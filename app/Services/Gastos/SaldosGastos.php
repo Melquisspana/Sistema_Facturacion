@@ -19,11 +19,29 @@ use Illuminate\Support\Facades\DB;
  *     subconjunto de pendiente, no otra cifra que se sume.
  *  2. Importe desconocido es DESCONOCIDO, no cero. Un gasto esperando recibo no
  *     aporta a pendiente ni a vencido, y se cuenta aparte.
+ *
+ * Un gasto ANULADO tiene pendiente cero en todas sus cuotas. Las consultas en SQL hacen lo
+ * mismo en {@see ConsultaGastos::cuotasConSaldo()}.
  */
 final class SaldosGastos
 {
-    /** Pendiente de UNA cuota, en centavos. Puede ser negativo si un crédito la excede. */
+    /**
+     * Pendiente de UNA cuota, en centavos. Puede ser negativo si un crédito la excede.
+     *
+     * La de un gasto ANULADO es cero: ya no se debe. Su importe, sus pagos revertidos y
+     * sus ajustes siguen en la ficha; lo que deja de existir es la deuda.
+     */
     public function pendienteCuota(Cuota $cuota): int
+    {
+        $anulado = $cuota->relationLoaded('gasto')
+            ? $cuota->gasto->anulado()
+            : DB::table('gastos')->where('id', $cuota->gasto_id)->whereNotNull('anulado_at')->exists();
+
+        return $anulado ? 0 : $this->saldoBruto($cuota);
+    }
+
+    /** Importe + débitos − créditos − pagos vigentes, sin mirar si el gasto se anuló. */
+    private function saldoBruto(Cuota $cuota): int
     {
         return Dinero::centavos((string) $cuota->importe)
             + $this->ajustes($cuota->id, 'debito')
@@ -68,10 +86,12 @@ final class SaldosGastos
             // Pendiente DESCONOCIDO, pero vencido CERO: mientras no se sepa el monto no
             // hay deuda que reclamar. Poner null en vencido invitaría a mostrar «por
             // definir» donde la respuesta correcta es «nada exigible todavía».
+            // Anulado sin haber llegado a tener monto: no se debe nada, y lo dice.
             return [
-                'pendiente' => null, 'vencido' => 0, 'importe' => null,
+                'pendiente' => $gasto->anulado() ? 0 : null, 'vencido' => 0, 'importe' => null,
                 'pagado' => 0, 'credito' => 0, 'debito' => 0,
-                'liquidacion' => 'por_determinar', 'vencimiento' => 'sin_fecha', 'proxima' => null,
+                'liquidacion' => $gasto->anulado() ? 'anulada' : 'por_determinar',
+                'vencimiento' => $gasto->anulado() ? 'saldada' : 'sin_fecha', 'proxima' => null,
             ];
         }
 
@@ -80,7 +100,7 @@ final class SaldosGastos
         $proxima = null;
 
         foreach ($gasto->cuotas as $cuota) {
-            $saldo = $this->pendienteCuota($cuota);
+            $saldo = $gasto->anulado() ? 0 : $this->saldoBruto($cuota);
             $importe += Dinero::centavos((string) $cuota->importe);
             $pagado += $this->aplicado($cuota->id);
             $credito += $this->ajustes($cuota->id, 'credito');
@@ -113,7 +133,9 @@ final class SaldosGastos
         return [
             'pendiente' => $pendiente, 'vencido' => $vencido, 'importe' => $importe,
             'pagado' => $pagado, 'credito' => $credito, 'debito' => $debito,
-            'liquidacion' => $this->liquidacion($pendiente, $pagado, $credito),
+            // «Anulado» antes que cualquier otra lectura: sin esto, un anulado sin pagos
+            // diría «Saldada por ajuste», y no se ajustó nada.
+            'liquidacion' => $gasto->anulado() ? 'anulada' : $this->liquidacion($pendiente, $pagado, $credito),
             'vencimiento' => $pendiente <= 0 ? 'saldada' : $vencimiento,
             'proxima' => $proxima,
         ];
@@ -146,6 +168,7 @@ final class SaldosGastos
         'saldada_mixta' => 'Pagada y ajustada',
         'credito_a_favor' => 'Crédito a favor por resolver',
         'por_determinar' => 'Por determinar',
+        'anulada' => 'Anulado',
     ];
 
     public const VENCIMIENTO = [

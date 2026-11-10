@@ -45,4 +45,9 @@ final class SinProteccion implements ProteccionDeGastos
     {
         return null;
     }
+
+    public function motivoParaNoAnular(int $gastoId): ?string
+    {
+        return null;
+    }
 }

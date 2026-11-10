@@ -40,6 +40,9 @@ final class ConsultaGastos
         // fila distingue cuál fue; el nombre no puede decir «Pagados» y mentir.
         'pagados' => 'Ya saldados',
         'por_completar' => 'Por completar',
+        // Ya no son deuda y no cuentan en ninguna otra pestaña ni en los totales. Están
+        // acá para que se puedan encontrar: anular no es borrar.
+        'anulados' => 'Anulados',
     ];
 
     /**
@@ -81,11 +84,22 @@ final class ConsultaGastos
      * Y la DEUDA misma tiene que existir ya: un gasto registrado después del corte no
      * estaba pendiente ese día. Se mira el `created_at` del gasto —que en una compra a
      * crédito es la fecha de la compra—, porque las cuotas no guardan cuándo nacieron.
+     *
+     * Y que todavía NO estuviera anulada al cerrar ese día: un gasto anulado el 20 se
+     * debía el 15 y ese informe lo sigue mostrando, igual que un pago revertido
+     * después. Sin corte, un anulado no aporta nada: ya no es deuda.
      */
     private function cuotasConSaldo(?string $corte = null): Builder
     {
         $centavos = fn (string $col) => $this->centavos($col);
         $finDelCorte = $corte !== null ? $corte.' 23:59:59' : null;
+
+        $gastosVivos = DB::table('gastos')
+            ->when($corte === null,
+                fn ($q) => $q->whereNull('anulado_at'),
+                fn ($q) => $q->where('created_at', '<=', $finDelCorte)
+                    ->where(fn ($w) => $w->whereNull('anulado_at')->orWhere('anulado_at', '>', $finDelCorte)))
+            ->select('id');
 
         $aplicado = DB::table('gastos_pago_aplicaciones as a')
             ->join('gastos_pagos as p', 'p.id', '=', 'a.pago_id')
@@ -115,10 +129,7 @@ final class ConsultaGastos
             ->selectRaw('SUM('.$centavos('importe').') as total');
 
         return DB::table('gastos_cuotas as c')
-            ->when($corte !== null, fn ($q) => $q->whereIn(
-                'c.gasto_id',
-                DB::table('gastos')->where('created_at', '<=', $finDelCorte)->select('id'),
-            ))
+            ->whereIn('c.gasto_id', $gastosVivos)
             ->leftJoinSub($aplicado, 'ap', 'ap.cuota_id', '=', 'c.id')
             ->leftJoinSub($ajuste('credito'), 'cr', 'cr.cuota_id', '=', 'c.id')
             ->leftJoinSub($ajuste('debito'), 'db', 'db.cuota_id', '=', 'c.id')
@@ -194,6 +205,13 @@ final class ConsultaGastos
 
     private function aplicarPestana(\Illuminate\Database\Eloquent\Builder $consulta, string $pestana, string $hoy): \Illuminate\Database\Eloquent\Builder
     {
+        if ($pestana === 'anulados') {
+            return $consulta->whereNotNull('gastos.anulado_at')->orderByDesc('gastos.anulado_at');
+        }
+
+        // Un anulado no tiene saldo, y uno sin monto entraría en «Por completar».
+        $consulta->whereNull('gastos.anulado_at');
+
         return match ($pestana) {
             // Esperando monto: NO entra en ninguna pestaña de saldo, porque no tiene uno.
             'por_completar' => $consulta->whereNull('gastos.importe')->orderBy('gastos.created_at', 'desc'),
@@ -267,7 +285,8 @@ final class ConsultaGastos
 
         $consulta = Gasto::query()
             ->leftJoinSub($this->saldosPorGasto($hoy), 's', 's.gasto_id', '=', 'gastos.id')
-            ->whereNotNull('gastos.importe');
+            ->whereNotNull('gastos.importe')
+            ->whereNull('gastos.anulado_at');
 
         $this->recortarPorAmbitoYFiltros($consulta, $usuario, $sinPestana);
 
@@ -284,7 +303,7 @@ final class ConsultaGastos
     /** Cuántos gastos están esperando monto: se informan aparte, no dentro de los totales. */
     public function esperandoMonto(User $usuario, array $filtros): int
     {
-        $consulta = Gasto::query()->whereNull('gastos.importe');
+        $consulta = Gasto::query()->whereNull('gastos.importe')->whereNull('gastos.anulado_at');
         $this->recortarPorAmbitoYFiltros($consulta, $usuario, $filtros);
 
         return $consulta->count();
@@ -308,7 +327,9 @@ final class ConsultaGastos
             ->where('g.beneficiario', $beneficiario)
             ->where('g.moneda', $moneda)
             ->whereNotNull('g.importe')
-            ->havingRaw('saldo > 0');
+            // WHERE y no HAVING, igual que en cuotasAbiertas(): sin agrupar, SQLite rechaza
+            // el HAVING y el alias del SELECT no es visible en el WHERE.
+            ->whereRaw('COALESCE(sc.saldo, '.$this->centavos('c.importe').') > 0');
 
         if (! $usuario->can('gastos.personales')) {
             $consulta->where('g.ambito', 'empresarial');
@@ -555,7 +576,7 @@ final class ConsultaGastos
         return $consulta
             ->select('a.pago_id', 'a.importe as aplicado', 'c.id as cuota_id', 'c.numero', 'c.vence',
                 'g.id as gasto_id', 'g.concepto', 'g.beneficiario', 'g.ambito', 'g.categoria',
-                'g.naturaleza', 'g.moneda', 'g.periodo_desde')
+                'g.naturaleza', 'g.moneda', 'g.periodo_desde', 'g.anulado_at')
             ->selectRaw('COALESCE(sc.saldo, '.$this->centavos('c.importe').') as pendiente_actual')
             ->orderBy('a.pago_id')->orderBy('g.id')->orderBy('c.numero')
             ->get()
@@ -621,6 +642,7 @@ final class ConsultaGastos
         $consulta = DB::table('gastos as g')
             ->leftJoin('gastos_ocurrencias as o', 'o.gasto_id', '=', 'g.id')
             ->whereNull('g.importe')
+            ->whereNull('g.anulado_at')
             ->whereIn('g.ambito', $ambitos)
             ->select('g.id as gasto_id', 'g.beneficiario', 'g.concepto', 'g.categoria',
                 'g.ambito', 'g.moneda', 'g.responsable_id', 'g.created_at',
@@ -650,7 +672,12 @@ final class ConsultaGastos
         }
     }
 
-    /** Saldo por cuota, en centavos, como subconsulta reutilizable. */
+    /**
+     * Saldo por cuota, en centavos, como subconsulta reutilizable.
+     *
+     * La de un gasto anulado da CERO y no desaparece: quien la usa hace
+     * `COALESCE(sc.saldo, importe)`, y una fila ausente volvería a su importe entero.
+     */
     private function saldoPorCuota(): Builder
     {
         $centavos = fn (string $col) => $this->centavos($col);
@@ -667,11 +694,13 @@ final class ConsultaGastos
             ->selectRaw('SUM('.$centavos('importe').') as total');
 
         return DB::table('gastos_cuotas as c2')
+            ->join('gastos as g2', 'g2.id', '=', 'c2.gasto_id')
             ->leftJoinSub($aplicado, 'ap', 'ap.cuota_id', '=', 'c2.id')
             ->leftJoinSub($ajuste('credito'), 'cr', 'cr.cuota_id', '=', 'c2.id')
             ->leftJoinSub($ajuste('debito'), 'db', 'db.cuota_id', '=', 'c2.id')
             ->select('c2.id as cuota_id')
-            ->selectRaw($centavos('c2.importe').' + COALESCE(db.total, 0) - COALESCE(cr.total, 0) - COALESCE(ap.total, 0) as saldo');
+            ->selectRaw('CASE WHEN g2.anulado_at IS NOT NULL THEN 0 ELSE '
+                .$centavos('c2.importe').' + COALESCE(db.total, 0) - COALESCE(cr.total, 0) - COALESCE(ap.total, 0) END as saldo');
     }
 
     /**

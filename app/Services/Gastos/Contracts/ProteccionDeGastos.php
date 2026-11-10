@@ -80,4 +80,12 @@ interface ProteccionDeGastos
      * saber qué desatar primero.
      */
     public function impedimentoParaRevertir(Pago $pago): ?string;
+
+    /**
+     * Por qué este gasto NO se anula desde Gastos, o null si sí se puede.
+     *
+     * Una obligación que creó otro módulo se deshace en ese módulo: anularla por acá
+     * dejaría al otro creyendo que sigue viva.
+     */
+    public function motivoParaNoAnular(int $gastoId): ?string;
 }

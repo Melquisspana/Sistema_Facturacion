@@ -48,6 +48,12 @@ final class CompletarMonto
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
             $gasto = Gasto::whereKey($gasto->id)->lockForUpdate()->firstOrFail();
 
+            if ($gasto->anulado()) {
+                throw ValidationException::withMessages([
+                    'importe' => 'Este gasto está anulado: ya no se debe y no se le pone monto. Si corresponde, registrá uno nuevo.',
+                ]);
+            }
+
             // Doble clic o dos operadores a la vez: el segundo encuentra el importe ya
             // puesto y se detiene en vez de duplicar cuotas sobre la misma deuda.
             if (! $gasto->montoDesconocido()) {

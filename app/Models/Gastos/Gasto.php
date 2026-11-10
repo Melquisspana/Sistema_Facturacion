@@ -61,7 +61,21 @@ class Gasto extends Model
 
     protected function casts(): array
     {
-        return ['importe' => 'decimal:2', 'periodo_desde' => 'date', 'periodo_hasta' => 'date'];
+        return ['importe' => 'decimal:2', 'periodo_desde' => 'date', 'periodo_hasta' => 'date', 'anulado_at' => 'datetime'];
+    }
+
+    /**
+     * Anulado no es borrado: sigue en su ficha y en el historial, pero desde
+     * `anulado_at` ya no es deuda. Ver App\Services\Gastos\AnularGasto.
+     */
+    public function anulado(): bool
+    {
+        return $this->anulado_at !== null;
+    }
+
+    public function anulador(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'anulado_por');
     }
 
     public function cuotas(): HasMany

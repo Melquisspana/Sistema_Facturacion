@@ -158,6 +158,9 @@
                                     @if ($filas->isNotEmpty())
                                         <p class="mt-0.5 text-xs text-gray-600">
                                             {{ $filas->count() === 1 ? $etiqueta($filas->first()) : $filas->count().' obligaciones' }}
+                                            @if ($filas->contains(fn ($f) => $f->anulado_at))
+                                                <span class="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Gasto anulado</span>
+                                            @endif
                                         </p>
                                     @endif
                                 </a>
@@ -204,6 +207,9 @@
                                                 <span class="ml-1 rounded px-1.5 py-0.5 text-[11px] font-medium {{ $f->ambito === 'personal' ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-600' }}">
                                                     {{ $f->ambito === 'personal' ? 'Casa' : 'Empresa' }}
                                                 </span>
+                                                @if ($f->anulado_at)
+                                                    <span class="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Gasto anulado</span>
+                                                @endif
                                             @elseif ($filas->count() > 1)
                                                 {{-- Varias: resumen arriba y el reparto a un clic. --}}
                                                 <details>
@@ -216,6 +222,9 @@
                                                             <li class="text-xs">
                                                                 <a href="{{ route('gastos.show', $f->gasto_id) }}" class="text-indigo-600 hover:underline">{{ $etiqueta($f) }}</a>
                                                                 <span class="tabular-nums text-gray-600">· {{ $f->moneda }} {{ Dinero::mostrar((int) $f->aplicado) }}</span>
+                                                                @if ($f->anulado_at)
+                                                                    <span class="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Gasto anulado</span>
+                                                                @endif
                                                                 @if ((int) $f->pendiente_actual > 0)
                                                                     <span class="block text-gray-500">Le queda {{ $f->moneda }} {{ Dinero::mostrar((int) $f->pendiente_actual) }} <em>hoy</em></span>
                                                                 @endif
