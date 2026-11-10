@@ -195,7 +195,7 @@
                                     <p>Facturado en 30 días: <span class="tabular-nums">{{ $plata($facturado[$ruta->id] ?? 0) }}</span></p>
                                     <p class="text-xs text-gray-500">
                                         {{ $pend['cantidad'] > 0 ? $pend['cantidad'].' CCF por entregar · $'.number_format($pend['monto'], 2) : 'Sin CCF por entregar' }}
-                                        · {{ $ruta->sucursales_count }} {{ $ruta->sucursales_count === 1 ? 'sala' : 'salas' }}
+                                        · {{ $fila['salas']->count() }} {{ $fila['salas']->count() === 1 ? 'sala' : 'salas' }}
                                     </p>
                                 </div>
 
@@ -309,7 +309,7 @@
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <p class="font-medium text-gray-800">{{ $sala->nombre }}</p>
-                                            <p class="text-sm text-gray-500">{{ $fila['ruta']->nombre }}</p>
+                                            <p class="text-sm text-gray-500">{{ $fila['ruta']?->nombre ?? 'Sin zona' }}</p>
                                         </div>
                                         <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto($fila['estado'], $fila['faltan']) }}</span>
                                     </div>
@@ -404,11 +404,12 @@
                 @endif
             </section>
 
-            @if ($salasSinRuta > 0)
+            {{-- Sin ruta y sin cobertura de su lugar: sale en la lista, pero no en ninguna zona. --}}
+            @if ($salasSinZona > 0)
                 <a href="{{ route('rutas.rutas.index') }}"
                    class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
-                    <span><strong>{{ $salasSinRuta }} {{ $salasSinRuta === 1 ? 'sala activa' : 'salas activas' }} sin ruta.</strong> No cuentan en ninguna ruta hasta asignarlas.</span>
-                    <span class="shrink-0 font-medium">Asignar</span>
+                    <span><strong>{{ $salasSinZona }} {{ $salasSinZona === 1 ? 'sala activa' : 'salas activas' }} sin zona.</strong> Ninguna ruta cubre su distrito ni su departamento.</span>
+                    <span class="shrink-0 font-medium">Ver coberturas</span>
                 </a>
             @endif
 

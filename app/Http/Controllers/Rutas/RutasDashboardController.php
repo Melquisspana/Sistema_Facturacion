@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Http\Controllers\Controller;
-use App\Models\ClienteSucursal;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\SalidaRuta;
@@ -19,7 +18,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -74,11 +72,9 @@ class RutasDashboardController extends Controller
             ])
             ->partition(fn (array $f) => $f['salida']->estado === EstadoSalidaRuta::EnCurso);
 
-        $rutas = $ritmo->porRuta($hoy);
-        $salas = $rutas->flatMap(fn (array $fila) => $fila['salas']->map(
-            fn (ClienteSucursal $sala) => RitmoRutas::filaSala($sala, $fila['ritmoSalas'][$sala->id], $hoy, $fila['visitas'][$sala->id]) + ['ruta' => $fila['ruta']]
-        ));
-        $salasDeRuta = $salas->groupBy(fn (array $s) => $s['ruta']->id);
+        // Cada sala activa en su zona; la que ninguna ruta cubre sale igual, sin zona.
+        ['zonas' => $rutas, 'salas' => $salas] = $ritmo->tablero($hoy);
+        $salasDeRuta = $salas->filter(fn (array $s) => $s['ruta'] !== null)->groupBy(fn (array $s) => $s['ruta']->id);
 
         // Filtros de la lista de salas. Lo que no se reconoce se ignora.
         $ver = in_array($request->query('ver'), self::VER, true) ? $request->query('ver') : 'todas';
@@ -91,7 +87,7 @@ class RutasDashboardController extends Controller
         $pagina = $this->paginar($lista, $request);
 
         $vendedores = PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre', 'telefono']);
-        $facturado = $this->facturadoPorRuta($entregas, $hoy);
+        $facturado = $this->facturadoPorZona($entregas, $hoy, $salas);
 
         return view('rutas.dashboard', [
             'resumen' => [
@@ -126,7 +122,7 @@ class RutasDashboardController extends Controller
             ],
             'vendedores' => $vendedores,
             'tarjetasVendedores' => $this->tarjetasVendedores($vendedores, $usuario, $hoy),
-            'salasSinRuta' => ClienteSucursal::whereNull('ruta_id')->where('activo', true)->count(),
+            'salasSinZona' => $salas->whereNull('ruta')->count(),
             'vaEnUnaSalida' => $vaEnUnaSalida,
             // Automáticas que se finalizaron solas y esperan «Terminar ruta»: una consulta.
             'porLiquidar' => SalidaRuta::porLiquidar()->count(),
@@ -134,28 +130,33 @@ class RutasDashboardController extends Controller
     }
 
     /**
-     * Lo facturado a las salas de cada ruta en los últimos 30 días (hoy incluido): la suma
-     * sin IVA de los CCF que cuentan en Rutas ({@see EntregasCcf::baseCcf()}). Una consulta.
-     * No resta notas de crédito: para eso está Ventas.
+     * Lo facturado a las salas de cada zona en los últimos 30 días (hoy incluido): la suma
+     * sin IVA de los CCF que cuentan en Rutas ({@see EntregasCcf::baseCcf()}). Una consulta,
+     * por sala; se reparte por la zona de cada sala. No resta notas de crédito: para eso
+     * está Ventas.
      *
-     * @return array<int, float> ruta_id => monto
+     * @param  Collection<int, array>  $salas  las del tablero, con su zona en `ruta`
+     * @return array<int, float> ruta_id (zona) => monto
      */
-    private function facturadoPorRuta(EntregasCcf $entregas, CarbonImmutable $hoy): array
+    private function facturadoPorZona(EntregasCcf $entregas, CarbonImmutable $hoy, Collection $salas): array
     {
-        $ccf = $entregas->baseCcf()
+        $zonaDe = $salas->filter(fn (array $s) => $s['ruta'] !== null)->mapWithKeys(fn (array $s) => [$s['sala']->id => $s['ruta']->id]);
+        $porSala = $entregas->baseCcf()
+            ->whereIn('cliente_sucursal_id', $zonaDe->keys()->all())
             ->whereDate('fecha_emision', '>=', $hoy->subDays(self::DIAS_FACTURADO - 1)->toDateString())
             ->whereDate('fecha_emision', '<=', $hoy->toDateString())
-            ->select('id');
+            ->groupBy('cliente_sucursal_id')
+            ->toBase()
+            ->selectRaw('cliente_sucursal_id, SUM(subtotal) as monto')
+            ->pluck('monto', 'cliente_sucursal_id');
 
-        return DB::table('dtes')
-            ->join('cliente_sucursales as sala', 'sala.id', '=', 'dtes.cliente_sucursal_id')
-            ->whereIn('dtes.id', $ccf)
-            ->whereNotNull('sala.ruta_id')
-            ->groupBy('sala.ruta_id')
-            ->selectRaw('sala.ruta_id, SUM(dtes.subtotal) as monto')
-            ->pluck('monto', 'ruta_id')
-            ->map(fn ($monto) => round((float) $monto, 2))
-            ->all();
+        $facturado = [];
+        foreach ($porSala as $salaId => $monto) {
+            $zona = $zonaDe[$salaId];
+            $facturado[$zona] = round(($facturado[$zona] ?? 0) + (float) $monto, 2);
+        }
+
+        return $facturado;
     }
 
     /**
@@ -245,7 +246,7 @@ class RutasDashboardController extends Controller
         return RitmoRutas::ordenarSalas($salas
             ->when($ver === 'atrasadas', fn ($c) => $c->where('estado', Ritmo::ATRASADA))
             ->when($ver === 'semana', fn ($c) => $c->filter(fn (array $s) => $this->tocaEstaSemana($s)))
-            ->when($rutaId !== null, fn ($c) => $c->filter(fn (array $s) => $s['ruta']->id === $rutaId))
+            ->when($rutaId !== null, fn ($c) => $c->filter(fn (array $s) => $s['ruta']?->id === $rutaId))
             ->when($buscar !== '', fn ($c) => $c->filter(fn (array $s) => str_contains($norm($s['sala']->nombre), $norm($buscar))
                 || str_contains($norm($s['sala']->codigo), $norm($buscar)))));
     }

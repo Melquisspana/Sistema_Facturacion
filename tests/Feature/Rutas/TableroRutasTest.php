@@ -240,7 +240,8 @@ class TableroRutasTest extends TestCase
         $muchas = $contar();
 
         $this->assertSame($pocas, $muchas, 'El tablero no debería hacer una consulta por ruta, sala o salida.');
-        // 27 hoy: todas agregadas (visitas de cada sala, pedidos sacados, facturado por ruta, …).
-        $this->assertLessThan(30, $muchas);
+        // 31 hoy: todas agregadas (visitas de cada sala, pedidos sacados, facturado por zona, la
+        // cobertura de las zonas, …).
+        $this->assertLessThan(33, $muchas);
     }
 }

@@ -11,9 +11,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
- * ¿A qué ruta toca ir? Una fila por ruta activa: su última visita, cuántos días pasaron
- * y cómo va contra el RITMO de la ruta, calculado con los pedidos de sus salas
- * ({@see RitmoPedidos}). Los días aproximados cargados a mano (`frecuencia_objetivo_dias`)
+ * ¿A qué zona toca ir? Una fila por ruta activa, que hace de ZONA (ver {@see tablero()}):
+ * su última visita, cuántos días pasaron y cómo va contra el RITMO de la zona, calculado
+ * con los pedidos de sus salas ({@see RitmoPedidos}). Los días aproximados cargados a mano (`frecuencia_objetivo_dias`)
  * se usan solo de respaldo, mientras la ruta no tenga ritmo (decisión 4 del plan).
  *
  * Esto avisa, no agenda: no hay calendario ni fecha obligatoria. El semáforo es el de
@@ -58,9 +58,17 @@ class RitmoRutas
     /** Los días se cuentan desde la última visita a una de sus salas. */
     public const DESDE_SALAS = 'salas';
 
-    public function __construct(private readonly RitmoPedidos $pedidos, private readonly EntregasCcf $entregas) {}
+    public function __construct(
+        private readonly RitmoPedidos $pedidos,
+        private readonly EntregasCcf $entregas,
+        private readonly PropuestaRutas $propuesta,
+    ) {}
 
     /**
+     * Una fila por ZONA. Las rutas activas son el catálogo de zonas: la zona de una sala es
+     * su ruta, si está activa, o la que cubre su distrito o su departamento
+     * ({@see PropuestaRutas::para()}). Así una sala sin ruta no queda afuera.
+     *
      * @return Collection<int, array{
      *     ruta: Ruta,
      *     estado: string,
@@ -80,9 +88,21 @@ class RitmoRutas
      */
     public function porRuta(?CarbonImmutable $hoy = null): Collection
     {
+        return $this->tablero($hoy)['zonas'];
+    }
+
+    /**
+     * Las zonas de {@see porRuta()} y TODAS las salas activas con su ritmo
+     * ({@see filaSala()}) y su zona (`ruta`, null si ninguna ruta cubre su lugar).
+     *
+     * @return array{zonas: Collection<int, array>, salas: Collection<int, array>}
+     */
+    public function tablero(?CarbonImmutable $hoy = null): array
+    {
         $hoy ??= CarbonImmutable::today();
 
-        $rutas = Ruta::activas()->withCount('sucursales')->orderBy('nombre')->get();
+        $rutas = Ruta::activas()->orderBy('nombre')->get();
+        $activas = $rutas->keyBy('id');
 
         // Todas las salidas que cuentan, en una consulta; se reparten en PHP.
         $salidas = SalidaRuta::query()
@@ -94,20 +114,25 @@ class RitmoRutas
             ->get()
             ->groupBy('ruta_id');
 
-        // Las salas activas de cada ruta y su ritmo: dos consultas más, para todas.
-        $salas = ClienteSucursal::query()
+        // Todas las salas activas, cada una en su zona, y su ritmo: unas pocas consultas más.
+        $todas = ClienteSucursal::query()
             ->where('activo', true)
-            ->whereIn('ruta_id', $rutas->pluck('id'))
             ->orderBy('nombre')
-            ->get(['id', 'ruta_id', 'nombre', 'codigo'])
-            ->groupBy('ruta_id');
-        $salaIds = $salas->flatten()->pluck('id')->all();
+            ->get(['id', 'ruta_id', 'nombre', 'codigo', 'departamento_id', 'distrito_id']);
+        $zonaDe = [];
+        foreach ($todas as $sala) {
+            $cubre = $this->propuesta->para($sala);
+            $zonaDe[$sala->id] = ($sala->ruta_id !== null ? $activas->get($sala->ruta_id) : null)
+                ?? ($cubre !== null ? $activas->get($cubre->id) : null);
+        }
+        $salas = $todas->groupBy(fn (ClienteSucursal $s) => $zonaDe[$s->id]?->id ?? 0);
+        $salaIds = $todas->pluck('id')->all();
         $ritmoSalas = $this->pedidos->porSala($salaIds, $hoy);
         $visitas = $this->visitas($salaIds);
 
         $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::PROGRAMADA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
 
-        return $rutas
+        $zonas = $rutas
             ->map(function (Ruta $ruta) use ($salas, $salidas, $ritmoSalas, $visitas, $hoy) {
                 $deRuta = array_flip($salas->get($ruta->id, collect())->pluck('id')->all());
 
@@ -126,6 +151,12 @@ class RitmoRutas
                 fn ($a, $b) => ($b['dias'] ?? -1) <=> ($a['dias'] ?? -1),
             ])
             ->values();
+
+        return [
+            'zonas' => $zonas,
+            'salas' => $todas->map(fn (ClienteSucursal $sala) => self::filaSala($sala, $ritmoSalas[$sala->id], $hoy, $visitas[$sala->id])
+                + ['ruta' => $zonaDe[$sala->id]]),
+        ];
     }
 
     /**
