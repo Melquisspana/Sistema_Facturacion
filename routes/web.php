@@ -38,6 +38,7 @@ use App\Http\Controllers\Facturacion\ContingenciaController;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Facturacion\ListaEmpaqueController;
 use App\Http\Controllers\Facturacion\OrdenCompraRecibidaController;
+use App\Http\Controllers\Facturacion\PorFacturarController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
 use App\Http\Controllers\Ppq\NcExportacionController;
 use App\Http\Controllers\Ppq\PpqBusquedaController;
@@ -226,6 +227,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [DteController::class, 'index'])->name('index');
         // Invalidaciones: lista de documentos aceptados que se pueden invalidar (antes de {dte}).
         Route::get('invalidaciones', [DteController::class, 'invalidaciones'])->name('invalidaciones');
+        // Lo que mandó la fábrica ese día, una tarjeta por sala. Solo lectura (dte.ver).
+        Route::get('llego-de-fabrica', [PorFacturarController::class, 'index'])->name('llego-de-fabrica');
         Route::get('ccf/crear', [DteController::class, 'createCcf'])->name('create-ccf');
         Route::post('ccf', [DteController::class, 'storeCcf'])->name('store-ccf');
         Route::get('factura/crear', [DteController::class, 'createFactura'])->name('create-factura');
@@ -958,6 +961,7 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
 require __DIR__.'/auth.php';
 require __DIR__.'/planta.php';
 require __DIR__.'/rutas.php';
+require __DIR__.'/fabrica.php';
 require __DIR__.'/asistencia.php';
 require __DIR__.'/gastos.php';
 require __DIR__.'/planilla.php';

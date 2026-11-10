@@ -546,12 +546,13 @@ class EntregasCcf
 
     /**
      * Última entrega conocida en cada sala: la más reciente entre lo que registró alguien y
-     * lo que prueba un albarán de entrega vinculado a un CCF de esa sala.
+     * lo que prueba un albarán de entrega vinculado a un CCF de esa sala. Con `$hasta`, solo
+     * hasta ese día (el mapa de ventas lo pide así para un mes pasado).
      *
      * @param  array<int, int>  $salaIds
      * @return array<int, Carbon> sala_id => fecha
      */
-    public function ultimaVisitaPorSala(array $salaIds): array
+    public function ultimaVisitaPorSala(array $salaIds, ?Carbon $hasta = null): array
     {
         if ($salaIds === []) {
             return [];
@@ -562,6 +563,7 @@ class EntregasCcf
         SalidaRutaEntrega::query()
             ->entregadas()
             ->whereIn('cliente_sucursal_id', $salaIds)
+            ->when($hasta !== null, fn ($q) => $q->whereDate('fecha_resultado', '<=', $hasta->toDateString()))
             ->groupBy('cliente_sucursal_id')
             ->selectRaw('cliente_sucursal_id, MAX(fecha_resultado) as ultima')
             ->get()
@@ -577,6 +579,7 @@ class EntregasCcf
             ->join('dtes', 'dtes.id', '=', 'ppq_albaranes.dte_id')
             ->whereIn('dtes.cliente_sucursal_id', $salaIds)
             ->whereNotNull('ppq_albaranes.fecha_albaran')
+            ->when($hasta !== null, fn ($q) => $q->whereDate('ppq_albaranes.fecha_albaran', '<=', $hasta->toDateString()))
             ->whereRaw('UPPER(ppq_albaranes.tipo_codigo) = ?', [PpqAlbaran::tipoDeEntrega()])
             ->groupBy('dtes.cliente_sucursal_id')
             ->toBase()

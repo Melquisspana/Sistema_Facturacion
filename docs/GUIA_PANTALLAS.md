@@ -138,6 +138,22 @@ Tomado de Planta (tabla, filtros y «Limpiar») y de Gastos (lista en tarjetas e
   - con filtros: «Nada coincide con estos filtros.» + enlace «Limpiar filtros».
 - **Celular:** en las pantallas que se usan en ruta o en el celular (Rutas, Cobros, Gastos), la tabla se cambia por una lista de tarjetas (`sm:hidden` / `hidden sm:block`). En las de oficina alcanza con que la tabla se corra de lado (`overflow-x-auto`).
 
+### Pestañas
+
+Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Mapa y Vendedores).
+
+- Una fila de enlaces dentro de un `<nav>` con `aria-label`: `flex flex-wrap gap-1 border-b border-gray-200`.
+- Cada pestaña: `inline-flex min-h-11 items-center rounded-t-md px-3 text-sm`. La elegida lleva `border-b-2 border-indigo-600 font-semibold text-indigo-700` y `aria-current="page"`; las otras, `text-gray-600 hover:text-gray-900`.
+- Si una pestaña pide un permiso, sin él no se dibuja. La ruta igual lleva su candado.
+
+### Mapas y gráficos
+
+Tomado del mapa de ventas de Rutas (09/11/2026).
+
+- Los colores propios del dibujo (rampas, rayado, leyenda) van como variables en un bloque `<style>` de la vista, con sus tonos para la clase `dark` de `<html>`. Lo demás (cajas, textos, botones) usa las clases de siempre.
+- Siempre con leyenda y con una tabla de los mismos datos, que sirve sin el dibujo y con lector de pantalla.
+- Las librerías van como archivo en `public/vendor/<nombre>/` con su licencia, no por CDN: así andan en contingencia y sin internet.
+
 ### Fichas y detalles
 
 Tomado de las fichas de Gastos y Rutas.
@@ -170,6 +186,34 @@ Tomado de las fichas de Gastos y Rutas.
 - Un solo componente `x-insignia` (sale de `x-planta.badge`) que recibe el color que da el enum: `x-rutas.estado-badge`, `x-estado-dte-badge` y `x-configuracion.badge` lo usan por dentro.
 - `x-planta.toggle-activo` se reemplaza por `x-asistencia.estado`, que ya hace lo mismo y además recibe el permiso; pasa a llamarse `x-estado-activo`.
 - Colores con significado: verde = listo/activo, ámbar = falta algo, rojo = rechazado/error, gris = inactivo/borrador, índigo/azul = en proceso.
+
+### Pantalla táctil (Fábrica)
+
+Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el dedo o con el mouse de una laptop. Agregado el 09/11/2026.
+
+- **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Se manda todo», «Mandar»).
+- **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («Faltan cosas», «No se trae», «Deshacer»).
+- **Cantidad:** `text-2xl font-bold tabular-nums`, alineada a la derecha.
+- Sin texto con prefijo de pantalla: el botón dice lo que hace.
+- Lo que se puede deshacer no se confirma: sale el aviso con un botón «Deshacer».
+- `confirm()` solo para «Deshacer» un envío y para «Borrar lo marcado».
+- La lista se recarga sola cuando nadie la usa (dedo, mouse, rueda o teclado); la hoja que se está llenando, nunca (guarda sola). Cada recarga renueva la sesión: para quien ve más que Fábrica, deja de recargarse antes de que la sesión venza por inactividad.
+- La hoja guarda con un solo retardo corto y, al salir, primero termina de guardar. Los errores del guardado se muestran con texto propio en castellano (por ejemplo, «Se cerró la sesión. Volvé a entrar.»), nunca el mensaje en inglés del sistema.
+
+### Páginas para imprimir
+
+Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`) y la hoja de lo que salió de la fábrica (`rutas/pedidos/hoja`). Agregado el 09/11/2026.
+
+- Documento aparte: su propio `<html>`, sus estilos en un `<style>` y sin el bundle de la aplicación ni la barra. No lleva modo oscuro.
+- Color de acento con los mismos colores del sistema: índigo para el encabezado y la tabla, verde, ámbar y rojo con el significado de las etiquetas de estado. Se imprime tal cual (`-webkit-print-color-adjust: exact; print-color-adjust: exact;`). **Regla:** la hoja se tiene que leer igual en una impresora en blanco y negro: nada se dice solo con color, los textos de color son tonos oscuros (`700`/`800`) y las cajas claras llevan borde. Entra en hoja carta vertical (`@page { size: letter portrait; }`).
+- La lista de empaque (`facturacion/listas/imprimir`) todavía sale en blanco y negro; se pasa a color cuando se toque esa pantalla.
+- Arriba, una barra que no se imprime (`.no-print`) con «Volver a <lugar>» y el botón «Imprimir», de 44 px de alto.
+- Encabezado en una franja índigo: el nombre de la empresa (`config('app.name')`, nunca escrito a mano), el título con lo que es («Lo que salió de la fábrica») y el número a la derecha.
+- Los datos en cajitas suaves etiqueta/valor; el estado como insignia del color que da el enum. Después la tabla con encabezado índigo y texto blanco, filas alternadas suaves, números grandes a la derecha y el encabezado que se repite en cada hoja (`thead { display: table-header-group; }`).
+- Fechas `d/m/Y` y con hora `d/m/Y H:i`, como en el resto.
+- Lo que hay que ver de un vistazo va marcado con una letra en un recuadro, que el color solo refuerza: la «F» de lo que faltó, como la que ponía a mano la fábrica, en rojo sobre fondo rojo claro y con `aria-label="Faltó"`; al lado, en rojo, cuánto faltó. Lo que todavía va en otro envío, en ámbar.
+- Al pie, el espacio para las firmas.
+- Lo que el papel no necesita no va: la hoja de la fábrica no lleva precios.
 
 ---
 

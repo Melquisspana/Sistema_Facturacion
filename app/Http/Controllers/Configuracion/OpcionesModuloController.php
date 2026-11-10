@@ -96,12 +96,16 @@ class OpcionesModuloController extends Controller
         ],
         'rutas' => [
             'titulo' => 'Rutas',
-            'descripcion' => 'Entregas de los CCF en ruta.',
+            'descripcion' => 'Entregas de los CCF en ruta y pedidos de la fábrica.',
             'modulo' => null,
             'grupos' => [
                 [
                     'titulo' => 'Entregas',
                     'claves' => ['rutas.entregas_desde'],
+                ],
+                [
+                    'titulo' => 'Pedidos de la fábrica',
+                    'claves' => ['pedidos.fabrica_desde'],
                 ],
             ],
         ],

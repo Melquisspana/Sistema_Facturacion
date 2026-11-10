@@ -36,7 +36,9 @@ use Illuminate\Support\Carbon;
  *
  * La cabeza va PRIMERO y con prioridad de presupuesto. Si un día entran cien correos
  * nuevos, esa corrida no avanza en la cola —y está bien: lo urgente es lo nuevo—, pero la
- * marca de la cola no se mueve, así que no se pierde nada.
+ * marca de la cola no se mueve, así que no se pierde nada. Tampoco la de la cabeza: si
+ * no cupo todo lo nuevo, queda donde estaba y la corrida siguiente sigue desde ahí
+ * (ver {@see confirmarAvance()}).
  *
  * ═══════════════════ Lo ya registrado no gasta presupuesto ═══════════════════
  *
@@ -85,9 +87,16 @@ class BarridoCorreosCobro
     private const SOLAPE_HORAS = 36;
 
     /**
-     * Tope de páginas por ventana. Acota el trabajo de una corrida cuando la tanda viene
+     * Tope de páginas de la COLA. Acota el trabajo de una corrida cuando la tanda viene
      * entera de mensajes ya conocidos: sin esto, una cola con miles de correos ya leídos
-     * podría recorrer el buzón entero en una sola pasada.
+     * podría recorrer el buzón entero en una sola pasada. La cola avanza igual, porque los
+     * ids conocidos mueven su marca.
+     *
+     * La CABEZA no lleva tope: su ventana va de la marca a hoy y la marca solo se mueve
+     * cuando la ventana se recorrió entera. Con tope, un atraso de más de PAGINAS_MAX
+     * páginas dejaba la cabeza leyendo siempre las mismas mil primeras, sin terminar
+     * nunca: la marca quedaba quieta para siempre y lo que estaba más allá no se leía. Listar
+     * ids es barato y lo ya registrado no baja el cuerpo.
      */
     private const PAGINAS_MAX = 10;
 
@@ -121,7 +130,8 @@ class BarridoCorreosCobro
      *     ya_conocidos: int,
      *     cola_agotada: bool,
      *     queda_backlog: bool,
-     *     tope_alcanzado: bool
+     *     tope_alcanzado: bool,
+     *     cabeza_completa: bool
      * }
      */
     public function prepararTanda(Cliente $cliente, string $consulta, int $limite): array
@@ -148,6 +158,7 @@ class BarridoCorreosCobro
         $enEstaTanda = [];
 
         // ─── 1 · CABEZA: lo nuevo desde la última corrida ───
+        $cabezaCompleta = true;
         $cabeza = $this->recorrer(
             $this->consultaCabeza($consulta, $progreso),
             $limite,
@@ -155,6 +166,8 @@ class BarridoCorreosCobro
             $conocidos,
             $topeAlcanzado,
             $enEstaTanda,
+            $cabezaCompleta,
+            paginasMax: null,
         );
         $mensajes = $cabeza;
 
@@ -194,7 +207,9 @@ class BarridoCorreosCobro
             'ya_conocidos' => $conocidos,
             'cola_agotada' => $colaAgotada,
             'queda_backlog' => $progreso->quedaBacklog() && ! $colaAgotada,
-            'tope_alcanzado' => $topeAlcanzado,
+            'tope_alcanzado' => $topeAlcanzado || ! $cabezaCompleta,
+            // Si la cabeza se recorrió entera. Si no, `confirmarAvance()` no mueve su marca.
+            'cabeza_completa' => $cabezaCompleta,
         ];
     }
 
@@ -244,7 +259,15 @@ class BarridoCorreosCobro
                 $masVieja = $masVieja === null || $fecha->lt($masVieja) ? $fecha : $masVieja;
             }
 
-            $progreso->avanzarCabeza($masNueva);
+            // Con la cabeza cortada por el tope queda un hueco sin leer entre la marca
+            // anterior y lo más viejo que se leyó. Si la marca saltara a lo más nuevo, ese
+            // hueco quedaría debajo de la ventana para siempre —y con el buzón ya recorrido,
+            // la cola tampoco mira ahí—. Se queda donde estaba y la siguiente sigue desde
+            // ahí; lo ya registrado se descarta por id, sin bajar el cuerpo. La primera vez
+            // no hay hueco: lo de más atrás es trabajo de la cola.
+            if (($tanda['cabeza_completa'] ?? true) || $progreso->ultimo_mensaje_en === null) {
+                $progreso->avanzarCabeza($masNueva);
+            }
             $progreso->avanzarCola($masVieja);
         }
 
@@ -270,6 +293,8 @@ class BarridoCorreosCobro
      *
      * @param  array<string, Carbon>  $vistos  se rellena: id => fecha del mensaje
      * @param  array<string, true>  $enEstaTanda  ids ya recogidos por la otra ventana
+     * @param  bool  $completa  se rellena: si la consulta se recorrió hasta el final
+     * @param  int|null  $paginasMax  null = sin tope de páginas (la cabeza)
      * @return array<int, array<string, mixed>>
      */
     private function recorrer(
@@ -279,6 +304,8 @@ class BarridoCorreosCobro
         int &$conocidos,
         bool &$topeAlcanzado,
         array &$enEstaTanda,
+        bool &$completa = true,
+        ?int $paginasMax = self::PAGINAS_MAX,
     ): array {
         $vistos ??= [];
         $mensajes = [];
@@ -290,6 +317,8 @@ class BarridoCorreosCobro
             $paginas++;
 
             if ($pagina['ids'] === []) {
+                $token = null;
+
                 break;
             }
 
@@ -317,6 +346,7 @@ class BarridoCorreosCobro
                     // Hay más para procesar y no cabe en esta corrida. NO se marca el
                     // barrido como completo y se avisa: la siguiente sigue por acá.
                     $topeAlcanzado = true;
+                    $completa = false;
 
                     return $mensajes;
                 }
@@ -328,11 +358,12 @@ class BarridoCorreosCobro
             }
 
             $token = $pagina['siguiente'];
-        } while (filled($token) && count($mensajes) < $limite && $paginas < self::PAGINAS_MAX);
+        } while (filled($token) && count($mensajes) < $limite && ($paginasMax === null || $paginas < $paginasMax));
 
         if (filled($token) && count($mensajes) >= $limite) {
             $topeAlcanzado = true;
         }
+        $completa = blank($token);
 
         return $mensajes;
     }

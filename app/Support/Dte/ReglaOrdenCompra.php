@@ -107,15 +107,10 @@ final class ReglaOrdenCompra
             return $problemas;
         }
 
-        $codigo = Sala::normalizar($sala->codigo);
-        if (preg_match('/^\d{4}$/', (string) $codigo) !== 1) {
-            return $problemas;
-        }
-
-        $deLaOrden = OrdenCompra::salaDesde($orden, $posicionSala);
-        if ($deLaOrden !== null && $deLaOrden !== $codigo) {
+        $deLaOrden = self::salaDistinta($orden, $sala, $posicionSala);
+        if ($deLaOrden !== null) {
             $problemas[] = 'La orden de compra «'.trim((string) $orden).'» es de la sala '.$deLaOrden
-                .' y la factura va para «'.$sala->nombre.'» ('.$codigo.'): revisá la orden o la sala.';
+                .' y la factura va para «'.$sala->nombre.'» ('.Sala::normalizar($sala->codigo).'): revisá la orden o la sala.';
         }
 
         return $problemas;
@@ -144,5 +139,25 @@ final class ReglaOrdenCompra
         }
 
         return $avisos;
+    }
+
+    /**
+     * La sala que trae la orden cuando NO es la de `$sala`; null si cuadra o no se puede
+     * saber. Solo con un código de sala de 4 dígitos (el de Calleja): la sala sin código se
+     * descarta antes de leer nada. `$posicionSala` es {@see OrdenCompra::posicionSala()} ya
+     * leída, para quien recorre muchos documentos.
+     *
+     * @param  array{0: int, 1: int}|null  $posicionSala
+     */
+    public static function salaDistinta(?string $orden, ?ClienteSucursal $sala, ?array $posicionSala = null): ?string
+    {
+        $codigo = Sala::normalizar($sala?->codigo);
+        if (preg_match('/^\d{4}$/', (string) $codigo) !== 1) {
+            return null;
+        }
+
+        $deLaOrden = OrdenCompra::salaDesde($orden, $posicionSala);
+
+        return $deLaOrden !== null && $deLaOrden !== $codigo ? $deLaOrden : null;
     }
 }

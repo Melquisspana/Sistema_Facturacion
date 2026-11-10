@@ -32,6 +32,9 @@ enum AreaSistema: string
     // exactamente como antes.
     case Gastos = 'gastos';
     case Planta = 'planta';
+    // La fábrica: solo «Pedidos», lo que sale para cada sala. Va DESPUÉS de Planta: quien
+    // tiene las dos (Producción) sigue aterrizando en Planta mientras esté encendida.
+    case Fabrica = 'fabrica';
     case Rutas = 'rutas';
     case Asistencia = 'asistencia';
 
@@ -53,6 +56,7 @@ enum AreaSistema: string
             self::Facturacion => 'Facturación',
             self::Gastos => 'Gastos y pagos',
             self::Planta => 'Producción',
+            self::Fabrica => 'Fábrica',
             self::Rutas => 'Rutas',
             self::Asistencia => 'Personal',
         };
@@ -91,6 +95,11 @@ enum AreaSistema: string
             self::Planta => [
                 ['permiso' => PermisoSistema::PlantaVer->value,
                     'habilitada' => ModuloSistema::Planta->activo(), 'ruta' => 'planta.dashboard'],
+            ],
+            // Sin interruptor, como Rutas (de donde salen los pedidos): no depende del módulo
+            // Producción, que en el servidor está apagado.
+            self::Fabrica => [
+                ['permiso' => PermisoSistema::FabricaPedidosMandar->value, 'habilitada' => true, 'ruta' => 'fabrica.pedidos.index'],
             ],
             self::Rutas => [
                 ['permiso' => PermisoSistema::RutasVer->value, 'habilitada' => true, 'ruta' => 'rutas.dashboard'],
@@ -158,6 +167,7 @@ enum AreaSistema: string
             self::Facturacion => 'facturacion',
             self::Gastos => 'contabilidad',
             self::Planta => 'planta',
+            self::Fabrica => 'salidas',
             self::Rutas => 'rutas',
             self::Asistencia => 'asistencia',
         };
@@ -238,6 +248,16 @@ enum AreaSistema: string
         ));
     }
 
+    /**
+     * ¿El usuario solo ve Fábrica (la tableta de la fábrica)? Su menú es solo «Pedidos»
+     * en cualquier pantalla, también en las que no son de un área (/profile), y su lista
+     * se recarga sola sin tope.
+     */
+    public static function soloFabrica(?User $usuario): bool
+    {
+        return self::visiblesPara($usuario) === [self::Fabrica];
+    }
+
     /** Área principal (primera visible) o null si el usuario no ve ninguna. */
     public static function principalPara(?User $usuario): ?self
     {
@@ -272,6 +292,7 @@ enum AreaSistema: string
         return match (true) {
             request()->routeIs('gastos.*') => self::Gastos,
             request()->routeIs('planta.*') => self::Planta,
+            request()->routeIs('fabrica.*') => self::Fabrica,
             request()->routeIs('rutas.*') => self::Rutas,
             // `asistencia.*` son las pantallas web. Los endpoints del lector se
             // llaman `api.asistencia.*` y no entran acá: no tienen sesión, no

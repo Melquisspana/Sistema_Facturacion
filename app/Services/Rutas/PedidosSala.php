@@ -21,7 +21,8 @@ use Illuminate\Validation\ValidationException;
  * Sacar pedido en la sala desde «Mi salida» (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10).
  *
  * Toda la regla está acá: en qué salas de la salida se puede sacar, quién lo saca, una sola
- * vez por sala mientras esté registrado, y la auditoría con las líneas. Los datos del formulario llegan
+ * vez por sala mientras no esté anulado (aunque la fábrica ya lo haya marcado), que no se corrija
+ * después de que la fábrica empezó, y la auditoría con las líneas. Los datos del formulario llegan
  * ya validados por {@see PedidoSalaRequest}.
  */
 class PedidosSala
@@ -59,8 +60,9 @@ class PedidosSala
 
             if ($pedido) {
                 $pedido = $salida->pedidos()->lockForUpdate()->findOrFail($pedido->id);
+                $this->exigirSinFabrica($pedido);
                 Gate::forUser($usuario)->authorize('corregir', $pedido);
-            } elseif ($salida->pedidos()->registrados()->where('cliente_sucursal_id', $sala->id)->exists()) {
+            } elseif ($salida->pedidos()->vigentes()->where('cliente_sucursal_id', $sala->id)->exists()) {
                 throw ValidationException::withMessages(['lineas' => 'El pedido de «'.$sala->nombre.'» ya está sacado. Si cambió algo, corregilo.']);
             }
 
@@ -100,6 +102,7 @@ class PedidosSala
         DB::transaction(function () use ($salida, $pedido, $usuario) {
             $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
             $pedido = $salida->pedidos()->lockForUpdate()->findOrFail($pedido->id);
+            $this->exigirSinFabrica($pedido);
             Gate::forUser($usuario)->authorize('corregir', $pedido);
             $pedido->update(['estado' => EstadoPedidoSala::Anulado]);
             $this->auditar($pedido, $usuario, 'anuló el pedido de la sala');
@@ -125,6 +128,24 @@ class PedidosSala
 
             return $pedido;
         });
+    }
+
+    public const EN_FABRICA = 'La fábrica ya marcó este pedido; ya no se puede corregir. Avisá a la oficina.';
+
+    /**
+     * Freno del vendedor: si la fábrica ya empezó (algún envío, aunque esté anulado, un
+     * estado suyo o el armado empezado), ni se corrige ni se anula. El estado y el armado
+     * se leen de la fila YA BLOQUEADA; los envíos, con una lectura con bloqueo, que ve lo
+     * último confirmado aunque la vista de lectura ya se haya abierto. Así no llega al 500
+     * de la FK restrict de los envíos al borrar las líneas.
+     */
+    private function exigirSinFabrica(PedidoSala $pedido): void
+    {
+        if (in_array($pedido->estado, [EstadoPedidoSala::Parcial, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae], true)
+            || $pedido->armando_desde !== null
+            || $pedido->envios()->sharedLock()->exists()) {
+            throw ValidationException::withMessages(['lineas' => self::EN_FABRICA]);
+        }
     }
 
     /** ¿El usuario es quien sacó el pedido? Su ficha de campo activa. */

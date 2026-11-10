@@ -27,13 +27,18 @@ class MiPedidoController extends Controller
         Gate::authorize('sacarPedido', $salida);
         abort_unless($this->pedidos->salasDeSalida($salida)->whereKey($sucursal->id)->exists(), 404);
 
-        // Ya sacado: no se saca otro. Quien lo sacó lo corrige; el compañero vuelve a la sala.
-        $sacado = $salida->pedidos()->registrados()->where('cliente_sucursal_id', $sucursal->id)->first();
+        // Ya sacado: no se saca otro. Quien lo sacó lo corrige (si la fábrica no empezó); el
+        // compañero vuelve a la sala.
+        $sacado = $salida->pedidos()->vigentes()->where('cliente_sucursal_id', $sucursal->id)->first();
         if ($sacado) {
-            return $request->user()->can('corregir', $sacado)
-                ? redirect()->route('rutas.mi-salida.pedidos.edit', [$salida, $sacado])
-                : redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$sucursal->id)
-                    ->with('error', 'El pedido de «'.$sucursal->nombre.'» ya está sacado.');
+            if ($request->user()->can('corregir', $sacado)) {
+                return redirect()->route('rutas.mi-salida.pedidos.edit', [$salida, $sacado]);
+            }
+
+            return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$sucursal->id)
+                ->with('error', $sacado->fabricaEmpezo()
+                    ? 'El pedido de «'.$sucursal->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.'
+                    : 'El pedido de «'.$sucursal->nombre.'» ya está sacado.');
         }
 
         return $this->formulario($salida, $sucursal, null);
@@ -46,8 +51,15 @@ class MiPedidoController extends Controller
         return $this->volver($salida, $pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.');
     }
 
-    public function edit(SalidaRuta $salida, PedidoSala $pedido): View
+    public function edit(SalidaRuta $salida, PedidoSala $pedido): View|RedirectResponse
     {
+        // Primero, que vaya en esa salida: a un ajeno no se le dice qué sala tiene pedido.
+        Gate::authorize('sacarPedido', $salida);
+        // Con una pantalla vieja (o volviendo de un error al guardar): un aviso, no un 403.
+        if ($pedido->estaVigente() && $pedido->fabricaEmpezo()) {
+            return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$pedido->cliente_sucursal_id)
+                ->with('error', 'El pedido de «'.$pedido->sala?->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.');
+        }
         Gate::authorize('corregir', $pedido);
 
         return $this->formulario($salida, $pedido->sala, $pedido);

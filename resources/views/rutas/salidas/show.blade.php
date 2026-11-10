@@ -33,7 +33,7 @@
                         </p>
                         <p class="mt-0.5 text-sm font-medium text-gray-700 dark:text-paper-100">{{ $salida->proposito->descripcion() }}</p>
                         @if ($salida->proposito->sacaPedido() && auth()->user()->can('rutas.pedidos.ver'))
-                            @php($pedidosSacados = $salida->pedidos()->registrados()->count())
+                            @php($pedidosSacados = $salida->pedidos()->vigentes()->count())
                             <a href="{{ route('rutas.pedidos.index', ['salida' => $salida->id]) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 underline dark:text-indigo-400">
                                 {{ $pedidosSacados === 1 ? '1 pedido sacado' : $pedidosSacados.' pedidos sacados' }} · Ver pedidos
                             </a>

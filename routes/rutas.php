@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Rutas\AsignacionSalasController;
+use App\Http\Controllers\Rutas\MapaVentasController;
 use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
 use App\Http\Controllers\Rutas\PedidoSalaController;
@@ -106,6 +107,9 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
     ->name('rutas.')
     ->group(function () {
         Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+        // La pestaña «Mapa» del tablero: ventas por zona, con montos (09/11/2026).
+        Route::get('mapa', [MapaVentasController::class, 'index'])
+            ->middleware('permission:rutas.mapa.ver')->name('mapa');
         Route::get('ventas', [VentasController::class, 'index'])
             ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
         Route::get('ventas/excel', [VentasController::class, 'excel'])
@@ -234,6 +238,8 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
         Route::prefix('pedidos')->name('pedidos.')->middleware('permission:rutas.pedidos.ver')->group(function () {
             Route::get('/', [PedidoSalaController::class, 'index'])->name('index');
             Route::get('{pedido}', [PedidoSalaController::class, 'show'])->name('show');
+            // La hoja de lo que salió: el sugerido en limpio, para imprimir. Sin precios.
+            Route::get('{pedido}/hoja', [PedidoSalaController::class, 'hoja'])->name('hoja');
             // La OC llega después por EDI: la agrega o corrige la oficina.
             Route::patch('{pedido}/orden-compra', [PedidoSalaController::class, 'ordenCompra'])->name('orden-compra')
                 ->middleware('permission:rutas.gestionar');

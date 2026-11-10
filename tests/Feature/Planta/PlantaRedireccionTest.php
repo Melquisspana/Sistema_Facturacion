@@ -164,11 +164,14 @@ class PlantaRedireccionTest extends TestCase
         }
     }
 
-    /** C4 bis — módulo apagado: el 404 tampoco ejecuta consultas del panel. */
+    /**
+     * C4 bis — módulo apagado: el 404 tampoco ejecuta consultas del panel. Con un usuario
+     * que solo tiene Planta: el rol Producción, desde el 09/11/2026, aterriza en Fábrica.
+     */
     public function test_c4_bis_el_404_tampoco_ejecuta_consultas_del_dashboard_fiscal(): void
     {
         $this->apagarModulo();
-        $usuario = $this->usuario('produccion');
+        $usuario = User::factory()->create(['activo' => true])->givePermissionTo('planta.ver');
 
         $consultas = $this->consultasDe(function () use ($usuario) {
             $this->actingAs($usuario)
@@ -187,11 +190,19 @@ class PlantaRedireccionTest extends TestCase
     // Módulo APAGADO: el rol produccion no entra al dashboard histórico.
     // ---------------------------------------------------------------------
 
-    public function test_con_el_modulo_apagado_produccion_recibe_404_en_el_dashboard(): void
+    /**
+     * Con Producción apagado, el rol aterriza en Fábrica (sus pedidos, 09/11/2026), que no
+     * depende del módulo. Quien solo tiene Planta sigue recibiendo el 404 de siempre.
+     */
+    public function test_con_el_modulo_apagado_produccion_aterriza_en_fabrica_y_solo_planta_recibe_404(): void
     {
         $this->apagarModulo();
 
         $this->actingAs($this->usuario('produccion'))
+            ->get(route('dashboard'))
+            ->assertRedirect(route('fabrica.pedidos.index'));
+
+        $this->actingAs(User::factory()->create(['activo' => true])->givePermissionTo('planta.ver'))
             ->get(route('dashboard'))
             ->assertNotFound();
     }

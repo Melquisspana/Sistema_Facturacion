@@ -1,0 +1,26 @@
+Límites del mapa de ventas por zona (Rutas › Tablero › Mapa)
+
+departamentos.json
+  Los 14 departamentos. Fuente: geoBoundaries (ADM1 de El Salvador), que los toma de
+  OpenStreetMap. © colaboradores de OpenStreetMap, licencia CC BY-SA 2.0.
+  Este archivo, derivado de esos datos, se comparte con la misma licencia.
+
+distritos.json
+  Los 262 distritos de la reforma de 2024 (los municipios de antes). Fuente: geoBoundaries
+  (ADM2 de El Salvador), de dominio público.
+
+Cómo se armaron
+  - Coordenadas reducidas a 3 decimales (unos 110 m).
+  - Cada forma lleva el código del catálogo Distrito del sistema: «06-14» es el código del
+    departamento (CAT-012) y el del distrito (CAT-008), que reinicia en cada departamento.
+    Los nombres de geoBoundaries se emparejaron con el catálogo sin tildes ni mayúsculas,
+    dentro del departamento. Se corrigieron a mano las erratas («San Ingnacio», «Teujutepeque»),
+    los nombres cortos («Opico», «Delgado», «San Francisco» de Morazán), los distritos que
+    geoBoundaries puso en el departamento vecino (Sacacoyo, Olocuilta, Jerusalén, El Tránsito,
+    El Rosario de Cuscatlán) y el cruce de Sonsonate y Sonzacate (la pieza sin nombre de 249 km²
+    es Sonsonate y la llamada «Sonsonate» es Sonzacate, por tamaño y vecinos).
+  - Otras nueve piezas sin nombre en geoBoundaries (islas de la bahía de Jiquilisco, esteros y
+    bordes) se juntaron al distrito vecino con el que comparten más borde, o al más cercano si
+    son islas.
+  - La prueba tests/Feature/Rutas/MapaFormasTest.php comprueba que cada distrito del
+    catálogo tenga su forma y que no sobre ninguna.

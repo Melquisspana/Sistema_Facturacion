@@ -24,6 +24,12 @@
             <section class="{{ $caja }}">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <x-rutas.estado-badge :estado="$pedido->estado" />
+                    {{-- Barra de acciones de la ficha (x-secondary-button es solo <button>). La hoja,
+                         solo si salió algo o ya se cerró: pendiente o anulado no dice nada. --}}
+                    @if ($pedido->estado->tieneHoja())
+                        <a href="{{ route('rutas.pedidos.hoja', $pedido) }}" target="_blank" rel="noopener"
+                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
+                    @endif
                 </div>
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
@@ -69,11 +75,15 @@
 
             <section class="rounded-lg border border-gray-200 bg-white" aria-labelledby="productos-titulo">
                 <h2 id="productos-titulo" class="px-4 pt-4 text-base font-semibold text-gray-800 sm:px-5">Productos</h2>
+                <div class="overflow-x-auto">
                 <table class="mt-2 min-w-full text-sm">
                     <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                             <th class="px-4 py-3 sm:px-5">Producto</th>
-                            <th class="px-4 py-3 text-right sm:px-5">Cantidad</th>
+                            <th class="px-4 py-3 text-right sm:px-5">Pidió</th>
+                            <th class="px-4 py-3 text-right sm:px-5">Mandado</th>
+                            <th class="px-4 py-3 text-right sm:px-5">Falta</th>
+                            <th class="px-4 py-3 sm:px-5">Motivo</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -84,10 +94,24 @@
                                     <span class="block text-xs text-gray-500">{{ $linea->producto?->codigo }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ $linea->cantidadLegible() }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ \App\Models\PedidoSalaLinea::legible($linea->mandado()) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</td>
+                                <td class="px-4 py-3 text-gray-600 sm:px-5">{{ $linea->motivo_no_enviado ?? '—' }}</td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
+                </div>
+            </section>
+
+            {{-- Cada envío por separado, para compararlo con el sugerido y la OC. --}}
+            <section class="{{ $caja }}" aria-labelledby="envios-titulo">
+                <h2 id="envios-titulo" class="text-base font-semibold text-gray-800">Lo que mandó la fábrica</h2>
+                @if ($pedido->envios->isEmpty())
+                    <p class="mt-1 text-sm text-gray-500">La fábrica todavía no mandó nada.</p>
+                @else
+                    <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios])</div>
+                @endif
             </section>
         </div>
     </div>

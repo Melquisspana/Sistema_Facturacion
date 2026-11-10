@@ -25,6 +25,9 @@ enum RolSistema: string
      * de Hacienda. Ver config/planta.php.
      */
     case Produccion = 'produccion';
+    // La fábrica: solo marca qué manda de cada pedido de sala (/fabrica/pedidos). No ve
+    // insumos ni nada más del sistema, y no depende del módulo Producción.
+    case Fabrica = 'fabrica';
 
     public function label(): string
     {
@@ -36,6 +39,7 @@ enum RolSistema: string
             self::Vendedor => 'Vendedor',
             self::JefeVendedores => 'Jefe de vendedores',
             self::Produccion => 'Producción',
+            self::Fabrica => 'Fábrica',
         };
     }
 
