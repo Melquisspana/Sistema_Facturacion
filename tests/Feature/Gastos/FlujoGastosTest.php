@@ -445,6 +445,65 @@ class FlujoGastosTest extends TestCase
         $this->assertNotNull($ajuste->fresh()->revertido_at);
     }
 
+    /**
+     * Quitar un débito BAJA la deuda. Si ese débito ya se pagó, lo pagado queda por
+     * encima de lo que se debe y la cuota pasa a negativo. Antes pasaba sin aviso.
+     */
+    public function test_un_debito_ya_pagado_no_se_puede_revertir_hasta_revertir_el_pago(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u);
+        $cuota = $gasto->cuotas->first();
+        $saldos = app(SaldosGastos::class);
+
+        $ajuste = app(RegistrarAjuste::class)->registrar($u, $cuota, [
+            'clave' => (string) Str::uuid(), 'direccion' => 'debito', 'tipo' => 'nota_debito',
+            'importe' => '20.00', 'motivo' => 'Nota de débito por intereses',
+        ]);
+        // Se paga casi todo: quedan 5.00, menos que los 20.00 del débito.
+        $pago = app(RegistrarPago::class)->registrar($u, [
+            'clave' => (string) Str::uuid(), 'importe' => '115.00', 'fecha' => now()->toDateString(),
+            'metodo' => 'transferencia', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
+        ], [['cuota_id' => $cuota->id, 'importe' => '115.00']]);
+
+        $this->actingAs($u)->post(route('gastos.ajustes.revertir', $ajuste), ['motivo' => 'Se cargó por error'])
+            ->assertSessionHasErrors('motivo');
+
+        $this->assertNull($ajuste->fresh()->revertido_at, 'El débito sigue vigente.');
+        $this->assertSame(500, $saldos->pendienteCuota($cuota->fresh()), 'La cuota no quedó en negativo.');
+        $this->assertSame(0, DB::table('gastos_eventos')->where('accion', 'ajuste_revertido')->count());
+
+        // Revertido el pago que lo cubría, el débito ya se puede quitar.
+        app(RegistrarPago::class)->revertir($u, $pago, 'El pago incluía un cargo que no correspondía');
+        $this->actingAs($u)->post(route('gastos.ajustes.revertir', $ajuste), ['motivo' => 'Se cargó por error'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNotNull($ajuste->fresh()->revertido_at);
+        $this->assertSame(10000, $saldos->pendienteCuota($cuota->fresh()));
+    }
+
+    /** Quitar un crédito SUBE la deuda: nunca la deja en negativo, aunque ya esté pagada. */
+    public function test_revertir_un_credito_de_una_cuota_pagada_reabre_la_deuda_por_ese_importe(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u);
+        $cuota = $gasto->cuotas->first();
+
+        $ajuste = app(RegistrarAjuste::class)->registrar($u, $cuota, [
+            'clave' => (string) Str::uuid(), 'direccion' => 'credito', 'tipo' => 'nota_credito',
+            'importe' => '30.00', 'motivo' => 'Nota de crédito por devolución',
+        ]);
+        app(RegistrarPago::class)->registrar($u, [
+            'clave' => (string) Str::uuid(), 'importe' => '70.00', 'fecha' => now()->toDateString(),
+            'metodo' => 'transferencia', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
+        ], [['cuota_id' => $cuota->id, 'importe' => '70.00']]);
+
+        app(RegistrarAjuste::class)->revertir($u, $ajuste, 'La nota de crédito era de otra factura');
+
+        $this->assertNotNull($ajuste->fresh()->revertido_at);
+        $this->assertSame(3000, app(SaldosGastos::class)->pendienteCuota($cuota->fresh()));
+    }
+
     public function test_un_ajuste_exige_el_permiso_de_administrar(): void
     {
         $duenio = $this->operador();
