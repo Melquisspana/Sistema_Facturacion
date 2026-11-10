@@ -191,6 +191,62 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $this->assertNull(app(NotaCreditoAjuste::class)->avisoImporte($nc));
     }
 
+    /** Neto del TXT → bruto estimado con la tasa vigente (IVA 13 %, retención 1 %). */
+    public static function brutosConLaTasaVigente(): array
+    {
+        return [
+            'un centavo' => ['0.01', '0.01'],
+            'bajo el umbral' => ['56.50', '56.50'],
+            'un centavo antes del umbral' => ['111.99', '111.99'],
+            'umbral exacto: no lo supera' => ['112.00', '112.00'],
+            'un centavo sobre el umbral' => ['112.01', '113.02'],
+            'dos centavos sobre el umbral' => ['112.02', '113.03'],
+            'ciento trece' => ['113.00', '114.01'],
+            'caso del TXT' => ['153.01', '154.38'],
+            'base redonda de 200' => ['224.00', '226.00'],
+            'base redonda de 300' => ['336.00', '339.00'],
+            'casi mil' => ['999.99', '1008.92'],
+            'base redonda de 1000' => ['1120.00', '1130.00'],
+            'con centavos' => ['1234.56', '1245.59'],
+            'diez mil' => ['10000.00', '10089.29'],
+        ];
+    }
+
+    #[DataProvider('brutosConLaTasaVigente')]
+    public function test_el_bruto_estimado_con_la_tasa_vigente_no_cambia_ni_un_centavo(string $neto, string $bruto): void
+    {
+        $servicio = app(NotaCreditoAjuste::class);
+        $ajuste = $this->ajuste(['monto' => '-'.$neto]);
+
+        $this->assertSame($bruto, $servicio->brutoEstimado($ajuste, $this->ccf));
+        // Un CCF sin retención no agrega nada: el neto del TXT ya es el bruto.
+        $this->assertSame($neto, $servicio->brutoEstimado($ajuste, new Dte(['aplica_retencion_iva' => false])));
+    }
+
+    public function test_la_nota_del_ajuste_sigue_la_tasa_de_iva_y_de_retencion_configuradas(): void
+    {
+        $servicio = app(NotaCreditoAjuste::class);
+        $ajuste = $this->ajuste(); // neto 153.01
+
+        // Retención al 2 %: 153.01 / 1.11 × 1.13 = 155.7669… → 155.77.
+        config(['dte.iva_tasa' => 0.13, 'dte.retencion_iva_tasa' => 0.02]);
+        $this->assertSame('155.77', $servicio->brutoEstimado($ajuste, $this->ccf));
+
+        // IVA al 10 %: 153.01 / 1.09 × 1.10 = 154.4137… → 154.42.
+        config(['dte.iva_tasa' => 0.10, 'dte.retencion_iva_tasa' => 0.01]);
+        $this->assertSame('154.42', $servicio->brutoEstimado($ajuste, $this->ccf));
+
+        // Y la nota creada cuadra con el TXT: 140.37 + 14.04 de IVA − 1.40 retenido = 153.01.
+        $this->post(route('facturacion.store-nota-credito'), $this->datos($ajuste))->assertSessionHasNoErrors();
+        $nc = $ajuste->fresh()->notaCredito;
+        $this->assertNotNull($nc);
+        $this->assertSame('153.01', $nc->total_pagar);
+        $this->assertEquals(140.37, (float) $nc->lineas->first()->precio_unitario);
+        $this->assertSame('14.04', $nc->iva);
+        $this->assertSame('1.40', $nc->iva_retenido);
+        $this->assertNull($servicio->avisoImporte($nc));
+    }
+
     public function test_importe_inalcanzable_muestra_aviso_persistente_en_editor(): void
     {
         DB::table('dtes')->where('id', $this->ccf->id)->update(['aplica_retencion_iva' => false]);
