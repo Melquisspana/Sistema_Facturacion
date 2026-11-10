@@ -111,15 +111,28 @@ final class ReglaOrdenCompra
         if ($sala !== null && blank($sala->codigo)) {
             $avisos[] = 'La sala «'.$sala->nombre.'» no tiene cargado su código de sala: cargalo en la ficha del cliente.';
         } elseif ($sala !== null && $avisos === [] && filled($dte->numero_orden_compra)) {
-            // Solo con la forma bien y un código de sala de 4 dígitos (el de Calleja).
-            $codigo = Sala::normalizar($sala->codigo);
-            $deLaOrden = OrdenCompra::salaDesde($dte->numero_orden_compra);
-            if (preg_match('/^\d{4}$/', (string) $codigo) === 1 && $deLaOrden !== null && $deLaOrden !== $codigo) {
+            // Solo con la forma bien.
+            $deLaOrden = self::salaDistinta($dte->numero_orden_compra, $sala);
+            if ($deLaOrden !== null) {
                 $avisos[] = 'La orden de compra «'.trim($dte->numero_orden_compra).'» es de la sala '.$deLaOrden
-                    .' y la factura va para «'.$sala->nombre.'» ('.$codigo.'): revisá la orden o la sala.';
+                    .' y la factura va para «'.$sala->nombre.'» ('.Sala::normalizar($sala->codigo).'): revisá la orden o la sala.';
             }
         }
 
         return $avisos;
+    }
+
+    /**
+     * La sala que trae la orden cuando NO es la de `$sala`; null si cuadra o no se puede
+     * saber. Solo con un código de sala de 4 dígitos (el de Calleja).
+     */
+    public static function salaDistinta(?string $orden, ?ClienteSucursal $sala): ?string
+    {
+        $codigo = Sala::normalizar($sala?->codigo);
+        $deLaOrden = OrdenCompra::salaDesde($orden);
+
+        return preg_match('/^\d{4}$/', (string) $codigo) === 1 && $deLaOrden !== null && $deLaOrden !== $codigo
+            ? $deLaOrden
+            : null;
     }
 }

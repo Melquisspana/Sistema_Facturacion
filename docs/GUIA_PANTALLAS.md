@@ -184,6 +184,21 @@ Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el 
 - La lista se recarga sola cuando nadie la usa (dedo, mouse, rueda o teclado); la hoja que se está llenando, nunca (guarda sola). Cada recarga renueva la sesión: para quien ve más que Fábrica, deja de recargarse antes de que la sesión venza por inactividad.
 - La hoja guarda con un solo retardo corto y, al salir, primero termina de guardar. Los errores del guardado se muestran con texto propio en castellano (por ejemplo, «Se cerró la sesión. Volvé a entrar.»), nunca el mensaje en inglés del sistema.
 
+### Páginas para imprimir
+
+Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`) y la hoja de lo que salió de la fábrica (`rutas/pedidos/hoja`). Agregado el 09/11/2026.
+
+- Documento aparte: su propio `<html>`, sus estilos en un `<style>` y sin el bundle de la aplicación ni la barra. No lleva modo oscuro.
+- Color de acento con los mismos colores del sistema: índigo para el encabezado y la tabla, verde, ámbar y rojo con el significado de las etiquetas de estado. Se imprime tal cual (`-webkit-print-color-adjust: exact; print-color-adjust: exact;`). **Regla:** la hoja se tiene que leer igual en una impresora en blanco y negro: nada se dice solo con color, los textos de color son tonos oscuros (`700`/`800`) y las cajas claras llevan borde. Entra en hoja carta vertical (`@page { size: letter portrait; }`).
+- La lista de empaque (`facturacion/listas/imprimir`) todavía sale en blanco y negro; se pasa a color cuando se toque esa pantalla.
+- Arriba, una barra que no se imprime (`.no-print`) con «Volver a <lugar>» y el botón «Imprimir», de 44 px de alto.
+- Encabezado en una franja índigo: el nombre de la empresa (`config('app.name')`, nunca escrito a mano), el título con lo que es («Lo que salió de la fábrica») y el número a la derecha.
+- Los datos en cajitas suaves etiqueta/valor; el estado como insignia del color que da el enum. Después la tabla con encabezado índigo y texto blanco, filas alternadas suaves, números grandes a la derecha y el encabezado que se repite en cada hoja (`thead { display: table-header-group; }`).
+- Fechas `d/m/Y` y con hora `d/m/Y H:i`, como en el resto.
+- Lo que hay que ver de un vistazo va marcado con una letra en un recuadro, que el color solo refuerza: la «F» de lo que faltó, como la que ponía a mano la fábrica, en rojo sobre fondo rojo claro y con `aria-label="Faltó"`; al lado, en rojo, cuánto faltó. Lo que todavía va en otro envío, en ámbar.
+- Al pie, el espacio para las firmas.
+- Lo que el papel no necesita no va: la hoja de la fábrica no lleva precios.
+
 ---
 
 ## 3. Plan por PR
