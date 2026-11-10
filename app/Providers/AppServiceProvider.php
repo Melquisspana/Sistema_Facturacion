@@ -14,6 +14,7 @@ use App\Services\Alertas\RegistroEventos;
 use App\Services\Asistencia\AutenticadorDispositivo;
 use App\Services\Contabilidad\SubidaDrivePaquete;
 use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
+use App\Services\DocumentosRecibidos\BuzonConFreno;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ImapMailboxClient;
 use App\Services\DocumentosRecibidos\NullMailboxClient;
@@ -99,8 +100,9 @@ class AppServiceProvider extends ServiceProvider
             // config(), para que apagar la lectura desde la pantalla tenga efecto
             // sin tocar el .env. El lector se construye por el contenedor porque
             // ahora recibe su configuración inyectada.
+            // Con el freno de Yahoo (#162): Compras y Cobros respetan la misma espera.
             static fn ($app) => $app->make(ConfiguracionDocumentosRecibidos::class)->lecturaActivada()
-                ? $app->make(ImapMailboxClient::class)
+                ? new BuzonConFreno($app->make(ImapMailboxClient::class))
                 : new NullMailboxClient
         );
 
@@ -111,7 +113,7 @@ class AppServiceProvider extends ServiceProvider
                 $configuracion = $app->make(ConfiguracionBuzonAdicional::class);
 
                 return $configuracion->lecturaActivada()
-                    ? new ImapMailboxClient($configuracion)
+                    ? new BuzonConFreno(new ImapMailboxClient($configuracion))
                     : new NullMailboxClient;
             }
         );

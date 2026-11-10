@@ -5,6 +5,7 @@ namespace App\Services\DocumentosRecibidos;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Exceptions\DocumentosRecibidos\AutenticacionBuzonException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
+use App\Exceptions\DocumentosRecibidos\BuzonFrenadoException;
 use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\Buzon\IdentidadCorreo;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
@@ -470,9 +471,11 @@ class SincronizadorDocumentosRecibidos
         array $total = [], array $completos = [], array $incompletos = [], bool $aplicar = false,
     ): ResumenSincronizacion {
         return new ResumenSincronizacion(
-            desenlace: $e instanceof AutenticacionBuzonException
-                ? ResumenSincronizacion::AUTENTICACION_FALLIDA
-                : ResumenSincronizacion::BUZON_INACCESIBLE,
+            desenlace: match (true) {
+                $e instanceof AutenticacionBuzonException => ResumenSincronizacion::AUTENTICACION_FALLIDA,
+                $e instanceof BuzonFrenadoException => ResumenSincronizacion::BUZON_FRENADO,
+                default => ResumenSincronizacion::BUZON_INACCESIBLE,
+            },
             carpeta: $carpeta,
             desde: $desde->toDateString(),
             hasta: $hasta->toDateString(),

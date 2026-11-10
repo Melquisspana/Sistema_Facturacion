@@ -187,13 +187,15 @@ class ComprasSincronizarCommand extends Command
         if (! $aplicar) {
             $this->warn('DRY-RUN: no se escribió nada (ni documentos ni progreso). Corré con --aplicar para guardar.');
 
-            return $r->fallo() ? self::FAILURE : self::SUCCESS;
+            return $r->fallo() && ! $r->pasajera() ? self::FAILURE : self::SUCCESS;
         }
 
         if ($r->fallo()) {
             $bitacora?->fallo($r->mensaje(), $r->aArreglo());
 
-            return self::FAILURE;
+            // El freno de Yahoo se levanta solo: queda el aviso en el log y la tarea
+            // termina bien, para no dar una alerta de caída cada vez (#162).
+            return $r->pasajera() ? self::SUCCESS : self::FAILURE;
         }
 
         // "Incompleta" no es un fallo del buzón: quedaron días por cerrar y la corrida
@@ -243,6 +245,7 @@ class ComprasSincronizarCommand extends Command
 
         match (true) {
             $r->desenlace === ResumenSincronizacion::AUTENTICACION_FALLIDA => $this->error('AUTENTICACIÓN FALLIDA: '.$r->error),
+            $r->desenlace === ResumenSincronizacion::BUZON_FRENADO => $this->warn('BUZÓN FRENADO: '.$r->error),
             $r->desenlace === ResumenSincronizacion::SIN_CONFIGURAR => $this->error('SIN CONFIGURAR: '.$r->error),
             $r->desenlace === ResumenSincronizacion::BUZON_INACCESIBLE => $this->error('BUZÓN INACCESIBLE: '.$r->error),
             $r->desenlace === ResumenSincronizacion::UID_VALIDITY_CAMBIADO => $this->error('BUZÓN RECONSTRUIDO: '.$r->error),
