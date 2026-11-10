@@ -62,19 +62,17 @@ class Secuencia extends Model
             );
         }
 
-        $fila = static::consultaBloqueada($clave)->first();
-
-        if (! $fila) {
-            // La fila la crea la migración; este camino solo cubre una clave nueva.
-            static::query()->insertOrIgnore([
-                'clave' => $clave,
-                'ultimo_numero' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $fila = static::consultaBloqueada($clave)->firstOrFail();
+        // Una clave nueva (las de cada día, como SOL-{código}-{fecha}) se crea ANTES de
+        // bloquearla. En MySQL, un FOR UPDATE sobre una fila que no existe bloquea el hueco
+        // del índice: dos procesos lo toman a la vez, después los dos insertan y MySQL corta
+        // a uno por interbloqueo. El upsert toma la fila en exclusiva aunque la haya creado
+        // otro —INSERT IGNORE la tomaría compartida y volvería el interbloqueo al bloquearla—,
+        // así que el segundo solo espera a que el primero termine.
+        if (! static::query()->where('clave', $clave)->exists()) {
+            static::query()->upsert([['clave' => $clave, 'ultimo_numero' => 0]], ['clave'], ['clave']);
         }
 
+        $fila = static::consultaBloqueada($clave)->firstOrFail();
         $fila->ultimo_numero = $fila->ultimo_numero + 1;
         $fila->save();
 

@@ -20,18 +20,29 @@ final class RegistrarPago
         private ProteccionDeGastos $proteccion,
     ) {}
 
-    /** Aplicaciones explícitas por cuota; nunca reparte silenciosamente en el servidor. */
-    public function registrar(User $usuario, array $datos, array $aplicaciones): Pago
+    /**
+     * Lo que pide todo pago. Público para que quien paga a través de este servicio —Planilla—
+     * lo revise ANTES de escribir lo suyo, con estas mismas reglas y no con una copia.
+     *
+     * @return array<string, array<int, mixed>>
+     */
+    public static function reglas(): array
     {
-        abort_unless($usuario->activo && $usuario->can('gastos.pagos.registrar'), 403);
-        $datos = Validator::make($datos, [
+        return [
             'clave' => ['required', 'uuid'], 'importe' => ['required', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D', 'gt:0'],
             'fecha' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'metodo' => ['required', Rule::in(array_keys(config('gastos.metodos')))],
             'pagado_por' => ['required', Rule::exists('users', 'id')->where('activo', true)],
             'referencia' => ['nullable', 'string', 'max:180'],
             'sin_comprobante' => ['nullable', 'string', 'max:250'],
-        ])->validate();
+        ];
+    }
+
+    /** Aplicaciones explícitas por cuota; nunca reparte silenciosamente en el servidor. */
+    public function registrar(User $usuario, array $datos, array $aplicaciones): Pago
+    {
+        abort_unless($usuario->activo && $usuario->can('gastos.pagos.registrar'), 403);
+        $datos = Validator::make($datos, self::reglas())->validate();
         Validator::make(['aplicaciones' => $aplicaciones], [
             'aplicaciones' => ['required', 'array', 'min:1', 'max:100'],
             'aplicaciones.*.cuota_id' => ['required', 'integer', 'distinct'],

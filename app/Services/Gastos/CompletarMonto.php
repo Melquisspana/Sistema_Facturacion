@@ -28,7 +28,7 @@ final class CompletarMonto
     public function __construct(private AccesoGastos $acceso, private VincularCompra $compras) {}
 
     /**
-     * @param  array<int, array{importe: string, vence: ?string}>  $cuotas
+     * @param  array<int, array{importe: string, vence?: ?string}>  $cuotas
      * @param  ?DocumentoRecibido  $documento  El recibo que trae la cifra, si viene de Compras
      */
     public function completar(User $usuario, Gasto $gasto, array $cuotas, ?DocumentoRecibido $documento = null): Gasto
@@ -71,7 +71,7 @@ final class CompletarMonto
                 $gasto->cuotas()->create([
                     'numero' => $i + 1,
                     'importe' => Dinero::decimal($importe),
-                    'vence' => $fila['vence'] ?: null,
+                    'vence' => ($fila['vence'] ?? null) ?: null,
                 ]);
             }
 

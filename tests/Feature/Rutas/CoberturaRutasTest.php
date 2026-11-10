@@ -11,6 +11,7 @@ use App\Models\RutaCobertura;
 use App\Models\User;
 use App\Services\Rutas\PropuestaRutas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
@@ -106,6 +107,29 @@ class CoberturaRutasTest extends TestCase
             ->assertSessionHas('error', '«Cabañas» ya lo cubre la ruta «San Vicente». Quitalo de allá primero.');
 
         $this->assertSame(0, $otra->coberturas()->count());
+    }
+
+    /**
+     * #22 · Dos altas del mismo lugar a la vez: la segunda ya pasó la consulta y choca con el
+     * índice único. Se avisa quién lo tiene, sin error del sistema y sin dejar auditoría falsa.
+     */
+    public function test_el_alta_simultanea_del_mismo_lugar_avisa_quien_lo_tiene(): void
+    {
+        $sanVicente = Ruta::create(['nombre' => 'San Vicente']);
+        $otra = Ruta::create(['nombre' => 'Chalatenango']);
+
+        // La otra pantalla lo guarda justo entre la consulta del controlador y su alta.
+        RutaCobertura::creating(fn () => DB::table('ruta_coberturas')->insert([
+            'ruta_id' => $sanVicente->id, 'departamento_id' => $this->cabanas->id,
+            'created_at' => now(), 'updated_at' => now(),
+        ]));
+
+        $this->actingAs($this->admin())
+            ->post(route('rutas.rutas.cobertura.store', $otra), ['departamento_id' => $this->cabanas->id])
+            ->assertSessionHas('error', '«Cabañas» ya lo cubre la ruta «San Vicente». Quitalo de allá primero.');
+
+        $this->assertSame(0, $otra->coberturas()->count());
+        $this->assertFalse(Activity::where('description', 'agregó a la cobertura de la ruta')->exists());
     }
 
     public function test_se_pide_un_departamento_o_un_distrito_no_los_dos_ni_ninguno(): void

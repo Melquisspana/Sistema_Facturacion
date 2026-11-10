@@ -6,6 +6,8 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Enums\TipoNotaCredito;
+use App\Exceptions\Dte\DocumentoInmutableException;
+use App\Exceptions\Dte\GeneracionException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -281,7 +283,7 @@ class DteNumeroSistemaTest extends TestCase
         // …ni escribiéndolo en un documento ya emitido (el observer de inmutabilidad
         // bloquea todo campo fuera de su whitelist, y este no está en ella).
         $dte->numero_sistema = 999;
-        $this->expectException(\App\Exceptions\Dte\DocumentoInmutableException::class);
+        $this->expectException(DocumentoInmutableException::class);
         $dte->save();
     }
 
@@ -304,6 +306,34 @@ class DteNumeroSistemaTest extends TestCase
         $sql = strtolower(Secuencia::consultaBloqueada(Secuencia::NUMERO_SISTEMA, 'mysql')->toSql());
         $this->assertStringContainsString('for update', $sql);
         $this->assertStringNotContainsString('max(', $sql);
+    }
+
+    /**
+     * #22 · Una clave nueva —las del día, como SOL-{código}-{fecha}— se crea ANTES de
+     * bloquearla. En MySQL (REPEATABLE READ) un FOR UPDATE sobre una clave que no existe
+     * bloquea el hueco del índice; dos procesos lo toman a la vez, después los dos insertan
+     * y MySQL corta a uno por interbloqueo: un error del sistema en el primer número del día.
+     * Acá hay una sola conexión y el choque no se puede ver, así que se prueba la causa.
+     */
+    public function test_la_secuencia_no_bloquea_una_clave_que_todavia_no_existe(): void
+    {
+        $clave = 'SOL-000123-20261109';
+        $bloqueada = Secuencia::consultaBloqueada($clave)->limit(1)->toSql();
+        $sobreFaltante = 0;
+
+        DB::listen(function ($consulta) use ($bloqueada, $clave, &$sobreFaltante) {
+            if ($consulta->sql === $bloqueada && ! Secuencia::query()->where('clave', $clave)->exists()) {
+                $sobreFaltante++;
+            }
+        });
+
+        $numeros = [
+            DB::transaction(fn () => Secuencia::siguiente($clave)),
+            DB::transaction(fn () => Secuencia::siguiente($clave)),
+        ];
+
+        $this->assertSame(0, $sobreFaltante, 'El bloqueo se tomó sobre una clave que todavía no existía.');
+        $this->assertSame([1, 2], $numeros);
     }
 
     public function test_la_secuencia_no_entrega_numeros_repetidos(): void
@@ -338,7 +368,7 @@ class DteNumeroSistemaTest extends TestCase
         try {
             app(DteGeneracionService::class)->generar($borrador->refresh());
             $this->fail('Un documento sin líneas no debería generarse.');
-        } catch (\App\Exceptions\Dte\GeneracionException) {
+        } catch (GeneracionException) {
             $this->assertTrue(true);
         }
 

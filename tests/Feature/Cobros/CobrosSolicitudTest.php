@@ -10,6 +10,7 @@ use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
 use App\Models\Cliente;
+use App\Models\ClientePerfilDocumento;
 use App\Models\ClienteSucursal;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
@@ -20,6 +21,7 @@ use App\Models\User;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Cobros\VinculadorAlbaranes;
+use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -682,6 +684,30 @@ class CobrosSolicitudTest extends TestCase
         $this->actingAs($admin)->get(route('cobros.index', ['cliente_id' => $solicitud->cliente_id]))
             ->assertOk()
             ->assertSeeText('No se pudo descargar '.$solicitud->referencia);
+    }
+
+    /**
+     * #22 · El número del día ya no sale de contar las solicitudes del cliente: contar no
+     * reserva nada, así que dos generadas a la vez —o dos clientes con el mismo código de
+     * proveedor, como estos— pedían el mismo número y chocaban con el índice único.
+     */
+    public function test_dos_solicitudes_del_mismo_codigo_el_mismo_dia_no_chocan(): void
+    {
+        $servicio = app(SolicitudCobroService::class);
+        $hoy = Carbon::today()->format('Ymd');
+
+        $referencias = [];
+        foreach (['5131', '5132'] as $i => $numero) {
+            $cliente = $this->cliente();
+            ClientePerfilDocumento::create(['cliente_id' => $cliente->id, 'activo' => true, 'codigo_proveedor' => '000123']);
+            app(PerfilDocumentoResolver::class)->olvidar();
+            $documento = $this->documento($cliente, ['numero_control' => 'DTE-03-M001P002-00000000000013'.$i]);
+            $documento->forceFill(['ppq_albaran_id' => $this->albaranReal(['numero_albaran' => 'AC01/0017/00/'.$numero])->id])->save();
+
+            $referencias[] = $servicio->crear($cliente, [$documento->id], $this->usuario())->referencia;
+        }
+
+        $this->assertSame(["SOL-000123-{$hoy}-01", "SOL-000123-{$hoy}-02"], $referencias);
     }
 
     /** Un documento no puede estar en dos solicitudes vigentes: sería cobrarlo dos veces. */

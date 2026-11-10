@@ -13,7 +13,9 @@ use App\Services\Gastos\Dinero;
 use App\Services\Gastos\RegistrarPago;
 use App\Services\Gastos\SaldosGastos;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Ramsey\Uuid\Uuid;
@@ -113,6 +115,7 @@ final class PagarPlanilla
     public function pagarPersona(User $usuario, PlanillaDetalle $detalle, array $datos): Pago
     {
         $this->autorizar($usuario);
+        $this->validar($datos, conImporte: true);
         $gasto = $this->obligacionDe($detalle);
 
         return DB::transaction(function () use ($usuario, $gasto, $datos) {
@@ -134,6 +137,7 @@ final class PagarPlanilla
     public function pagarTercero(User $usuario, PlanillaObligacionTercero $obligacion, array $datos): Pago
     {
         $this->autorizar($usuario);
+        $this->validar($datos, conImporte: true);
 
         if ($obligacion->gasto === null) {
             throw ValidationException::withMessages(['pago' => 'Esta obligación todavía no tiene su gasto.']);
@@ -169,6 +173,8 @@ final class PagarPlanilla
     public function pagarLote(User $usuario, Planilla $planilla, array $datos, array $detalleIds): array
     {
         $this->autorizar($usuario);
+        // El importe de cada persona es su pendiente; lo demás se revisa ANTES de crear el lote.
+        $this->validar($datos, conImporte: false);
 
         if (! $planilla->confirmada()) {
             throw ValidationException::withMessages([
@@ -369,5 +375,21 @@ final class PagarPlanilla
     private function autorizar(User $usuario): void
     {
         abort_unless($usuario->activo && $usuario->can('planilla.pagar'), 403);
+    }
+
+    /**
+     * Los datos del pago, revisados antes de escribir nada: un campo que falta es un aviso
+     * al lado de ese campo, no un error del sistema. Las reglas son las de
+     * {@see RegistrarPago}; la clave es opcional porque, si no viene, se genera.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    private function validar(array $datos, bool $conImporte): void
+    {
+        $reglas = Arr::except(RegistrarPago::reglas(), $conImporte ? ['clave'] : ['clave', 'importe']);
+
+        Validator::make($datos, ['clave' => ['nullable', 'uuid']] + $reglas, [], [
+            'fecha' => 'fecha del pago', 'metodo' => 'método de pago', 'pagado_por' => 'quién pagó',
+        ])->validate();
     }
 }

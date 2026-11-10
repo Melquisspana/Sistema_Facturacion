@@ -41,15 +41,18 @@ final class RegistrarAnticipo
         abort_unless($usuario->activo && $usuario->can('planilla.gestionar'), 403);
         abort_unless($usuario->can('planilla.salarios'), 403);
 
+        // `gt:0` no necesita `numeric`: el formato ya exige cifras, y con cifras Laravel
+        // compara como número. `bail` deja un solo aviso cuando el importe está mal escrito.
         $datos = Validator::make($datos, [
             'clave' => ['nullable', 'uuid'],
             'fecha' => ['required', 'date_format:Y-m-d'],
-            'importe' => ['required', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D', 'gt:0'],
+            'importe' => ['bail', 'required', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D', 'gt:0'],
             'moneda' => ['required', Rule::in(config('gastos.monedas'))],
             'pago_id' => ['nullable', 'integer', Rule::exists('gastos_pagos', 'id')],
             'referencia' => ['nullable', 'string', 'max:180'],
             'descripcion' => ['nullable', 'string', 'max:250'],
         ], [
+            'importe.regex' => 'Escribí el anticipo con hasta dos decimales, sin comas.',
             'importe.gt' => 'El anticipo tiene que ser mayor que cero.',
         ])->validate();
 

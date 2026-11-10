@@ -9,6 +9,7 @@ use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\Planilla\PlanillaLote;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
 use App\Services\Gastos\RegistrarPago;
@@ -21,6 +22,7 @@ use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -306,6 +308,29 @@ class FlujoPlanillaTest extends TestCase
         }
     }
 
+    /**
+     * #22 · Un anticipo en cero o mal escrito es un aviso claro, con un solo mensaje, y no
+     * un error del sistema. «0» y «0.00» no pasan aunque `gt:0` vaya sin `numeric`: la
+     * regla de formato ya exige cifras, y con cifras Laravel compara como número.
+     */
+    public function test_un_anticipo_en_cero_o_mal_escrito_avisa_con_un_mensaje_claro(): void
+    {
+        $u = $this->gestor();
+        $ana = $this->empleado($u, 'Ana Mendoza');
+        $cero = 'El anticipo tiene que ser mayor que cero.';
+        $formato = 'Escribí el anticipo con hasta dos decimales, sin comas.';
+
+        foreach ([['0', $cero], ['0.00', $cero], ['abc', $formato], ['1,000.00', $formato], [['60.00'], $formato]] as [$importe, $mensaje]) {
+            $this->actingAs($u)->post(route('planilla.anticipos.store', $ana), [
+                'fecha' => '2026-09-02', 'importe' => $importe, 'moneda' => 'USD',
+            ])->assertSessionHasErrors('importe');
+
+            $this->assertSame([$mensaje], session('errors')->get('importe'));
+        }
+
+        $this->assertSame(0, PlanillaAnticipo::count());
+    }
+
     public function test_solo_se_ofrecen_anticipos_con_saldo(): void
     {
         $u = $this->gestor();
@@ -418,6 +443,56 @@ class FlujoPlanillaTest extends TestCase
         ]);
 
         $this->assertSame('pagado', app(EstadoPlanilla::class)->deTercero($tercero->fresh()->load('gasto.cuotas'))['estado']);
+    }
+
+    /**
+     * #22 · Pagar sin los datos del pago es un aviso por campo, no un error del sistema.
+     * Antes se leían sin preguntar si venían, y el lote además dejaba creado un lote vacío.
+     */
+    public function test_pagar_sin_los_datos_del_pago_avisa_por_campo(): void
+    {
+        $u = $this->gestor();
+        ['planilla' => $planilla] = $this->planillaLista($u);
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
+        $detalle = PlanillaDetalle::firstOrFail();
+        $tercero = PlanillaObligacionTercero::firstOrFail();
+        $faltan = ['importe', 'fecha', 'metodo' => 'El campo método de pago es obligatorio.', 'pagado_por'];
+
+        $this->actingAs($u)->post(route('planilla.pagar.persona', $detalle), [])->assertSessionHasErrors($faltan);
+        $this->actingAs($u)->post(route('planilla.pagar.tercero', $tercero), [])->assertSessionHasErrors($faltan);
+        $this->actingAs($u)->post(route('planilla.pagar.lote', $planilla), ['detalles' => [$detalle->id]])
+            ->assertSessionHasErrors(['fecha', 'metodo', 'pagado_por']);
+
+        $this->assertSame(0, Pago::count());
+        $this->assertSame(0, PlanillaLote::count(), 'Un lote rechazado no deja un lote vacío.');
+    }
+
+    /**
+     * #22 · El lote vacío aparecía con datos a medias: la fecha y el método bastaban para
+     * crear el lote en su propia transacción, y el pago se rechazaba después por lo que
+     * faltaba o estaba mal. Ahora todo se revisa antes de crear el lote.
+     */
+    public function test_un_lote_con_datos_a_medias_no_deja_un_lote_vacio(): void
+    {
+        $u = $this->gestor();
+        ['planilla' => $planilla] = $this->planillaLista($u);
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
+        $completos = [
+            'fecha' => now()->toDateString(), 'metodo' => 'transferencia', 'pagado_por' => $u->id,
+            'sin_comprobante' => 'Lote de prueba.', 'detalles' => PlanillaDetalle::pluck('id')->all(),
+        ];
+
+        foreach ([
+            'pagado_por' => Arr::except($completos, 'pagado_por'),
+            'fecha' => ['fecha' => now()->addDay()->toDateString()] + $completos,
+        ] as $campo => $datos) {
+            $respuesta = $this->actingAs($u)->post(route('planilla.pagar.lote', $planilla), $datos);
+
+            $this->assertSame(0, PlanillaLote::count(), "Con «{$campo}» mal quedó un lote vacío.");
+            $respuesta->assertSessionHasErrors($campo);
+        }
+
+        $this->assertSame(0, Pago::count());
     }
 
     public function test_no_se_puede_pagar_un_borrador(): void
