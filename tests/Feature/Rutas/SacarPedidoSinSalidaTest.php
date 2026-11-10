@@ -125,6 +125,9 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->get(route('rutas.mi-salida.index'))->assertOk()
             ->assertSee('Tu viaje')->assertSee('Lunes · San Miguel')->assertSee('Día 2 · 2 salas con pedido')
             ->assertSee('href="'.route('rutas.mi-salida.show', $viaje).'"', false)
+            ->assertSee('href="'.route('rutas.mi-salida.dia').'"', false);
+        // La pregunta está en «Terminar el día», con el resumen y el PDF.
+        $this->get(route('rutas.mi-salida.dia'))->assertOk()
             ->assertSee('¿Mañana seguís en la misma zona?')
             ->assertSee('action="'.route('rutas.mi-salida.terminar-dia', $viaje).'"', false);
         $this->get(route('rutas.mi-salida.show', $viaje))->assertOk()->assertSee('Lunes · San Miguel')
@@ -134,8 +137,8 @@ class SacarPedidoSinSalidaTest extends TestCase
             ->assertRedirect(route('rutas.mi-salida.index'))
             ->assertSessionHas('status', 'Listo. Este viaje ya no suma pedidos; queda abierto para entregar.');
         $this->assertFalse($viaje->refresh()->suma_pedidos);
-        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Lunes · San Miguel')
-            ->assertSee('Ya no suma pedidos')->assertDontSee('¿Mañana seguís en la misma zona?');
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Lunes · San Miguel')->assertSee('Ya no suma pedidos');
+        $this->get(route('rutas.mi-salida.dia'))->assertOk()->assertDontSee('¿Mañana seguís en la misma zona?');
         $this->post(route('rutas.mi-salida.terminar-dia', $viaje), ['sigue' => 'quizas'])->assertSessionHasErrors('sigue');
 
         // El próximo pedido abre otro viaje.

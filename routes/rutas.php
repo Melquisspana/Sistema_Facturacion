@@ -59,6 +59,9 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
     ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
     ->group(function () {
         Route::get('/', [MiSalidaController::class, 'index'])->name('index');
+        // «Terminar el día» del vendedor: su resumen y el PDF (antes que las de {salida}).
+        Route::get('dia', [MiSalidaController::class, 'dia'])->name('dia');
+        Route::get('dia/pdf', [MiSalidaController::class, 'diaPdf'])->name('dia.pdf');
         Route::post('{salida}/gastos', [SalidaGastoController::class, 'store'])->name('gastos.store');
         Route::delete('{salida}/gastos/{gasto}', [SalidaGastoController::class, 'destroy'])->name('gastos.destroy');
         Route::get('{salida}/gastos/{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('gastos.foto');

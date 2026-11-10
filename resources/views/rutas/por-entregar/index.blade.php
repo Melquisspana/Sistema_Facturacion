@@ -1,5 +1,6 @@
 {{-- «Por entregar» (06/11/2026): todos los CCF que faltan entregar, por la ruta de su sala,
-     para el celular del vendedor. Arriba, pastillas para mirar una ruta (?ruta=, no guarda
+     para el celular del vendedor. Desde el 10/11/2026, con su viaje en curso, arriba elige
+     «Este viaje», «Toda la zona» o «Todas»; al entregar dice cómo le pagaron. Arriba, pastillas para mirar una ruta (?ruta=, no guarda
      nada). Cada tarjeta descarga el PDF y marca «Entregado» o «No se pudo entregar»: el
      sistema elige o arma la salida (App\Services\Rutas\PorEntregar). Lo marcado hoy queda
      abajo, con «Deshacer». --}}
@@ -24,7 +25,20 @@
         <p class="mt-4 rounded-2xl bg-white p-5 dark:bg-ink-800">Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.</p>
     @endif
 
-    @if ($grupos->isNotEmpty())
+    {{-- Con su viaje en curso: «Este viaje», «Toda la zona» y «Todas» (?ver=, no guarda nada). --}}
+    @if ($vistas !== [])
+        @php
+            $nombres = ['viaje' => 'Este viaje', 'zona' => 'Toda la zona', 'todas' => 'Todas'];
+        @endphp
+        <nav aria-label="Qué mostrar" class="mt-4 flex flex-wrap gap-2">
+            @foreach ($vistas as $clave => $cuantos)
+                <a href="{{ route('rutas.por-entregar.index', ['ver' => $clave]) }}" @if ($ver === $clave) aria-current="page" @endif
+                   class="{{ $pastilla }} {{ $ver === $clave ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">{{ $nombres[$clave] }} {{ $cuantos }}</a>
+            @endforeach
+        </nav>
+    @endif
+
+    @if ($grupos->isNotEmpty() && $ver === 'todas')
         <nav aria-label="Qué ruta mostrar" class="mt-4 flex flex-wrap gap-2">
             <a href="{{ request()->fullUrlWithQuery(['ruta' => null]) }}" @if ($ruta === null) aria-current="page" @endif
                class="{{ $pastilla }} {{ $ruta === null ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">Todas {{ $total }}</a>
@@ -58,6 +72,9 @@
                 <div class="{{ $caja }} mt-3 px-4 py-3">
                     <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</p>
                     <p class="truncate text-sm text-gray-800 dark:text-paper-100">{{ $dte->cliente?->nombre_comercial ?: $dte->cliente?->nombre }}</p>
+                    @if (($quien = $sacadoPor->get($dte->id)) && $quien->id !== $persona?->id)
+                        <p class="text-xs text-gray-500 dark:text-paper-300">Lo sacó {{ $quien->nombre }}</p>
+                    @endif
                     <div class="mt-1 flex flex-wrap items-center justify-between gap-3">
                         <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                             <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $dte->numero_control }}">
@@ -73,7 +90,7 @@
                         </a>
                     </div>
 
-                    @if ($grupo['clave'] === $sinRuta)
+                    @if ($grupo['clave'] === $sinRuta && $vistas === [])
                         <p class="mt-3 text-sm text-amber-800 dark:text-amber-300">{{ \App\Services\Rutas\PorEntregar::SIN_RUTA }}</p>
                     @elseif ($planificada)
                         <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en la salida {{ $camino->salida->descripcionCorta() }}, que todavía no empezó: se marca cuando la empiecen.</p>
@@ -90,6 +107,8 @@
                             'clave' => 'dte-'.$dte->id,
                             'habitual' => $dte->cliente?->cobro_en_entrega,
                             'textoNo' => 'No se pudo entregar',
+                            'pidePago' => true,
+                            'portal' => $portal !== null && (int) $dte->cliente_id === $portal,
                         ])
                     @endif
                 </div>

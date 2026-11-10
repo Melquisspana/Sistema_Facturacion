@@ -11,25 +11,37 @@ use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
+use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
+use App\Support\NombreEmpresa;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class MiSalidaController extends Controller
 {
     /** Hasta esta cantidad, «Tu próxima salida» lista los CCF uno por uno. */
     private const CCF_EN_LISTA = 10;
 
-    public function __construct(private readonly EntregasCcf $entregas, private readonly RitmoRutas $ritmo, private readonly Viajes $viajes) {}
+    public function __construct(
+        private readonly EntregasCcf $entregas,
+        private readonly RitmoRutas $ritmo,
+        private readonly Viajes $viajes,
+        private readonly PorEntregar $porEntregar,
+        private readonly DiaVendedor $dia,
+    ) {}
 
     private function persona(Request $request): ?PersonalRuta
     {
@@ -73,10 +85,60 @@ class MiSalidaController extends Controller
             'dia' => $viaje ? $this->viajes->dia($viaje) : null,
             'sumando' => $viaje !== null && $this->viajes->sigueSumando($viaje),
             'salasConPedido' => $viaje ? $viaje->pedidos()->vigentes()->distinct()->count('cliente_sucursal_id') : 0,
-            'pedidosHoy' => $persona ? PedidoSala::vigentes()->where('sacado_por_id', $persona->id)->whereDate('fecha', HoraNegocio::fechaHoy())->count() : 0,
+            'hoy' => $persona ? $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()) : null,
+            'porEntregar' => $persona ? $this->cuantosPorEntregar($viaje) : 0,
             'salidas' => $salidas,
             'proximas' => $persona ? $this->proximas($persona)->get() : collect(),
         ]);
+    }
+
+    /**
+     * Lo que le queda en «Por entregar»: lo de su viaje (o de su zona, si el viaje todavía no
+     * tiene CCF); sin viaje, todo. El mismo criterio de la lista.
+     */
+    private function cuantosPorEntregar(?SalidaRuta $viaje): int
+    {
+        $todos = $this->entregas->porEntregar();
+        if ($viaje === null) {
+            return $todos->count();
+        }
+        $vistas = $this->porEntregar->vistas($viaje, $todos->load('clienteSucursal:id,ruta_id'));
+
+        return reset($vistas)->count();
+    }
+
+    /** «Terminar el día»: lo que entregó, lo que no se pudo y lo cobrado hoy, y la pregunta. */
+    public function dia(Request $request): View|RedirectResponse
+    {
+        $persona = $this->persona($request);
+        if ($persona === null) {
+            return redirect()->route('rutas.mi-salida.index');
+        }
+        $viaje = $this->viajes->abierto($persona);
+
+        return view('rutas.mi-salida.dia', [
+            'persona' => $persona,
+            'resumen' => $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()),
+            'viaje' => $viaje,
+            'sumando' => $viaje !== null && $this->viajes->sigueSumando($viaje),
+        ]);
+    }
+
+    /** El PDF del día: lo entregado, lo que no se pudo y lo cobrado, con el nombre de la empresa. */
+    public function diaPdf(Request $request): Response|RedirectResponse
+    {
+        $persona = $this->persona($request);
+        if ($persona === null) {
+            return redirect()->route('rutas.mi-salida.index');
+        }
+        $fecha = HoraNegocio::fechaHoy();
+
+        return Pdf::loadView('rutas.mi-salida.dia-pdf', [
+            'resumen' => $this->dia->resumen($persona, $request->user(), $fecha),
+            'persona' => $persona,
+            'empresa' => NombreEmpresa::actual(),
+            'generado' => HoraNegocio::aLocal(now()),
+        ])->setPaper('letter')->stream('dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf');
     }
 
     /** «Terminar el día»: si mañana no sigue en la misma zona, el viaje deja de sumar pedidos. */

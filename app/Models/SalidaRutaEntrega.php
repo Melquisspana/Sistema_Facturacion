@@ -56,7 +56,7 @@ class SalidaRutaEntrega extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['resultado', 'motivo_no_entrega', 'nota', 'trae_nota_averia', 'entregado_por_id', 'fecha_resultado', 'origen_registro'])
+            ->logOnly(['resultado', 'motivo_no_entrega', 'nota', 'trae_nota_averia', 'entregado_por_id', 'fecha_resultado', 'origen_registro', 'forma_cobro', 'monto_cobrado'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->useLogName('salida_ruta_entrega')

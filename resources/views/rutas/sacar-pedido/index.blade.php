@@ -1,7 +1,8 @@
 {{-- «Sacar pedido» (maqueta aprobada por Melqui el 10/11/2026): el vendedor busca cualquier
      sala, sin salida armada y sin que sea de una ruta, y saca el pedido. El pedido se suma solo
      a su viaje. La búsqueda es un formulario común (anda sin JavaScript) con la misma consulta
-     que el buscador de salas de la oficina. Abajo, sus pedidos de hoy para corregir o anular. --}}
+     que el buscador de salas de la oficina; cada sala dice hace cuánto compró y si «le toca»
+     según su ritmo de compra (los CCF). Abajo, sus pedidos de hoy para corregir o anular. --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Sacar pedido')
@@ -47,7 +48,13 @@
                                     <span class="min-w-0">
                                         <span class="block font-semibold">{{ $sala->nombre }}</span>
                                         <span class="block {{ $gris }}">{{ collect([$sala->codigo, $sala->distrito?->nombre, $sala->cliente?->nombre])->filter()->implode(' · ') }}</span>
+                                        @if (($ritmos[$sala->id]['dias'] ?? null) !== null)
+                                            <span class="block {{ $gris }}">Última compra hace {{ $ritmos[$sala->id]['dias'] === 1 ? '1 día' : $ritmos[$sala->id]['dias'].' días' }}</span>
+                                        @endif
                                     </span>
+                                    @if ($ritmos[$sala->id]['leToca'] ?? false)
+                                        <span class="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Le toca</span>
+                                    @endif
                                     @if ($sacadas->has($sala->id))
                                         <span class="inline-flex shrink-0 items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">Pedido sacado</span>
                                     @endif

@@ -1,6 +1,7 @@
 {{-- Inicio del vendedor (maqueta aprobada por Melqui el 10/11/2026): su viaje, que se arma
-     solo con el primer pedido, y los dos botones grandes. Al final del día contesta si mañana
-     sigue en la misma zona. Las salidas que arma la oficina siguen abajo, como antes. --}}
+     solo con el primer pedido, los dos botones grandes (con lo que falta entregar) y lo de hoy:
+     pedidos, entregas y cobrado. «Terminar el día» abre el resumen, el PDF y la pregunta de si
+     mañana sigue en la misma zona. Las salidas que arma la oficina siguen abajo, como antes. --}}
 @extends('layouts.vendedor')
 
 @section('content')
@@ -38,29 +39,24 @@
             @can('rutas.pedidos.registrar')
                 <a href="{{ route('rutas.sacar-pedido.index') }}" class="{{ $grande }} bg-indigo-600 text-white hover:bg-indigo-700">Sacar pedido</a>
             @endcan
-            <a href="{{ route('rutas.por-entregar.index') }}" class="{{ $grande }} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Por entregar</a>
+            <a href="{{ route('rutas.por-entregar.index') }}" class="{{ $grande }} gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
+                Por entregar
+                @if ($porEntregar > 0)
+                    <span class="inline-flex items-center justify-center rounded-full bg-indigo-600 px-2.5 text-sm font-semibold text-white">{{ $porEntregar }}</span>
+                @endif
+            </a>
         </div>
 
-        @if ($viaje)
-            <div class="mt-4 {{ $caja }}">
-                <h2 class="text-lg font-semibold">Hoy</h2>
-                <p class="mt-1 flex justify-between gap-3"><span>Pedidos sacados</span><strong class="tabular-nums">{{ $pedidosHoy }}</strong></p>
-            </div>
-        @endif
-
-        {{-- «Terminar el día»: si mañana no sigue en la zona, el viaje deja de sumar pedidos. --}}
-        @if ($viaje && $sumando)
-            <form method="POST" action="{{ route('rutas.mi-salida.terminar-dia', $viaje) }}" class="mt-4 {{ $caja }}">
-                @csrf
-                <h2 class="text-lg font-semibold">Terminar el día</h2>
-                <p class="mt-2 rounded-xl bg-blue-50 p-3 font-semibold text-blue-700">¿Mañana seguís en la misma zona?</p>
-                <div class="mt-3 grid grid-cols-2 gap-2">
-                    <button name="sigue" value="1" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Sí, sigo</button>
-                    <button name="sigue" value="0" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">No, vuelvo</button>
-                </div>
-                <p class="mt-2 {{ $gris }}">Si volvés, el viaje deja de sumar pedidos y se cierra solo cuando todo esté entregado.</p>
-            </form>
-        @endif
+        {{-- Lo de hoy, en cualquier viaje o salida. «Terminar el día» abre el resumen, el PDF y la pregunta. --}}
+        <div class="mt-4 {{ $caja }}">
+            <h2 class="text-lg font-semibold">Hoy</h2>
+            <dl class="mt-1 divide-y divide-gray-100 dark:divide-ink-700">
+                <div class="flex justify-between gap-3 py-1.5"><dt>Pedidos sacados</dt><dd class="font-semibold tabular-nums">{{ $hoy['pedidos'] }}</dd></div>
+                <div class="flex justify-between gap-3 py-1.5"><dt>Entregas marcadas</dt><dd class="font-semibold tabular-nums">{{ $hoy['entregadas']->count() }}</dd></div>
+                <div class="flex justify-between gap-3 py-1.5"><dt>Cobrado</dt><dd class="font-semibold tabular-nums">${{ number_format($hoy['cobrado'] / 100, 2) }}</dd></div>
+            </dl>
+            <a href="{{ route('rutas.mi-salida.dia') }}" class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Terminar el día</a>
+        </div>
 
         @if ($salidas->isNotEmpty())
             <h2 class="mt-6 text-xl font-semibold">Salidas en camino</h2>

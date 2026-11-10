@@ -5,9 +5,9 @@ namespace App\Services\Rutas;
 use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
-use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Models\ClienteSucursal;
+use App\Models\Dte;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
@@ -33,14 +33,16 @@ use Illuminate\Support\Facades\DB;
  *      sumar y queda abierto solo para entregar.
  *
  * Sigue sumando mientras no diga «No, vuelvo» al terminar el día ({@see terminarDia()}) y
- * tenga un pedido de hoy o de ayer: un día entero sin pedidos corta el viaje. Cada vendedor
- * tiene el suyo; cualquiera puede entregar sus CCF.
+ * tenga un pedido de hoy o del día anterior: un día entero sin pedidos corta el viaje. El
+ * domingo no cuenta: del sábado al lunes sigue siendo seguido. Cada vendedor tiene el suyo;
+ * cualquiera puede entregar sus CCF.
  *
  * La zona de una sala es su ruta; si no tiene, la que propone la cobertura
  * ({@see PropuestaRutas}). Las rutas quedan como catálogo de zonas.
  *
  * Se cierra solo ({@see cerrarTerminados()}, cada mañana) cuando ya no suma y todos sus
- * pedidos están facturados y entregados, o tras {@see self::DIAS_SIN_MOVIMIENTO} días sin
+ * pedidos están facturados y entregados (marcados por quien sea o confirmados por el albarán
+ * del supermercado), o tras {@see self::DIAS_SIN_MOVIMIENTO} días sin
  * movimiento (un pedido que nunca sale de la fábrica no lo deja abierto para siempre). No se
  * cierra por fecha.
  */
@@ -70,7 +72,11 @@ class Viajes
         '14' => ['12', '13'],
     ];
 
-    public function __construct(private readonly PropuestaRutas $propuesta, private readonly EntregasCcf $entregas) {}
+    public function __construct(
+        private readonly PropuestaRutas $propuesta,
+        private readonly EntregasCcf $entregas,
+        private readonly AlbaranLocalizador $albaranes,
+    ) {}
 
     /** La zona de la sala: su ruta o, si no tiene, la que propone la cobertura. */
     public function zona(ClienteSucursal $sala): ?Ruta
@@ -129,10 +135,14 @@ class Viajes
             ->first();
     }
 
-    /** ¿Todavía recibe pedidos? Sin «No, vuelvo» y con un pedido (o su apertura) de hoy o de ayer. */
+    /**
+     * ¿Todavía recibe pedidos? Sin «No, vuelvo» y con un pedido (o su apertura) de hoy o del
+     * día anterior. El domingo no se cuenta: el lunes, el día anterior es el sábado.
+     */
     public function sigueSumando(SalidaRuta $viaje, ?string $hoy = null): bool
     {
-        $ayer = CarbonImmutable::parse($hoy ?? HoraNegocio::fechaHoy())->subDay()->toDateString();
+        $ayer = CarbonImmutable::parse($hoy ?? HoraNegocio::fechaHoy())->subDay();
+        $ayer = ($ayer->isSunday() ? $ayer->subDay() : $ayer)->toDateString();
         $ultimo = $viaje->pedidos()->max('fecha');
         $ultimo = $ultimo !== null ? CarbonImmutable::parse($ultimo)->toDateString() : $viaje->fecha_inicio->toDateString();
 
@@ -218,19 +228,14 @@ class Viajes
     }
 
     /**
-     * ¿Todo facturado y entregado? Ninguna fila del viaje sin entregar, y cada pedido vigente
-     * que salió de la fábrica está en un CCF que cuenta y ese CCF se entregó (en esta salida o
-     * en otra, lo haya marcado quien sea). Lo que no se trae no espera nada; lo que falta
-     * mandar, sí.
+     * ¿Todo facturado y entregado? Cada pedido vigente que salió de la fábrica está en un CCF
+     * que cuenta, y cada CCF del viaje (los de sus pedidos y los que se anotaron en él) se
+     * entregó: marcado en esta salida o en otra, por quien sea, o confirmado por el albarán de
+     * entrega del supermercado ({@see AlbaranLocalizador}). Lo que no se trae no espera nada;
+     * lo que falta mandar, sí.
      */
     public function todoEntregado(SalidaRuta $viaje): bool
     {
-        $sinEntregar = $viaje->entregas()->where(fn ($q) => $q->whereNull('resultado')
-            ->orWhere('resultado', '!=', ResultadoEntrega::Entregado->value))->exists();
-        if ($sinEntregar) {
-            return false;
-        }
-
         $pedidos = $viaje->pedidos()->vigentes()->with(['envios' => fn ($q) => $q->vigentes(), 'envios.dte'])->get();
         if ($pedidos->contains(fn (PedidoSala $p) => $p->estaPorMandar())) {
             return false;
@@ -239,9 +244,18 @@ class Viajes
         if ($envios->contains(fn ($e) => ! $e->estaFacturado())) {
             return false;
         }
-        $dtes = $envios->pluck('dte_id')->unique()->values();
+        $dtes = $envios->pluck('dte_id')->merge($viaje->entregas()->pluck('dte_id'))->map(fn ($id) => (int) $id)->unique()->values();
+        $faltan = $dtes->diff(SalidaRutaEntrega::whereIn('dte_id', $dtes)->entregadas()->pluck('dte_id')->map(fn ($id) => (int) $id));
+        if ($faltan->isEmpty()) {
+            return true;
+        }
 
-        return $dtes->diff(SalidaRutaEntrega::whereIn('dte_id', $dtes)->entregadas()->pluck('dte_id'))->isEmpty();
+        // Lo que nadie marcó: el albarán de entrega lo confirma.
+        $sinMarcar = Dte::whereKey($faltan->all())->get(['id', 'numero_orden_compra']);
+        [$porDte, $porOrden] = $this->albaranes->indices($sinMarcar->modelKeys(), $sinMarcar->pluck('numero_orden_compra')->all());
+
+        return $sinMarcar->count() === $faltan->count()
+            && $sinMarcar->every(fn (Dte $d) => $this->albaranes->elegir($porDte, $porOrden, $d->id, $d->numero_orden_compra)->estaVinculado());
     }
 
     /** El último día con algo: la apertura, un pedido o un resultado de entrega. */

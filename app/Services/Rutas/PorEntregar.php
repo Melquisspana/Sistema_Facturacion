@@ -7,6 +7,7 @@ use App\Enums\PropositoSalida;
 use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Models\Dte;
+use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
@@ -14,6 +15,7 @@ use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Policies\SalidaRutaPolicy;
 use App\Support\HoraNegocio;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -24,13 +26,15 @@ use Illuminate\Validation\ValidationException;
  *
  *   1. si el CCF ya va sin registrar en una salida en curso (una formal a San Miguel, por
  *      ejemplo), en esa; si es formal y el vendedor no va en ella, no se marca;
- *   2. si no, en la salida formal de entrega en curso de la ruta de su sala donde va el
+ *   2. si no, en el viaje del pedido que lo trajo, si sigue en curso; si no, en el viaje en
+ *      curso del que entrega (10/11/2026: cualquier vendedor entrega cualquier CCF);
+ *   3. si no, en la salida formal de entrega en curso de la ruta de su sala donde va el
  *      vendedor (aunque sea un viaje que empezó antes); si no, en la automática de hoy;
- *   3. si no hay, en una que se arma sola: en curso, para entregar, de hoy, a nombre del
+ *   4. si no hay, en una que se arma sola: en curso, para entregar, de hoy, a nombre del
  *      vendedor y con él adentro. No carga los demás pendientes: lleva solo lo que se marca.
  *
  * A una formal nunca se suma a nadie: ir en una salida da el cierre del día y la liquidación
- * ({@see SalidaRutaPolicy}), sea responsable o acompañante. A la automática sí,
+ * ({@see SalidaRutaPolicy}), sea responsable o acompañante. A la automática (y al viaje) sí,
  * como acompañante. Las automáticas de días anteriores se finalizan solas
  * ({@see self::finalizarAutomaticasViejas()}) y quedan para que la oficina las liquide.
  */
@@ -38,7 +42,7 @@ class PorEntregar
 {
     public const SIN_RUTA = 'Esta sala no tiene ruta: pedile a la oficina que se la asigne.';
 
-    public function __construct(private readonly EntregasCcf $entregas) {}
+    public function __construct(private readonly EntregasCcf $entregas, private readonly Viajes $viajes) {}
 
     /**
      * La fila de la salida donde se va a anotar este CCF, con el vendedor ya adentro. Llamar
@@ -50,13 +54,16 @@ class PorEntregar
     public function entregaPara(Dte $dte, PersonalRuta $persona, User $usuario): SalidaRutaEntrega
     {
         return DB::transaction(function () use ($dte, $persona, $usuario) {
-            $rutaId = $dte->clienteSucursal?->ruta_id
-                ?? throw ValidationException::withMessages(['entrega' => self::SIN_RUTA]);
-            // Con la ruta bloqueada, dos vendedores que marcan a la vez no arman dos salidas.
-            Ruta::whereKey($rutaId)->lockForUpdate()->firstOrFail();
-            $this->finalizarAutomaticasViejas($rutaId);
+            $rutaId = $dte->clienteSucursal?->ruta_id;
+            if ($rutaId !== null) {
+                // Con la ruta bloqueada, dos vendedores que marcan a la vez no arman dos salidas.
+                Ruta::whereKey($rutaId)->lockForUpdate()->firstOrFail();
+                $this->finalizarAutomaticasViejas($rutaId);
+            }
 
-            $entrega = $this->enCamino($dte, $persona) ?? $this->enLaDeHoy($dte, $rutaId, $persona, $usuario);
+            $entrega = $this->enCamino($dte, $persona)
+                ?? $this->enElViaje($dte, $persona, $usuario)
+                ?? $this->enLaDeHoy($dte, $rutaId ?? throw ValidationException::withMessages(['entrega' => self::SIN_RUTA]), $persona, $usuario);
             $this->sumar($entrega->salida, $persona, $usuario);
 
             return $entrega;
@@ -147,6 +154,37 @@ class PorEntregar
         }
 
         return $entrega;
+    }
+
+    /**
+     * El viaje donde queda la entrega (10/11/2026): el del pedido que trajo el CCF, si sigue
+     * en curso, o el viaje en curso del que entrega. Null si no hay ninguno (sigue la regla
+     * de la ruta). Un «No se pudo» ya anotado en ese viaje se reintenta en la misma fila.
+     */
+    private function enElViaje(Dte $dte, PersonalRuta $persona, User $usuario): ?SalidaRutaEntrega
+    {
+        $delPedido = PedidoSalaEnvio::query()->vigentes()->where('dte_id', $dte->id)
+            ->join('pedidos_sala', 'pedidos_sala.id', '=', 'pedido_sala_envios.pedido_sala_id')
+            ->whereNotNull('pedidos_sala.salida_ruta_id')->orderByDesc('pedido_sala_envios.id')
+            ->value('pedidos_sala.salida_ruta_id');
+        $viaje = $delPedido !== null ? SalidaRuta::lockForUpdate()->find($delPedido) : null;
+        if ($viaje === null || $viaje->estado !== EstadoSalidaRuta::EnCurso || ! $viaje->esViaje()) {
+            $viaje = $this->viajes->abierto($persona, lock: true);
+        }
+        if ($viaje === null) {
+            return null;
+        }
+        if ($viaje->diaCerrado()) {
+            throw ValidationException::withMessages(['entrega' => self::diaCerrado($viaje)]);
+        }
+
+        $entrega = $viaje->entregas()->where('dte_id', $dte->id)->lockForUpdate()->first();
+        if ($entrega?->resultado === ResultadoEntrega::NoEntregado) {
+            $this->reintentar($entrega, $usuario);
+        }
+        $entrega ??= $this->entregas->meterCcf($viaje, $dte->id);
+
+        return $entrega->setRelation('salida', $viaje);
     }
 
     /**
@@ -244,6 +282,32 @@ class PorEntregar
             ->causedBy($usuario)
             ->withProperties(['agregados' => [$persona->nombre], 'quitados' => [], 'desde' => 'por_entregar'])
             ->log('cambió los participantes de la salida');
+    }
+
+    /**
+     * Lo que mira el vendedor con su viaje en curso (10/11/2026). «Este viaje»: los CCF de sus
+     * pedidos y los que ya se anotaron en él. «Toda la zona»: además, los de las salas de sus
+     * zonas (la ruta de cada pedido y la del viaje), salgan o no de un pedido. Si el viaje no
+     * tiene nada, solo «Toda la zona».
+     *
+     * @param  Collection<int, Dte>  $todos  los de {@see EntregasCcf::porEntregar()}, con su sala
+     * @return array<string, Collection<int, Dte>>
+     */
+    public function vistas(SalidaRuta $viaje, Collection $todos): array
+    {
+        $delViaje = PedidoSalaEnvio::vigentes()->whereNotNull('dte_id')
+            ->whereHas('pedido', fn ($q) => $q->where('salida_ruta_id', $viaje->id))->pluck('dte_id')
+            ->merge($viaje->entregas()->pluck('dte_id'))->map(fn ($id) => (int) $id)->unique()->all();
+        $zonas = $viaje->pedidos()->vigentes()->whereNotNull('ruta_id')->distinct()->pluck('ruta_id')
+            ->push($viaje->ruta_id)->filter()->map(fn ($id) => (int) $id)->unique()->all();
+
+        $vistas = [
+            'viaje' => $todos->filter(fn (Dte $d) => in_array($d->id, $delViaje, true))->values(),
+            'zona' => $todos->filter(fn (Dte $d) => in_array($d->id, $delViaje, true)
+                || in_array((int) $d->clienteSucursal?->ruta_id, $zonas, true))->values(),
+        ];
+
+        return $vistas['viaje']->isEmpty() ? ['zona' => $vistas['zona']] : $vistas;
     }
 
     public static function participa(SalidaRuta $salida, PersonalRuta $persona): bool

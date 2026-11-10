@@ -3,11 +3,17 @@
 
      Recibe: $accion (URL), $metodo (PATCH o POST), $clave (id de la tarjeta; el formulario
      de «Entregado» se llama entregar-{clave}), $habitual (forma de pago del cliente),
-     $motivos, $entregadoPorId (quién entregó, si va fijo) y $textoNo. --}}
+     $motivos, $entregadoPorId (quién entregó, si va fijo) y $textoNo.
+
+     Con $pidePago («Por entregar», 10/11/2026) se pregunta «¿Cómo te pagaron?» con las cuatro
+     opciones a la vista y sin ninguna marcada: el servidor no deja entregar sin elegir. Con
+     $portal (el supermercado que cobra por el portal) no se pregunta. --}}
 @php
     $metodo ??= 'PATCH';
     $entregadoPorId ??= null;
     $textoNo ??= 'No entregado';
+    $pidePago ??= false;
+    $portal ??= false;
 @endphp
 <div class="mt-3 grid grid-cols-2 gap-2">
     <form id="entregar-{{ $clave }}" method="POST" action="{{ $accion }}">
@@ -21,6 +27,21 @@
             <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
             Trae nota de avería
         </label>
+        @if ($portal)
+            <p class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">El cobro va por el portal; la entrega se confirma sola con el albarán.</p>
+        @elseif ($pidePago)
+            <fieldset class="mt-1.5">
+                <legend class="text-xs font-medium text-gray-700 dark:text-paper-100">¿Cómo te pagaron?</legend>
+                <div class="mt-1 grid grid-cols-2 gap-1.5">
+                    @foreach (\App\Enums\FormaCobroEntrega::opciones() + [\App\Services\Rutas\EntregasCcf::SIN_COBRO => 'Quedan'] as $valor => $label)
+                        <label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-800 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                            <input type="radio" name="forma_cobro" value="{{ $valor }}" required class="h-4 w-4 border-gray-300 text-indigo-600">
+                            {{ $label }}
+                        </label>
+                    @endforeach
+                </div>
+            </fieldset>
+        @else
         {{-- Cómo pagó la sala esta vez. Vale la habitual del cliente y no se pregunta:
              solo si esta vez fue distinto se abre y se cambia. No toca su ficha. --}}
         <details class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">
@@ -33,6 +54,7 @@
                 @endforeach
             </select>
         </details>
+        @endif
     </form>
 
     <details class="group">
