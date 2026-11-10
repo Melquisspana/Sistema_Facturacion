@@ -8,8 +8,9 @@ use App\Models\User;
 use App\Support\HoraNegocio;
 
 /**
- * Envíos de la fábrica. Deshacer (anular) solo el envío del día, vigente y de un pedido que
- * no esté anulado. Un envío de un día anterior no se toca: se manda otro.
+ * Envíos de la fábrica. Deshacer (anular) solo el envío del día, vigente, de un pedido que
+ * no esté anulado y que la oficina todavía no facturó. Un envío de un día anterior no se
+ * toca: se manda otro. Con las filas bloqueadas lo vuelve a revisar PedidosFabrica.
  */
 class PedidoSalaEnvioPolicy
 {
@@ -18,6 +19,7 @@ class PedidoSalaEnvioPolicy
         return $usuario->can(PermisoSistema::FabricaPedidosMandar->value)
             && $envio->estaVigente()
             && $envio->fecha->toDateString() === HoraNegocio::fechaHoy()
-            && $envio->pedido->estaVigente();
+            && $envio->pedido->estaVigente()
+            && ! $envio->estaFacturado();
     }
 }

@@ -3,10 +3,14 @@
      oficina (rutas/pedidos/show) y «Hechos» de la fábrica (fabrica/pedidos/index).
 
      Variables: $envios (con lineas.linea.producto, registradoPor, anuladoPor y, si
-     $conSala, pedido.sala); $conSala (bool); $conDeshacer (bool, solo la fábrica). --}}
+     $conSala, pedido.sala; con $conFacturacion o $conDeshacer, también dte); $conSala (bool);
+     $conDeshacer (bool, solo la fábrica; si ya se facturó, en vez del botón dice que avise a
+     la oficina); $conFacturacion (bool, solo la oficina: «Por facturar»,
+     «Borrador abierto» o «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto). --}}
 @php
     $conSala ??= false;
     $conDeshacer ??= false;
+    $conFacturacion ??= false;
 @endphp
 <ul class="space-y-3">
     @foreach ($envios as $envio)
@@ -20,6 +24,14 @@
             </div>
             @if ($anulado)
                 <p class="mt-1 text-sm text-gray-500">Anulado por {{ $envio->anuladoPor?->name }} el {{ $envio->anulado_en->format('d/m/Y') }}</p>
+            @elseif ($conFacturacion)
+                <p class="mt-1 text-sm text-gray-700">
+                    @if ($envio->estaFacturado())
+                        @include('facturacion.por-facturar._ccf', ['dte' => $envio->dte])
+                    @else
+                        <x-planta.badge color="amber">Por facturar</x-planta.badge>
+                    @endif
+                </p>
             @endif
             <ul class="mt-2 space-y-1 text-sm {{ $anulado ? 'line-through text-gray-400' : 'text-gray-700' }}">
                 @foreach ($envio->lineas as $linea)
@@ -33,6 +45,12 @@
                         @csrf @method('PATCH')
                         <button class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Deshacer</button>
                     </form>
+                @else
+                    {{-- Sin «Deshacer» porque la oficina ya lo facturó: la fábrica sabe a quién
+                         avisar (el mismo texto que da PedidosFabrica si tocan a la vez). --}}
+                    @if (! $anulado && $envio->estaFacturado())
+                        <p class="mt-3 text-base font-medium text-amber-800">{{ \App\Services\Rutas\PedidosFabrica::FACTURADO }}</p>
+                    @endif
                 @endcan
             @endif
         </li>

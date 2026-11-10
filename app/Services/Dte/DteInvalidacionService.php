@@ -10,6 +10,7 @@ use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
+use App\Services\Rutas\FacturarPedido;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Http\Client\Response;
@@ -434,6 +435,13 @@ class DteInvalidacionService
                     : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ');
         });
 
+        // Lo que llegó de la fábrica facturado en este CCF pasa al que lo reemplaza. Va fuera de
+        // la transacción de arriba: si esto fallara, la invalidación que Hacienda ya aceptó
+        // queda guardada igual.
+        if ($aceptado && ! $tardia && filled($evento->codigoGeneracionReemplazo)) {
+            $this->pasarEnviosAlReemplazo($dte, (string) $evento->codigoGeneracionReemplazo);
+        }
+
         if ($tardia) {
             return $this->resultado($interpretado['resultado'], $interpretado['http_status'],
                 'Llegó una respuesta tardía: se conservó el evento de invalidación aceptado.', $dte->sello_invalidacion, $dte,
@@ -448,6 +456,24 @@ class DteInvalidacionService
             $dte->refresh(),
             $aceptado,
         );
+    }
+
+    /**
+     * Los envíos de la fábrica facturados en el CCF invalidado pasan al documento que lo
+     * reemplaza ({@see FacturarPedido::pasarAlCcfQueCorrige()}). Un error acá se reporta y no
+     * tumba la invalidación ya guardada: el envío volvería a «Por facturar», a la vista.
+     */
+    private function pasarEnviosAlReemplazo(Dte $invalidado, string $codigo): void
+    {
+        try {
+            $reemplazo = Dte::query()->whereRaw('UPPER(codigo_generacion) = ?', [strtoupper(trim($codigo))])
+                ->whereKeyNot($invalidado->id)->first();
+            if ($reemplazo !== null) {
+                DB::transaction(fn () => FacturarPedido::pasarAlCcfQueCorrige($invalidado, $reemplazo, 'reemplazo de la invalidación'));
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     /**

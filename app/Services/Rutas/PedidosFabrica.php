@@ -44,6 +44,8 @@ class PedidosFabrica
 
     public const CERRADO = 'Este pedido ya está cerrado.';
 
+    public const FACTURADO = 'Ya se facturó: avisale a la oficina.';
+
     /**
      * Lo que falta mandar, de cualquier fecha desde `pedidos.fabrica_desde`, del más viejo
      * al más nuevo. Sin precios: la fábrica no tiene `productos.ver`.
@@ -91,7 +93,8 @@ class PedidosFabrica
 
         $envios = PedidoSalaEnvio::query()
             ->whereDate('fecha', $hoy)
-            ->with(['pedido.sala:id,nombre', 'registradoPor:id,name', 'anuladoPor:id,name', 'lineas.linea.producto:id,nombre'])
+            // `dte`: el botón «Deshacer» se apaga si ya se facturó, sin una consulta por envío.
+            ->with(['pedido.sala:id,nombre', 'registradoPor:id,name', 'anuladoPor:id,name', 'lineas.linea.producto:id,nombre', 'dte:id,estado,deleted_at'])
             ->orderByDesc('id')
             ->get();
 
@@ -341,6 +344,11 @@ class PedidosFabrica
             $envio = $pedido->envios()->whereKey($envio->id)->lockForUpdate()->firstOrFail()->setRelation('pedido', $pedido);
             if (! $envio->estaVigente()) {
                 return false;
+            }
+            // Con las filas bloqueadas (FacturarPedido toma los mismos candados): si la
+            // oficina lo facturó mientras tanto, se avisa en vez de dar un 403.
+            if ($envio->estaFacturado()) {
+                throw ValidationException::withMessages(['envio' => self::FACTURADO]);
             }
             Gate::forUser($usuario)->authorize('anular', $envio);
 

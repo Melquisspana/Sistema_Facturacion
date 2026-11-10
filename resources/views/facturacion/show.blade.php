@@ -66,6 +66,7 @@
                     'rose'   => 'bg-rose-100 text-rose-700 ring-rose-200',
                 ];
             @endphp
+            @include('facturacion.partials.viene-del-pedido', ['dte' => $dte])
             <div class="bg-white shadow sm:rounded-lg p-4 flex flex-wrap items-center gap-3">
                 <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ring-1 {{ $stMap[$stColor] }}">{{ $stTxt }}</span>
                 <span class="text-sm text-gray-500">{{ $stSub }}</span>

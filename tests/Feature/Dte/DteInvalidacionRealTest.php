@@ -4,6 +4,7 @@ namespace Tests\Feature\Dte;
 
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\EstadoDte;
+use App\Enums\EstadoPedidoSala;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteInvalidacionException;
@@ -12,7 +13,10 @@ use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
+use App\Models\PedidoSala;
+use App\Models\PedidoSalaEnvio;
 use App\Models\PuntoVenta;
+use App\Models\User;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteTransmisionService;
@@ -246,6 +250,41 @@ class DteInvalidacionRealTest extends TestCase
         $this->assertStringContainsString('ya se usó para invalidar', implode(' ', $problemas));
         $this->assertTrue($this->servicio()->evaluarCandados($b, $evento, true, true)['bloqueado']);
         $this->assertFalse(app(BusquedaDocumentoReemplazo::class)->buscar($b)->contains('id', $c->id));
+    }
+
+    /** Un envío de la fábrica facturado en ese CCF, como lo deja «Facturar» el pedido. */
+    private function envioFacturadoEn(Dte $dte): PedidoSalaEnvio
+    {
+        $usuario = User::factory()->create(['activo' => true]);
+        $sala = $dte->cliente->sucursales()->create(['nombre' => 'Sala de prueba Norte', 'codigo' => '9001']);
+        $pedido = PedidoSala::create([
+            'cliente_sucursal_id' => $sala->id, 'registrado_por' => $usuario->id,
+            'fecha' => '2026-06-30', 'estado' => EstadoPedidoSala::Enviado,
+        ]);
+
+        return $pedido->envios()->create([
+            'numero' => 1, 'clave' => (string) Str::uuid(), 'fecha' => '2026-06-30', 'registrado_por' => $usuario->id, 'dte_id' => $dte->id,
+        ]);
+    }
+
+    public function test_la_invalidacion_con_reemplazo_pasa_lo_que_llego_de_la_fabrica_al_ccf_nuevo(): void
+    {
+        $base = $this->ncAceptada();
+        $b = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $c = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $envio = $this->envioFacturadoEn($b);
+        $evento = new EventoInvalidacionData(tipoAnulacion: TipoAnulacionMh::ErrorInformacion, codigoGeneracionReemplazo: strtoupper($c->codigo_generacion), nombreResponsable: 'Responsable', tipoDocResponsable: '13', numDocResponsable: '040000000', nombreSolicita: 'Solicitante', tipoDocSolicita: '13', numDocSolicita: '040000001');
+        $this->fakeHttp(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-INVALIDACION']);
+
+        $this->servicio()->transmitir($b, $evento, true, true);
+
+        $this->assertSame(EstadoDte::Invalidado, $b->refresh()->estado);
+        // Lo que llegó del pedido sigue facturado, ahora en el CCF que reemplaza al invalidado.
+        $this->assertSame($c->id, $envio->refresh()->dte_id);
+        $this->assertTrue($envio->estaFacturado());
+        $this->assertSame(0, PedidoSalaEnvio::porFacturar()->count());
+        $log = Activity::where('description', 'el CCF que corrige se quedó con lo que llegó del pedido')->sole();
+        $this->assertSame($b->id, $log->properties['dte_anterior']);
     }
 
     public function test_invalidacion_real_guarda_codigo_del_sustituto(): void

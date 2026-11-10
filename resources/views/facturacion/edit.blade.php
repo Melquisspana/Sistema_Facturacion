@@ -41,6 +41,11 @@
             {{-- Mensajes en vivo del editor AJAX (éxito/error sin recargar). Vacío por defecto. --}}
             <div id="ccf-flash" role="status" aria-live="polite" class="hidden rounded-md border p-3 text-sm"></div>
 
+            @include('facturacion.partials.viene-del-pedido', ['dte' => $dte])
+
+            {{-- El aviso de lo que llegó de la fábrica va en el panel de la derecha
+                 (partials/resumen-ccf), que se repinta con cada cambio de cantidad. --}}
+
             {{-- Aviso SUAVE de OC duplicada: solo advierte (con link); no bloquea generar. --}}
             @if ($ocDuplicada ?? null)
                 <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
@@ -362,7 +367,7 @@
                 {{-- Panel lateral: resumen del CCF (productos agregados + totales + Generar), sticky. --}}
                 <div class="order-1 lg:order-2 @cannot('update', $dte) lg:col-span-3 @endcannot">
                     <div class="lg:sticky lg:top-6" id="resumen-panel">
-                        @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'confirmGenerar' => $confirmGenerar])
+                        @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'confirmGenerar' => $confirmGenerar, 'avisosPedido' => $avisosPedido ?? []])
                     </div>
                 </div>
             </div>

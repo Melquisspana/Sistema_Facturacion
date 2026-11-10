@@ -1,6 +1,12 @@
 {{-- Detalle de un pedido de sala para la oficina (docs/GUIA_PANTALLAS.md, «Fichas y
      detalles»): estado y datos arriba, la OC (que suele llegar después por EDI y se agrega
-     acá) y los productos. --}}
+     acá), los productos y lo que mandó la fábrica, con cómo va la facturación de cada envío.
+
+     Variables: $pedido (con envios.dte) y $regresa [producto_id => llego, facturado,
+     regresa] (FacturarPedido::regresa): la columna «Regresa» sale solo si ya se facturó algo.
+     «Facturar» (solo quien factura) abre el formulario del CCF con lo que sigue sin facturar;
+     con un borrador abierto no sale y se dice por qué: lo nuevo va en ese mismo CCF. El enlace
+     lleva `desde=pedido` para que «Cancelar» vuelva a esta ficha. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -15,6 +21,10 @@
         $dt = 'text-xs font-medium text-gray-500';
         $dd = 'mt-0.5 text-sm text-gray-800';
         $avisos = $pedido->avisosOrdenCompra();
+        // Sin consultas: los envíos ya traen su CCF.
+        $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);
+        $puedeFacturar = $pedido->estaVigente() && $facturacion['por_facturar']->isNotEmpty() && ! $facturacion['borrador'];
+        $llegoDespues = $pedido->estaVigente() && $facturacion['por_facturar']->isNotEmpty() && $facturacion['borrador'] !== null;
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -26,11 +36,22 @@
                     <x-rutas.estado-badge :estado="$pedido->estado" />
                     {{-- Barra de acciones de la ficha (x-secondary-button es solo <button>). La hoja,
                          solo si salió algo o ya se cerró: pendiente o anulado no dice nada. --}}
-                    @if ($pedido->estado->tieneHoja())
-                        <a href="{{ route('rutas.pedidos.hoja', $pedido) }}" target="_blank" rel="noopener"
-                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
-                    @endif
+                    <div class="flex flex-wrap gap-2">
+                        @if ($pedido->estado->tieneHoja())
+                            <a href="{{ route('rutas.pedidos.hoja', $pedido) }}" target="_blank" rel="noopener"
+                               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
+                        @endif
+                        @if ($puedeFacturar)
+                            @can('create', App\Models\Dte::class)
+                                <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']) }}"
+                                   class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
+                            @endcan
+                        @endif
+                    </div>
                 </div>
+                @if ($llegoDespues)
+                    <p class="mt-3 text-sm text-amber-800">{{ \App\Services\Rutas\FacturarPedido::LLEGO_DESPUES_DEL_BORRADOR }}</p>
+                @endif
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
@@ -82,6 +103,10 @@
                             <th class="px-4 py-3 sm:px-5">Producto</th>
                             <th class="px-4 py-3 text-right sm:px-5">Pidió</th>
                             <th class="px-4 py-3 text-right sm:px-5">Mandado</th>
+                            @if ($regresa !== [])
+                                {{-- Llegó − lo que quedó en los CCF (lo que la OC no pidió y se bajó en el editor). --}}
+                                <th class="px-4 py-3 text-right sm:px-5">Regresa</th>
+                            @endif
                             <th class="px-4 py-3 text-right sm:px-5">Falta</th>
                             <th class="px-4 py-3 sm:px-5">Motivo</th>
                         </tr>
@@ -95,6 +120,9 @@
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ $linea->cantidadLegible() }}</td>
                                 <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ \App\Models\PedidoSalaLinea::legible($linea->mandado()) }}</td>
+                                @if ($regresa !== [])
+                                    <td class="px-4 py-3 text-right font-semibold tabular-nums sm:px-5">{{ isset($regresa[$linea->producto_id]) ? \App\Models\PedidoSalaLinea::legible($regresa[$linea->producto_id]['regresa']) : '—' }}</td>
+                                @endif
                                 <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</td>
                                 <td class="px-4 py-3 text-gray-600 sm:px-5">{{ $linea->motivo_no_enviado ?? '—' }}</td>
                             </tr>
@@ -110,7 +138,7 @@
                 @if ($pedido->envios->isEmpty())
                     <p class="mt-1 text-sm text-gray-500">La fábrica todavía no mandó nada.</p>
                 @else
-                    <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios])</div>
+                    <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios, 'conFacturacion' => true])</div>
                 @endif
             </section>
         </div>
