@@ -22,11 +22,13 @@ use App\Models\User;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\RegistroDescargas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -479,6 +481,95 @@ class CobrosQuedanNotasCreditoTest extends TestCase
         @unlink($ruta);
         $this->assertSame(3, $hoja->getHighestDataRow(), 'Encabezado + 1 CCF + la NC vigente.');
         $this->assertSame($vigente->albaran->numero, $hoja->getCell('B3')->getValue());
+    }
+
+    /** Solicitud ya preparada con estos CCF (sin NC), por el mismo camino que la pantalla. */
+    private function solicitudCon(User $usuario, CobroDocumento ...$documentos): CobroSolicitud
+    {
+        $token = $this->previa(array_map(fn (CobroDocumento $d) => $d->id, $documentos), $usuario)->assertOk()->viewData('token');
+        $this->actingAs($usuario)
+            ->post(route('cobros.solicitudes.store', $this->cliente), ['previa' => $token])
+            ->assertSessionHasNoErrors();
+
+        return CobroSolicitud::sole();
+    }
+
+    /** #12 (decisión de Melqui, 09/11/2026): el CCF invalidado también sale solo del quedan de Cobros. */
+    public function test_el_ccf_invalidado_sale_solo_del_quedan_y_la_ficha_avisa(): void
+    {
+        $usuario = $this->usuario();
+        $vigente = $this->ccf();
+        $anulado = $this->ccf();
+        $solicitud = $this->solicitudCon($usuario, $vigente, $anulado);
+
+        DB::table('dtes')->where('id', $anulado->dte_id)->update(['estado' => 'invalidado']);
+        $aviso = 'CCF '.$anulado->numero_control.': fue invalidado ante Hacienda.';
+
+        $this->actingAs($usuario)->get(route('cobros.solicitudes.show', $solicitud))
+            ->assertOk()
+            ->assertSeeText('La primera descarga deja fuera del quedan lo que ya no vale ante Hacienda:')
+            ->assertSeeText($aviso);
+
+        $ruta = app(ExportadorSolicitudCargaMasivaV1::class)->generar($solicitud->fresh());
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
+        @unlink($ruta);
+        $this->assertSame(2, $hoja->getHighestDataRow(), 'Encabezado + el CCF vigente.');
+        $this->assertSame((string) (5000 + $vigente->id), $hoja->getCell('B2')->getValue());
+    }
+
+    /** #12: lo que el archivo dejó fuera queda en la bitácora y la ficha lo sigue diciendo después de archivarlo. */
+    public function test_lo_que_el_quedan_dejo_fuera_queda_en_la_bitacora_y_en_la_ficha(): void
+    {
+        $usuario = $this->usuario();
+        $ccfDte = $this->dte('03');
+        $nc = $this->nc($ccfDte);
+        $this->lote([$nc], presentado: true);
+        $anulado = $this->ccf();
+        $solicitud = $this->solicitudCon($usuario, $this->ccf($ccfDte), $anulado);
+
+        DB::table('dtes')->where('id', $anulado->dte_id)->update(['estado' => 'invalidado']);
+        DB::table('dtes')->where('id', $nc->id)->update(['estado' => 'rechazado']);
+        $fuera = [
+            'CCF '.$anulado->numero_control.': fue invalidado ante Hacienda.',
+            'NC '.$nc->numero_control.': Hacienda la rechazó.',
+        ];
+
+        $this->actingAs($usuario)->post(route('cobros.solicitudes.descargar', $solicitud))->assertOk();
+
+        $entrada = Activity::where('log_name', RegistroDescargas::LOG_FUERA)->sole();
+        $this->assertTrue($entrada->subject->is($solicitud));
+        $this->assertSame($usuario->id, (int) $entrada->causer_id);
+        $this->assertSame($fuera, $entrada->getExtraProperty('fuera'));
+
+        // Aunque el documento cambie otra vez, la ficha dice lo que dejó fuera ESE archivo.
+        DB::table('dtes')->where('id', $nc->id)->update(['estado' => 'aceptado']);
+        $this->actingAs($usuario)->post(route('cobros.solicitudes.descargar', $solicitud))->assertOk();
+        $this->assertSame(1, Activity::where('log_name', RegistroDescargas::LOG_FUERA)->count(), 'Solo se anota al generar el archivo.');
+
+        $this->actingAs($usuario)->get(route('cobros.solicitudes.show', $solicitud))
+            ->assertOk()
+            ->assertSeeText('El archivo descargado dejó fuera lo que ya no valía ante Hacienda:')
+            ->assertSeeText($fuera[0])
+            ->assertSeeText($fuera[1]);
+    }
+
+    /** #12: sin ningún CCF vigente no se archiva un quedan vacío. */
+    public function test_si_todos_los_ccf_se_invalidaron_no_se_genera_ni_se_archiva_el_quedan(): void
+    {
+        $usuario = $this->usuario();
+        $anulado = $this->ccf();
+        $solicitud = $this->solicitudCon($usuario, $anulado);
+        DB::table('dtes')->where('id', $anulado->dte_id)->update(['estado' => 'invalidado']);
+
+        $this->actingAs($usuario)->post(route('cobros.solicitudes.descargar', $solicitud))
+            ->assertRedirect(route('cobros.index', ['cliente_id' => $this->cliente->id]))
+            ->assertSessionHasErrors('documentos');
+
+        $solicitud->refresh();
+        $this->assertNull($solicitud->archivo_hash);
+        $this->assertNull($solicitud->archivo_path);
+        $this->assertSame(0, $solicitud->descargas);
+        $this->assertSame(0, Activity::where('log_name', RegistroDescargas::LOG_FUERA)->count());
     }
 
     public function test_una_nc_aparecida_despues_de_la_previa_impide_confirmar(): void

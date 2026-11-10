@@ -134,8 +134,9 @@ class ExportadorSolicitudCargaMasivaV1 implements ExportadorSolicitud
         $hoja = $libro->getSheetByName(self::HOJA);
         $libro->setActiveSheetIndex($libro->getIndex($hoja));
 
+        // El CCF invalidado sale solo del archivo; la ficha de la solicitud avisa cuál (#12).
         $fila = self::PRIMERA_FILA;
-        foreach ($solicitud->items as $item) {
+        foreach ($solicitud->renglonesVigentes() as $item) {
             $this->fila($hoja, $fila, $item);
             $fila++;
         }

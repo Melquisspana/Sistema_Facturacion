@@ -7,10 +7,12 @@ use App\Models\Cliente;
 use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\User;
 use App\Support\Dinero;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 /**
  * Una PRESENTACIÓN de documentos al cliente: la selección, el archivo exacto y lo que pasó
@@ -120,6 +122,51 @@ class CobroSolicitud extends Model
     public function notas(): HasMany
     {
         return $this->hasMany(CobroSolicitudNota::class);
+    }
+
+    /**
+     * Los renglones que el archivo escribe: los de un CCF que sigue valiendo ante Hacienda.
+     * El invalidado sale solo y se avisa ({@see fueraDelArchivo()}, #12). Un documento sin
+     * DTE de este sistema no se puede evaluar y va.
+     *
+     * @return Collection<int, CobroSolicitudItem>
+     */
+    public function renglonesVigentes(): Collection
+    {
+        $this->loadMissing('items.documento.dte');
+
+        return $this->items
+            ->filter(fn (CobroSolicitudItem $i) => ($dte = $i->documento?->dte) === null
+                || VigenciaFiscalDte::motivoFueraDelArchivo($dte) === null)
+            ->values();
+    }
+
+    /**
+     * Lo que el archivo deja fuera porque ya no vale ante Hacienda: sus CCF invalidados y
+     * sus NC que dejaron de estar aceptadas, como «CCF DTE-03-…: fue invalidado ante
+     * Hacienda.», para avisarlo y dejarlo en la bitácora al generar el archivo.
+     *
+     * @return array<int, string>
+     */
+    public function fueraDelArchivo(): array
+    {
+        $this->loadMissing('items.documento.dte');
+        $lineas = [];
+
+        foreach ($this->items as $item) {
+            $dte = $item->documento?->dte;
+            if ($dte !== null && ($motivo = VigenciaFiscalDte::motivoFueraDelArchivo($dte)) !== null) {
+                $lineas[] = ($item->documento->esNc() ? 'NC ' : 'CCF ').($item->documento->numero_control ?: $dte->numero_control).': '.$motivo.'.';
+            }
+        }
+
+        foreach ($this->notas()->with('dte')->orderBy('id')->get() as $nota) {
+            if ($nota->dte !== null && ($motivo = VigenciaFiscalDte::motivoFueraDelArchivo($nota->dte)) !== null) {
+                $lineas[] = 'NC '.$nota->dte->numero_control.': '.$motivo.'.';
+            }
+        }
+
+        return $lineas;
     }
 
     /**
