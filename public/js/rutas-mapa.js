@@ -33,16 +33,12 @@
     const cambio = (z) => (z.anterior ? ((z.ventas - z.anterior) / z.anterior) * 100 : null);
     // En un mes pasado los días se cuentan al cierre del mes (D.corte, «31/10»), no a hoy.
     const alCorte = D.corte ? ' al ' + D.corte : '';
-    const estado = (dias) => {
-        if (dias === null) {
-            return ['var(--mal)', 'Sin compras'];
-        }
-        if (dias >= 30) {
-            return ['var(--mal)', 'Sin compra ' + dias + ' días'];
-        }
-        const compro = dias === 0 ? (D.corte ? 'Compró el ' + D.corte : 'Compró hoy') : 'Hace ' + dias + (dias === 1 ? ' día' : ' días');
-        return [dias > 15 ? 'var(--ojo)' : 'var(--bien)', compro];
-    };
+    // Una sala de «Dónde falta», por su ritmo: atrasada (pasó su fecha con margen) o le toca.
+    const dias = (n) => n + (n === 1 ? ' día' : ' días');
+    const estado = (s) => (s.estado === 'atrasada'
+        ? ['var(--mal)', 'Atrasada ' + dias(-s.faltan)]
+        : ['var(--ojo)', s.faltan > 0 ? 'Le toca en ' + dias(s.faltan) : 'Le toca']);
+    const atrasadasTexto = (z) => z.atrasadas + (z.atrasadas === 1 ? ' atrasada' : ' atrasadas') + ', a ' + z.leToca + (z.leToca === 1 ? ' le toca' : ' les toca');
 
     // ---------- Estado (en el #hash) ----------
     const leerHash = () => Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
@@ -66,7 +62,7 @@
     const hayD3 = typeof window.d3 !== 'undefined';
     let cargadas = !hayD3;
     const nombreDep = (c) => (propia(D.departamentos, c) ? D.departamentos[c].nombre : '');
-    const vacia = (f) => ({ nombre: f.properties.n, dep: f.properties.d || f.properties.c, ventas: 0, anterior: 0, salas: 0, todas: 0, compraron: 0, sinCompra: 0, entrega: null, entregaDias: null, rutas: [], peores: [] });
+    const vacia = (f) => ({ nombre: f.properties.n, dep: f.properties.d || f.properties.c, ventas: 0, anterior: 0, salas: 0, todas: 0, compraron: 0, faltan: 0, leToca: 0, atrasadas: 0, sinRitmo: 0, entrega: null, entregaDias: null, rutas: [], porVisitar: [] });
     const zona = (id) => {
         const datos = NIVELES[st.nivel];
         const z = propia(datos, id) ? datos[id] : null;
@@ -222,7 +218,7 @@
     // cuáles van en cada uno.
     const calcularCortes = () => {
         const conSalas = Object.values(NIVELES[st.nivel]).filter((z) => z.salas > 0);
-        maxFalta = Math.max(1, ...conSalas.map((z) => z.sinCompra));
+        maxFalta = Math.max(1, ...conSalas.map((z) => z.faltan));
         const v = conSalas.map((z) => z.ventas).filter((x) => x > 0).sort(d3.ascending);
         cortes = v.length ? [0.2, 0.4, 0.6, 0.8].map((x) => d3.quantile(v, x)) : [1, 2, 3, 4];
     };
@@ -241,13 +237,13 @@
             return 'url(#mapa-rayado)';
         }
         if (st.modo === 'falta') {
-            return z.sinCompra === 0 ? 'var(--mv-vacia)' : 'var(' + RAMPA.falta[tonoFalta(z.sinCompra)] + ')';
+            return z.faltan === 0 ? 'var(--mv-vacia)' : 'var(' + RAMPA.falta[tonoFalta(z.faltan)] + ')';
         }
         return 'var(' + RAMPA.ventas[Math.min(d3.bisectRight(cortes, z.ventas), 4)] + ')';
     };
     const sinSalasCorto = (z) => (z.todas ? 'Ninguna sala de esta ruta; ' + z.todas + ' de otras rutas' : 'Todavía no hay salas aquí');
     const textoTip = (z) => '<b>' + esc(z.nombre) + '</b>' + (st.nivel === 'dis' ? ' · ' + esc(nombreDep(z.dep)) : '')
-        + '<br>' + (z.salas ? plata(z.ventas) + ' en el mes<br>' + z.salas + (z.salas === 1 ? ' sala' : ' salas') + ' · ' + z.sinCompra + ' sin compra 30+ días' : sinSalasCorto(z))
+        + '<br>' + (z.salas ? plata(z.ventas) + ' en el mes<br>' + z.salas + (z.salas === 1 ? ' sala' : ' salas') + ' · ' + atrasadasTexto(z) : sinSalasCorto(z))
         + '<br>Ruta: ' + esc(rutasDe(z).join(', ') || 'ninguna');
 
     const dibujar = () => {
@@ -266,7 +262,7 @@
             .attr('role', enDep ? 'button' : null)
             .attr('aria-label', (f) => {
                 const z = zona(f.properties.c);
-                return z.nombre + ': ' + plata(z.ventas) + ', ' + z.salas + ' salas, ' + z.sinCompra + ' sin compra 30 días o más';
+                return z.nombre + ': ' + plata(z.ventas) + ', ' + z.salas + ' salas, ' + atrasadasTexto(z);
             })
             .on('mousemove', (ev, f) => mostrarTip(ev, textoTip(zona(f.properties.c))))
             .on('mouseleave', ocultarTip)
@@ -306,9 +302,9 @@
                 const t = tonoFalta(n);
                 tramos[t] = tramos[t] ? [tramos[t][0], n] : [n, n];
             }
-            L.innerHTML = '<div class="text-xs font-semibold">Salas sin compra 30+ días' + esc(alCorte) + '</div>'
+            L.innerHTML = '<div class="text-xs font-semibold">Salas atrasadas o que les toca' + esc(alCorte) + '</div>'
                 + '<div class="mv-clases text-gray-500">' + tramos.map((r, t) => (r ? '<span><i style="background:var(' + RAMPA.falta[t] + ')"></i>' + (r[0] === r[1] ? r[0] : r[0] + '–' + r[1]) + '</span>' : '')).join('') + '</div>'
-                + muestra('var(--mv-vacia)', 'Ninguna sin compra')
+                + muestra('var(--mv-vacia)', 'Ninguna atrasada ni le toca')
                 + rayado;
             return;
         }
@@ -325,7 +321,7 @@
         $('mapa-titulo').textContent = { ventas: 'Ventas del mes por ' + n, falta: 'Dónde falta, por ' + n, rutas: unaRuta ? 'Zonas de ' + unaRuta : 'Por dónde pasan las rutas' }[st.modo];
         $('mapa-sub').textContent = {
             ventas: 'Color más intenso, más vendido. Tocá una zona para ver su ficha.',
-            falta: 'Color más intenso, más salas sin compra hace 30 días o más' + alCorte + '. Las rayadas no tienen salas ' + (D.ruta ? 'de esta ruta.' : 'todavía.'),
+            falta: 'Color más intenso, más salas atrasadas o que les toca visita según cada cuánto compra cada una' + alCorte + '. Las rayadas no tienen salas ' + (D.ruta ? 'de esta ruta.' : 'todavía.'),
             rutas: 'Elegí una ruta arriba o en la ficha para ver sus zonas.',
         }[st.modo];
     };
@@ -361,10 +357,10 @@
             + valorHtml + '</span><span class="block text-xs text-gray-500">' + texto + '</span></div>';
         // En un mes pasado, la fecha de la entrega: «hoy» o «ayer» serían del cierre del mes.
         const entrega = z.entrega ? '<time datetime="' + esc(z.entrega) + '" title="' + fecha(z.entrega) + '">' + (D.corte ? fecha(z.entrega) : hace(z.entregaDias)) + '</time>' : '—';
-        const salas = z.peores.length
-            ? '<div><h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Salas que más llevan sin comprar' + esc(D.corte ? ' (al ' + D.corte + ')' : '') + '</h4><ul class="mt-1 divide-y divide-gray-100">'
-                + z.peores.map((s) => {
-                    const [c, t] = estado(s.dias);
+        const salas = z.porVisitar.length
+            ? '<div><h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Salas que toca visitar' + esc(D.corte ? ' (al ' + D.corte + ')' : '') + '</h4><ul class="mt-1 divide-y divide-gray-100">'
+                + z.porVisitar.map((s) => {
+                    const [c, t] = estado(s);
                     return '<li class="flex items-center justify-between gap-3 py-2 text-sm"><span class="min-w-0 text-gray-800">' + esc(s.nombre) + '</span>'
                         + '<span class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-700"><span class="mv-punto" style="background:' + c + '"></span>' + t + '</span></li>';
                 }).join('') + '</ul></div>'
@@ -379,7 +375,7 @@
                 ? '<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1"><span class="text-3xl font-bold tabular-nums text-gray-800">' + plata(z.ventas) + '</span>' + delta + '</div>'
                     + '<div class="grid grid-cols-2 gap-3">'
                     + dato(z.salas, z.salas === 1 ? 'sala' : 'salas')
-                    + dato(z.sinCompra, 'sin compra 30+ días' + esc(alCorte))
+                    + dato(z.atrasadas, (z.atrasadas === 1 ? 'atrasada' : 'atrasadas') + ', a ' + z.leToca + (z.leToca === 1 ? ' le toca' : ' les toca') + esc(alCorte))
                     + dato(entrega, 'última entrega' + esc(alCorte))
                     + dato(z.compraron ? plata(z.ventas / z.compraron) : '—', 'promedio por sala que compró')
                     + '</div>'
