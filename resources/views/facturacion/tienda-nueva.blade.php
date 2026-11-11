@@ -4,7 +4,7 @@
 
      Variables: $pedido (sacadoPor, ruta), $texto (lo buscado; al entrar, el nombre que escribió
      el vendedor), $salas (las que coinciden, con cliente y distrito) y $puedeDarDeAlta
-     (clientes.gestionar). --}}
+     (clientes.gestionar, o clientes.alta para esta tienda nueva). --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">

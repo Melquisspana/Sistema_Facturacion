@@ -18,7 +18,8 @@ use Illuminate\View\View;
 
 /**
  * Sucursales / salas de un cliente. La autorización reutiliza ClientePolicy:
- * gestionar sucursales requiere poder actualizar el cliente.
+ * gestionar sucursales requiere poder actualizar el cliente. El alta (create y store) usa
+ * `crearSala`, que además deja a Facturación dar de alta la sala de la tienda nueva de un pedido.
  */
 class ClienteSucursalController extends Controller
 {
@@ -29,9 +30,10 @@ class ClienteSucursalController extends Controller
 
     public function create(Request $request, Cliente $cliente, PedidosSala $pedidos): View
     {
-        $this->authorize('update', $cliente);
-        // La tienda nueva de un pedido: su nombre, y al guardar queda enlazada.
+        // La tienda nueva de un pedido: su nombre, y al guardar queda enlazada. Con
+        // `clientes.alta` la sala se da de alta solo con ese pedido (ClientePolicy::crearSala).
         $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->query('pedido_sala'), $request->user());
+        $this->authorize('crearSala', [$cliente, $pedidoSala]);
 
         return view('clientes.sucursales.form', $this->datosFormulario(
             $cliente,
@@ -41,15 +43,15 @@ class ClienteSucursalController extends Controller
 
     public function store(ClienteSucursalRequest $request, Cliente $cliente, PedidosSala $pedidos): RedirectResponse
     {
-        $this->authorize('update', $cliente);
+        // «Dar de alta la tienda» desde Facturación: la sala queda enlazada al pedido y se
+        // vuelve a facturar. Si el enlace no se puede (otro ya lo enlazó), la sala igual queda.
+        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->input('pedido_sala'), $request->user());
+        $this->authorize('crearSala', [$cliente, $pedidoSala]);
 
         $datos = $request->validated();
         $datos['pais_id'] = Pais::where('codigo', 'SV')->value('id'); // El Salvador
         $sucursal = $cliente->sucursales()->create($datos);
 
-        // «Dar de alta la tienda» desde Facturación: la sala queda enlazada al pedido y se
-        // vuelve a facturar. Si el enlace no se puede (otro ya lo enlazó), la sala igual queda.
-        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->input('pedido_sala'), $request->user());
         if ($pedidoSala !== null) {
             try {
                 $pedidoSala = $pedidos->enlazarSala($pedidoSala, $sucursal->id, $request->user());

@@ -142,9 +142,10 @@ class ClienteController extends Controller
 
     public function create(Request $request, PedidosSala $pedidos): View
     {
-        $this->authorize('create', Cliente::class);
-        // «Dar de alta la tienda» desde Facturación: el nombre que escribió el vendedor.
+        // «Dar de alta la tienda» desde Facturación: el nombre que escribió el vendedor. Con
+        // `clientes.alta` el alta vale solo con ese pedido (ClientePolicy::create).
         $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->query('pedido_sala'), $request->user());
+        $this->authorize('create', [Cliente::class, $pedidoSala]);
 
         // El contacto (teléfono/correo) se captura principalmente en la sala; el
         // cliente no lo precarga. El teléfono sugerido 77777777 vive en el alta de
@@ -155,12 +156,12 @@ class ClienteController extends Controller
 
     public function store(ClienteRequest $request, PedidosSala $pedidos): RedirectResponse
     {
-        $this->authorize('create', Cliente::class);
+        // La tienda nueva de un pedido: sigue con su sala, que vuelve enlazando el pedido.
+        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->input('pedido_sala'), $request->user());
+        $this->authorize('create', [Cliente::class, $pedidoSala]);
 
         $cliente = Cliente::create($request->validated());
 
-        // La tienda nueva de un pedido: sigue con su sala, que vuelve enlazando el pedido.
-        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->input('pedido_sala'), $request->user());
         if ($pedidoSala !== null) {
             return redirect()
                 ->route('clientes.sucursales.create', [$cliente, 'pedido_sala' => $pedidoSala->id])

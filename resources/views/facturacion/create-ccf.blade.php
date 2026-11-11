@@ -141,6 +141,9 @@
                                     <a href="{{ route('facturacion.pedidos.tienda', $pedido) }}"
                                        class="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Dar de alta la tienda</a>
                                 </div>
+                            @elseif ($salaPedido === null)
+                                {{-- La sala se borró de Clientes después de sacar el pedido: sin sala no se factura. --}}
+                                <p role="alert" class="mt-1 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{{ \App\Services\Rutas\FacturarPedido::SALA_BORRADA }}</p>
                             @else
                             <p class="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
                                 {{ $salaPedido?->cliente?->nombre }} — {{ $salaPedido?->nombre }}{{ $salaPedido?->codigo ? ' · '.$salaPedido->codigo : '' }}

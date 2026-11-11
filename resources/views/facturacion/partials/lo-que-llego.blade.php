@@ -55,6 +55,8 @@
             {{-- La tienda nueva no frena por una línea: frena por la sala que falta enlazar. --}}
             @if ($pedido->esTiendaNueva())
                 <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 font-medium text-red-700">{{ \App\Services\Rutas\FacturarPedido::SIN_SALA }}</p>
+            @elseif ($pedido->sala === null)
+                <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 font-medium text-red-700">{{ \App\Services\Rutas\FacturarPedido::SALA_BORRADA }}</p>
             @endif
             @if (collect($propuesta['lineas'])->contains(fn ($l) => $l['problema'] !== null))
                 <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 font-medium text-red-700">

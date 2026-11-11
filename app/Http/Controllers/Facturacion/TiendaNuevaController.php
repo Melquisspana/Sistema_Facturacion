@@ -38,7 +38,7 @@ class TiendaNuevaController extends Controller
             'pedido' => $pedido->loadMissing(['sacadoPor:id,nombre', 'ruta:id,nombre']),
             'texto' => $texto,
             'salas' => $salas,
-            'puedeDarDeAlta' => $request->user()->can('create', Cliente::class),
+            'puedeDarDeAlta' => $request->user()->can('create', [Cliente::class, $pedido]),
         ]);
     }
 

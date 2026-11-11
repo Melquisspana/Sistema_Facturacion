@@ -107,9 +107,8 @@ class RolesPermisosTest extends TestCase
     public static function escrituras(): array
     {
         return [
-            // Clientes: administrador y, desde el 10/11/2026, facturación (da de alta la tienda
-            // nueva al facturar). Productos: SOLO administrador.
-            'crear cliente' => ['post', 'clientes.store', ['administrador', 'facturacion']],
+            // Gestión de clientes/productos: SOLO administrador.
+            'crear cliente' => ['post', 'clientes.store', ['administrador']],
             'crear producto' => ['post', 'productos.store', ['administrador']],
             // PPQ y exportaciones: administrador y facturación.
             'crear lote PPQ' => ['post', 'ppq.lotes.store', ['administrador', 'facturacion']],

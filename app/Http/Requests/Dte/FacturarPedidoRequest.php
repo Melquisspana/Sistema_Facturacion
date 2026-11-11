@@ -36,6 +36,10 @@ class FacturarPedidoRequest extends CrearBorradorRequest
         if ($pedido->esTiendaNueva() && $this->authorize()) {
             throw ValidationException::withMessages(['pedido' => FacturarPedido::SIN_SALA]);
         }
+        // La sala se borró de Clientes: lo mismo, el motivo claro y no «falta el cliente».
+        if (! $pedido->esTiendaNueva() && $pedido->sala === null && $this->authorize()) {
+            throw ValidationException::withMessages(['pedido' => FacturarPedido::SALA_BORRADA]);
+        }
         $this->merge([
             'tipo_dte' => TipoDte::CreditoFiscal->value,
             'cliente_id' => $pedido->sala?->cliente_id,

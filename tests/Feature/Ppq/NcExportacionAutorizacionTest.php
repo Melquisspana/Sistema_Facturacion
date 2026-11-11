@@ -235,10 +235,9 @@ class NcExportacionAutorizacionTest extends TestCase
     {
         $cliente = $this->clienteConPerfil();
 
-        // Jefatura VE clientes pero no los gestiona: no puede tocar el perfil, que decide el
-        // descuento de las notas de crédito. (Facturación sí gestiona clientes desde el
-        // 10/11/2026, para dar de alta la tienda nueva al facturar.)
-        $usuario = $this->usuario(RolSistema::Jefatura);
+        // Facturación VE clientes pero no los gestiona: no puede tocar el perfil, que
+        // decide el descuento de las notas de crédito.
+        $usuario = $this->usuario(RolSistema::Facturacion);
         $this->assertTrue($usuario->can(PermisoSistema::ClientesVer->value));
         $this->assertFalse($usuario->can(PermisoSistema::ClientesGestionar->value));
 
@@ -348,8 +347,7 @@ class NcExportacionAutorizacionTest extends TestCase
     {
         $cliente = $this->clienteConPerfil();
 
-        // Jefatura solo lee clientes (Facturación los gestiona desde el 10/11/2026).
-        $this->actingAs($this->usuario(RolSistema::Jefatura))
+        $this->actingAs($this->usuario(RolSistema::Facturacion))
             ->get(route('clientes.show', $cliente))
             ->assertOk()
             ->assertSee('Perfil documental')

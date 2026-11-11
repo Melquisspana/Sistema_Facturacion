@@ -52,6 +52,11 @@ enum PermisoSistema: string
     // Comercial.
     case ClientesVer = 'clientes.ver';
     case ClientesGestionar = 'clientes.gestionar';
+    // Dar de alta el cliente y la sala de la TIENDA NUEVA de un pedido, al facturar (Melqui,
+    // 10/11/2026). Solo eso: vale únicamente con un pedido de tienda nueva vigente y sin
+    // enlazar que el usuario pueda enlazar ({@see \App\Policies\ClientePolicy::create()}).
+    // No edita, no inactiva, no borra ni toca el perfil documental: eso es `clientes.gestionar`.
+    case ClientesAlta = 'clientes.alta';
     case ProductosVer = 'productos.ver';
     case ProductosGestionar = 'productos.gestionar';
 
@@ -290,7 +295,7 @@ enum PermisoSistema: string
             ]),
 
             // Facturación: operación diaria. Emite y gestiona DTE, PPQ y
-            // exportaciones; ve (no gestiona) productos; ve compras.
+            // exportaciones; ve (no gestiona) clientes/productos; ve compras.
             RolSistema::Facturacion => self::valores([
                 self::DashboardVer,
                 self::DteVer,
@@ -298,10 +303,10 @@ enum PermisoSistema: string
                 self::DteEmitir,
                 self::DteEnviarCorreo,
                 self::ClientesVer,
-                // Da de alta clientes y salas para registrar la tienda nueva al facturar
-                // (decisión de Melqui, 10/11/2026). Es el permiso entero: también edita
-                // clientes y su perfil documental.
-                self::ClientesGestionar,
+                // Da de alta el cliente y la sala de la tienda nueva de un pedido, al facturar
+                // (decisión de Melqui, 10/11/2026). Nada más de Clientes: no edita, no borra
+                // ni toca el perfil documental (`clientes.gestionar` sigue siendo del administrador).
+                self::ClientesAlta,
                 self::ProductosVer,
                 self::PpqVer,
                 self::PpqGestionar,

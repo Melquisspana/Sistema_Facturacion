@@ -23,7 +23,7 @@ Melqui aprobó el 10/11/2026 un solo flujo, de sacar pedido a entregar. La decis
 - **Las rutas son zonas:** nombre y cobertura. Los «días objetivo» de la sección 2 ya no se cargan ni se editan; el ritmo sale de los pedidos reales. Lo que una zona ya tuviera cargado queda de respaldo mientras no tenga ritmo.
 - **El celular del vendedor:** Inicio, Sacar pedido y Por entregar. «Terminar el día» da el PDF del día, con los gastos y «Entregó / Recibió» para firmar. Con ese PDF se entrega el dinero; en el sistema no se liquida nada nuevo.
 - **La oficina y el jefe:** Tablero (Resumen, Viajes, Mapa, Vendedores), Pedidos, Ventas, Viajes anteriores y Zonas. La pestaña Viajes dice en qué paso va cada pedido, lo trabado, las facturas que no se pudieron entregar dos veces y los quedan por cobrar.
-- **Permisos:** `rutas.salidas.armar` ya no se usa. `rutas.salidas.terminar` sigue solo para terminar las salidas viejas que quedaron abiertas. Facturación da de alta clientes y salas (`clientes.gestionar`) para registrar la tienda nueva al facturar.
+- **Permisos:** `rutas.salidas.armar` ya no se usa. `rutas.salidas.terminar` sigue solo para terminar las salidas viejas que quedaron abiertas. Facturación da de alta el cliente y la sala de la tienda nueva de un pedido, al facturar, con el permiso `clientes.alta`: vale solo con ese pedido y no deja editar, borrar ni tocar el perfil documental (eso sigue en `clientes.gestionar`, del administrador). **Al desplegar:** crear el permiso `clientes.alta`, dárselo al rol Facturación y quitarle `clientes.gestionar` si lo tuviera.
 - **Lo viejo:** las salidas armadas a mano quedan en «Viajes anteriores» como historial. No se borró ninguna tabla ni dato.
 
 ---

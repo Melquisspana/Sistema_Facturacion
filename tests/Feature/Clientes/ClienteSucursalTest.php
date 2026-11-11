@@ -294,21 +294,34 @@ class ClienteSucursalTest extends TestCase
         ]);
     }
 
-    public function test_facturacion_crea_la_sala_y_jefatura_no(): void
+    public function test_facturacion_no_puede_crear_sucursal(): void
     {
-        // Desde el 10/11/2026 facturación da de alta clientes y salas: registra la tienda nueva
-        // al facturar (decisión de Melqui). Quien solo lee clientes sigue sin poder.
+        // Nueva política: facturación es SOLO lectura en clientes/salas.
         $cliente = Cliente::factory()->contribuyente()->create();
-
-        $this->actingAs($this->usuario('jefatura'))
-            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
-            ->assertForbidden();
-        $this->assertDatabaseCount('cliente_sucursales', 0);
 
         $this->actingAs($this->usuario('facturacion'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
-            ->assertSessionHasNoErrors()->assertRedirect();
-        $this->assertDatabaseCount('cliente_sucursales', 1);
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('cliente_sucursales', 0);
+    }
+
+    public function test_facturacion_no_edita_ni_inactiva_ni_borra_salas(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Sala de prueba', 'activo' => true]);
+        $facturacion = $this->usuario('facturacion');
+
+        $this->actingAs($facturacion)->get(route('clientes.sucursales.create', $cliente))->assertForbidden();
+        $this->actingAs($facturacion)->get(route('clientes.sucursales.edit', [$cliente, $sala]))->assertForbidden();
+        $this->actingAs($facturacion)->put(route('clientes.sucursales.update', [$cliente, $sala]), $this->datosSucursal(['nombre' => 'Otro nombre']))->assertForbidden();
+        $this->actingAs($facturacion)->patch(route('clientes.sucursales.toggle-activo', [$cliente, $sala]))->assertForbidden();
+        $this->actingAs($facturacion)->delete(route('clientes.sucursales.destroy', [$cliente, $sala]))->assertForbidden();
+
+        $sala->refresh();
+        $this->assertSame('Sala de prueba', $sala->nombre);
+        $this->assertTrue($sala->activo);
+        $this->assertNull($sala->deleted_at);
     }
 
     public function test_sucursal_puede_requerir_orden_compra_propia(): void

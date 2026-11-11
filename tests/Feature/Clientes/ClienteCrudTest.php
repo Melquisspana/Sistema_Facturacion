@@ -95,23 +95,35 @@ class ClienteCrudTest extends TestCase
         ]);
     }
 
-    public function test_facturacion_da_de_alta_clientes(): void
+    public function test_facturacion_solo_ve_no_crea(): void
     {
-        // Desde el 10/11/2026 facturación da de alta clientes: registra la tienda nueva al
-        // facturar (decisión de Melqui). Las validaciones del formulario son las mismas.
+        // Facturación es SOLO lectura en clientes (la gestión es admin). Su única alta es la
+        // tienda nueva de un pedido, al facturar (`clientes.alta`, ver TiendaNuevaTest).
         $facturacion = $this->usuario('facturacion');
 
         $this->actingAs($facturacion)->get(route('clientes.index'))->assertOk();
-        $this->actingAs($facturacion)->get(route('clientes.create'))->assertOk();
-        $this->actingAs($facturacion)
-            ->post(route('clientes.store'), $this->datosClienteValido(['nombre' => '']))
-            ->assertSessionHasErrors('nombre');
-        $this->assertDatabaseCount('clientes', 0);
-
+        $this->actingAs($facturacion)->get(route('clientes.create'))->assertForbidden();
         $this->actingAs($facturacion)
             ->post(route('clientes.store'), $this->datosClienteValido())
-            ->assertSessionHasNoErrors()->assertRedirect();
-        $this->assertDatabaseCount('clientes', 1);
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('clientes', 0);
+    }
+
+    public function test_facturacion_no_edita_ni_inactiva_ni_borra_clientes(): void
+    {
+        $facturacion = $this->usuario('facturacion');
+        $cliente = Cliente::factory()->create(['nombre' => 'Cliente de prueba', 'activo' => true]);
+
+        $this->actingAs($facturacion)->get(route('clientes.edit', $cliente))->assertForbidden();
+        $this->actingAs($facturacion)->put(route('clientes.update', $cliente), $this->datosClienteValido(['nombre' => 'Otro nombre']))->assertForbidden();
+        $this->actingAs($facturacion)->patch(route('clientes.toggle-activo', $cliente))->assertForbidden();
+        $this->actingAs($facturacion)->delete(route('clientes.destroy', $cliente))->assertForbidden();
+
+        $cliente->refresh();
+        $this->assertSame('Cliente de prueba', $cliente->nombre);
+        $this->assertTrue($cliente->activo);
+        $this->assertNull($cliente->deleted_at);
     }
 
     public function test_administrador_edita_cliente(): void

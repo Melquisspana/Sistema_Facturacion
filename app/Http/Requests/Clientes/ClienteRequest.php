@@ -8,6 +8,8 @@ use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
 use App\Enums\TipoPersona;
+use App\Models\Cliente;
+use App\Services\Rutas\PedidosSala;
 use App\Support\Dui;
 use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
@@ -46,7 +48,17 @@ class ClienteRequest extends FormRequest
         // Gestión de clientes (crear/editar): permiso clientes.gestionar (solo admin).
         // Autoriza ANTES de validar, así un rol sin permiso recibe 403 y no una
         // validación 302. El controlador vuelve a autorizar (defensa en profundidad).
-        return (bool) $this->user()?->can('clientes.gestionar');
+        //
+        // Solo en el ALTA (POST), `clientes.alta` también vale, y únicamente con la tienda
+        // nueva de un pedido por enlazar (ClientePolicy::create). Editar sigue igual.
+        $usuario = $this->user();
+        if ($usuario === null) {
+            return false;
+        }
+
+        return $usuario->can('clientes.gestionar') || ($this->isMethod('POST') && $usuario->can('create', [
+            Cliente::class, app(PedidosSala::class)->tiendaNuevaPorEnlazar($this->input('pedido_sala'), $usuario),
+        ]));
     }
 
     public function rules(): array
