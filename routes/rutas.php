@@ -177,8 +177,6 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
         Route::get('salidas/{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('salidas.ccf')
             ->scopeBindings();
         Route::get('salidas/{salida}/editar', fn (SalidaRuta $salida) => redirect()->route('rutas.salidas.show', $salida));
-        Route::patch('salidas/{salida}/iniciar', [SalidaRutaController::class, 'iniciar'])->name('salidas.iniciar')
-            ->middleware('permission:rutas.gestionar');
         Route::patch('salidas/{salida}/finalizar', [SalidaRutaController::class, 'finalizar'])->name('salidas.finalizar')
             ->middleware('permission:rutas.gestionar');
         Route::patch('salidas/{salida}/cancelar', [SalidaRutaController::class, 'cancelar'])->name('salidas.cancelar')

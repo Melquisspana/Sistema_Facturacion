@@ -21,8 +21,6 @@ use Illuminate\Support\Collection;
  * {@see Ritmo::estado()}, más:
  *
  *   · en_ruta     — hay una salida en curso.
- *   · programada  — ya hay una salida armada (planificada) para la ruta: no se avisa como
- *                   atrasada ni «toca pronto», porque ya se resolvió.
  *   · sin_ritmo   — ni ritmo calculado ni días cargados: se muestran los días, sin color.
  *   · sin_salidas — nunca se registró una salida ni hay visitas a sus salas.
  *
@@ -37,8 +35,6 @@ use Illuminate\Support\Collection;
 class RitmoRutas
 {
     public const EN_RUTA = 'en_ruta';
-
-    public const PROGRAMADA = 'programada';
 
     public const ATRASADA = Ritmo::ATRASADA;
 
@@ -77,7 +73,6 @@ class RitmoRutas
      *     desde: ?string,
      *     ultima: ?SalidaRuta,
      *     enCurso: ?SalidaRuta,
-     *     proxima: ?SalidaRuta,
      *     faltan: ?int,
      *     avance: ?int,
      *     ritmo: ?int,
@@ -128,7 +123,7 @@ class RitmoRutas
         $ritmoSalas = $this->pedidos->porSala($salaIds, $hoy);
         $visitas = $this->visitas($salaIds);
 
-        $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::PROGRAMADA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
+        $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
 
         $zonas = $rutas
             ->map(function (Ruta $ruta) use ($salas, $salidas, $ritmoSalas, $visitas, $hoy) {
@@ -292,11 +287,6 @@ class RitmoRutas
     {
         $enCurso = $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::EnCurso);
         $ultima = $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::Finalizada);
-        $proxima = $salidas
-            ->filter(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::Planificada)
-            ->sortBy('fecha_inicio')
-            ->first();
-
         $calculado = $this->pedidos->deRuta($ritmoSalas);
 
         // La última visita: el regreso de la última salida o la visita más nueva a una de sus salas.
@@ -323,7 +313,6 @@ class RitmoRutas
 
         $estado = match (true) {
             $enCurso !== null => self::EN_RUTA,
-            $proxima !== null => self::PROGRAMADA,
             $dias === null => self::SIN_SALIDAS,
             ! $ritmo => self::SIN_RITMO,
             default => Ritmo::estado($ritmo, $dias),
@@ -336,7 +325,6 @@ class RitmoRutas
             'desde' => $desde,
             'ultima' => $ultima,
             'enCurso' => $enCurso,
-            'proxima' => $proxima,
             // Días que faltan para la fecha esperada; negativo = días de atraso.
             'faltan' => $ritmo && $dias !== null ? $ritmo - $dias : null,
             // Cuánto del ritmo ya pasó, de 0 a 100, para la barra.

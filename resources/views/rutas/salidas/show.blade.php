@@ -11,9 +11,6 @@
         $puedeGestionar = auth()->user()?->can('rutas.gestionar');
         $hechos = $resumen['entregados'] + $resumen['no_entregados'];
         $porcentaje = $resumen['total'] ? (int) round($hechos * 100 / $resumen['total']) : 0;
-        $planificada = $salida->estado === \App\Enums\EstadoSalidaRuta::Planificada;
-        // Programada para otro día: sale ese día, como «Empezar ruta» de Mi salida.
-        $futura = $planificada && $salida->fecha_inicio->toDateString() > \App\Support\HoraNegocio::fechaHoy();
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -56,15 +53,9 @@
                 {{-- Las salidas de antes ya no se terminan ni se liquidan acá (11/11/2026): quedan para leer. --}}
                 @if (! $salida->estado->esTerminal() && ($puedeGestionar || $salida->esAutomatica()))
                     <div class="mt-5 flex flex-wrap items-center gap-3">
-                        @if ($futura)
-                            <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-center text-sm font-medium text-gray-700 dark:bg-ink-700 dark:text-paper-100">
-                                Sale el {{ $salida->fecha_inicio->copy()->locale('es')->dayName }} {{ $salida->fecha_inicio->format('d/m/Y') }}
-                            </p>
-                        @elseif ($planificada)
-                            <form method="POST" action="{{ route('rutas.salidas.iniciar', $salida) }}" class="flex-1">
-                                @csrf @method('PATCH')
-                                <button class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700">Salir ahora</button>
-                            </form>
+                        @if ($salida->estado === \App\Enums\EstadoSalidaRuta::Planificada)
+                            {{-- Ya no se arman ni se empiezan salidas: la que quedó programada solo se cancela. --}}
+                            <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-ink-700 dark:text-paper-100">Quedó programada y ya no sale. Cancelala para que sus CCF vuelvan a «Por entregar».</p>
                         @elseif ($salida->esAutomatica())
                             {{-- El viaje no se liquida acá. --}}
                             <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-ink-700 dark:text-paper-100">Se cierra solo cuando todo está entregado. El dinero se entrega con el PDF del día, firmado.</p>

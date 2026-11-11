@@ -9,10 +9,8 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
-use App\Support\HoraNegocio;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -94,37 +92,6 @@ class SalidaRutaController extends Controller
     }
 
     // ------------------------------------------------------------- transiciones
-
-    /**
-     * «Salir ahora» de una salida vieja que quedó programada, con la salida bloqueada. Ya no
-     * carga los pendientes de la ruta: lo que falta entregar se marca desde «Por entregar».
-     */
-    public function iniciar(Request $request, SalidaRuta $salida): RedirectResponse
-    {
-        [$tipo, $mensaje] = DB::transaction(function () use ($request, $salida) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-            $anterior = $salida->estado;
-
-            // La programada para otro día sale ese día, no antes.
-            if ($anterior === EstadoSalidaRuta::Planificada && $salida->fecha_inicio->toDateString() > HoraNegocio::fechaHoy()) {
-                return ['error', 'Esta salida es para el '.$salida->fecha_inicio->copy()->locale('es')->dayName.' '
-                    .$salida->fecha_inicio->format('d/m/Y').'. La podés empezar ese día.'];
-            }
-
-            if (! $salida->iniciar()) {
-                return ['error', "No se puede iniciar una salida {$anterior->label()}."];
-            }
-
-            $this->auditar($request, $salida, 'inició la salida', [
-                'estado_anterior' => $anterior->value,
-                'estado_nuevo' => $salida->estado->value,
-            ]);
-
-            return ['status', 'Salida iniciada.'];
-        });
-
-        return back()->with($tipo, $mensaje);
-    }
 
     public function finalizar(Request $request, SalidaRuta $salida): RedirectResponse
     {

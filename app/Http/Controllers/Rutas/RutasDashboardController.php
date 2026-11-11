@@ -51,25 +51,20 @@ class RutasDashboardController extends Controller
 
         $usuario = $request->user();
 
-        // Los viajes y las salidas de antes que sigan abiertas. Los pedidos con su zona, para
-        // nombrar cada viaje sin consultar uno por uno.
+        // Los viajes (y las salidas de antes) en curso. Los pedidos con su zona, para nombrar
+        // cada viaje sin consultar uno por uno.
         $salidasAbiertas = SalidaRuta::query()
-            ->whereIn('estado', [EstadoSalidaRuta::EnCurso->value, EstadoSalidaRuta::Planificada->value])
+            ->enEstado(EstadoSalidaRuta::EnCurso)
             ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra',
                 'pedidos:id,salida_ruta_id,ruta_id,estado', 'pedidos.ruta:id,nombre'])
-            ->orderByRaw('CASE WHEN estado = ? THEN 0 ELSE 1 END', [EstadoSalidaRuta::EnCurso->value])
             ->orderBy('fecha_inicio')
             ->get();
         // Los albaranes de todas las salidas de una vez, no salida por salida.
         $resoluciones = $entregas->resolucionesAlbaran($salidasAbiertas->flatMap->entregas);
-        // «En camino» son solo las en curso, como el número del resumen; las planificadas van
-        // aparte, en «Programadas».
-        [$enCamino, $programadas] = $salidasAbiertas
-            ->map(fn (SalidaRuta $s) => [
-                'salida' => $s,
-                'resumen' => $entregas->resumen($s->entregas, $resoluciones),
-            ])
-            ->partition(fn (array $f) => $f['salida']->estado === EstadoSalidaRuta::EnCurso);
+        $enCamino = $salidasAbiertas->map(fn (SalidaRuta $s) => [
+            'salida' => $s,
+            'resumen' => $entregas->resumen($s->entregas, $resoluciones),
+        ]);
 
         // Cada sala activa en su zona; la que ninguna ruta cubre sale igual, sin zona.
         ['zonas' => $rutas, 'salas' => $salas] = $ritmo->tablero($hoy);
@@ -93,8 +88,8 @@ class RutasDashboardController extends Controller
             'fallas' => $viajes->fallas()->count(),
             'resumen' => [
                 'rutasAtrasadas' => $rutas->where('estado', RitmoRutas::ATRASADA)->count(),
-                // Con la salida en camino o ya armada, la ruta está resuelta: cuenta como al día.
-                'rutasAlDia' => $rutas->whereIn('estado', [RitmoRutas::AL_DIA, RitmoRutas::EN_RUTA, RitmoRutas::PROGRAMADA])->count(),
+                // Con un viaje abierto, la zona está resuelta: cuenta como al día.
+                'rutasAlDia' => $rutas->whereIn('estado', [RitmoRutas::AL_DIA, RitmoRutas::EN_RUTA])->count(),
                 'rutas' => $rutas->count(),
                 'salasAtrasadas' => $salas->where('estado', Ritmo::ATRASADA)->count(),
                 'salasAlDia' => $salas->where('estado', Ritmo::AL_DIA)->count(),
@@ -112,7 +107,6 @@ class RutasDashboardController extends Controller
             'pendientes' => $entregas->pendientesPorRuta(),
             'facturado' => $facturado,
             'enCamino' => $enCamino->values(),
-            'programadas' => $programadas->values(),
             'salas' => $pagina,
             'hayFiltro' => $ver !== 'todas' || $rutaId !== null || $buscar !== '',
             'filtro' => ['ver' => $ver, 'ruta' => $rutaId, 'q' => $buscar],

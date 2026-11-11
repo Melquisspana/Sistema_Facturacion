@@ -92,15 +92,15 @@ class RitmoRutasTest extends TestCase
         $this->salida($enRuta, '2026-09-25', EstadoSalidaRuta::EnCurso);
         // Una cancelada no cuenta como visita: nadie fue.
         $this->salida($nunca, '2026-09-20', EstadoSalidaRuta::Cancelada);
-        $planificada = $this->salida($nunca, '2026-09-29', EstadoSalidaRuta::Planificada);
+        $this->salida($nunca, '2026-09-29', EstadoSalidaRuta::Planificada);
 
         $filas = $this->filas();
 
         $this->assertSame(RitmoRutas::EN_RUTA, $filas['San Miguel']['estado']);
-        // Nunca fue, pero ya tiene una salida armada: se dice eso, no «sin salidas».
-        $this->assertSame(RitmoRutas::PROGRAMADA, $filas['Chalatenango']['estado']);
+        // Nunca fue: la salida que quedó programada no cuenta como visita ni la resuelve.
+        $this->assertSame(RitmoRutas::SIN_SALIDAS, $filas['Chalatenango']['estado']);
         $this->assertNull($filas['Chalatenango']['ultima']);
-        $this->assertSame($planificada->id, $filas['Chalatenango']['proxima']?->id);
+        $this->assertArrayNotHasKey('proxima', $filas['Chalatenango']);
     }
 
     public function test_lo_atrasado_va_primero_y_las_rutas_inactivas_no_aparecen(): void

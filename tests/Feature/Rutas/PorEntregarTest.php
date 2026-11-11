@@ -15,6 +15,7 @@ use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
+use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
@@ -562,16 +563,21 @@ class PorEntregarTest extends TestCase
             ->assertSessionHasNoErrors();
     }
 
-    public function test_lo_que_va_en_una_salida_planificada_espera_a_que_empiece(): void
+    public function test_lo_que_va_en_una_salida_que_quedo_programada_no_se_marca_hasta_que_la_oficina_la_cancela(): void
     {
         $dte = $this->ccf('Antiguo');
         $planificada = $this->salidaFormal('Antiguo', PersonalRuta::create(['nombre' => 'Ana Inventada']), EstadoSalidaRuta::Planificada, '2026-11-07');
         $this->cargarCcfDeLaRuta($planificada);
 
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
-            ->assertSee('que todavía no empezó')->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
+            ->assertSee('que quedó programada y ya no sale: pedile a la oficina que la cancele')->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasErrors('entrega');
         $this->assertSame(1, SalidaRuta::count());
+
+        // Cancelada, el CCF queda libre y se entrega como cualquiera.
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'))->patch(route('rutas.salidas.cancelar', $planificada))->assertSessionHas('status');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->assertSame(1, SalidaRutaEntrega::where('dte_id', $dte->id)->entregadas()->count());
     }
 
     public function test_permisos(): void

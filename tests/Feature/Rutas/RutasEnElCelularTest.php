@@ -94,42 +94,28 @@ class RutasEnElCelularTest extends TestCase
         ]);
     }
 
-    public function test_en_camino_son_solo_las_en_curso_y_las_programadas_van_aparte(): void
+    /** «Programadas» se retiró (11/11/2026): una salida de antes que quedó sin empezar ya no sale en el tablero. */
+    public function test_viajes_abiertos_son_solo_los_en_curso_y_ya_no_hay_programadas(): void
     {
         [$jefe, $fichaJefe] = $this->usuario('Ernesto Ficticio', RolSistema::JefeVendedores);
         $mario = PersonalRuta::create(['nombre' => 'Mario Inventado']);
         $costa = Ruta::create(['nombre' => 'Ruta Costa']);
-        $norte = Ruta::create(['nombre' => 'Ruta Norte']);
+        $norte = Ruta::create(['nombre' => 'Ruta Norte', 'frecuencia_objetivo_dias' => 7]);
         $this->salida($costa, '2026-11-02', EstadoSalidaRuta::EnCurso, [$mario]);
-        $this->salida($norte, '2026-11-05', EstadoSalidaRuta::Planificada, [$fichaJefe]);
+        // Norte se visitó hace 25 días con ritmo de 7 y tiene una salida que quedó programada.
+        SalidaRuta::create(['ruta_id' => $norte->id, 'fecha_inicio' => '2026-10-09', 'fecha_fin_real' => '2026-10-09', 'estado' => EstadoSalidaRuta::Finalizada]);
+        $programada = $this->salida($norte, '2026-11-05', EstadoSalidaRuta::Planificada, [$fichaJefe]);
 
         $this->actingAs($jefe)->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSeeInOrder(['1', 'viaje abierto'])
-            // «Viajes abiertos» lleva la en curso; la del jueves va en «Programadas», después.
-            ->assertSeeInOrder(['Viajes abiertos', 'Ruta Costa · Mario Inventado', 'Abierta desde el 02/11/2026', 'Programadas', 'Ruta Norte · Ernesto Ficticio', 'Sale el 05/11/2026'])
-            ->assertDontSee('Programada desde');
-    }
-
-    public function test_la_ruta_con_salida_armada_no_sale_como_atrasada(): void
-    {
-        [$jefe, $fichaJefe] = $this->usuario('Ernesto Ficticio', RolSistema::JefeVendedores);
-        $ruta = Ruta::create(['nombre' => 'Ruta Paracentral', 'frecuencia_objetivo_dias' => 7]);
-        // Se fue hace 25 días con ritmo de 7: 18 días tarde... pero ya tiene salida para el jueves.
-        SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => '2026-10-09', 'fecha_fin_real' => '2026-10-09', 'estado' => EstadoSalidaRuta::Finalizada]);
-        $programada = $this->salida($ruta, '2026-11-05', EstadoSalidaRuta::Planificada, [$fichaJefe]);
-
-        $respuesta = $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertOk();
-
-        $respuesta->assertSee('Ya tiene salida armada para el 05/11/2026')
-            ->assertSee(route('rutas.salidas.show', $programada))
-            ->assertDontSee('días tarde')
-            ->assertDontSee('Atrasada 18 días')
-            ->assertSeeInOrder(['0', 'zonas atrasadas']);
-
-        // Sin la salida armada, la misma ruta sí está atrasada.
-        $programada->cancelar();
-        $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('Atrasada 18 días');
+            ->assertSeeInOrder(['Viajes abiertos', 'Ruta Costa · Mario Inventado', 'Abierta desde el 02/11/2026'])
+            ->assertDontSee('Programadas')->assertDontSee('Programada')->assertDontSee('Ya tiene salida armada')
+            ->assertDontSee(route('rutas.salidas.show', $programada))
+            // La programada no «resuelve» la zona: se avisa su atraso real.
+            ->assertSee('Atrasada 18 días');
+        // Sigue en «Todos los viajes», de donde la oficina la cancela.
+        $this->get(route('rutas.salidas.index'))->assertOk()->assertSee(route('rutas.salidas.show', $programada));
     }
 
     public function test_los_nombres_van_con_comas_y_y_y_primero_quien_encabeza(): void

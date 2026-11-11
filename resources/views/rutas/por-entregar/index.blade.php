@@ -117,7 +117,7 @@
                     </div>
 
                     @if ($planificada)
-                        <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}, que todavía no empezó: se marca cuando empiece.</p>
+                        <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}, que quedó programada y ya no sale: pedile a la oficina que la cancele.</p>
                     @elseif ($trabados->has($dte->id))
                         {{-- Día cerrado, o una salida formal donde no va: los botones siempre fallarían. --}}
                         <p class="mt-3 text-sm text-amber-800 dark:text-amber-300">{{ $trabados->get($dte->id) }}</p>

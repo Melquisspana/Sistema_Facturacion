@@ -708,7 +708,7 @@ class EntregasCcf
         if ($salida->estado !== EstadoSalidaRuta::EnCurso) {
             throw ValidationException::withMessages([
                 'salida' => $salida->estado === EstadoSalidaRuta::Planificada
-                    ? 'La salida todavía no inició: iniciala para registrar entregas.'
+                    ? 'La salida quedó programada y ya no sale: no se registran entregas en ella.'
                     : ($salida->estado === EstadoSalidaRuta::Finalizada
                         ? 'La salida ya está finalizada: no se registran entregas en ella.'
                         : 'La salida está cancelada: no se registran entregas en ella.'),

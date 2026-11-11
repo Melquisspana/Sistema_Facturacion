@@ -37,10 +37,6 @@
     </nav>
 @endif
 
-@if ($salida->estado === \App\Enums\EstadoSalidaRuta::Planificada && $resumen['total'] > 0 && ! ($futura ?? false))
-    <p class="mt-4 text-sm text-gray-500 dark:text-paper-300">Tocá «Salir ahora» para empezar a marcar entregas.</p>
-@endif
-
 @if ($ver !== 'todos' && ! $porSala->collapse()->contains($seVe))
     <div class="{{ $caja }} mt-4 px-5 py-8 text-center">
         <p class="text-base font-medium text-gray-800 dark:text-paper-100">{{ $ver === 'faltan' ? 'No falta marcar ningún CCF.' : 'Todavía no hay CCF entregados.' }}</p>

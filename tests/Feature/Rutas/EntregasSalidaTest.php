@@ -300,7 +300,7 @@ class EntregasSalidaTest extends TestCase
         $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
         $segunda = $this->salida(EstadoSalidaRuta::Planificada);
         $this->cargarCcfDeLaRuta($segunda);
-        $segunda->iniciar();
+        $segunda->update(['estado' => EstadoSalidaRuta::EnCurso]);
         $this->entregar($segunda->entregas()->sole());
         $this->servicio()->deshacer($entrega);
         $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$primera, $entrega]), [

@@ -149,7 +149,7 @@ class PorEntregar
 
         if ($salida->estado === EstadoSalidaRuta::Planificada) {
             throw ValidationException::withMessages(['entrega' => 'Este CCF va en '.$salida->conArticulo()
-                .', que todavía no empezó: se marca cuando empiece.']);
+                .', que quedó programada y ya no sale: pedile a la oficina que la cancele.']);
         }
         // Con el día cerrado la política no deja registrar: se dice por qué, no un 403.
         if ($salida->diaCerrado()) {

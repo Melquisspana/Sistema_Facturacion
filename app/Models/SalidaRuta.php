@@ -255,12 +255,6 @@ class SalidaRuta extends Model
 
     // ------------------------------------------------------------ transiciones
 
-    /** Arranca la salida. Solo desde `planificada`. */
-    public function iniciar(): bool
-    {
-        return $this->transicionar(EstadoSalidaRuta::EnCurso);
-    }
-
     /**
      * Cierra la salida y deja constancia del regreso REAL. Solo desde `en_curso`.
      * Si no se indica fecha se usa hoy, que es el caso normal (se cierra al volver).
