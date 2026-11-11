@@ -299,7 +299,7 @@ class SacarPedidoSinSalidaTest extends TestCase
         // Vendedor sin ficha de Rutas: se le dice qué hacer y no saca.
         $suelto = User::factory()->create(['activo' => true])->assignRole('vendedor');
         $this->actingAs($suelto);
-        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tu usuario no está enlazado a una persona de Rutas.');
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tu usuario no es vendedor')->assertSee('Ver «Por entregar»');
         $this->sacar($this->sala)->assertForbidden();
 
         // Terminar el día del viaje de otro: no.

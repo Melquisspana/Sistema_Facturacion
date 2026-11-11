@@ -8,13 +8,16 @@ use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Planilla\NombreUnico;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
- * Un usuario con rol Vendedor o Jefe de vendedores tiene su ficha en Rutas, enlazada, sin
- * cargarlo en otro lado (el usuario pidió registrar al vendedor en UN solo lugar,
- * 29/10/2026). El jefe también sale a ruta a veces (plan del tablero, decisión 1).
+ * Un usuario con rol Vendedor, Jefe de vendedores o Administrador tiene su ficha en Rutas,
+ * enlazada, sin cargarlo en otro lado (el usuario pidió registrar al vendedor en UN solo
+ * lugar, 29/10/2026). El jefe también sale a ruta a veces (plan del tablero, decisión 1). El
+ * administrador entra al «Menú del vendedor» y hace lo mismo que un vendedor (Melqui,
+ * 11/11/2026: «yo tengo que poder hacer todo»).
  *
  *  - Si ya hay una ficha enlazada a ese usuario, se usa.
  *  - Si la persona está en Personal y ya tiene ficha de Rutas, se usa esa.
@@ -34,7 +37,25 @@ use Illuminate\Support\Str;
 class FichaVendedor
 {
     /** Roles que salen a ruta y por eso tienen ficha de campo. */
-    public const ROLES = [RolSistema::Vendedor->value, RolSistema::JefeVendedores->value];
+    public const ROLES = [RolSistema::Vendedor->value, RolSistema::JefeVendedores->value, RolSistema::Administrador->value];
+
+    /**
+     * Los administradores que ya existían no pasaron por el alta de usuario: su ficha se arma
+     * la primera vez que entran al «Menú del vendedor». Solo si no tienen NINGUNA enlazada:
+     * la que alguien desactivó a mano no se reactiva sola. A Vendedor y Jefe no les aplica: la
+     * suya nace con el usuario y, si la oficina la desenlazó, no se rearma por entrar.
+     */
+    public function asegurar(User $usuario): void
+    {
+        if (! $usuario->activo || ! $usuario->hasRole(RolSistema::Administrador->value) || PersonalRuta::where('user_id', $usuario->id)->exists()) {
+            return;
+        }
+        try {
+            $this->sincronizar($usuario);
+        } catch (UniqueConstraintViolationException) {
+            // Dos pantallas a la vez: la otra ya la armó (`user_id` es único).
+        }
+    }
 
     public function sincronizar(User $usuario): ?PersonalRuta
     {

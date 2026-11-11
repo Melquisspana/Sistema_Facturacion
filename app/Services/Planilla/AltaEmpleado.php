@@ -255,8 +255,10 @@ class AltaEmpleado
      */
     private function autorizarModulos(User $actor, array $datos): array
     {
-        $vendedorNuevo = filter_var($datos['usa_sistema'] ?? false, FILTER_VALIDATE_BOOLEAN) && in_array($datos['rol'] ?? null, FichaVendedor::ROLES, true);
         $usuarioId = filter_var($datos['user_id'] ?? null, FILTER_VALIDATE_INT);
+        // El rol del formulario vale solo para la cuenta que se crea: al enlazar una que ya
+        // existe manda el rol que esa cuenta tiene.
+        $vendedorNuevo = ! $usuarioId && filter_var($datos['usa_sistema'] ?? false, FILTER_VALIDATE_BOOLEAN) && in_array($datos['rol'] ?? null, FichaVendedor::ROLES, true);
         $vendedorEnlazado = $usuarioId && User::find($usuarioId)?->hasAnyRole(FichaVendedor::ROLES);
         if ($vendedorNuevo || $vendedorEnlazado) {
             $datos['sale_rutas'] = true;

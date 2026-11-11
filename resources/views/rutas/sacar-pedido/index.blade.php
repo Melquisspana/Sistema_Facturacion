@@ -21,7 +21,11 @@
     @endif
 
     @if (! $persona)
-        <p class="mt-5 {{ $caja }}">Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.</p>
+        <div class="mt-5 {{ $caja }}">
+            <p class="font-semibold">Tu usuario no es vendedor</p>
+            <p class="{{ $gris }}">Por eso no podés sacar pedidos. Podés mirar lo que falta entregar. Si salís a vender, pedile a la oficina que revise tu ficha en Personal.</p>
+            <a href="{{ route('rutas.por-entregar.index') }}" class="{{ $secundario }} mt-3 w-full">Ver «Por entregar»</a>
+        </div>
     @else
         <form method="GET" action="{{ route('rutas.sacar-pedido.index') }}" class="mt-5 {{ $caja }}" role="search">
             <label for="buscar-sala" class="block font-semibold">Buscar sala o tienda</label>

@@ -159,7 +159,8 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 
 - Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
 - Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
-- En la barra lateral de la oficina, los mismos títulos van primero y solo para quien tiene el permiso de vendedor. Después: Tablero, Pedidos, Ventas, Todos los viajes y Zonas.
+- En la barra lateral de la oficina el orden es Tablero, Pedidos, Ventas, Todos los viajes y Zonas, y al final **una sola** entrada, «Menú del vendedor», que abre el Inicio del celular (a quien solo puede mirar, «Por entregar»). Las tres pantallas no se repiten en la barra. *Pedido de Melqui, 11/11/2026.*
+- Quien entra sin ficha de vendedor no queda en una pantalla vacía: se le dice «Tu usuario no es vendedor» y se le ofrece «Por entregar».
 
 ### Las palabras de Rutas
 

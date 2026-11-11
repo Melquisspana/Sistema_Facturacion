@@ -89,7 +89,7 @@ class VendedorMiSalidaTest extends TestCase
     public function test_indice_enlace_vacio_una_y_varias_salidas(): void
     {
         $this->persona->update(['user_id' => null]);
-        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.');
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Tu usuario no es vendedor');
         $this->persona->update(['user_id' => $this->usuario->id]);
         $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Todavía no tenés un viaje abierto');
         $una = $this->salida();

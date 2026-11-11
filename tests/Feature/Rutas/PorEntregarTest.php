@@ -594,7 +594,7 @@ class PorEntregarTest extends TestCase
         // Vendedor sin persona de Rutas: ve la lista pero no marca.
         $this->persona->update(['user_id' => null]);
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
-            ->assertSee('Tu usuario no está enlazado')->assertDontSee('action="'.$marcar.'"', false);
+            ->assertSee('Tu usuario no es vendedor')->assertDontSee('action="'.$marcar.'"', false);
         $this->actingAs($this->vendedor)->post($marcar, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHas('error');
         $this->assertSame(0, SalidaRuta::count());
 

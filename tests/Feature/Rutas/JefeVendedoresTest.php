@@ -103,10 +103,10 @@ class JefeVendedoresTest extends TestCase
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSee('Oriente')
-            // También sale a vender: su menú lo lleva al inicio del vendedor y a sacar pedido,
-            // tenga o no un viaje abierto (el viaje se abre con el primer pedido).
+            // También sale a vender: «Menú del vendedor» lo lleva al inicio del celular, tenga o
+            // no un viaje abierto (el viaje se abre con el primer pedido).
             ->assertSee('href="'.route('rutas.mi-salida.index').'"', false)
-            ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false);
+            ->assertSee('Menú del vendedor');
     }
 
     public function test_usa_mi_salida_solo_en_las_salidas_donde_va(): void

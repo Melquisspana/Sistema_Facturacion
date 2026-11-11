@@ -18,7 +18,12 @@
     <p class="mt-1 {{ $gris }}">{{ ucfirst(\App\Support\HoraNegocio::hoy()->locale('es')->dayName) }} {{ \App\Support\HoraNegocio::hoy()->format('d/m/Y') }}</p>
 
     @if (! $persona)
-        <p class="mt-6 {{ $caja }}">Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.</p>
+        {{-- Sin ficha de vendedor no hay viaje ni pedidos propios: se dice y se ofrece lo que sí puede mirar. --}}
+        <div class="mt-6 {{ $caja }}">
+            <p class="font-semibold">Tu usuario no es vendedor</p>
+            <p class="{{ $gris }}">Acá no tenés viaje ni pedidos. Podés mirar lo que falta entregar. Si salís a vender, pedile a la oficina que revise tu ficha en Personal.</p>
+            <a href="{{ route('rutas.por-entregar.index') }}" class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Ver «Por entregar»</a>
+        </div>
     @else
         @if ($viaje)
             <div class="mt-5 rounded-2xl bg-indigo-50 p-5 text-indigo-800 ring-1 ring-indigo-200 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-600">

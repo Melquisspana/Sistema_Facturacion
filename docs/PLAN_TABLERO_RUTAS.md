@@ -28,6 +28,16 @@ Melqui aprobó el 10/11/2026 un solo flujo, de sacar pedido a entregar. La decis
 
 ---
 
+## Menú, Ventas y números por zona (11/11/2026)
+
+Decidido por Melqui el 11/11/2026. Donde este plan diga otra cosa, vale esto:
+
+- **Menú de la oficina y del jefe:** Tablero primero, después Pedidos, Ventas (solo quien la ve), Todos los viajes y Zonas. Al final, una sola entrada, **«Menú del vendedor»**, que abre el Inicio del celular; Inicio, Sacar pedido y Por entregar son sus pestañas. A quien solo puede mirar (Jefatura y Facturación) le abre «Por entregar».
+- **El administrador hace todo lo del vendedor** desde «Menú del vendedor»: sacar pedido, marcar entregas y terminar el día. Tiene ficha de Rutas como el vendedor y el jefe (`FichaVendedor::ROLES`), con las mismas reglas: usa la de Personal si existe y no duplica personas. A los administradores que ya existían se les arma sola la primera vez que entran (`FichaVendedor::asegurar()`), sin migración. Jefatura y Facturación no tienen ficha: miran «Por entregar» y ven el aviso «Tu usuario no es vendedor».
+- **Al desplegar (permisos):** el administrador ya tiene `rutas.pedidos.registrar` y `rutas.entregas.registrar` (tiene todos): no hay que darle nada.
+
+---
+
 ## 1. Qué ve el jefe de vendedores
 
 Una sola pantalla, de arriba hacia abajo, en este orden:

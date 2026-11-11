@@ -13,6 +13,7 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
@@ -60,6 +61,7 @@ class MiSalidaController extends Controller
      */
     public function index(Request $request): View
     {
+        app(FichaVendedor::class)->asegurar($request->user());
         $persona = $this->persona($request);
         $viaje = $persona ? $this->viajes->abierto($persona) : null;
         $salidas = $persona ? SalidaRuta::with('ruta')->enEstado(EstadoSalidaRuta::EnCurso)

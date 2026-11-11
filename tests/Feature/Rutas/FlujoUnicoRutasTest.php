@@ -139,14 +139,21 @@ class FlujoUnicoRutasTest extends TestCase
     public function test_el_menu_de_la_oficina_es_corto_y_sin_armar_salidas(): void
     {
         $menu = fn (User $usuario) => $this->actingAs($usuario)->get(route('rutas.dashboard'))->assertOk();
+        $entrada = fn (string $ruta) => '/href="'.preg_quote(route($ruta), '/').'"[^>]*>\s*Menú del vendedor/u';
 
-        // El jefe también sale a vender: lleva lo del vendedor y lo de la oficina que le toca.
-        $menu($this->jefe)->assertSeeInOrder(['Inicio', 'Sacar pedido', 'Por entregar', 'Tablero', 'Pedidos', 'Todos los viajes', 'Zonas'])
+        // El Tablero va primero. Lo del celular es UNA sola entrada, al final (11/11/2026).
+        // El jefe también sale a vender: le abre el Inicio del celular.
+        $jefe = $menu($this->jefe)->assertSeeInOrder(['Tablero', 'Pedidos', 'Todos los viajes', 'Zonas', 'Menú del vendedor'])
             ->assertSee('href="'.route('rutas.salidas.index').'"', false)
-            ->assertSee('href="'.route('rutas.rutas.index').'"', false);
-        // La oficina no saca pedidos ni entrega: sin las pantallas del vendedor, con Ventas.
-        $menu($this->oficina)->assertSeeInOrder(['Por entregar', 'Tablero', 'Pedidos', 'Ventas', 'Todos los viajes', 'Zonas'])
+            ->assertSee('href="'.route('rutas.rutas.index').'"', false)
+            ->assertDontSee('href="'.route('rutas.sacar-pedido.index').'"', false)
+            ->assertDontSee('href="'.route('rutas.por-entregar.index').'"', false);
+        $this->assertMatchesRegularExpression($entrada('rutas.mi-salida.index'), $jefe->getContent());
+        // La oficina no saca pedidos ni entrega: su entrada abre lo único que puede mirar, «Por entregar».
+        $oficina = $menu($this->oficina)->assertSeeInOrder(['Tablero', 'Pedidos', 'Todos los viajes', 'Zonas', 'Menú del vendedor'])
+            ->assertDontSee('href="'.route('rutas.mi-salida.index').'"', false)
             ->assertDontSee('href="'.route('rutas.sacar-pedido.index').'"', false);
+        $this->assertMatchesRegularExpression($entrada('rutas.por-entregar.index'), $oficina->getContent());
 
         foreach ([$this->jefe, $this->oficina] as $usuario) {
             $menu($usuario)->assertDontSee('Salidas anteriores')->assertDontSee('Configurar rutas')
