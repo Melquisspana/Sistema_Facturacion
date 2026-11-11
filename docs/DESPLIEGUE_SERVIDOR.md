@@ -1,5 +1,7 @@
 # Guía de despliegue a servidor
 
+> **Historia.** Desde el 11/11/2026 producción corre en Linux con Docker: la guía vigente es `docs/DESPLIEGUE_LINUX.md`.
+
 > Esta guía es solo documentación: **no se ejecutó nada de esto contra el servidor
 > real** como parte de la tarea que la generó. Es para que el operador la siga a mano
 > (o la automatice después) cuando decida desplegar.

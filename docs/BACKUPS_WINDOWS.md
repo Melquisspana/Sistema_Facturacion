@@ -1,5 +1,7 @@
 # Backups en Windows / Laragon
 
+> **Historia.** Desde el 11/11/2026 producción corre en Linux con Docker: en Linux, el respaldo diario de la base lo programa Laravel (`BACKUP_DIARIO_PROGRAMADO=true`) y la copia a Drive es `scripts/linux/respaldo-nube/README.md`.
+
 Guía para hacer copias de seguridad automáticas de **Dulces La Negrita** usando
 `spatie/laravel-backup` (ya instalado) en una PC con Windows + Laragon.
 

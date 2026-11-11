@@ -1,5 +1,7 @@
 # Worker de colas en Windows / Laragon
 
+> **Historia.** Desde el 11/11/2026 producción corre en Linux con Docker: en Linux el worker es el contenedor `worker` de `compose.yaml`; ver `docs/DESPLIEGUE_LINUX.md`.
+
 Guía para dejar el worker de colas (`php artisan queue:work`, `QUEUE_CONNECTION=database`)
 corriendo de forma automática y desatendida en Windows, con reinicio propio y sin
 duplicar instancias.

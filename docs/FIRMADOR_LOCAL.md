@@ -1,5 +1,7 @@
 # Firmador local del MH — guía de firma local
 
+> **Desde el 11/11/2026**, en Linux el firmador es el contenedor `firmador` de `compose.yaml` (JAR y certificado montados de solo lectura, sin puerto publicado); ver `docs/MIGRACION_LINUX_DOCKER.md` §2.6 y §3.5. Lo de abajo sobre Windows queda como historia.
+
 > Estado: **firma LOCAL real funcionando** (apagada por defecto: `DTE_FIRMA_ENABLED=false`).
 > Firmar localmente **NO** transmite nada a Hacienda: un DTE solo queda emitido tras
 > **firma + transmisión + recepción/sello + PDF definitivo**.

@@ -1,5 +1,7 @@
 # Arranque del sistema en Windows (PC de facturación)
 
+> **Historia.** Desde el 11/11/2026 producción corre en Linux con Docker: en Linux todo arranca solo con Docker (`restart: always`); ver `docs/DESPLIEGUE_LINUX.md`.
+
 Guía para dejar **Dulces La Negrita** listo al encender la PC de facturación,
 **sin activar emisión real**. El sistema sigue en **modo paralelo seguro**: Conta
 Portable continúa siendo el sistema oficial mientras no se decida lo contrario.
