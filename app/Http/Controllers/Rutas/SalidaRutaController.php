@@ -14,13 +14,11 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * «Viajes anteriores»: los viajes y las salidas de antes, su hoja y las tres acciones de
- * estado. Desde el 10/11/2026 nadie arma salidas: el viaje se abre solo ({@see Viajes}).
+ * «Todos los viajes»: los viajes y las salidas de antes y su detalle. Desde el 10/11/2026
+ * nadie arma salidas: el viaje se abre y se cierra solo ({@see Viajes}).
  *
- * Los cambios de estado NO son ediciones de un campo: son actos con nombre propio
- * (iniciar, finalizar, cancelar), cada uno con su ruta, su permiso y su registro
- * de auditoría. El modelo valida la transición; acá se traduce a mensaje. Quedan para
- * cerrar las salidas viejas.
+ * La única acción de estado que queda acá es cancelar, con su ruta, su permiso y su registro
+ * de auditoría: para el viaje que se abrió por error. El modelo valida la transición.
  */
 class SalidaRutaController extends Controller
 {
@@ -93,35 +91,25 @@ class SalidaRutaController extends Controller
 
     // ------------------------------------------------------------- transiciones
 
-    public function finalizar(Request $request, SalidaRuta $salida): RedirectResponse
-    {
-        return $this->cambiarEstado($request, $salida, 'finalizar', 'finalizó la salida', 'Salida finalizada.');
-    }
-
-    public function cancelar(Request $request, SalidaRuta $salida): RedirectResponse
-    {
-        return $this->cambiarEstado($request, $salida, 'cancelar', 'canceló la salida', 'Salida cancelada.');
-    }
-
     /**
-     * Aplica una transición y la audita. Si el modelo la rechaza (por ejemplo,
-     * finalizar algo que nunca se inició) no se escribe nada y el usuario recibe
-     * un error en vez de un cambio silencioso.
+     * Cancela un viaje (o una salida de antes) que sigue abierto, y lo audita. Si el modelo
+     * rechaza la transición (ya está cerrado o cancelado) no se escribe nada y el usuario
+     * recibe un error en vez de un cambio silencioso.
      */
-    private function cambiarEstado(Request $request, SalidaRuta $salida, string $accion, string $descripcion, string $mensaje): RedirectResponse
+    public function cancelar(Request $request, SalidaRuta $salida): RedirectResponse
     {
         $anterior = $salida->estado;
 
-        if (! $salida->{$accion}()) {
-            return back()->with('error', "No se puede {$accion} una salida {$anterior->label()}.");
+        if (! $salida->cancelar()) {
+            return back()->with('error', "No se puede cancelar una salida {$anterior->label()}.");
         }
 
-        $this->auditar($request, $salida, $descripcion, [
+        $this->auditar($request, $salida, 'canceló la salida', [
             'estado_anterior' => $anterior->value,
             'estado_nuevo' => $salida->estado->value,
         ]);
 
-        return back()->with('status', $mensaje);
+        return back()->with('status', 'Salida cancelada.');
     }
 
     // ------------------------------------------------------------------ apoyo

@@ -34,7 +34,7 @@ use Tests\TestCase;
 
 /**
  * El cierre del flujo único de Rutas (Melqui, 10/11/2026; decisión 0010): el menú corto, las
- * pantallas retiradas que redirigen, las zonas en lugar de las rutas fijas, la pestaña Viajes
+ * pantallas retiradas (que ya no redirigen), las zonas en lugar de las rutas fijas, la pestaña Viajes
  * con sus avisos, la misma regla de «entregado» en todos lados, el viaje que no se liquida y
  * los gastos en el PDF del día. Datos ficticios.
  */
@@ -167,9 +167,10 @@ class FlujoUnicoRutasTest extends TestCase
         }
     }
 
-    // ══════════════════════════════ lo retirado redirige
+    // ══════════════════════════════ lo retirado ya no existe
 
-    public function test_las_pantallas_retiradas_llevan_a_su_equivalente_sin_404(): void
+    /** Desde el 11/11/2026 los enlaces guardados de las pantallas de antes ya no redirigen. */
+    public function test_las_pantallas_retiradas_ya_no_existen_ni_redirigen(): void
     {
         $viaje = $this->viaje();
         $manual = SalidaRuta::create(['ruta_id' => $this->zona->id, 'fecha_inicio' => '2026-11-12', 'estado' => EstadoSalidaRuta::Planificada]);
@@ -182,14 +183,16 @@ class FlujoUnicoRutasTest extends TestCase
         $this->post('/rutas/mi-salida/'.$manual->id.'/empezar')->assertNotFound();
         $this->assertSame(EstadoSalidaRuta::Planificada, $manual->refresh()->estado);
 
-        // La oficina: armar, editar, asignar salas y la ficha de una ruta.
+        // La oficina: armar, editar, asignar salas y la ficha de una ruta. Ninguna abre ni redirige
+        // (404, o 405 donde la misma dirección todavía recibe el guardado de la zona).
         $this->actingAs($this->oficina);
-        $this->get('/rutas/salidas/crear')->assertRedirect(route('rutas.viajes'))->assertSessionHas('status');
-        $this->get('/rutas/salidas/'.$manual->id.'/editar')->assertRedirect(route('rutas.salidas.show', $manual));
-        $this->get('/rutas/rutas/crear')->assertRedirect(route('rutas.rutas.index'));
-        $this->get('/rutas/rutas/asignacion')->assertRedirect(route('rutas.rutas.index'));
-        $this->get('/rutas/rutas/'.$this->zona->id)->assertRedirect(route('rutas.rutas.index').'#ruta-'.$this->zona->id);
-        $this->get('/rutas/rutas/'.$this->zona->id.'/editar')->assertRedirect(route('rutas.rutas.index').'#ruta-'.$this->zona->id);
+        foreach (['/rutas/salidas/crear', '/rutas/salidas/'.$manual->id.'/editar', '/rutas/rutas/'.$this->zona->id.'/editar', '/rutas-cobros', '/rutas-cobros/salidas/crear'] as $vieja) {
+            $this->get($vieja)->assertNotFound();
+        }
+        foreach (['/rutas/rutas/crear', '/rutas/rutas/asignacion', '/rutas/rutas/'.$this->zona->id] as $vieja) {
+            $this->get($vieja)->assertStatus(405);
+        }
+        $this->patch('/rutas/salidas/'.$manual->id.'/finalizar')->assertNotFound();
 
         // Y lo que escribía ya no existe.
         $this->post('/rutas/salidas', ['ruta_id' => $this->zona->id, 'personal' => [$this->persona->id]])->assertStatus(405);

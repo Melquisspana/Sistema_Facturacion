@@ -153,8 +153,8 @@ class JefeVendedoresTest extends TestCase
             ->assertDontSee('Salir a esta ruta')
             ->assertDontSee('Salir hoy')
             ->assertDontSee('Armar salida');
-        // El enlace viejo de «Armar salida» lleva a los viajes, con el aviso.
-        $this->actingAs($this->jefe)->get('/rutas/salidas/crear')->assertRedirect(route('rutas.viajes'))->assertSessionHas('status');
+        // El enlace viejo de «Armar salida» ya no existe.
+        $this->actingAs($this->jefe)->get('/rutas/salidas/crear')->assertNotFound();
         $this->actingAs($this->jefe)->post('/rutas/salidas', ['ruta_id' => 1])->assertStatus(405);
 
         $salida = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));

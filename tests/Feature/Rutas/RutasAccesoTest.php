@@ -64,12 +64,6 @@ class RutasAccesoTest extends TestCase
         $urls = [
             route('rutas.dashboard'),
             route('rutas.rutas.index'),
-            // Las pantallas retiradas redirigen, pero no para quien no entra a Rutas.
-            '/rutas/rutas/'.$ruta->id,
-            '/rutas/rutas/'.$ruta->id.'/editar',
-            '/rutas/rutas/crear',
-            '/rutas/rutas/asignacion',
-            '/rutas/salidas/crear',
             route('rutas.salidas.index'),
             route('rutas.viajes'),
         ];
@@ -188,10 +182,10 @@ class RutasAccesoTest extends TestCase
         }
     }
 
-    /** Los enlaces viejos de /rutas-cobros llevan al mismo lugar en /rutas. */
-    public function test_la_url_vieja_redirige_a_la_nueva(): void
+    /** El área se llamó «Cobros» y vivía en /rutas-cobros: esos enlaces ya no redirigen (11/11/2026). */
+    public function test_la_url_vieja_ya_no_existe(): void
     {
-        $this->get('/rutas-cobros')->assertRedirect('/rutas/');
-        $this->get('/rutas-cobros/salidas/crear')->assertRedirect('/rutas/salidas/crear');
+        $this->get('/rutas-cobros')->assertNotFound();
+        $this->get('/rutas-cobros/salidas/crear')->assertNotFound();
     }
 }
