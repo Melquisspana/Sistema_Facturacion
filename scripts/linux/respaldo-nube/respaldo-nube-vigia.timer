@@ -1,0 +1,9 @@
+[Unit]
+Description=Revisa que el respaldo a Drive esté al día (10:00, 15:00 y 20:00)
+
+[Timer]
+OnCalendar=*-*-* 10,15,20:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

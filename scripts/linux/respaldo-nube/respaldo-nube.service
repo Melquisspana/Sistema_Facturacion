@@ -1,0 +1,11 @@
+[Unit]
+Description=Respaldo de Facturación a Google Drive (rclone cifrado)
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=respaldo-nube-fallo.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/respaldo-nube/respaldo-nube.sh
+Nice=10
+IOSchedulingClass=idle

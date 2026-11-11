@@ -1,0 +1,9 @@
+[Unit]
+Description=Respaldo a Google Drive 4 veces al día (02:30 completo; 08:30, 12:30 y 17:30)
+
+[Timer]
+OnCalendar=*-*-* 02,08,12,17:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
