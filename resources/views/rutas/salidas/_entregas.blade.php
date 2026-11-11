@@ -112,7 +112,7 @@
                         @endif
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">
-                            {{ $entrega->entregadoPor?->nombreCorto() }} · {{ $entrega->fecha_resultado?->translatedFormat($modoVendedor ? 'H:i' : 'd M') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
+                            {{ $entrega->entregadoPor?->nombreCorto() }} · {{ $entrega->fecha_resultado?->format($modoVendedor ? 'H:i' : 'd/m/Y') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
                         </p>
                     @elseif ($entrega->resultado === \App\Enums\ResultadoEntrega::NoEntregado)
                         <p class="text-sm font-medium text-red-700 dark:text-red-400">✗ No entregado</p>

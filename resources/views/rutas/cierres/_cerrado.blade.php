@@ -1,6 +1,6 @@
 <section class="mt-6 rounded-2xl bg-green-50 p-5 ring-1 ring-green-300 dark:bg-ink-800 dark:ring-green-600" aria-label="Día terminado">
     <h2 class="text-xl font-bold text-green-900 dark:text-green-300">Día terminado</h2>
-    <p class="mt-1 text-sm dark:text-paper-300">{{ \Illuminate\Support\Carbon::parse($fecha)->translatedFormat('d M Y') }}</p>
+    <p class="mt-1 text-sm dark:text-paper-300">{{ \Illuminate\Support\Carbon::parse($fecha)->format('d/m/Y') }}</p>
     <dl class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         @foreach (['efectivo' => 'Efectivo', 'cheques' => 'Cheques', 'transferencias' => 'Transferencias'] as $campo => $label)
             <div><dt class="text-sm text-gray-600 dark:text-paper-300">{{ $label }}</dt><dd class="text-2xl font-bold tabular-nums dark:text-paper-100">${{ number_format((float) $cierre->{$campo.'_cobrado'}, 2) }}</dd></div>

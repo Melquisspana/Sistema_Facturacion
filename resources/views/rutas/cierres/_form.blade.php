@@ -1,6 +1,6 @@
 <a href="{{ route($prefijo.'show', $salida) }}" class="inline-flex min-h-11 items-center text-sm underline dark:text-paper-300">Volver a la salida</a>
 <h1 class="mt-2 text-3xl font-bold dark:text-paper-100">{{ $salida->ruta->nombre }}</h1>
-<p class="mt-1 text-gray-600 dark:text-paper-300">Terminar día · {{ \Illuminate\Support\Carbon::parse($fecha)->translatedFormat('d M Y') }}</p>
+<p class="mt-1 text-gray-600 dark:text-paper-300">Terminar día · {{ \Illuminate\Support\Carbon::parse($fecha)->format('d/m/Y') }}</p>
 @if ($errors->any())
     <div role="alert" class="mt-4 rounded-xl bg-red-50 p-4 text-red-800 dark:bg-ink-800 dark:text-red-300"><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
 @endif

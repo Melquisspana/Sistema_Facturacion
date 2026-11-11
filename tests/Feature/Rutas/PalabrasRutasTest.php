@@ -241,6 +241,16 @@ class PalabrasRutasTest extends TestCase
             ->assertSee('14/08/2026')->assertSee('02/09/2026')->assertDontSee('ago 2026')->assertDontSee('Aug 2026')->assertDontSee('sep 2026');
     }
 
+    public function test_las_entregas_del_viaje_llevan_la_fecha_completa_en_la_oficina(): void
+    {
+        $dte = $this->facturado($this->sacar($this->sala));
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', SalidaRutaEntrega::sole()->salida))->assertOk()
+            ->assertSee('· 10/11/2026')->assertDontSee('10 nov');
+    }
+
     // ---------------------------------------------------------------- B7: por qué no se corrige
 
     public function test_tus_pedidos_de_hoy_dice_por_que_no_se_puede_corregir(): void
