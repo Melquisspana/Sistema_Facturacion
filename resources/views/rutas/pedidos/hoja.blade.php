@@ -199,7 +199,10 @@
         <div class="ancho"><dt>Sala</dt><dd>{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
         <div><dt>Estado</dt><dd><span class="insignia insignia-{{ $estado->color() }}">{{ $estado->label() }}</span></dd></div>
         <div><dt>Orden de compra</dt><dd class="mono">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
-        <div><dt>Ruta</dt><dd>{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</dd></div>
+        {{-- La zona de la sala; si no tiene, la cajita no va (antes decía «Ruta: Sin ruta»). --}}
+        @if ($pedido->ruta)
+            <div><dt>Zona</dt><dd>{{ $pedido->ruta->nombre }}</dd></div>
+        @endif
         <div><dt>Vendedor</dt><dd>{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
         <div><dt>Fecha del pedido</dt><dd>{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
         <div><dt>Envíos</dt><dd>

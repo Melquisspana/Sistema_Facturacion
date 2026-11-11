@@ -98,7 +98,7 @@ class VendedoresTableroTest extends TestCase
 
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Zoe Ejemplo', 'Sin teléfono', 'Sin salidas en los últimos 90 días'], false)
+            ->assertSeeInOrder(['Zoe Ejemplo', 'Sin teléfono', 'Sin viajes en los últimos 90 días'], false)
             ->assertDontSee(route('rutas.personal.show', $sinNada))
             ->assertDontSee('Ver ficha');
     }

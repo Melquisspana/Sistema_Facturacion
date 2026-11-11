@@ -1,6 +1,7 @@
-@props(['estado'])
+@props(['estado', 'texto' => null])
 {{-- Badge del estado de una salida. El color sale del enum (EstadoSalidaRuta),
-     que es la fuente única: la vista no decide qué color va con qué estado.
+     que es la fuente única: la vista no decide qué color va con qué estado. Con `texto`
+     se muestra ese nombre (SalidaRuta::estadoLegible(): el viaje está «Abierto» o «Cerrado»).
 
      Las clases se escriben completas y no interpoladas dentro del atributo para
      que Tailwind las encuentre al compilar; un `bg-{{ $color }}-100` quedaría
@@ -15,5 +16,5 @@
 @endphp
 
 <span {{ $attributes->merge(['class' => 'inline-block rounded-full px-2.5 py-0.5 text-xs font-medium '.$clases]) }}>
-    {{ $estado->label() }}
+    {{ $texto ?? $estado->label() }}
 </span>

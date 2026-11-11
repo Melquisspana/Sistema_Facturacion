@@ -479,7 +479,7 @@ class VentasRutasTest extends TestCase
     public function test_ruta_actual_y_sin_ruta(): void
     {
         $this->documento();
-        $this->assertSame('Sin ruta', $this->ventas()['rutas'][0]['nombre']);
+        $this->assertSame('Sin zona', $this->ventas()['rutas'][0]['nombre']);
         $ruta = Ruta::create(['nombre' => 'Occidente']);
         $this->sala->update(['ruta_id' => $ruta->id]);
         $this->assertSame('Occidente', $this->ventas()['rutas'][0]['nombre']);

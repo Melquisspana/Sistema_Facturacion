@@ -148,8 +148,8 @@ class PorEntregar
         $entrega->setRelation('salida', $salida);
 
         if ($salida->estado === EstadoSalidaRuta::Planificada) {
-            throw ValidationException::withMessages(['entrega' => 'Este CCF va en la salida '.$salida->descripcionCorta()
-                .', que todavía no empezó: se marca cuando la empiecen.']);
+            throw ValidationException::withMessages(['entrega' => 'Este CCF va en '.$salida->conArticulo()
+                .', que todavía no empezó: se marca cuando empiece.']);
         }
         // Con el día cerrado la política no deja registrar: se dice por qué, no un 403.
         if ($salida->diaCerrado()) {
@@ -329,11 +329,11 @@ class PorEntregar
 
     public static function noVa(SalidaRuta $salida): string
     {
-        return 'Este CCF va en la salida '.$salida->descripcionCorta().': lo marca quien va en ella o la oficina lo suma.';
+        return 'Este CCF va en '.$salida->conArticulo().': lo marca quien va ahí o la oficina lo suma.';
     }
 
     public static function diaCerrado(SalidaRuta $salida): string
     {
-        return 'Va en la salida '.$salida->descripcionCorta().', que ya cerró el día de hoy: pedile a la oficina que lo reabra.';
+        return 'Va en '.$salida->conArticulo().', que ya cerró el día de hoy: pedile a la oficina que lo reabra.';
     }
 }

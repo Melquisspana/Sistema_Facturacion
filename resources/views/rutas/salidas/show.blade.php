@@ -1,8 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $salida->esViaje() ? 'Hoja del viaje' : 'Hoja de la salida' }}</h2>
-            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver a rutas</a>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $salida->esViaje() ? 'Viaje' : 'Hoja de la salida' }}</h1>
+            <a href="{{ route('rutas.dashboard') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Volver al tablero</a>
         </div>
     </x-slot>
 
@@ -38,7 +38,7 @@
                             </a>
                         @endif
                     </div>
-                    <x-rutas.estado-badge :estado="$salida->estado" class="!px-3 !py-1 !text-sm" />
+                    <x-rutas.estado-badge :estado="$salida->estado" :texto="$salida->estadoLegible()" />
                 </div>
 
                 <div class="mt-4">
@@ -75,7 +75,7 @@
                         @endif
                         @if ($puedeGestionar)
                             <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
-                                  onsubmit="return confirm('¿Cancelar esta salida? Sus CCF vuelven a quedar pendientes.');">
+                                  onsubmit="return confirm('{{ $salida->esViaje() ? '¿Cancelar este viaje?' : '¿Cancelar esta salida?' }} Sus CCF vuelven a quedar pendientes.');">
                                 @csrf @method('PATCH')
                                 <button class="text-sm text-gray-400 hover:text-red-600 hover:underline dark:text-paper-500">Cancelar</button>
                             </form>

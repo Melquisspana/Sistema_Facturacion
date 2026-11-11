@@ -29,7 +29,7 @@
         </div>
     </div>
     <p class="mt-1 text-sm text-gray-600">
-        {{ $pedido->ruta?->nombre ?? 'Sin ruta' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }} · {{ $pedido->created_at->format('H:i') }}
+        {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }} · {{ $pedido->created_at->format('H:i') }}
     </p>
     @if ($atrasado)
         <p class="mt-1 text-sm font-semibold text-amber-800">Del {{ $pedido->fecha->format('d/m/Y') }} · hace {{ $dias === 1 ? '1 día' : $dias.' días' }}</p>

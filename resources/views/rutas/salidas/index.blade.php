@@ -1,8 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            {{-- Historial: los viajes y las salidas armadas a mano de antes. Acá no se arma nada. --}}
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Viajes anteriores</h2>
+            {{-- Todos: los viajes abiertos y cerrados, y las salidas armadas a mano de antes. Acá no se arma nada. --}}
+            <h1 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Todos los viajes</h1>
         </div>
     </x-slot>
 
@@ -13,8 +13,8 @@
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Zona</label>
-                    <select name="ruta_id" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                    <label for="f-zona" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Zona</label>
+                    <select id="f-zona" name="ruta_id" class="mt-1 block min-h-11 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todas</option>
                         @foreach ($rutas as $r)
                             <option value="{{ $r->id }}" @selected(request('ruta_id') == $r->id)>{{ $r->nombre }}</option>
@@ -22,17 +22,18 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
-                    <select name="estado" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                    <label for="f-estado" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
+                    <select id="f-estado" name="estado" class="mt-1 block min-h-11 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
+                        {{-- Los mismos nombres de la lista (SalidaRuta::estadoLegible()). --}}
                         @foreach ($estados as $estado)
-                            <option value="{{ $estado->value }}" @selected(request('estado') === $estado->value)>{{ $estado->label() }}</option>
+                            <option value="{{ $estado->value }}" @selected(request('estado') === $estado->value)>{{ ['planificada' => 'Programados', 'en_curso' => 'Abiertos', 'finalizada' => 'Cerrados', 'cancelada' => 'Cancelados'][$estado->value] ?? $estado->label() }}</option>
                         @endforeach
                     </select>
                 </div>
-                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
+                <button class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Filtrar</button>
                 @if (request()->hasAny(['ruta_id', 'estado']))
-                    <a href="{{ route('rutas.salidas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
+                    <a href="{{ route('rutas.salidas.index') }}" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline dark:text-indigo-400">Limpiar</a>
                 @endif
             </form>
 
@@ -45,7 +46,7 @@
                                 <th class="py-3 px-4">Inicio</th>
                                 <th class="py-3 px-4">Regreso</th>
                                 <th class="py-3 px-4">Vendedores</th>
-                                <th class="py-3 px-4 text-center">CCF entregados</th>
+                                <th class="whitespace-nowrap py-3 px-4 text-center">CCF entregados</th>
                                 <th class="py-3 px-4 text-center">Estado</th>
                                 <th class="py-3 px-4 text-right">Acciones</th>
                             </tr>
@@ -56,12 +57,12 @@
                                     <td class="py-3 px-4 font-medium text-gray-800 dark:text-paper-100">
                                         <a href="{{ route('rutas.salidas.show', $salida) }}" class="hover:underline">{{ $salida->titulo() }}</a>
                                     </td>
-                                    <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->fecha_inicio->translatedFormat('d M Y') }}</td>
-                                    <td class="py-3 px-4 text-gray-600 dark:text-paper-300">
+                                    <td class="whitespace-nowrap py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->fecha_inicio->format('d/m/Y') }}</td>
+                                    <td class="whitespace-nowrap py-3 px-4 text-gray-600 dark:text-paper-300">
                                         @if ($salida->fecha_fin_real)
-                                            {{ $salida->fecha_fin_real->translatedFormat('d M Y') }}
+                                            {{ $salida->fecha_fin_real->format('d/m/Y') }}
                                         @elseif ($salida->fecha_fin_estimada)
-                                            <span class="text-gray-400 dark:text-paper-500" title="Estimado">~ {{ $salida->fecha_fin_estimada->translatedFormat('d M Y') }}</span>
+                                            <span class="text-gray-400 dark:text-paper-500" title="Estimado">~ {{ $salida->fecha_fin_estimada->format('d/m/Y') }}</span>
                                         @else
                                             —
                                         @endif
@@ -71,7 +72,7 @@
                                         {{ $salida->entregados_count }} / {{ $salida->entregas_count }}
                                     </td>
                                     <td class="py-3 px-4 text-center">
-                                        <x-rutas.estado-badge :estado="$salida->estado" />
+                                        <x-rutas.estado-badge :estado="$salida->estado" :texto="$salida->estadoLegible()" />
                                     </td>
                                     <td class="py-3 px-4 text-right">
                                         <a href="{{ route('rutas.salidas.show', $salida) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Ver</a>

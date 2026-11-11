@@ -1,6 +1,7 @@
-{{-- «Sugerido» de una sala (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10). Así le dicen al formato
-     de la empresa donde el vendedor apunta el pedido y que firma el gerente de la sala. Desde
-     el 10/11/2026 no depende de una salida: el pedido se suma solo al viaje del vendedor.
+{{-- El pedido de una sala, en el celular (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10). «Sugerido»
+     le dicen a la HOJA de la empresa que firma el gerente de la sala (rutas.pedidos.hoja);
+     esta pantalla no sugiere cantidades, así que se titula «Pedido de <sala>». Desde el
+     10/11/2026 no depende de una salida: el pedido se suma solo al viaje del vendedor.
 
      Los productos de facturación activos, con buscador (sin JavaScript se ven todos), la OC
      solo si la sala la usa (casi siempre llega después por EDI: se agrega desde la oficina) y
@@ -25,8 +26,9 @@
     @endphp
 
     <p class="text-sm font-medium text-gray-600 dark:text-paper-300">{{ $viaje ? 'Tu viaje: '.$viaje->nombreViaje() : 'Tu primer pedido abre tu viaje.' }}</p>
-    <h1 class="text-3xl font-bold">Sugerido</h1>
-    <p class="mt-1 text-base">{{ $sala?->nombre ?? 'Tienda nueva' }}</p>
+    {{-- No se llama «Sugerido»: el sugerido es la hoja que firma el gerente, y acá no se sugiere nada. --}}
+    <h1 class="text-3xl font-bold">Pedido de {{ $sala?->nombre ?? 'una tienda nueva' }}</h1>
+    <p class="mt-1 text-base">Anotá las cantidades. Lo que quede vacío no se pide.</p>
 
     @if ($historia ?? null)
         <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 rounded-2xl bg-white p-4 text-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600" aria-label="Historia de la sala">

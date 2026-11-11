@@ -75,7 +75,7 @@
     @if ($canal === 'nacional')
     <h2>Devoluciones</h2>
     <p>Devuelto {{ $dinero($devoluciones['total']) }} · {{ $devoluciones['porcentaje'] !== null ? number_format($devoluciones['porcentaje'], 1).' % de lo vendido' : 'Sin venta de referencia' }}</p>
-    <p class="footer">Las notas de crédito de pronto pago son descuentos financieros y no cuentan como devolución. Ruta actual de la sala.</p>
+    <p class="footer">Las notas de crédito de pronto pago son descuentos financieros y no cuentan como devolución. Zona actual de la sala.</p>
     @endif
 </body>
 </html>

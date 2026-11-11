@@ -75,7 +75,7 @@
             <x-rutas.avisos />
 
             <p class="text-sm text-gray-600">
-                Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin ruta' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}
+                Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}
                 {{ $pedido->numero_orden_compra ? ' · OC '.$pedido->numero_orden_compra : '' }}
             </p>
             @if ($pedido->notas)

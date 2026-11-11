@@ -141,11 +141,11 @@ class FlujoUnicoRutasTest extends TestCase
         $menu = fn (User $usuario) => $this->actingAs($usuario)->get(route('rutas.dashboard'))->assertOk();
 
         // El jefe también sale a vender: lleva lo del vendedor y lo de la oficina que le toca.
-        $menu($this->jefe)->assertSeeInOrder(['Inicio', 'Sacar pedido', 'Por entregar', 'Tablero', 'Pedidos', 'Viajes anteriores', 'Zonas'])
+        $menu($this->jefe)->assertSeeInOrder(['Inicio', 'Sacar pedido', 'Por entregar', 'Tablero', 'Pedidos', 'Todos los viajes', 'Zonas'])
             ->assertSee('href="'.route('rutas.salidas.index').'"', false)
             ->assertSee('href="'.route('rutas.rutas.index').'"', false);
         // La oficina no saca pedidos ni entrega: sin las pantallas del vendedor, con Ventas.
-        $menu($this->oficina)->assertSeeInOrder(['Por entregar', 'Tablero', 'Pedidos', 'Ventas', 'Viajes anteriores', 'Zonas'])
+        $menu($this->oficina)->assertSeeInOrder(['Por entregar', 'Tablero', 'Pedidos', 'Ventas', 'Todos los viajes', 'Zonas'])
             ->assertDontSee('href="'.route('rutas.sacar-pedido.index').'"', false);
 
         foreach ([$this->jefe, $this->oficina] as $usuario) {
@@ -337,7 +337,7 @@ class FlujoUnicoRutasTest extends TestCase
             'resultado' => ResultadoEntrega::NoEntregado, 'motivo_no_entrega' => 'sala_cerrada', 'fecha_resultado' => '2026-11-10 10:00:00']);
         $coinciden($viaje, false, 'Con un CCF suelto sin entregar');
         $this->assertSame(1, app(TableroViajes::class)->calcular()['abiertos']->first()['sueltos']);
-        $this->actingAs($this->jefe)->get(route('rutas.viajes'))->assertOk()->assertSee('1 factura de la zona anotada en el viaje y todavía sin entregar');
+        $this->actingAs($this->jefe)->get(route('rutas.viajes'))->assertOk()->assertSee('Además, 1 factura de la zona, que no salió de estos pedidos, sigue sin entregar.');
 
         // Entregado en otra salida, por quien sea: cuenta.
         $otra = SalidaRuta::create(['ruta_id' => $this->zona->id, 'fecha_inicio' => '2026-11-10', 'estado' => EstadoSalidaRuta::EnCurso]);
@@ -370,7 +370,7 @@ class FlujoUnicoRutasTest extends TestCase
             $viaje->update(['estado' => $estado, 'fecha_fin_real' => $estado === EstadoSalidaRuta::Finalizada ? '2026-11-10' : null]);
 
             $this->get(route('rutas.salidas.show', $viaje))->assertOk()
-                ->assertSee('Hoja del viaje')->assertSee('Lunes · San Miguel')
+                ->assertSee('Volver al tablero')->assertSee('Lunes · San Miguel')->assertDontSee('Hoja del viaje')
                 ->assertDontSee('Terminar ruta')->assertDontSee('Terminar día')->assertDontSee('Cambiar quiénes van')
                 ->assertDontSee('Buscar CCF nuevos de la ruta');
             $this->post(route('rutas.salidas.liquidar', $viaje), ['entrega_dinero_personal_id' => $this->persona->id])
@@ -398,7 +398,7 @@ class FlujoUnicoRutasTest extends TestCase
         $this->assertTrue($manual->refresh()->estaLiquidada());
         // Liquidada, queda de solo lectura en el historial.
         $this->actingAs($this->oficina)->get(route('rutas.salidas.index'))->assertOk()
-            ->assertSee('Viajes anteriores')->assertSee('href="'.route('rutas.salidas.show', $manual).'"', false);
+            ->assertSee('Todos los viajes')->assertSee('href="'.route('rutas.salidas.show', $manual).'"', false);
         $this->post(route('rutas.salidas.liquidar', $manual))->assertSessionHasErrors('salida');
     }
 
@@ -519,7 +519,9 @@ class FlujoUnicoRutasTest extends TestCase
 
     public function test_facturacion_da_de_alta_clientes_y_nadie_arma_salidas(): void
     {
-        $this->assertContains('clientes.gestionar', RolSistema::Facturacion->permisos());
+        // Solo el alta de la tienda nueva de un pedido (`clientes.alta`); gestionar clientes sigue siendo del administrador.
+        $this->assertContains('clientes.alta', RolSistema::Facturacion->permisos());
+        $this->assertNotContains('clientes.gestionar', RolSistema::Facturacion->permisos());
         $this->assertNotContains('clientes.gestionar', RolSistema::JefeVendedores->permisos());
         $this->assertNotContains('clientes.gestionar', RolSistema::Jefatura->permisos());
         foreach (RolSistema::cases() as $rol) {

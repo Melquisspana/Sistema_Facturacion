@@ -267,6 +267,20 @@ class PedidosSala
             ->where('sacado_por_id', $pedido->sacado_por_id)->where('id', '>', $pedido->id)->exists();
     }
 
+    /**
+     * Por qué quien lo sacó ya no puede corregir su pedido, para decírselo en «Tus pedidos de
+     * hoy». Null si no hay un motivo que decir (anulado, o todavía se corrige).
+     */
+    public static function porQueNoSeCorrige(PedidoSala $pedido): ?string
+    {
+        return match (true) {
+            ! $pedido->estaVigente() => null,
+            $pedido->fabricaEmpezo() => 'Ya está en la fábrica: si cambió algo, avisá a la oficina.',
+            self::sacoElSiguiente($pedido) => 'Ya sacaste otro pedido: este lo corrige la oficina.',
+            default => null,
+        };
+    }
+
     /** ¿El usuario es quien sacó el pedido? Su ficha de campo activa. */
     public static function loSaco(User $usuario, PedidoSala $pedido): bool
     {

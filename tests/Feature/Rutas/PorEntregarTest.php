@@ -409,7 +409,7 @@ class PorEntregarTest extends TestCase
 
         $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.show', $auto))->followingRedirects()
             ->patch(route('rutas.mi-salida.deshacer', [$auto, $auto->entregas()->sole()]))
-            ->assertOk()->assertSee('Se quitó el CCF de la salida; vuelve a Por entregar.')->assertSee($dte->numero_control);
+            ->assertOk()->assertSee('Se deshizo: el CCF vuelve a Por entregar.')->assertSee($dte->numero_control);
         $this->assertSame(EstadoSalidaRuta::Cancelada, $auto->refresh()->estado);
     }
 

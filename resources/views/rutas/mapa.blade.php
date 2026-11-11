@@ -3,7 +3,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <p class="text-sm text-gray-500">Rutas › Tablero</p>
-                <h1 class="text-xl font-semibold leading-tight text-gray-800">Mapa de ventas por zona</h1>
+                <h1 class="text-xl font-semibold leading-tight text-gray-800">Mapa de ventas</h1>
             </div>
         </div>
     </x-slot>
@@ -126,9 +126,9 @@
                         </select>
                     </div>
                     <div class="w-full sm:w-56">
-                        <label for="mapa-ruta" class="block text-xs font-medium text-gray-500">Ruta</label>
+                        <label for="mapa-ruta" class="block text-xs font-medium text-gray-500">Zona</label>
                         <select id="mapa-ruta" name="ruta" class="{{ $campo }} mt-1">
-                            <option value="">Todas las rutas</option>
+                            <option value="">Todas las zonas</option>
                             @foreach ($datos['rutas'] as $ruta)
                                 <option value="{{ $ruta['id'] }}" @selected($filtro['ruta'] === $ruta['id'])>{{ $ruta['nombre'] }}</option>
                             @endforeach
@@ -145,11 +145,11 @@
                     <div class="mv-seg mt-1 border border-gray-300 bg-white" role="group" aria-labelledby="mapa-ver">
                         <button type="button" class="text-gray-700" data-modo="ventas" aria-pressed="true">Ventas</button>
                         <button type="button" class="text-gray-700" data-modo="falta" aria-pressed="false">Dónde falta</button>
-                        <button type="button" class="text-gray-700" data-modo="rutas" aria-pressed="false">Rutas</button>
+                        <button type="button" class="text-gray-700" data-modo="rutas" aria-pressed="false">Zonas</button>
                     </div>
                 </div>
                 <div>
-                    <span class="block text-xs font-medium text-gray-500" id="mapa-nivel">Zonas</span>
+                    <span class="block text-xs font-medium text-gray-500" id="mapa-nivel">Ver por</span>
                     <div class="mv-seg mt-1 border border-gray-300 bg-white" role="group" aria-labelledby="mapa-nivel">
                         <button type="button" class="text-gray-700" data-nivel="dep" aria-pressed="true">Departamentos</button>
                         <button type="button" class="text-gray-700" data-nivel="dis" aria-pressed="false">Distritos</button>
@@ -179,7 +179,7 @@
                     <div class="{{ $caja }} p-4">
                         <span class="block text-sm text-gray-600">Salas que compraron</span>
                         <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-800">{{ $t['compraron'] }} de {{ $t['salas'] }}</span>
-                        <span class="mt-0.5 block text-xs text-gray-500">{{ $rutaElegida ? 'en '.$rutaElegida['nombre'] : 'en todas las rutas' }}</span>
+                        <span class="mt-0.5 block text-xs text-gray-500">{{ $rutaElegida ? 'en '.$rutaElegida['nombre'] : 'en todas las zonas' }}</span>
                     </div>
                     @php
                         $leTocan = $t['faltan'] - $t['atrasadas'];
@@ -192,7 +192,7 @@
                     <div class="{{ $caja }} p-4">
                         <span class="block text-sm text-gray-600">Distritos sin ninguna sala</span>
                         <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-800">{{ $t['distritosSinSalas'] }}</span>
-                        <span class="mt-0.5 block text-xs text-gray-500">donde todavía no vendemos{{ $rutaElegida ? ', en todo el país y con cualquier ruta' : '' }}</span>
+                        <span class="mt-0.5 block text-xs text-gray-500">donde todavía no vendemos{{ $rutaElegida ? ', en todo el país y con cualquier zona' : '' }}</span>
                     </div>
                 </div>
             </section>
@@ -209,7 +209,7 @@
                 <section class="{{ $caja }} mv-mapa" aria-labelledby="mapa-titulo">
                     <div class="border-b border-gray-200 px-4 py-3">
                         <h2 id="mapa-titulo" class="text-base font-semibold text-gray-800">Ventas del mes por departamento</h2>
-                        <p id="mapa-sub" class="text-sm text-gray-500">Color más intenso, más vendido. Tocá una zona para ver su ficha.</p>
+                        <p id="mapa-sub" class="text-sm text-gray-500">Color más intenso, más vendido. Tocá un lugar para ver su ficha.</p>
                     </div>
                     <div class="mv-lienzo">
                         <svg id="mapa-svg" class="mv-svg" role="group" aria-labelledby="mapa-titulo mapa-sub"></svg>
@@ -225,8 +225,8 @@
                     <p class="px-4 py-6 text-center text-sm text-gray-500" id="mapa-carga">Cargando el mapa…</p>
                 </section>
 
-                <section class="{{ $caja }} p-4" id="mapa-ficha" aria-live="polite" aria-label="Ficha de la zona">
-                    <p class="text-sm text-gray-500">Tocá una zona del mapa o de la tabla para ver su ficha.</p>
+                <section class="{{ $caja }} p-4" id="mapa-ficha" aria-live="polite" aria-label="Ficha del lugar">
+                    <p class="text-sm text-gray-500">Tocá un lugar del mapa o de la tabla para ver su ficha.</p>
                 </section>
             </div>
 
@@ -255,7 +255,7 @@
                                             <span class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-700"><span class="mv-punto" style="background:var({{ $zona['atrasadas'] > 0 ? '--mal' : '--ojo' }})"></span>{{ $zona['faltan'] }} de {{ $zona['salas'] }}</span>
                                         </span>
                                         <span class="mt-0.5 block text-xs text-gray-500">
-                                            {{ $zona['atrasadas'] }} {{ $zona['atrasadas'] === 1 ? 'atrasada' : 'atrasadas' }} · a {{ $zona['leToca'] }} {{ $zona['leToca'] === 1 ? 'le toca' : 'les toca' }}{{ $alCorte }} · {{ $rutasTexto($zona['rutas']) ?: 'sin ruta' }}
+                                            {{ $zona['atrasadas'] }} {{ $zona['atrasadas'] === 1 ? 'atrasada' : 'atrasadas' }} · a {{ $zona['leToca'] }} {{ $zona['leToca'] === 1 ? 'le toca' : 'les toca' }}{{ $alCorte }} · {{ $rutasTexto($zona['rutas']) ?: 'sin zona' }}
                                         </span>
                                         <span class="mv-barra mt-1.5 block"><span style="width: {{ round($zona['faltan'] / $maximo * 100) }}%"></span></span>
                                     </button>
@@ -264,12 +264,12 @@
                                 <li class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500">Ninguna sala está atrasada ni le toca visita todavía.</li>
                             @endforelse
                             <li class="mv-falta-vacias rounded-lg border border-gray-200 px-3 py-2">
-                                <span class="block text-sm text-gray-800"><strong>{{ $vacias->count() }} {{ $palabra }}</strong> {{ $rutaElegida ? 'de '.$rutaElegida['nombre'].' sin ninguna sala' : 'con ruta y sin ninguna sala' }}</span>
+                                <span class="block text-sm text-gray-800"><strong>{{ $vacias->count() }} {{ $palabra }}</strong> {{ $rutaElegida ? 'de '.$rutaElegida['nombre'].' sin ninguna sala' : 'con zona y sin ninguna sala' }}</span>
                                 <span class="mt-0.5 block text-xs text-gray-500">
                                     @if ($vacias->isNotEmpty())
                                         Ya pasamos cerca: son los primeros para ofrecer.
                                     @else
-                                        {{ $rutaElegida ? 'Cada lugar por donde pasa esta ruta ya tiene salas.' : 'Las rutas ya tienen salas en cada lugar que cubren.' }}
+                                        {{ $rutaElegida ? 'Cada lugar que cubre esta zona ya tiene salas.' : 'Las zonas ya tienen salas en cada lugar que cubren.' }}
                                     @endif
                                 </span>
                                 {{-- Los nombres, para encontrarlas sin el dibujo y con el teclado. --}}
@@ -327,7 +327,7 @@
                                                 <span class="mt-0.5 block text-sm text-gray-600">
                                                     {{ $zona['cambioTexto'] }} {{ $contraCorto }} · {{ $zona['salas'] }} {{ $zona['salas'] === 1 ? 'sala' : 'salas' }} · <span class="{{ $zona['atrasadas'] > 0 ? 'font-medium text-red-700' : '' }}">{{ $zona['atrasadas'] }} {{ $zona['atrasadas'] === 1 ? 'atrasada' : 'atrasadas' }}, a {{ $zona['leToca'] }} {{ $zona['leToca'] === 1 ? 'le toca' : 'les toca' }}{{ $alCorte }}</span>
                                                 </span>
-                                                <span class="block text-sm text-gray-500">{{ $rutasTexto($zona['rutas']) ?: 'Sin ruta' }} · última entrega {{ $zona['entregaTexto'] ?? '—' }}</span>
+                                                <span class="block text-sm text-gray-500">{{ $rutasTexto($zona['rutas']) ?: 'Sin zona' }} · última entrega {{ $zona['entregaTexto'] ?? '—' }}</span>
                                             </button>
                                         </li>
                                     @endforeach
@@ -336,13 +336,13 @@
                                 <table class="min-w-full text-sm">
                                     <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                                         <tr>
-                                            <th scope="col" class="px-3 py-2">Zona</th>
+                                            <th scope="col" class="px-3 py-2">Lugar</th>
                                             <th scope="col" class="px-3 py-2 text-right">Vendido</th>
                                             <th scope="col" class="px-3 py-2 text-right">{{ $contraCorto }}</th>
                                             <th scope="col" class="px-3 py-2 text-right">Salas</th>
                                             <th scope="col" class="px-3 py-2 text-right">Atrasadas</th>
                                             <th scope="col" class="px-3 py-2 text-right">Les toca</th>
-                                            <th scope="col" class="px-3 py-2">Ruta</th>
+                                            <th scope="col" class="px-3 py-2">Zona</th>
                                             <th scope="col" class="px-3 py-2 text-right">Última entrega</th>
                                         </tr>
                                     </thead>

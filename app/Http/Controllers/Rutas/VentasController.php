@@ -22,7 +22,7 @@ class VentasController extends Controller
         foreach (['ruta' => Ruta::class, 'cliente' => Cliente::class, 'sala' => ClienteSucursal::class, 'producto' => Producto::class] as $clave => $modelo) {
             if (isset($datos['filtros'][$clave])) {
                 $consulta = $clave === 'ruta' ? $modelo::query() : $modelo::withTrashed();
-                $chips[$clave] = (int) $datos['filtros'][$clave] === 0 ? ($clave === 'ruta' ? 'Sin ruta' : 'Ajustes sin producto') : $consulta->find($datos['filtros'][$clave])?->nombre;
+                $chips[$clave] = (int) $datos['filtros'][$clave] === 0 ? ($clave === 'ruta' ? 'Sin zona' : 'Ajustes sin producto') : $consulta->find($datos['filtros'][$clave])?->nombre;
             }
         }
 

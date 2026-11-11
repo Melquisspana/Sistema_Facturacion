@@ -1,5 +1,7 @@
 # Módulo Rutas — diseño acordado (26/09/2026)
 
+> **Reemplazado en parte el 10/11/2026.** Ya no hay rutas fijas ni salidas armadas a mano: el viaje se abre solo con el primer pedido del vendedor y las rutas quedan como catálogo de zonas. Leé primero la [decisión 0010](decisiones/0010-el-viaje-reemplaza-a-la-ruta-fija.md); este documento queda como historia de cómo se llegó.
+
 Decisiones tomadas con el usuario para convertir el área «Cobros» (`/rutas-cobros`, nombre técnico `rutas`) en un módulo de rutas hecho para la operación real. El seguimiento de CCF de Calleja (`/cobros`, en Facturación) **no se toca**: sigue siendo donde se controla albarán, quedan y pago.
 
 ## Cómo trabajan hoy (según el usuario)

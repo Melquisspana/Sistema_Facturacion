@@ -122,8 +122,8 @@ class TableroRutasTest extends TestCase
             ->assertSee('<h1', false)
             ->assertSee('Todavía no hay zonas.')
             ->assertSee('Todavía no hay salas activas.')
-            ->assertSee('rutas atrasadas')
-            ->assertDontSee('En camino desde');
+            ->assertSee('zonas atrasadas')
+            ->assertDontSee('Viaje abierto desde');
     }
 
     public function test_resumen_rutas_y_salas_por_urgencia(): void
@@ -133,7 +133,7 @@ class TableroRutasTest extends TestCase
         $respuesta = $this->actingAs($this->admin())->get(route('rutas.dashboard'))->assertOk();
 
         // Resumen: 1 ruta atrasada, 2 salas atrasadas, 1 toca esta semana, 0 en camino.
-        $respuesta->assertSeeInOrder(['1', 'ruta atrasada', '2', 'salas atrasadas', '1', 'sala toca esta semana', '0', 'viajes en camino']);
+        $respuesta->assertSeeInOrder(['1', 'zona atrasada', '2', 'salas atrasadas', '1', 'sala toca esta semana', '0', 'viajes abiertos']);
 
         // Rutas: la atrasada primero, con su ritmo calculado y sus salas.
         // Oriente se cuenta desde el regreso de su salida; Costa, que nunca salió, desde
@@ -194,8 +194,8 @@ class TableroRutasTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard', ['rutas' => 'atrasadas']))
             ->assertOk()
-            ->assertSee('Rutas atrasadas')
-            ->assertSee('Ver todas las rutas')
+            ->assertSee('Zonas atrasadas')
+            ->assertSee('Ver todas las zonas')
             ->assertDontSee('Suele ir cada 7 días');
     }
 

@@ -9,7 +9,7 @@
     {{-- Menú corto del flujo único (10/11/2026), cada título en una línea. Primero lo del
          vendedor, para quien también sale a vender (el jefe): Inicio, Sacar pedido y Por
          entregar. Después lo de la oficina: el Tablero (Resumen, Viajes, Mapa y Vendedores
-         son sus pestañas), Pedidos, Ventas, Viajes anteriores (el historial) y Zonas. Ya no
+         son sus pestañas), Pedidos, Ventas, Todos los viajes y Zonas. Ya no
          hay «armar salida» ni «asignar salas». --}}
     <x-sidebar-group titulo="Rutas" icono="rutas">
         @can('rutas.entregas.registrar')
@@ -26,7 +26,7 @@
         @can('rutas.ventas.ver')
             <x-sidebar-link :href="route('rutas.ventas.index')" :active="request()->routeIs('rutas.ventas.*')">Ventas</x-sidebar-link>
         @endcan
-        <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Viajes anteriores</x-sidebar-link>
+        <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Todos los viajes</x-sidebar-link>
         <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Zonas</x-sidebar-link>
         {{-- Los empleados son solo de la administración (`planilla.ver`, 04/11/2026). --}}
         @if (auth()->user()->can('rutas.personal.ver') && auth()->user()->can('planilla.ver'))

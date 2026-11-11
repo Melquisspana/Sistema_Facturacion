@@ -113,13 +113,13 @@
                     </div>
 
                     @if ($planificada)
-                        <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en la salida {{ $camino->salida->descripcionCorta() }}, que todavía no empezó: se marca cuando la empiecen.</p>
+                        <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}, que todavía no empezó: se marca cuando empiece.</p>
                     @elseif ($trabados->has($dte->id))
                         {{-- Día cerrado, o una salida formal donde no va: los botones siempre fallarían. --}}
                         <p class="mt-3 text-sm text-amber-800 dark:text-amber-300">{{ $trabados->get($dte->id) }}</p>
                     @elseif ($puedeMarcar)
                         @if ($camino)
-                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">Va en la salida {{ $camino->salida->descripcionCorta() }}: se marca ahí.</p>
+                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}: se marca ahí.</p>
                         @endif
                         @include('rutas.salidas._marcar', [
                             'accion' => route('rutas.por-entregar.marcar', $dte),

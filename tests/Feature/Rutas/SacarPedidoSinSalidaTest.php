@@ -158,7 +158,7 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->get(route('rutas.sacar-pedido.index', ['q' => 'x']))->assertOk()->assertSee('Escribí al menos 2 letras.');
 
         $this->get(route('rutas.sacar-pedido.create', $this->otraSala))->assertOk()
-            ->assertSee('Sugerido')->assertSee('Galleta de prueba')->assertSee('Tu primer pedido abre tu viaje.');
+            ->assertSee('Pedido de Tienda de prueba Centro')->assertDontSee('Sugerido')->assertSee('Galleta de prueba')->assertSee('Tu primer pedido abre tu viaje.');
         $this->sacar($this->otraSala)->assertSessionHasNoErrors()
             ->assertRedirect(route('rutas.sacar-pedido.index'))
             ->assertSessionHas('status', 'Pedido de «Tienda de prueba Centro» guardado. Se abrió tu viaje: Lunes · Sin zona.');

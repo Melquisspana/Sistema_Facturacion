@@ -158,7 +158,10 @@ class PorEntregarController extends Controller
             return $this->entregas->registrar($entrega, $datos + ['entregado_por_id' => $persona->id], $request->user(), OrigenRegistroEntrega::Vendedor);
         });
 
-        return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().' (salida '.$registrada->salida->descripcionCorta().').');
+        // Solo el viaje se nombra: la salida que se arma sola para entregar no le dice nada al vendedor.
+        $salida = $registrada->salida;
+
+        return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().($salida->esViaje() ? ' (viaje '.$salida->nombreViaje().')' : '').'.');
     }
 
     /**

@@ -104,7 +104,7 @@ class TiendaNuevaTest extends TestCase
             ->assertSee('Tienda nueva')
             ->assertSee('action="'.route('rutas.sacar-pedido.tienda-nueva.create').'"', false);
         $this->get(route('rutas.sacar-pedido.tienda-nueva.create', ['nombre' => '  Tienda   La Chapina ']))->assertOk()
-            ->assertSee('Tienda nueva')->assertSee('value="Tienda La Chapina"', false)
+            ->assertSee('Pedido de una tienda nueva')->assertSee('value="Tienda La Chapina"', false)
             ->assertSee('action="'.route('rutas.sacar-pedido.tienda-nueva.store').'"', false);
 
         $this->post(route('rutas.sacar-pedido.tienda-nueva.store'), [

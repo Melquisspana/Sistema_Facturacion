@@ -105,9 +105,9 @@ class RutasEnElCelularTest extends TestCase
 
         $this->actingAs($jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['1', 'viaje en camino'])
-            // «En camino» lleva la en curso; la del jueves va en «Programadas», después.
-            ->assertSeeInOrder(['En camino', 'Ruta Costa · Mario Inventado', 'En camino desde el 02/11/2026', 'Programadas', 'Ruta Norte · Ernesto Ficticio', 'Sale el 05/11/2026'])
+            ->assertSeeInOrder(['1', 'viaje abierto'])
+            // «Viajes abiertos» lleva la en curso; la del jueves va en «Programadas», después.
+            ->assertSeeInOrder(['Viajes abiertos', 'Ruta Costa · Mario Inventado', 'Abierta desde el 02/11/2026', 'Programadas', 'Ruta Norte · Ernesto Ficticio', 'Sale el 05/11/2026'])
             ->assertDontSee('Programada desde');
     }
 
@@ -125,7 +125,7 @@ class RutasEnElCelularTest extends TestCase
             ->assertSee(route('rutas.salidas.show', $programada))
             ->assertDontSee('días tarde')
             ->assertDontSee('Atrasada 18 días')
-            ->assertSeeInOrder(['0', 'rutas atrasadas']);
+            ->assertSeeInOrder(['0', 'zonas atrasadas']);
 
         // Sin la salida armada, la misma ruta sí está atrasada.
         $programada->cancelar();

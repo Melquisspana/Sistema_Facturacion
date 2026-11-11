@@ -566,7 +566,7 @@ class NavigationTest extends TestCase
 
         $sidebar = $this->sidebarDe($html);
         // Los títulos nuevos, en orden; los de antes ya no están.
-        $this->assertMatchesRegularExpression('/Inicio.*Sacar pedido.*Por entregar.*Tablero.*Pedidos.*Ventas.*Viajes anteriores.*Zonas/su', $sidebar);
+        $this->assertMatchesRegularExpression('/Inicio.*Sacar pedido.*Por entregar.*Tablero.*Pedidos.*Ventas.*Todos los viajes.*Zonas/su', $sidebar);
         foreach (['Salidas anteriores', 'Configurar rutas', 'Armar salida', 'Asignar salas'] as $retirado) {
             $this->assertStringNotContainsString($retirado, $sidebar);
         }

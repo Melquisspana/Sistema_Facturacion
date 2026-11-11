@@ -33,7 +33,7 @@
                     <input type="hidden" name="activa" value="1">
                     <div class="min-w-0 flex-1">
                         <label for="nueva_nombre" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Nueva zona</label>
-                        <input id="nueva_nombre" name="nombre" required maxlength="120" placeholder="Puerto" value="{{ old('nombre') }}" class="mt-1 w-full {{ $campo }}">
+                        <input id="nueva_nombre" name="nombre" required maxlength="120" placeholder="Ej.: Oriente" value="{{ old('nombre') }}" class="mt-1 w-full {{ $campo }}">
                         <x-input-error :messages="$errors->get('nombre')" class="mt-1" />
                     </div>
                     <button class="inline-flex min-h-11 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">Crear</button>

@@ -106,7 +106,8 @@
                                     </form>
                                 </div>
                             @else
-                                <p class="mt-2 {{ $gris }}">{{ $pedido->estado->label() }}</p>
+                                {{-- Por qué ya no lo corrige: sacó el de la sala siguiente o la fábrica lo empezó. --}}
+                                <p class="mt-2 {{ $gris }}">{{ \App\Services\Rutas\PedidosSala::porQueNoSeCorrige($pedido) ?? $pedido->estado->label() }}</p>
                             @endcan
                         </li>
                     @endforeach

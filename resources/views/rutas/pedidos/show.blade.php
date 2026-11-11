@@ -61,10 +61,11 @@
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
-                    <div><dt class="{{ $dt }}">Ruta</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</dd></div>
-                    <div><dt class="{{ $dt }}">Salida</dt><dd class="{{ $dd }}">
+                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</dd></div>
+                    {{-- El viaje, por su nombre («Lunes · San Miguel»); una salida armada a mano de antes, por su fecha. --}}
+                    <div><dt class="{{ $dt }}">{{ $pedido->salida && ! $pedido->salida->esViaje() ? 'Salida' : 'Viaje' }}</dt><dd class="{{ $dd }}">
                         @if ($pedido->salida)
-                            <a href="{{ route('rutas.salidas.show', $pedido->salida) }}" class="text-indigo-600 underline">{{ $pedido->salida->fecha_inicio->format('d/m/Y') }}</a>
+                            <a href="{{ route('rutas.salidas.show', $pedido->salida) }}" class="text-indigo-600 underline">{{ $pedido->salida->esViaje() ? $pedido->salida->nombreViaje() : $pedido->salida->fecha_inicio->format('d/m/Y') }}</a>
                         @else
                             —
                         @endif

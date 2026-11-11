@@ -32,7 +32,7 @@
                     <input id="f-hasta" type="date" name="hasta" value="{{ request('hasta') }}" class="{{ $campo }}">
                 </div>
                 <div>
-                    <label for="f-ruta" class="{{ $etiqueta }}">Ruta</label>
+                    <label for="f-ruta" class="{{ $etiqueta }}">Zona</label>
                     <select id="f-ruta" name="ruta_id" class="{{ $campo }}">
                         <option value="">Todas</option>
                         @foreach ($rutas as $r)
@@ -65,7 +65,7 @@
                         @if ($filtrado)
                             Nada coincide con estos filtros. <a href="{{ route('rutas.pedidos.index') }}" class="text-indigo-600 underline">Limpiar filtros</a>
                         @else
-                            Todavía no hay pedidos. Los sacan los vendedores desde «Mi salida».
+                            Todavía no hay pedidos. Los sacan los vendedores desde «Sacar pedido».
                         @endif
                     </div>
                 @else
@@ -77,7 +77,7 @@
                                     <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="min-w-0 font-medium text-indigo-600 underline">{{ $pedido->nombreSala() }}</a>
                                     <x-rutas.estado-badge :estado="$pedido->estado" class="shrink-0" />
                                 </div>
-                                <p class="mt-1 text-sm text-gray-600">{{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin ruta' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}</p>
+                                <p class="mt-1 text-sm text-gray-600">{{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}</p>
                                 <p class="mt-1 text-sm text-gray-600">
                                     {{ $pedido->lineas_count }} {{ $pedido->lineas_count === 1 ? 'producto' : 'productos' }} · {{ $pedido->numero_orden_compra ? 'OC '.$pedido->numero_orden_compra : 'Sin OC' }}
                                 </p>
@@ -92,7 +92,7 @@
                                 <tr>
                                     <th class="px-4 py-3">Fecha</th>
                                     <th class="px-4 py-3">Sala</th>
-                                    <th class="px-4 py-3">Ruta</th>
+                                    <th class="px-4 py-3">Zona</th>
                                     <th class="px-4 py-3">Sacó</th>
                                     <th class="px-4 py-3 text-right">Productos</th>
                                     <th class="px-4 py-3">OC</th>
@@ -105,7 +105,7 @@
                                     <tr>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->fecha->format('d/m/Y') }}</td>
                                         <td class="px-4 py-3 font-medium text-gray-800">{{ $pedido->nombreSala() }}</td>
-                                        <td class="px-4 py-3 text-gray-600">{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</td>
+                                        <td class="px-4 py-3 text-gray-600">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</td>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td>
                                         <td class="px-4 py-3 text-right tabular-nums">{{ $pedido->lineas_count }}</td>
                                         <td class="px-4 py-3 font-mono text-gray-600">{{ $pedido->numero_orden_compra ?? '—' }}</td>

@@ -169,7 +169,7 @@ class PedidosSalaTest extends TestCase
 
         Producto::factory()->create(['nombre' => 'Producto apagado', 'activo' => false]);
         $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()
-            ->assertSee('Sugerido')->assertDontSee('type="file"', false)->assertDontSee('multipart/form-data', false)
+            ->assertSee('Pedido de '.$this->sala->nombre)->assertDontSee('Sugerido')->assertDontSee('type="file"', false)->assertDontSee('multipart/form-data', false)
             ->assertSee('Galleta de prueba')->assertDontSee('Producto apagado')
             // Esta sala no usa OC.
             ->assertDontSee('Número de orden de compra');

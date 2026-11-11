@@ -73,7 +73,7 @@
                                         @endif
                                         {{-- Lo que también lo deja abierto: CCF marcados en el viaje que no son de sus pedidos. --}}
                                         @if ($viaje['sueltos'] > 0)
-                                            <p class="text-xs text-gray-500">Y {{ $plural($viaje['sueltos'], 'factura de la zona anotada en el viaje y todavía sin entregar', 'facturas de la zona anotadas en el viaje y todavía sin entregar') }}.</p>
+                                            <p class="text-xs text-gray-500">Además, {{ $viaje['sueltos'] === 1 ? '1 factura de la zona, que no salió de estos pedidos, sigue sin entregar.' : $viaje['sueltos'].' facturas de la zona, que no salieron de estos pedidos, siguen sin entregar.' }}</p>
                                         @endif
                                         @if ($viaje['todoEntregado'] && ! $salida->suma_pedidos)
                                             <p class="text-sm font-medium text-green-700">Todo entregado: se cierra solo mañana temprano.</p>
@@ -85,7 +85,7 @@
                                             </p>
                                         @endforeach
                                         {{-- Sin `group-open:`: no está en el CSS de producción. --}}
-                                        <p class="text-sm font-medium text-indigo-600">Ver u ocultar sus {{ $plural($viaje['pedidos']->count(), 'pedido', 'pedidos') }}</p>
+                                        <p class="text-sm font-medium text-indigo-600">{{ $viaje['pedidos']->count() === 1 ? 'Ver su pedido' : 'Ver sus '.$viaje['pedidos']->count().' pedidos' }}</p>
                                     </summary>
 
                                     {{-- El viaje: sus entregas y el PDF de cada día. --}}

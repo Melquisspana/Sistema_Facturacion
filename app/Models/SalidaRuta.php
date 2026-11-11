@@ -307,14 +307,15 @@ class SalidaRuta extends Model
 
     /**
      * Quiénes van, para leer: «Ana Ficticia (encabeza), Beto Ejemplo y Carla Inventada».
-     * Quien encabeza va primero y marcado (solo si van varios); los demás, por nombre.
+     * Quien encabeza va primero y marcado (solo si van varios y no es un viaje); los demás, por nombre.
      * Con `$sin` se deja afuera a una persona: en «Mi salida», «Vas con …» no se nombra a
      * quien mira. Usa `personal` (con el rol en el pivote): cargarlo antes en listas.
      */
     public function quienesVan(?int $sin = null): string
     {
         $encabeza = fn (PersonalRuta $p) => $p->pivot?->rol === RolEnSalida::Responsable->value;
-        $marcar = $this->personal->count() > 1;
+        // En el viaje nadie encabeza: es de quien lo abrió y los demás solo entregaron algo suyo.
+        $marcar = ! $this->esViaje() && $this->personal->count() > 1;
 
         return $this->personal
             ->reject(fn (PersonalRuta $p) => $p->id === $sin)
@@ -323,7 +324,7 @@ class SalidaRuta extends Model
             ->join(', ', ' y ');
     }
 
-    /** Etiqueta breve para mensajes: «San Miguel · 14–16 ago 2026»; el viaje, por su nombre. */
+    /** Etiqueta breve para mensajes: «San Miguel · 14/08/2026 al 16/08/2026»; el viaje, por su nombre. */
     public function descripcionCorta(): string
     {
         return $this->esViaje() ? $this->nombreViaje() : $this->ruta->nombre.' · '.$this->periodoLegible();
@@ -353,22 +354,38 @@ class SalidaRuta extends Model
     }
 
     /**
-     * Rango de fechas legible: «14–16 ago 2026», o solo la de inicio si todavía no
-     * hay regreso conocido. Se usa en el encabezado del detalle y en el listado.
+     * Las fechas de la salida, en dd/mm/aaaa como todo el sistema: «14/08/2026 al 16/08/2026»,
+     * o solo la de inicio si todavía no hay regreso conocido. Se usa en el encabezado del
+     * detalle y en los mensajes.
      */
     public function periodoLegible(): string
     {
         $fin = $this->fecha_fin_real ?? $this->fecha_fin_estimada;
+        $inicio = $this->fecha_inicio->format('d/m/Y');
 
-        if ($fin === null) {
-            return $this->fecha_inicio->translatedFormat('d M Y');
-        }
+        return $fin === null || $fin->isSameDay($this->fecha_inicio) ? $inicio : $inicio.' al '.$fin->format('d/m/Y');
+    }
 
-        // Mismo mes y año: no se repite el mes ("14–16 ago 2026").
-        if ($this->fecha_inicio->isSameMonth($fin)) {
-            return $this->fecha_inicio->translatedFormat('d').'–'.$fin->translatedFormat('d M Y');
-        }
+    /**
+     * El estado, como se lee en las pantallas de Rutas. El viaje está «Abierto» o «Cerrado»
+     * (o «Cancelado»): un solo nombre, sin mezclarlo con «en curso», «finalizada» ni «en
+     * camino». La salida armada a mano de antes dice lo mismo, en femenino.
+     */
+    public function estadoLegible(): string
+    {
+        $viaje = $this->esViaje();
 
-        return $this->fecha_inicio->translatedFormat('d M').' – '.$fin->translatedFormat('d M Y');
+        return match ($this->estado) {
+            EstadoSalidaRuta::Planificada => 'Programada',
+            EstadoSalidaRuta::EnCurso => $viaje ? 'Abierto' : 'Abierta',
+            EstadoSalidaRuta::Finalizada => $viaje ? 'Cerrado' : 'Cerrada',
+            EstadoSalidaRuta::Cancelada => $viaje ? 'Cancelado' : 'Cancelada',
+        };
+    }
+
+    /** Para una frase: «el viaje Lunes · San Miguel» o «la salida San Miguel · 14/08/2026». */
+    public function conArticulo(): string
+    {
+        return ($this->esViaje() ? 'el viaje ' : 'la salida ').$this->descripcionCorta();
     }
 }

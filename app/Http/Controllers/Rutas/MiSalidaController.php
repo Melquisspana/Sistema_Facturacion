@@ -249,7 +249,7 @@ class MiSalidaController extends Controller
         // atrás daría 403, así que se va a «Por entregar», donde el CCF aparece otra vez.
         $salida->refresh();
         if ($salida->esAutomatica()) {
-            $aviso = 'Se quitó el CCF de la salida; vuelve a Por entregar.';
+            $aviso = 'Se deshizo: el CCF vuelve a Por entregar.';
 
             return $salida->estado === EstadoSalidaRuta::EnCurso ? back()->with('status', $aviso)
                 : redirect()->route('rutas.por-entregar.index')->with('status', $aviso);

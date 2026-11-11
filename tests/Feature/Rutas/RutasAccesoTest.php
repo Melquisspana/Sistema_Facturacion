@@ -42,7 +42,7 @@ class RutasAccesoTest extends TestCase
                 ->assertDontSee('Configurar rutas');
 
             $this->actingAs($usuario)->get(route('rutas.rutas.index'))->assertOk();
-            $this->actingAs($usuario)->get(route('rutas.salidas.index'))->assertOk()->assertSee('Viajes anteriores');
+            $this->actingAs($usuario)->get(route('rutas.salidas.index'))->assertOk()->assertSee('Todos los viajes');
         }
     }
 

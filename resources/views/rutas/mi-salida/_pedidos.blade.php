@@ -1,6 +1,7 @@
 {{-- Los pedidos de esta salida (desde el 10/11/2026, los del viaje: se suman solos al sacarlos).
      Sacar uno nuevo se hace desde «Sacar pedido», en cualquier sala; acá se ve lo sacado y, para
-     quien lo sacó y el mismo día, Corregir y Anular. --}}
+     quien lo sacó, Corregir y Anular: hasta que saque el pedido de la sala siguiente o la
+     fábrica lo empiece (PedidoSalaPolicy::corregir). Después lo corrige la oficina. --}}
 @php
     $cajaPedido = 'rounded-2xl bg-white p-4 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
     $gris = 'text-sm text-gray-600 dark:text-paper-300';

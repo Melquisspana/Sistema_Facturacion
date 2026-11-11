@@ -107,7 +107,7 @@
                                         <p class="text-lg font-semibold text-gray-800">{{ $pedido->nombreSala() }}</p>
                                         <x-rutas.estado-badge :estado="$pedido->estado" />
                                     </div>
-                                    <p class="mt-1 text-sm text-gray-600">Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</p>
+                                    <p class="mt-1 text-sm text-gray-600">Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }}</p>
                                     <ul class="mt-2 space-y-1 text-sm text-gray-700">
                                         @foreach ($pedido->lineas->filter->tienePendiente() as $linea)
                                             <li>Faltó <span class="font-semibold tabular-nums">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</span> × {{ $linea->producto?->nombre }}{{ $linea->motivo_no_enviado ? ' · '.$linea->motivo_no_enviado : '' }}</li>
