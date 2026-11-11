@@ -1,6 +1,6 @@
 # Migración del servidor a Linux con Docker
 
-> Plan de trabajo, 08/11/2026. Producción no cambió. La fase A (archivos de Docker y cambios de código en el repo) está hecha; ver su estado en la sección 5.
+> Plan de trabajo del 08/11/2026. **El cambio se hizo el 11/11/2026:** producción corre en Linux con Docker. Lo que se hizo y lo que cambió frente al plan está al final de las fases D, E y F (sección 5). La guía vigente para desplegar es `docs/DESPLIEGUE_LINUX.md`.
 > Este documento se armó con mapas del repositorio hechos en modo lectura. Cuando algo no se puede ver en el repo, aparece como **pregunta abierta** (sección 6) y no como algo seguro.
 > Por ser un repositorio público, aquí no van datos de clientes ni de personas, IP reales, dominios reales ni secretos. Los secretos aparecen solo por su **nombre de variable**.
 
@@ -465,15 +465,17 @@ El filtro del Host lo hace Apache: en `docker/apache/facturacion.conf` el primer
 | Variable o ajuste | Valor en Linux |
 |---|---|
 | `DB_HOST` | `mysql` (nombre del servicio) |
-| `DB_DUMP_PATH` | vacío o `/usr/bin` (`BackupMysqlDiarioCommand` ya quita el `.exe` cuando no es Windows) |
+| `DB_DUMP_PATH` | `/usr/bin` (en Windows era la carpeta de MySQL de Laragon; `BackupMysqlDiarioCommand` ya quita el `.exe` cuando no es Windows) |
 | `BACKUP_DIARIO_ROOT` | `/var/www/html/backups` |
 | `DTE_FIRMADOR_URL` | `http://firmador:8080/firmardocumento` |
-| `SALUD_FIRMADORES` | solo `http://firmador:8080/firmardocumento/status` (el 8119 no se migra) |
+| `SALUD_FIRMADORES` | solo `http://firmador:8080/firmardocumento/status` (el 8119 no se migra). Con las URL de Windows, `/salud` da 503 |
 | `DTE_PDF_LOGO_PATH` | vacío (usa `public_path`) o una ruta Linux |
 | `DB_QUEUE_RETRY_AFTER` | mayor que 3600 (por ejemplo 3700) |
 | `TRUSTED_PROXIES` | `172.30.0.10` (cloudflared); más la IP fija del contenedor de Tailscale si se usa (3.6). Nunca la puerta de enlace ni la red de la oficina |
 | `BACKUP_DIARIO_PROGRAMADO` | `true` (en Windows queda en `false`: lo corre su tarea de las 02:00) |
-| `LOG_CHANNEL` / `LOG_STACK` | `daily`, porque hoy `laravel.log` no rota |
+| `LOG_CHANNEL` / `LOG_STACK` | `daily`, porque hoy `laravel.log` no rota. **Pendiente:** el 11/11 quedó como estaba (`stack`) |
+| SMTP (`MAIL_*`) | el que vale está en el Centro de Configuración (base), no en el `.env`. Un script propio que mande correo tiene que llamar a `ConfiguracionCorreoRuntime::aplicar()` |
+| DNS del host y de Docker | resolutores que funcionen desde la oficina (el router no resolvía); en `/etc/docker/daemon.json`, `"dns"` |
 | `APP_MAINTENANCE_DRIVER` | `cache` (va a la base y afecta a todos los contenedores) o dejar `file`, que ya se comparte en el volumen |
 | `TZ` | `America/El_Salvador` en todos los contenedores |
 | `APP_URL`, `SESSION_SECURE_COOKIE`, `GMAIL_REDIRECT_URI`, `CLOUDFLARE_ACCESS_*` | **los mismos de producción** si el dominio no cambia (P9). `APP_URL` tiene que ser el dominio público (`https://…`): el enlace de «olvidé mi contraseña» sale con él, y desde la red local se llega por Cloudflare |
@@ -482,7 +484,7 @@ El filtro del Host lo hace Apache: en `docker/apache/facturacion.conf` el primer
 | `WEB_IP_LAN`, `LAN_SUBNET`, `LAN_TLS_DIR` (`.env.compose`) | la IP del servidor en la red local, la red de la oficina y la carpeta con `lan.crt` y `lan.key` (3.7) |
 | Destino del túnel en Cloudflare | `http://web:80` |
 | Tailscale Serve | contenedor `tailscale` con IP fija hacia `http://web:80`, en `TRUSTED_PROXIES` (3.6); no `127.0.0.1:80` del host |
-| Reserva de DHCP | la misma IP para el equipo (los ESP32 la tienen fija) |
+| Reserva de DHCP | la misma IP para el equipo (los ESP32 la tienen fija). El 11/11 se fijó en el host, sin reserva |
 
 ---
 
@@ -673,6 +675,13 @@ Lo que sigue de esta fase:
    - nombres de tablas en minúsculas y que `routines`, `triggers` y `events` se importan sin error de `DEFINER` (R7).
 5. Al terminar, borrar la copia de la máquina de ensayo y anotar que se borró.
 
+**Hecho (11/11/2026),** en WSL de otra PC, con el volcado de esa mañana:
+- la restauración completa tardó 7 minutos, más 6 para copiar 4 GB de documentos desde Windows a Linux;
+- el volcado llegó con el mismo SHA-256; la base, la `APP_KEY` (ajustes y Gmail), el PDF de un DTE y la firma con el certificado de producción, sin transmitir, salieron bien;
+- **hallazgo:** el paso de permisos usaba `RolesSeeder`. Se cambió por `scripts/linux/permisos-sumar.php`, que solo suma;
+- `/salud` daba 503 porque `SALUD_FIRMADORES` seguía apuntando a Windows y en el ensayo no hay worker: son ajustes de 4.4;
+- la copia se borró ese mismo día.
+
 ### Fase E — El día del cambio
 
 **Antes del día:**
@@ -713,7 +722,29 @@ Lo que sigue de esta fase:
 - **Sin imagen de Windows**, la salida práctica es seguir en Linux hasta arreglarlo. Con la ISO se puede reinstalar Windows, pero después hay que volver a instalar y configurar todo (Laragon, MySQL, firmador, tareas, cloudflared) y restaurar las copias: es cosa de un día, no de horas. Por eso la fase C tiene que salir completa.
 - Comprobar la hora del sistema antes de firmar (R9).
 
+**Hecho (11/11/2026), y en qué cambió frente al plan:**
+- **Sin imagen de Windows** (decisión de Melqui). La salida, si fallaba, era reinstalar Windows con la copia; no hizo falta.
+- **Respaldo final** con el sistema en mantenimiento. El volcado y `storage/app` se copiaron a un medio externo y se comprobaron: SHA-256 del volcado y la misma cantidad de documentos.
+- **Debian 13** (netinst, solo servidor SSH y utilidades). La IP fija va en el host (`/etc/network/interfaces`), no en una reserva de DHCP. Al pasar de DHCP a IP fija hay que reiniciar, porque el cliente DHCP sigue con la dirección anterior hasta entonces.
+- **DNS:** el router de la oficina no resolvía nombres. El host y el daemon de Docker (`/etc/docker/daemon.json`, `"dns"`) usan resolutores públicos. Tailscale con MagicDNS reescribe `resolv.conf` y toma esos como base.
+- **Imagen:** la misma que pasó la fase D, llevada con `docker save` / `docker load`.
+- **Arranque:** la base se importó y se puso `artisan down --secret` antes de levantar `web`, sin worker ni programador. Se abrió después de las comprobaciones: `/salud`, firma, APP_KEY, PDF, HTTP y HTTPS de la oficina, y un respaldo de prueba.
+- **Túnel:** el destino estaba en el panel de Cloudflare (`127.0.0.1:80`) y daba 502 hasta cambiarlo a mano a `http://web:80`. Las rutas de dos sistemas que ya no se usan se borraron.
+- **Tailscale Serve no se configuró:** se entra por SSH a través del Tailscale del host. P16 queda abierta solo si se quiere servir la app por Tailscale.
+- **Respaldo a Drive:** la subida de Windows (`respaldo-nube.ps1`) **fallaba desde el 09/11 sin avisar**. En Linux quedó con aviso por correo: `scripts/linux/respaldo-nube/`.
+- **Pendientes:**
+  - el primer DTE real (paso 12): ese día no hubo qué facturar;
+  - la marca de un lector (paso 11): el único lector activo no se conectaba desde el 29/10, antes del cambio.
+
 ### Fase F — Después del cambio
+
+**Estado (11/11/2026):**
+- paso 4 hecho, con la subida de Rutas (v2026.11.11.2): imagen construida en el servidor desde el commit, siguiendo `docs/DESPLIEGUE_LINUX.md`;
+- paso 5 hecho con esa guía;
+- paso 6 no aplica, porque no se sacó imagen de Windows;
+- paso 7 hecho: la BIOS ya encendía sola al volver la luz y un reinicio sin monitor dejó todo andando sin entrar a nadie;
+- en curso: paso 1 (primera semana);
+- pendientes: paso 2 (restauración de prueba) y paso 3 (NUT, P14).
 
 1. **Primera semana:**
    - revisar cada día `/salud`, alertas, `failed_jobs` y los registros del programador;
@@ -774,10 +805,10 @@ Lo que sigue de esta fase:
 | P9 | ¿El dominio público, `APP_URL`, `SESSION_SECURE_COOKIE` y `GMAIL_REDIRECT_URI` quedan iguales? | `.env` de producción (lo lee Melqui) |
 | P10 | ¿Algún pedido web necesita más de 30 s? ¿Qué `php.ini` tiene producción (subidas, memoria, opcache)? | Servidor y registros |
 | P11 | ¿Apache (menos cambio) o nginx + php-fpm? | Decisión técnica en la fase A |
-| P12 | ¿Qué sube rclone hoy, cuándo y a qué remoto? (`C:\rclone` no se toca) | Melqui |
+| P12 | ~~¿Qué sube rclone hoy, cuándo y a qué remoto?~~ **Respondida (11/11):** documentos, configuración crítica, firmador y un volcado propio a un remoto cifrado, y la configuración cifrada de rclone a una carpeta de rescate. En Linux: `scripts/linux/respaldo-nube/` | — |
 | P13 | ¿El paquete del MH trae JAR, compose o variante para Linux? ¿Exige otra versión de Java? ¿Se usa el perfil `ssl` en producción? | Contenido de `resources/firmador/` en el servidor |
 | P14 | ¿Qué UPS hay y se puede conectar por USB para NUT? | Melqui |
-| P15 | ¿Cuánto tiempo se guarda la imagen de Windows después del cambio? ¿Hay un disco USB para sacarla? | Decisión de Melqui |
+| P15 | ~~¿Cuánto tiempo se guarda la imagen de Windows después del cambio?~~ **No aplica:** Melqui decidió no sacarla (11/11) | — |
 | P16 | ¿Tailscale en el host (nodo nuevo) o en contenedor? ¿Cambia el nombre que usa el despliegue por SSH? Recomendado: contenedor con IP fija en `TRUSTED_PROXIES` para servir la app (3.6); falta probarlo en la fase C | Decisión técnica y consola de Tailscale |
 | P17 | Si se activa BitLocker antes del cambio, ¿la clave de recuperación está a mano para restaurar la imagen? | Melqui |
 | P18 | ¿Quién consulta `/salud` desde afuera (issue #163)? ¿Hay que avisarle de una ventana sin servicio? | Melqui |

@@ -1,5 +1,7 @@
 # Probar la restauración de un backup en Windows / Laragon
 
+> **Historia.** Desde el 11/11/2026 producción corre en Linux con Docker: en Linux la prueba de restauración es `scripts/linux/backup-restore-test.sh`.
+
 Guía para **validar** que un backup se puede restaurar, **sin tocar la base real**.
 La prueba se hace siempre en una base **temporal**: `base_ejemplo`.
 
