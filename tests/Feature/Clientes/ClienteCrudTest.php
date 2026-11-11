@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Clientes;
 
+use App\Models\ActividadEconomica;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Departamento;
 use App\Models\Municipio;
 use App\Models\Pais;
@@ -93,18 +95,23 @@ class ClienteCrudTest extends TestCase
         ]);
     }
 
-    public function test_facturacion_solo_ve_no_crea(): void
+    public function test_facturacion_da_de_alta_clientes(): void
     {
-        // Nueva política: facturación es SOLO lectura en clientes (la gestión es admin).
+        // Desde el 10/11/2026 facturación da de alta clientes: registra la tienda nueva al
+        // facturar (decisión de Melqui). Las validaciones del formulario son las mismas.
         $facturacion = $this->usuario('facturacion');
 
         $this->actingAs($facturacion)->get(route('clientes.index'))->assertOk();
-        $this->actingAs($facturacion)->get(route('clientes.create'))->assertForbidden();
+        $this->actingAs($facturacion)->get(route('clientes.create'))->assertOk();
+        $this->actingAs($facturacion)
+            ->post(route('clientes.store'), $this->datosClienteValido(['nombre' => '']))
+            ->assertSessionHasErrors('nombre');
+        $this->assertDatabaseCount('clientes', 0);
+
         $this->actingAs($facturacion)
             ->post(route('clientes.store'), $this->datosClienteValido())
-            ->assertForbidden();
-
-        $this->assertDatabaseCount('clientes', 0);
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertDatabaseCount('clientes', 1);
     }
 
     public function test_administrador_edita_cliente(): void
@@ -316,7 +323,7 @@ class ClienteCrudTest extends TestCase
             'tipo_documento' => '36',
             'num_documento' => '0614-010101-101-1',
             'nrc' => '123456-7',
-            'actividad_economica_id' => \App\Models\ActividadEconomica::firstOrFail()->id,
+            'actividad_economica_id' => ActividadEconomica::firstOrFail()->id,
             'nombre' => 'Distribuidora Contribuyente, S.A. de C.V.',
         ], $override));
     }
@@ -547,7 +554,7 @@ class ClienteCrudTest extends TestCase
     public function test_editar_cliente_con_salas_no_abre_la_ubicacion(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();
-        \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
+        ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('clientes.edit', $cliente))
@@ -721,7 +728,7 @@ class ClienteCrudTest extends TestCase
             ->assertOk()
             ->assertSee('Agregar la primera sala');
 
-        \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
+        ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
 
         $this->actingAs($admin)->get(route('clientes.show', $cliente))
             ->assertOk()

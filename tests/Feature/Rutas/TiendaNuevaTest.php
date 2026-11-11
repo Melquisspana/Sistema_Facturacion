@@ -3,6 +3,7 @@
 namespace Tests\Feature\Rutas;
 
 use App\Enums\EstadoPedidoSala;
+use App\Enums\RolSistema;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Departamento;
@@ -311,12 +312,22 @@ class TiendaNuevaTest extends TestCase
         $this->assertSame($sala->id, $pedido->refresh()->cliente_sucursal_id);
     }
 
-    public function test_sin_permiso_de_clientes_la_pantalla_dice_a_quien_pedirle_el_alta(): void
+    public function test_facturacion_da_de_alta_la_tienda_y_sin_permiso_de_clientes_dice_a_quien_pedirselo(): void
     {
         $pedido = $this->pedidoConEnvio();
+        // Facturación da de alta clientes y salas desde el 10/11/2026 (decisión de Melqui).
         $this->actingAs($this->oficina)->get(route('facturacion.pedidos.tienda', $pedido))->assertOk()
+            ->assertSee('href="'.e(route('clientes.create', ['pedido_sala' => $pedido->id])).'"', false)
+            ->assertDontSee('Pedile a quien maneja Clientes que la dé de alta');
+        $this->actingAs($this->oficina)->get(route('clientes.create', ['pedido_sala' => $pedido->id]))->assertOk();
+
+        // Quien factura sin el permiso de Clientes: se le dice a quién pedírselo.
+        $sinClientes = User::factory()->create(['activo' => true]);
+        $sinClientes->givePermissionTo(array_values(array_diff(RolSistema::Facturacion->permisos(), ['clientes.gestionar'])));
+        $this->actingAs($sinClientes)->get(route('facturacion.pedidos.tienda', $pedido))->assertOk()
             ->assertDontSee(route('clientes.create', ['pedido_sala' => $pedido->id]))
             ->assertSee('Pedile a quien maneja Clientes que la dé de alta');
+        $this->actingAs($sinClientes)->get(route('clientes.create', ['pedido_sala' => $pedido->id]))->assertForbidden();
     }
 
     public function test_antes_de_la_tienda_nueva_ofrece_las_parecidas(): void
