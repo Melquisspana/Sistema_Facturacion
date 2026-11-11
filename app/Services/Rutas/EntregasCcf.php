@@ -353,30 +353,6 @@ class EntregasCcf
         return ['quedan_numero' => $validos['quedan_numero'], 'quedan_fecha_pago' => $validos['quedan_fecha_pago']];
     }
 
-    /** Toda la sala entregada, por la misma persona. Devuelve cuántos marcó. */
-    public function registrarSala(SalidaRuta $salida, int $salaId, int $entregadoPorId, ?User $usuario, OrigenRegistroEntrega $origen): int
-    {
-        return DB::transaction(function () use ($salida, $salaId, $entregadoPorId, $usuario, $origen) {
-            $pendientes = $salida->entregas()->pendientes()->with('dte:id,estado')->where('cliente_sucursal_id', $salaId)->get();
-            $noVigentes = $this->noVigentes($pendientes);
-            $marcados = 0;
-
-            foreach ($pendientes as $entrega) {
-                if (isset($noVigentes[$entrega->dte_id])) {
-                    continue;
-                }
-                $entrega->setRelation('salida', $salida);
-                $this->registrar($entrega, [
-                    'resultado' => ResultadoEntrega::Entregado->value,
-                    'entregado_por_id' => $entregadoPorId,
-                ], $usuario, $origen);
-                $marcados++;
-            }
-
-            return $marcados;
-        });
-    }
-
     /** Vuelve a «sin registrar»: corrige un registro equivocado. */
     public function deshacer(SalidaRutaEntrega $entrega): void
     {
@@ -718,7 +694,7 @@ class EntregasCcf
 
     private function exigirDiaAbierto(SalidaRuta $salida, string $fecha): void
     {
-        // Lectura bloqueante: registrarSala pudo abrir antes una foto de REPEATABLE READ.
+        // Lectura bloqueante: la transacción pudo abrir antes una foto de REPEATABLE READ.
         $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->first();
         abort_if($cierre?->estaCerrado(), 403, 'Ese día de la salida ya está cerrado: sus entregas no se cambian.');
     }

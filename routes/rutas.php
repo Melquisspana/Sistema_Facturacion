@@ -69,7 +69,6 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         Route::delete('{salida}/gastos/{gasto}', [SalidaGastoController::class, 'destroy'])->name('gastos.destroy');
         Route::get('{salida}/gastos/{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('gastos.foto');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
-        Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
         // «Terminar el día» del viaje: ¿mañana sigue en la misma zona? Si no, deja de sumar pedidos.
         Route::post('{salida}/terminar-dia', [MiSalidaController::class, 'terminarDia'])->name('terminar-dia');
     });
@@ -191,9 +190,6 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             ->middleware('permission:rutas.gestionar')
             ->scopeBindings()
             ->group(function () {
-                // Literales antes que paramétricas (regla del repo).
-                Route::post('sala/{sucursal}', [SalidaEntregaController::class, 'sala'])->name('sala')
-                    ->withoutScopedBindings();
                 Route::post('/', [SalidaEntregaController::class, 'store'])->name('store');
                 Route::patch('{entrega}', [SalidaEntregaController::class, 'update'])->name('update');
                 Route::patch('{entrega}/deshacer', [SalidaEntregaController::class, 'deshacer'])->name('deshacer');

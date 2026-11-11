@@ -312,8 +312,8 @@ class PorEntregarViajeTest extends TestCase
         // La hoja de antes («Mi salida») ya no existe: no llega al viaje ni escribiendo la dirección.
         $this->actingAs($this->ana)->patch('/rutas/mi-salida/'.$viaje->id.'/entregas/'.$entrega->id, ['resultado' => 'entregado'])
             ->assertNotFound();
-        $this->actingAs($this->ana)->post(route('rutas.mi-salida.sala', [$viaje, $this->salas['San Miguel']]))
-            ->assertSessionHasErrors($falta);
+        $this->actingAs($this->ana)->post('/rutas/mi-salida/'.$viaje->id.'/sala/'.$this->salas['San Miguel']->id)
+            ->assertNotFound();
         $this->assertSame(0, SalidaRutaEntrega::whereNotNull('resultado')->count());
 
         // La regla vive en el servicio: el vendedor, en el viaje, dice cómo le pagaron.

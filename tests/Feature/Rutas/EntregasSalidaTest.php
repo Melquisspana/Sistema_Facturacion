@@ -332,7 +332,7 @@ class EntregasSalidaTest extends TestCase
         $this->assertSame(0, $segunda->entregas()->count());
     }
 
-    public function test_la_hoja_marca_invalidado_y_la_sala_no_lo_entrega(): void
+    public function test_la_hoja_marca_invalidado_y_no_ofrece_entregarlo(): void
     {
         $dte = $this->ccf();
         $this->ccf();
@@ -348,7 +348,8 @@ class EntregasSalidaTest extends TestCase
         $xpath = new \DOMXPath($dom);
         $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
         $this->assertSame(0, $xpath->query('//form[@action="'.$url.'"]//input[@name="resultado"]')->length);
-        $this->assertSame(2, $this->servicio()->registrarSala($salida, $this->sala->id, $this->carlos->id, null, OrigenRegistroEntrega::Oficina));
+        // Los otros dos sí se pueden marcar.
+        $this->assertSame(2, $xpath->query('//form[contains(@action, "/entregas/")]//input[@name="resultado" and @value="entregado"]')->length);
         $this->assertTrue($entrega->refresh()->estaPendiente());
     }
 
@@ -427,20 +428,6 @@ class EntregasSalidaTest extends TestCase
 
         $this->actingAs($admin)->delete(route('rutas.salidas.entregas.destroy', [$salida, $entrega]))->assertSessionHas('status');
         $this->assertSame(0, $salida->entregas()->count());
-    }
-
-    public function test_toda_la_sala_entregada(): void
-    {
-        $this->ccf();
-        $this->ccf();
-        $salida = $this->salida();
-        $this->cargarCcfDeLaRuta($salida);
-
-        $this->actingAs($this->admin())
-            ->post(route('rutas.salidas.entregas.sala', [$salida, $this->sala]), ['entregado_por_id' => $this->carlos->id])
-            ->assertSessionHas('status');
-
-        $this->assertSame(2, $salida->entregas()->entregadas()->count());
     }
 
     public function test_agregar_por_numero_de_control_tolera_el_numero_sin_guiones(): void

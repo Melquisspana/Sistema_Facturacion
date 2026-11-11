@@ -3,9 +3,7 @@
 namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
-use App\Enums\OrigenRegistroEntrega;
 use App\Http\Controllers\Controller;
-use App\Models\ClienteSucursal;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
@@ -40,15 +38,6 @@ class MiSalidaController extends Controller
     private function persona(Request $request): ?PersonalRuta
     {
         return PersonalRuta::where('user_id', $request->user()->id)->where('activo', true)->first();
-    }
-
-    /**
-     * Quién entregó: el vendedor puede marcar a un compañero de la salida; si no elige,
-     * es él. Que la persona vaya en la salida lo valida {@see EntregasCcf::registrar()}.
-     */
-    private function quienEntrega(Request $request): int
-    {
-        return $request->filled('entregado_por_id') ? (int) $request->input('entregado_por_id') : $this->persona($request)->id;
     }
 
     /**
@@ -201,14 +190,5 @@ class MiSalidaController extends Controller
         }
 
         return back()->with('status', 'El CCF volvió a quedar sin registrar.');
-    }
-
-    public function sala(Request $request, SalidaRuta $salida, ClienteSucursal $sucursal): RedirectResponse
-    {
-        Gate::authorize('registrar', $salida);
-        abort_unless($salida->entregas()->where('cliente_sucursal_id', $sucursal->id)->exists(), 404);
-        $marcados = $this->entregas->registrarSala($salida, $sucursal->id, $this->quienEntrega($request), $request->user(), OrigenRegistroEntrega::Vendedor);
-
-        return back()->with('status', "«{$sucursal->nombre}»: {$marcados} CCF marcados como entregados.");
     }
 }

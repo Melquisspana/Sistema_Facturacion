@@ -153,23 +153,6 @@ class VendedorMiSalidaTest extends TestCase
         $this->assertSame(OrigenRegistroEntrega::Oficina, $entrega->origen_registro);
     }
 
-    public function test_todo_entregado_solo_marca_la_sala_elegida(): void
-    {
-        $salida = $this->salida();
-        $primera = $this->entrega($salida);
-        $segunda = $this->entrega($salida);
-        $otraSala = $this->sala->cliente->sucursales()->create(['nombre' => 'Otra sala']);
-        $otra = $this->entrega($salida, $otraSala);
-        $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]), ['entregado_por_id' => 999])->assertSessionHasErrors('entregado_por_id');
-        $this->assertTrue($primera->refresh()->estaPendiente());
-        $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]))->assertSessionHas('status');
-        foreach ([$primera, $segunda] as $entrega) {
-            $this->assertSame($this->persona->id, $entrega->refresh()->entregado_por_id);
-            $this->assertSame(OrigenRegistroEntrega::Vendedor, $entrega->origen_registro);
-        }
-        $this->assertTrue($otra->refresh()->estaPendiente());
-    }
-
     public function test_todas_las_rutas_get_y_gestion_de_rutas_estan_aisladas(): void
     {
         $comprobadas = 0;

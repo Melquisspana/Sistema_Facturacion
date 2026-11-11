@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Rutas;
 
 use App\Enums\OrigenRegistroEntrega;
 use App\Http\Controllers\Controller;
-use App\Models\ClienteSucursal;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\EntregasCcf;
@@ -64,16 +63,5 @@ class SalidaEntregaController extends Controller
         $this->entregas->quitar($entrega);
 
         return back()->with('status', 'CCF quitado de la salida. Vuelve a quedar pendiente.');
-    }
-
-    public function sala(Request $request, SalidaRuta $salida, ClienteSucursal $sucursal): RedirectResponse
-    {
-        $datos = $request->validate(['entregado_por_id' => ['required', 'integer']], [
-            'entregado_por_id.required' => 'Elegí quién entregó.',
-        ]);
-
-        $marcados = $this->entregas->registrarSala($salida, $sucursal->id, (int) $datos['entregado_por_id'], $request->user(), OrigenRegistroEntrega::Oficina);
-
-        return back()->with('status', "«{$sucursal->nombre}»: {$marcados} CCF marcados como entregados.");
     }
 }
