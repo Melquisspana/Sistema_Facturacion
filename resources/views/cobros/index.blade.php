@@ -46,6 +46,17 @@
                 </div>
             @endif
 
+            @if (($recienAceptados ?? 0) > 0)
+                <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200" role="status">
+                    @if ($recienAceptados === 1)
+                        Hay 1 factura recién aceptada que está entrando al seguimiento.
+                    @else
+                        Hay {{ $recienAceptados }} facturas recién aceptadas que están entrando al seguimiento.
+                    @endif
+                    Aparecen solas en unos minutos: volvé a abrir esta pantalla.
+                </div>
+            @endif
+
             @if (isset($devolucionesSinVincular) && $devolucionesSinVincular->total() > 0)
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4 text-sm">
                     <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Notas de devolución sin vincular ({{ $devolucionesSinVincular->total() }})</h3>

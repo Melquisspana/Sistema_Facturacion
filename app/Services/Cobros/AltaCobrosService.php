@@ -56,6 +56,9 @@ class AltaCobrosService
     /** Tipos que entran al seguimiento: el CCF que se cobra y la NC que lo descuenta. */
     private const TIPOS = [TipoDte::CreditoFiscal->value, TipoDte::NotaCredito->value];
 
+    /** Minutos durante los que un CCF aceptado que todavía no entró se anuncia como «entrando». */
+    private const MINUTOS_RECIEN_ACEPTADO = 15;
+
     /** Motivo de revisión de un documento viejo que entró sin ningún antecedente. */
     public const MOTIVO_SIN_ANTECEDENTE = 'Emitida antes de que existiera este seguimiento y sin '
         .'ningún antecedente: no consta si se presentó ni si se cobró.';
@@ -77,52 +80,130 @@ class AltaCobrosService
         $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0, 'en_otro_cliente' => 0];
 
         $existentes = CobroDocumento::deCliente($cliente->id)
-            ->get(['id', 'dte_id', 'numero_control_norm', 'ejercicio_control'])
+            ->get(['id', 'cliente_id', 'dte_id', 'numero_control_norm', 'ejercicio_control'])
             ->keyBy(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control));
 
         $this->elegibles($cliente)->chunkById(200, function ($documentos) use (&$resumen, $existentes, $cliente) {
             foreach ($documentos as $dte) {
                 $clave = EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision));
+                $alta = $this->incorporarDte($cliente, $dte, $clave === null ? null : $existentes->get($clave));
 
-                if ($clave === null) {
-                    // Sin número de control no hay identidad posible y no se inventa una.
+                if ($alta === null) {
                     continue;
                 }
 
-                $existente = $existentes->get($clave);
+                [$resultado, $documento] = $alta;
+                $resumen[$resultado]++;
 
-                if ($existente !== null) {
-                    $adoptado = $this->adoptar($existente->id, $dte);
-                    $adoptado ? $resumen['adoptados']++ : $resumen['sin_cambio']++;
+                if ($documento !== null) {
+                    if ($documento->revisar_historico) {
+                        $resumen['revision_historica']++;
+                    }
 
-                    continue;
+                    $existentes->put($clave, $documento);
                 }
-
-                $ajeno = $this->enOtroCliente($cliente, $dte);
-                if ($ajeno !== null) {
-                    $resumen['en_otro_cliente']++;
-                    Log::warning('Cobros: el documento ya está en el seguimiento de otro cliente; no se dio de alta.', [
-                        'numero_control' => $dte->numero_control,
-                        'dte_id' => $dte->id,
-                        'cliente_id' => $cliente->id,
-                        'cobro_documento_id' => $ajeno->id,
-                        'otro_cliente_id' => (int) $ajeno->cliente_id,
-                    ]);
-
-                    continue;
-                }
-
-                $documento = $this->crearDesdeDte($cliente, $dte);
-                $resumen['creados']++;
-                if ($documento->revisar_historico) {
-                    $resumen['revision_historica']++;
-                }
-
-                $existentes->put($clave, $documento);
             }
         });
 
         return $resumen;
+    }
+
+    /**
+     * Da de alta UN documento en el momento en que Hacienda lo acepta, sin esperar a la tarea
+     * programada. Lo llama el observador del DTE cuando el estado pasa a Aceptado.
+     *
+     * No tiene reglas propias: pregunta por ESTE documento a la misma consulta de elegibles
+     * y lo incorpora por el mismo camino que {@see sincronizar()}. Lo único que agrega son las
+     * dos condiciones que la tarea programada trae de afuera: la llave `cobros.alta.automatica`
+     * y que el cliente tenga perfil documental activo. Por eso la tarea y este método no se
+     * pisan: el que llega segundo encuentra el documento y no hace nada.
+     *
+     * No vincula albaranes ni marca revisión histórica por antigüedad: eso sigue en la tarea.
+     *
+     * @return 'creados'|'adoptados'|'sin_cambio'|'en_otro_cliente'|null `null` si no le corresponde entrar
+     */
+    public function darDeAlta(Dte $dte): ?string
+    {
+        $tipo = $dte->tipo_dte instanceof TipoDte ? $dte->tipo_dte->value : (string) $dte->tipo_dte;
+
+        if (! in_array($tipo, self::TIPOS, true) || ! Ajustes::bool('cobros.alta.automatica')) {
+            return null;
+        }
+
+        $cliente = Cliente::query()
+            ->whereKey($dte->cliente_id)
+            ->whereHas('perfilDocumento', fn ($q) => $q->where('activo', true))
+            ->first();
+
+        // Se lee de nuevo de la base: lo que decide es lo que quedó guardado, no el modelo en memoria.
+        $elegible = $cliente === null ? null : $this->elegibles($cliente)->whereKey($dte->id)->first();
+
+        if ($elegible === null) {
+            return null;
+        }
+
+        return $this->incorporarDte($cliente, $elegible)[0] ?? null;
+    }
+
+    /**
+     * Cuántos CCF del cliente aceptados hace instantes todavía NO están en el seguimiento.
+     *
+     * Lo normal es cero, porque el alta ocurre al aceptarse. Si quedó alguno afuera (el alta
+     * falló y lo recoge la tarea programada), la pantalla lo anuncia en vez de mostrar la
+     * lista como si estuviera completa. Con el alta automática apagada nada «está entrando»,
+     * así que no se anuncia nada.
+     */
+    public function recienAceptadosSinEntrar(Cliente $cliente): int
+    {
+        if (! Ajustes::bool('cobros.alta.automatica')) {
+            return 0;
+        }
+
+        return $this->elegibles($cliente)
+            ->where('tipo_dte', TipoDte::CreditoFiscal->value)
+            ->where('fecha_procesamiento_mh', '>=', now()->subMinutes(self::MINUTOS_RECIEN_ACEPTADO))
+            ->whereNotIn('id', CobroDocumento::query()->whereNotNull('dte_id')->select('dte_id'))
+            ->count();
+    }
+
+    /**
+     * Incorpora al seguimiento UN documento elegible. Es el único lugar donde se decide si se
+     * crea, se adopta o se deja: lo usan la sincronización del cliente y el alta al aceptar.
+     *
+     * Si no llega el seguimiento ya conocido, se busca en la base. La sincronización trae el
+     * suyo de una lista leída al empezar, y entre esa lectura y este documento el alta al
+     * aceptar pudo haberlo creado: por eso «no está en la lista» nunca alcanza para crear.
+     *
+     * Devuelve el resultado y, si se creó, el documento; `null` sin número de control.
+     *
+     * @return array{0: 'creados'|'adoptados'|'sin_cambio'|'en_otro_cliente', 1: ?CobroDocumento}|null
+     */
+    private function incorporarDte(Cliente $cliente, Dte $dte, ?CobroDocumento $existente = null): ?array
+    {
+        if (IdentidadPpq::normalizar($dte->numero_control) === null) {
+            // Sin número de control no hay identidad posible y no se inventa una.
+            return null;
+        }
+
+        $existente ??= $this->enSeguimiento($dte);
+
+        if ($existente !== null && (int) $existente->cliente_id !== (int) $cliente->id) {
+            Log::warning('Cobros: el documento ya está en el seguimiento de otro cliente; no se dio de alta.', [
+                'numero_control' => $dte->numero_control,
+                'dte_id' => $dte->id,
+                'cliente_id' => $cliente->id,
+                'cobro_documento_id' => $existente->id,
+                'otro_cliente_id' => (int) $existente->cliente_id,
+            ]);
+
+            return ['en_otro_cliente', null];
+        }
+
+        if ($existente !== null) {
+            return [$this->adoptar($existente->id, $dte) ? 'adoptados' : 'sin_cambio', null];
+        }
+
+        return ['creados', $this->crearDesdeDte($cliente, $dte)];
     }
 
     /**
@@ -197,14 +278,21 @@ class AltaCobrosService
             ->aceptadoRealMh();
     }
 
-    /** El seguimiento de OTRO cliente que ya tiene este número y ejercicio, si lo hay. */
-    private function enOtroCliente(Cliente $cliente, Dte $dte): ?CobroDocumento
+    /** El seguimiento que ya tiene este número y ejercicio, sea del cliente que sea (la llave es única). */
+    private function enSeguimiento(Dte $dte): ?CobroDocumento
     {
         return CobroDocumento::query()
             ->where('numero_control_norm', IdentidadPpq::normalizar($dte->numero_control))
             ->where('ejercicio_control', EjercicioControl::de($dte->fecha_emision) ?? EjercicioControl::hoy())
-            ->where('cliente_id', '!=', $cliente->id)
-            ->first(['id', 'cliente_id']);
+            ->first(['id', 'cliente_id', 'dte_id']);
+    }
+
+    /** El seguimiento de OTRO cliente que ya tiene este número y ejercicio, si lo hay. */
+    private function enOtroCliente(Cliente $cliente, Dte $dte): ?CobroDocumento
+    {
+        $documento = $this->enSeguimiento($dte);
+
+        return $documento !== null && (int) $documento->cliente_id !== (int) $cliente->id ? $documento : null;
     }
 
     /** Crea el seguimiento de un DTE aceptado, con sus antecedentes si los hay. */

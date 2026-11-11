@@ -8,6 +8,7 @@ use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Facades\Ajustes;
 use App\Models\Dte;
 use App\Models\DteEnvio;
+use App\Services\Cobros\AltaCobrosService;
 use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Ppq\NcPosterioresLotePpq;
 use Illuminate\Support\Facades\DB;
@@ -104,6 +105,17 @@ class DteObserver
         if (! $dte->wasChanged('estado') || $dte->estado !== EstadoDte::Aceptado) {
             return;
         }
+        // Seguimiento de cobros: el CCF/NC entra en el momento en que Hacienda lo acepta, sin
+        // esperar a la tarea programada. Va DESPUÉS de confirmada la aceptación y nunca la
+        // rompe: si falla, el documento queda aceptado, el error se reporta y lo recoge la
+        // tarea `cobros:sincronizar`. Las reglas de quién entra viven en AltaCobrosService.
+        DB::afterCommit(function () use ($dte) {
+            try {
+                app(AltaCobrosService::class)->darDeAlta($dte);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        });
         if ($dte->tipo_dte === TipoDte::NotaCredito && $dte->dte_relacionado_id) {
             DB::afterCommit(function () use ($dte) {
                 try {

@@ -226,6 +226,8 @@ class CobrosController extends Controller
                 ->get()->keyBy('dte_id'),
             'clientes' => $clientes,
             'cliente' => $cliente,
+            // CCF aceptados hace instantes que todavía no están en el seguimiento (lo normal: 0).
+            'recienAceptados' => $this->alta->recienAceptadosSinEntrar($cliente),
             // Sin Gmail no entran albaranes: se avisa arriba para que no pase inadvertido.
             'gmailDesconectado' => app(ConfiguracionGmail::class)->habilitado() && ! app(GmailClient::class)->disponible(),
             'meses' => $this->meses($cliente, $filtros),
