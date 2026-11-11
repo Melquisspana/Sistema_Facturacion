@@ -26,6 +26,9 @@ class ResumenSincronizacion
     /** El servidor rechazó usuario/contraseña. Reintentar no sirve. */
     public const AUTENTICACION_FALLIDA = 'autenticacion_fallida';
 
+    /** Yahoo frenó los logins seguidos (#162). Pasajero: la próxima corrida lo intenta. */
+    public const BUZON_FRENADO = 'buzon_frenado';
+
     /** El buzón no está configurado todavía. */
     public const SIN_CONFIGURAR = 'sin_configurar';
 
@@ -61,9 +64,15 @@ class ResumenSincronizacion
     public function fallo(): bool
     {
         return in_array($this->desenlace, [
-            self::BUZON_INACCESIBLE, self::AUTENTICACION_FALLIDA,
+            self::BUZON_INACCESIBLE, self::AUTENTICACION_FALLIDA, self::BUZON_FRENADO,
             self::SIN_CONFIGURAR, self::UID_VALIDITY_CAMBIADO,
         ], true);
+    }
+
+    /** Falla que se arregla sola esperando: la tarea programada no la cuenta como caída. */
+    public function pasajera(): bool
+    {
+        return $this->desenlace === self::BUZON_FRENADO;
     }
 
     public function etiqueta(): string
@@ -74,6 +83,7 @@ class ResumenSincronizacion
             self::INCOMPLETA => 'Quedaron días sin cerrar',
             self::BUZON_INACCESIBLE => 'Buzón inaccesible',
             self::AUTENTICACION_FALLIDA => 'Autenticación fallida',
+            self::BUZON_FRENADO => 'Buzón frenado por Yahoo',
             self::SIN_CONFIGURAR => 'Buzón sin configurar',
             self::UID_VALIDITY_CAMBIADO => 'El buzón se reconstruyó (UIDVALIDITY cambió)',
             default => $this->desenlace,

@@ -12,8 +12,8 @@ use App\Facades\Ajustes;
 use App\Models\AjusteSistema;
 use App\Models\User;
 use App\Models\VerificacionConfiguracion;
+use App\Services\DocumentosRecibidos\BuzonConFreno;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
-use App\Services\DocumentosRecibidos\ImapMailboxClient;
 use App\Services\DocumentosRecibidos\NullMailboxClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -267,7 +267,8 @@ class IntegracionDocumentosRecibidosTest extends TestCase
         $this->actingAs($admin);
 
         Ajustes::guardar('documentos_recibidos.driver', 'imap');
-        $this->assertInstanceOf(ImapMailboxClient::class, app(MailboxClient::class));
+        // El lector IMAP sale envuelto con el freno de Yahoo (#162).
+        $this->assertInstanceOf(BuzonConFreno::class, app(MailboxClient::class));
 
         Ajustes::guardar('documentos_recibidos.driver', 'none');
         $this->assertInstanceOf(NullMailboxClient::class, app(MailboxClient::class));
