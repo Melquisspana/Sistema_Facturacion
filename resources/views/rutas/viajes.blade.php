@@ -153,10 +153,10 @@
                 @if ($quedan->isEmpty())
                     <p class="mt-1 text-sm text-gray-600">No hay quedan de tiendas por cobrar.</p>
                 @else
-                    <p class="mt-1 text-sm text-gray-600">Los quedan que dejaron las tiendas al entregar, el pago más próximo primero.</p>
+                    <p class="mt-1 text-sm text-gray-600">Los quedan que dejaron las tiendas al entregar: primero los que no tienen fecha de pago, después el pago más próximo.</p>
                     <ul class="{{ $caja }} mt-3 divide-y divide-gray-100">
                         @foreach ($quedan as $entrega)
-                            @php $vencido = $entrega->quedan_fecha_pago->toDateString() < \App\Support\HoraNegocio::fechaHoy(); @endphp
+                            @php $vencido = $entrega->quedan_fecha_pago !== null && $entrega->quedan_fecha_pago->toDateString() < \App\Support\HoraNegocio::fechaHoy(); @endphp
                             <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                                 <div class="min-w-0">
                                     <p class="font-medium text-gray-800">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</p>
@@ -167,7 +167,11 @@
                                 </div>
                                 <div class="text-right">
                                     <p class="font-semibold tabular-nums text-gray-800">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
-                                    <p class="text-xs {{ $vencido ? 'font-medium text-red-700' : 'text-gray-500' }}">{{ $vencido ? 'Venció el' : 'Paga el' }} {{ $entrega->quedan_fecha_pago->format('d/m/Y') }}</p>
+                                    @if ($entrega->quedan_fecha_pago === null)
+                                        <p class="text-xs font-medium text-amber-800">Sin fecha de pago</p>
+                                    @else
+                                        <p class="text-xs {{ $vencido ? 'font-medium text-red-700' : 'text-gray-500' }}">{{ $vencido ? 'Venció el' : 'Paga el' }} {{ $entrega->quedan_fecha_pago->format('d/m/Y') }}</p>
+                                    @endif
                                 </div>
                             </li>
                         @endforeach

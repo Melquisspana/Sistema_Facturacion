@@ -31,27 +31,33 @@
         @if ($portal)
             <p class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">El cobro va por el portal; la entrega se confirma sola con el albarán.</p>
         @elseif ($pidePago)
+            {{-- `forma` solo decide qué se ve (Alpine, que ya carga la plantilla): los datos del
+                 quedan aparecen al elegir «Quedan». Sin JavaScript quedan siempre a la vista. --}}
+            <div x-data="{ forma: '' }">
             <fieldset class="mt-1.5">
                 <legend class="text-xs font-medium text-gray-700 dark:text-paper-100">¿Cómo te pagaron?</legend>
                 <div class="mt-1 grid grid-cols-2 gap-1.5">
                     @foreach (\App\Enums\FormaCobroEntrega::opciones() + [\App\Services\Rutas\EntregasCcf::SIN_COBRO => 'Quedan'] as $valor => $label)
                         <label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-800 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                            <input type="radio" name="forma_cobro" value="{{ $valor }}" required class="h-4 w-4 border-gray-300 text-indigo-600">
+                            <input type="radio" name="forma_cobro" value="{{ $valor }}" required x-model="forma" class="h-4 w-4 border-gray-300 text-indigo-600">
                             {{ $label }}
                         </label>
                     @endforeach
                 </div>
             </fieldset>
-            {{-- Quedan: puede anotar el número y la fecha de pago que le dieron (opcional). --}}
-            <details class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">
-                <summary class="min-h-11 cursor-pointer py-2">Si dejaron quedan: número y fecha de pago <span class="underline">(opcional)</span></summary>
-                <label for="quedan-numero-{{ $clave }}" class="block">N.º de quedan</label>
+            {{-- Quedan: el número y la fecha de pago que le dieron, a la vista. No son obligatorios
+                 (la tienda puede no dar la fecha): sin fecha, la oficina lo ve como «Sin fecha de pago». --}}
+            <div x-show="forma === '{{ \App\Services\Rutas\EntregasCcf::SIN_COBRO }}'" class="mt-2 rounded-lg bg-gray-50 p-3 ring-1 ring-gray-200 dark:bg-ink-700 dark:ring-ink-600">
+                <p class="text-sm font-medium text-gray-800 dark:text-paper-100">Datos del quedan</p>
+                <p class="text-xs text-gray-600 dark:text-paper-300">Si la tienda no te dio la fecha, dejala vacía.</p>
+                <label for="quedan-numero-{{ $clave }}" class="mt-2 block text-sm text-gray-700 dark:text-paper-100">N.º de quedan</label>
                 <input id="quedan-numero-{{ $clave }}" name="quedan_numero" maxlength="30" autocomplete="off"
                        class="mt-1 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                <label for="quedan-fecha-{{ $clave }}" class="mt-2 block">Fecha de pago</label>
+                <label for="quedan-fecha-{{ $clave }}" class="mt-2 block text-sm text-gray-700 dark:text-paper-100">Fecha de pago</label>
                 <input id="quedan-fecha-{{ $clave }}" name="quedan_fecha_pago" type="date" min="{{ \App\Support\HoraNegocio::fechaHoy() }}"
                        class="mt-1 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-            </details>
+            </div>
+            </div>
         @else
         {{-- Cómo pagó la sala esta vez. Vale la habitual del cliente y no se pregunta:
              solo si esta vez fue distinto se abre y se cambia. No toca su ficha. --}}

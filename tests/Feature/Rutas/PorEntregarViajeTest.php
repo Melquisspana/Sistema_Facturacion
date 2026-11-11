@@ -521,6 +521,40 @@ class PorEntregarViajeTest extends TestCase
         $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia'))->assertOk()->assertSee('N.º Q-0451 · paga el 24/11/2026');
     }
 
+    public function test_el_quedan_sin_fecha_tambien_queda_por_cobrar_y_va_primero(): void
+    {
+        $marcar = fn (Dte $dte, array $datos = []) => $this->actingAs($this->ana)
+            ->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado'] + $datos)->assertSessionHasNoErrors();
+        $conFecha = $this->ccf($this->salas['San Miguel'], '50.00');
+        $marcar($conFecha, ['forma_cobro' => EntregasCcf::SIN_COBRO, 'quedan_numero' => 'Q-1', 'quedan_fecha_pago' => '2026-11-24']);
+        // La tienda no dio fecha ni número: igual quedó por cobrar.
+        $sinFecha = $this->ccf($this->salas['otra San Miguel'], '75.00');
+        $marcar($sinFecha, ['forma_cobro' => EntregasCcf::SIN_COBRO]);
+        // Lo cobrado en efectivo y lo del supermercado del portal no son quedan.
+        $marcar($this->ccf($this->salas['San Miguel'], '10.00'), ['forma_cobro' => 'efectivo']);
+        $super = Cliente::factory()->create(['nombre' => 'Súper de prueba']);
+        config(['ppq.cliente_default_id' => $super->id]);
+        $marcar($this->ccf($super->sucursales()->create(['nombre' => 'Súper de prueba Oriente', 'ruta_id' => $this->rutas['San Miguel']->id]), '310.80', $super));
+
+        $this->assertSame([$sinFecha->id, $conFecha->id], SalidaRutaEntrega::quedanPorCobrar()->pluck('dte_id')->all());
+
+        $jefe = User::factory()->create(['activo' => true])->assignRole('jefe_vendedores');
+        $this->actingAs($jefe)->get(route('rutas.viajes'))->assertOk()
+            ->assertSeeInOrder(['Quedan por cobrar', 'Tienda de prueba Oriente', 'Quedan sin número', 'Sin fecha de pago',
+                'Sala de prueba Oriente', 'Quedan n.º Q-1', 'Paga el 24/11/2026'])
+            ->assertDontSee('Súper de prueba Oriente');
+    }
+
+    public function test_al_entregar_los_datos_del_quedan_van_a_la_vista_y_no_dicen_opcional(): void
+    {
+        $this->ccf($this->salas['San Miguel']);
+        $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSeeInOrder(['¿Cómo te pagaron?', 'Quedan', 'Datos del quedan', 'N.º de quedan', 'Fecha de pago'])
+            ->assertDontSee('Si dejaron quedan')
+            // Se ven al elegir «Quedan»; sin JavaScript quedan siempre a la vista, nunca en un desplegable.
+            ->assertSee('x-show="forma === \'sin_cobro\'"', false);
+    }
+
     public function test_la_observacion_de_la_entrega_queda_guardada(): void
     {
         $dte = $this->ccf($this->salas['San Miguel']);
