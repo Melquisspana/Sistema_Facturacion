@@ -88,6 +88,10 @@
                                         <p class="text-sm font-medium text-indigo-600">Ver u ocultar sus {{ $plural($viaje['pedidos']->count(), 'pedido', 'pedidos') }}</p>
                                     </summary>
 
+                                    {{-- El viaje: sus entregas y el PDF de cada día. --}}
+                                    <p class="border-t border-gray-100 px-4">
+                                        <a href="{{ route('rutas.salidas.show', $salida) }}" class="inline-flex min-h-11 items-center text-sm font-medium text-indigo-600 hover:underline">Ver viaje<span class="sr-only">: {{ $viaje['nombre'] }}</span></a>
+                                    </p>
                                     {{-- Los pedidos del viaje: lista de tarjetas, se lee igual en el celular. --}}
                                     <ul class="divide-y divide-gray-100 border-t border-gray-100">
                                         @foreach ($viaje['pedidos'] as $p)
@@ -192,7 +196,9 @@
                             @foreach ($cerrados as $viaje)
                                 <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                                     <div class="min-w-0">
-                                        <p class="font-medium text-gray-800">{{ $viaje['nombre'] }}</p>
+                                        <p class="font-medium text-gray-800">
+                                            <a href="{{ route('rutas.salidas.show', $viaje['salida']) }}" class="text-indigo-600 hover:underline">{{ $viaje['nombre'] }}</a>
+                                        </p>
                                         <p class="text-xs text-gray-500">
                                             Del {{ $viaje['salida']->fecha_inicio->format('d/m/Y') }} al {{ $viaje['salida']->fecha_fin_real?->format('d/m/Y') }}
                                             · {{ implode(', ', $viaje['vendedores']) ?: 'Sin vendedores' }}

@@ -16,13 +16,12 @@ use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
-use App\Support\NombreEmpresa;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -95,7 +94,11 @@ class MiSalidaController extends Controller
         return reset($vistas)->count();
     }
 
-    /** «Terminar el día»: lo que entregó, lo que no se pudo y lo cobrado hoy, y la pregunta. */
+    /**
+     * «Terminar el día»: lo que entregó, lo que no se pudo y lo cobrado, y la pregunta. Con
+     * `?fecha=AAAA-MM-DD`, el resumen de un día anterior (el viaje dura varios días y cada día
+     * tiene su PDF firmado). Abajo, un enlace al PDF de cada día anterior con movimiento.
+     */
     public function dia(Request $request): View|RedirectResponse
     {
         $persona = $this->persona($request);
@@ -103,32 +106,70 @@ class MiSalidaController extends Controller
             return redirect()->route('rutas.mi-salida.index');
         }
         $viaje = $this->viajes->abierto($persona);
+        $hoy = HoraNegocio::fechaHoy();
+        $fecha = $this->fechaDelDia($request, $viaje);
+        if ($fecha === null) {
+            return $this->diaInvalido();
+        }
 
         return view('rutas.mi-salida.dia', [
             'persona' => $persona,
-            'resumen' => $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()),
+            'fecha' => $fecha,
+            'esHoy' => $fecha === $hoy,
+            'resumen' => $this->dia->resumen($persona, $request->user(), $fecha),
             'viaje' => $viaje,
             'sumando' => $viaje !== null && $this->viajes->sigueSumando($viaje),
-            // Los gastos del día se anotan en el viaje y salen en el PDF.
-            'puedeAnotarGastos' => $viaje !== null && $request->user()->can('agregarGasto', [$viaje, HoraNegocio::fechaHoy()]),
+            // Los gastos del día se anotan en el viaje y salen en el PDF. Solo los de hoy.
+            'puedeAnotarGastos' => $fecha === $hoy && $viaje !== null && $request->user()->can('agregarGasto', [$viaje, $hoy]),
+            'diasAnteriores' => array_values(array_filter(
+                $this->dia->diasConMovimiento($persona, $request->user(), $viaje ? $viaje->fecha_inicio->toDateString() : $this->desdeSinViaje(), $hoy),
+                fn (string $d) => $d !== $hoy,
+            )),
         ]);
     }
 
-    /** El PDF del día: lo entregado, lo que no se pudo y lo cobrado, con el nombre de la empresa. */
+    /** El PDF del día (hoy, o `?fecha=`): lo entregado, lo que no se pudo y lo cobrado, con el nombre de la empresa. */
     public function diaPdf(Request $request): Response|RedirectResponse
     {
         $persona = $this->persona($request);
         if ($persona === null) {
             return redirect()->route('rutas.mi-salida.index');
         }
-        $fecha = HoraNegocio::fechaHoy();
+        $fecha = $this->fechaDelDia($request, $this->viajes->abierto($persona));
+        if ($fecha === null) {
+            return $this->diaInvalido();
+        }
 
-        return Pdf::loadView('rutas.mi-salida.dia-pdf', [
-            'resumen' => $this->dia->resumen($persona, $request->user(), $fecha),
-            'persona' => $persona,
-            'empresa' => NombreEmpresa::actual(),
-            'generado' => HoraNegocio::aLocal(now()),
-        ])->setPaper('letter')->stream('dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf');
+        return $this->dia->pdf($persona, $request->user(), $fecha);
+    }
+
+    /**
+     * El día pedido (`?fecha=AAAA-MM-DD`) o, sin él, hoy. Vale si no es futuro y está dentro
+     * de su viaje abierto o es de hasta {@see DiaVendedor::DIAS_ATRAS} días atrás. Null si no vale.
+     */
+    private function fechaDelDia(Request $request, ?SalidaRuta $viaje): ?string
+    {
+        $hoy = HoraNegocio::fechaHoy();
+        if (! $request->has('fecha')) {
+            return $hoy;
+        }
+        $desde = min($this->desdeSinViaje(), $viaje?->fecha_inicio->toDateString() ?? $hoy);
+        $fecha = $request->query('fecha');
+
+        return is_string($fecha) && Validator::make(['fecha' => $fecha], [
+            'fecha' => ['date_format:Y-m-d', 'after_or_equal:'.$desde, 'before_or_equal:'.$hoy],
+        ])->passes() ? $fecha : null;
+    }
+
+    private function desdeSinViaje(): string
+    {
+        return Carbon::parse(HoraNegocio::fechaHoy())->subDays(DiaVendedor::DIAS_ATRAS)->toDateString();
+    }
+
+    private function diaInvalido(): RedirectResponse
+    {
+        return redirect()->route('rutas.mi-salida.dia')
+            ->with('error', 'Ese día no se puede abrir: solo los días de tu viaje o de los últimos '.DiaVendedor::DIAS_ATRAS.' días.');
     }
 
     /** «Terminar el día»: si mañana no sigue en la misma zona, el viaje deja de sumar pedidos. */

@@ -456,6 +456,95 @@ class PorEntregarViajeTest extends TestCase
         $this->assertSame(0, SalidaRutaEntrega::count());
     }
 
+    // ---------------------------------------------------------------- el PDF de cada día
+
+    private function entregar(User $usuario, Dte $dte, string $forma = 'efectivo'): void
+    {
+        $this->actingAs($usuario)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => $forma])
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_terminar_el_dia_enlaza_el_pdf_de_cada_dia_del_viaje_con_movimiento(): void
+    {
+        $this->sacar('San Miguel', $this->personaAna, $this->ana);
+        $this->entregar($this->ana, $this->ccf($this->salas['San Miguel'], '142.00'));
+        // El miércoles no hubo nada; el jueves sí.
+        $this->travelTo('2026-11-12 09:00:00');
+        $this->entregar($this->ana, $this->ccf($this->salas['San Miguel'], '20.00'), 'cheque');
+
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia'))->assertOk()
+            ->assertSeeInOrder(['Días anteriores de este viaje', 'Martes 10/11/2026'])
+            ->assertSee('href="'.e(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-11-10'])).'"', false)
+            ->assertDontSee('Miércoles 11/11/2026')
+            ->assertSee('href="'.route('rutas.mi-salida.dia.pdf').'"', false);
+
+        $pdf = $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-11-10']));
+        $pdf->assertOk()->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString('dia-2026-11-10-ana-ficticia.pdf', (string) $pdf->headers->get('content-disposition'));
+        // Ese día, en pantalla: su resumen, sin la pregunta de hoy.
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia', ['fecha' => '2026-11-10']))->assertOk()
+            ->assertSee('Martes 10/11/2026')->assertSeeInOrder(['Efectivo', '$142.00'])
+            ->assertSee('href="'.e(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-11-10'])).'"', false)
+            ->assertDontSee('¿Mañana seguís en la misma zona?');
+        $this->assertSame(14200, app(DiaVendedor::class)->resumen($this->personaAna, $this->ana, '2026-11-10')['efectivo']);
+    }
+
+    public function test_el_pdf_del_dia_no_se_abre_para_un_dia_futuro_ni_viejo(): void
+    {
+        // Sin viaje: hasta 15 días atrás.
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-10-26']))->assertOk();
+        foreach (['2026-11-11', '2026-10-25', 'ayer', '2026-13-45'] as $fecha) {
+            $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia.pdf', ['fecha' => $fecha]))
+                ->assertRedirect(route('rutas.mi-salida.dia'))->assertSessionHas('error');
+            $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia', ['fecha' => $fecha]))
+                ->assertRedirect(route('rutas.mi-salida.dia'))->assertSessionHas('error');
+        }
+
+        // Con el viaje abierto, todos sus días, aunque pasen más de 15; antes del viaje, no.
+        $this->sacar('San Miguel', $this->personaAna, $this->ana);
+        $this->travelTo('2026-11-30 09:00:00');
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-11-10']))->assertOk();
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-11-09']))->assertRedirect(route('rutas.mi-salida.dia'));
+    }
+
+    public function test_la_oficina_y_el_jefe_abren_el_pdf_de_cualquier_dia_de_un_viaje(): void
+    {
+        $pedido = $this->sacar('San Miguel', $this->personaAna, $this->ana);
+        $viaje = $pedido->salida;
+        $this->entregar($this->ana, $this->ccf($this->salas['San Miguel'], '142.00'));
+        $this->travelTo('2026-11-11 09:00:00');
+        // Beto entrega un CCF del pedido de Ana: va de acompañante y también tiene su PDF.
+        $this->entregar($this->beto, $this->facturado($pedido, '60.00'));
+        $this->travelTo('2026-11-12 09:00:00');
+
+        $deAna = route('rutas.salidas.dia-pdf', [$viaje, '2026-11-10', $this->personaAna]);
+        $deBeto = route('rutas.salidas.dia-pdf', [$viaje, '2026-11-11', $this->personaBeto]);
+        foreach (['jefe_vendedores', 'facturacion'] as $rol) {
+            $usuario = User::factory()->create(['activo' => true])->assignRole($rol);
+            $this->actingAs($usuario)->get(route('rutas.salidas.show', $viaje))->assertOk()
+                ->assertSeeInOrder(['PDF de cada día', 'Martes 10/11/2026', 'Ana Ficticia', 'Miércoles 11/11/2026', 'Beto Ficticio'])
+                ->assertSee('href="'.$deAna.'"', false)->assertSee('href="'.$deBeto.'"', false);
+            $pdf = $this->actingAs($usuario)->get($deAna);
+            $pdf->assertOk()->assertHeader('content-type', 'application/pdf');
+            $this->assertStringContainsString('dia-2026-11-10-ana-ficticia.pdf', (string) $pdf->headers->get('content-disposition'));
+            $this->actingAs($usuario)->get($deBeto)->assertOk();
+            // La pestaña «Viajes» lleva al viaje.
+            $this->actingAs($usuario)->get(route('rutas.viajes'))->assertOk()->assertSee('href="'.route('rutas.salidas.show', $viaje).'"', false);
+        }
+
+        // Fuera del viaje, un día que no existe, quien no va en él o una salida que no es un viaje: 404.
+        $otro = PersonalRuta::create(['nombre' => 'Carla Ficticia']);
+        $aMano = SalidaRuta::create(['ruta_id' => $this->rutas['San Miguel']->id, 'fecha_inicio' => '2026-11-10', 'estado' => EstadoSalidaRuta::EnCurso]);
+        $aMano->participantes()->create(['rutas_personal_id' => $this->personaAna->id, 'rol' => RolEnSalida::Responsable]);
+        foreach ([[$viaje, '2026-11-09', $this->personaAna], [$viaje, '2026-11-13', $this->personaAna], [$viaje, '2026-02-31', $this->personaAna],
+            [$viaje, '2026-11-10', $otro], [$aMano, '2026-11-10', $this->personaAna]] as $parametros) {
+            $this->actingAs($usuario)->get(route('rutas.salidas.dia-pdf', $parametros))->assertNotFound();
+        }
+        // El vendedor no entra por la oficina: solo abre los suyos, desde «Terminar el día».
+        $this->actingAs($this->beto)->get($deAna)->assertForbidden();
+        $this->actingAs($this->ana)->get($deAna)->assertForbidden();
+    }
+
     // ---------------------------------------------------------------- sacar pedido
 
     public function test_el_buscador_marca_la_sala_que_le_toca(): void

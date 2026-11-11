@@ -7,6 +7,7 @@ use App\Enums\MotivoNoEntrega;
 use App\Http\Controllers\Controller;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
+use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
 use App\Support\HoraNegocio;
 use Illuminate\Http\RedirectResponse;
@@ -53,7 +54,7 @@ class SalidaRutaController extends Controller
         ]);
     }
 
-    public function show(SalidaRuta $salida, EntregasCcf $servicio): View
+    public function show(SalidaRuta $salida, EntregasCcf $servicio, DiaVendedor $dia): View
     {
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
@@ -88,6 +89,8 @@ class SalidaRutaController extends Controller
             'abierta' => ! $salida->estado->esTerminal(),
             'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,
             'facturadosDespues' => $facturadosDespues->sortBy(fn ($e) => [$e->fecha_resultado, $e->sala?->nombre ?? ''])->values(),
+            // El viaje no se liquida: su control es el PDF de cada día de cada vendedor.
+            'diasPdf' => $salida->esViaje() ? $dia->diasDelViaje($salida) : [],
         ]);
     }
 

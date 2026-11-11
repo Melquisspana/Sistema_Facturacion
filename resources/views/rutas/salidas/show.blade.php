@@ -93,6 +93,26 @@
                 @endif
             </div>
 
+            {{-- El viaje no se liquida: el control del dinero es el PDF de cada día, firmado. --}}
+            @if (! empty($diasPdf))
+                <section aria-labelledby="dias-pdf-titulo" class="{{ $caja }} mt-4 p-5">
+                    <h2 id="dias-pdf-titulo" class="text-base font-semibold text-gray-800 dark:text-paper-100">PDF de cada día</h2>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">El resumen que firma el vendedor al entregar el dinero: lo entregado, lo cobrado y sus gastos.</p>
+                    <ul class="mt-2 divide-y divide-gray-100 dark:divide-ink-700">
+                        @foreach ($diasPdf as $diaPdf)
+                            <li>
+                                <a href="{{ route('rutas.salidas.dia-pdf', [$salida, $diaPdf['fecha'], $diaPdf['persona']]) }}" target="_blank" rel="noopener"
+                                   class="flex min-h-11 flex-wrap items-center justify-between gap-x-3 py-2 text-sm text-indigo-600 hover:underline dark:text-indigo-400">
+                                    {{-- La fecha se arma en la misma línea: un bloque de PHP acá se confunde con el de una línea de más arriba. --}}
+                                    <span>{{ ucfirst(\Illuminate\Support\Carbon::parse($diaPdf['fecha'])->locale('es')->dayName) }} {{ \Illuminate\Support\Carbon::parse($diaPdf['fecha'])->format('d/m/Y') }} · {{ $diaPdf['persona']->nombre }}</span>
+                                    <span class="font-medium">Ver PDF</span>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
+
             @include('rutas.salidas._entregas')
 
             @include('rutas.salidas._facturados_despues')

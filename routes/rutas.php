@@ -198,6 +198,9 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
         // Ya no se arman salidas: el viaje se abre solo con el primer pedido.
         Route::get('salidas/crear', fn () => redirect()->route('rutas.viajes')
             ->with('status', 'Ya no se arman salidas: el viaje se abre solo cuando un vendedor saca el primer pedido.'));
+        // El PDF del día de quien va en un viaje, para la oficina y el jefe.
+        Route::get('salidas/{salida}/dia/{fecha}/{persona}/pdf', [ViajesController::class, 'diaPdf'])
+            ->where('fecha', '\d{4}-\d{2}-\d{2}')->name('salidas.dia-pdf');
         Route::get('salidas/{salida}', [SalidaRutaController::class, 'show'])->name('salidas.show');
         // El PDF de un CCF de la salida, para verlo al tocar su tarjeta. Solo lectura.
         Route::get('salidas/{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('salidas.ccf')
