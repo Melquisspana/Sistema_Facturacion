@@ -20,10 +20,16 @@ use Illuminate\Support\Facades\Schema;
  *    viaje queda abierto solo para entregar.
  *
  * Aditiva: dos columnas con valor por defecto y un índice. Las salidas que ya existen quedan
- * como estaban.
+ * como estaban. Al revertir, las que eran viajes quedan anotadas en `observaciones`.
  */
 return new class extends Migration
 {
+    /** La observación de la automática de «Por entregar» (SalidaRuta::OBSERVACION_AUTOMATICA), fija acá. */
+    private const OBSERVACION_AUTOMATICA = 'Se armó sola al marcar una entrega en «Por entregar».';
+
+    /** Lo que se anota al revertir en las que eran viajes. */
+    private const ERA_VIAJE = 'Era un viaje que se abrió solo (automático), no una salida armada a mano. Anotado al revertir la migración del viaje.';
+
     public function up(): void
     {
         Schema::table('salidas_ruta', function (Blueprint $table) {
@@ -44,6 +50,19 @@ return new class extends Migration
         if (DB::table('salidas_ruta')->whereNull('ruta_id')->exists()) {
             throw new RuntimeException('Hay viajes sin ruta en salidas_ruta: asignales una ruta antes de revertir esta migración.');
         }
+
+        // La marca del viaje se va con la columna: antes se anota en `observaciones` (sin pisar
+        // lo que ya diga), para que tras revertir no queden como salidas armadas a mano. La
+        // automática de «Por entregar» ya lo dice con su observación de siempre.
+        DB::table('salidas_ruta')->where('automatica', true)->orderBy('id')->get(['id', 'observaciones'])
+            ->each(function (object $fila) {
+                if ($fila->observaciones === self::OBSERVACION_AUTOMATICA || str_contains((string) $fila->observaciones, self::ERA_VIAJE)) {
+                    return;
+                }
+                DB::table('salidas_ruta')->where('id', $fila->id)->update([
+                    'observaciones' => filled($fila->observaciones) ? $fila->observaciones."\n".self::ERA_VIAJE : self::ERA_VIAJE,
+                ]);
+            });
 
         Schema::table('salidas_ruta', function (Blueprint $table) {
             $table->dropIndex('salidas_ruta_automatica_estado_idx');
