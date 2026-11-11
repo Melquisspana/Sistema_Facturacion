@@ -1,8 +1,7 @@
 {{-- Inicio del vendedor (maqueta aprobada por Melqui el 10/11/2026): su viaje, que se arma
      solo con el primer pedido, los dos botones grandes (con lo que falta entregar) y lo de hoy:
      pedidos, entregas y cobrado. «Terminar el día» abre el resumen, los gastos, el PDF y la
-     pregunta de si mañana sigue en la misma zona. Ya nadie arma salidas: abajo quedan solo las
-     armadas a mano de antes que sigan en camino, hasta que se terminen. --}}
+     pregunta de si mañana sigue en la misma zona. Ya nadie arma salidas. --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Inicio')
@@ -63,20 +62,5 @@
             </dl>
             <a href="{{ route('rutas.mi-salida.dia') }}" class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Terminar el día</a>
         </div>
-
-        @if ($salidas->isNotEmpty())
-            <h2 class="mt-6 text-xl font-semibold">Salidas de antes en camino</h2>
-            <p class="mt-1 {{ $gris }}">Se armaron a mano antes del viaje. Terminalas desde su hoja.</p>
-            <ul class="mt-3 space-y-3">
-                @foreach ($salidas as $salida)
-                    <li>
-                        <a href="{{ route('rutas.mi-salida.show', $salida) }}" class="block min-h-11 {{ $caja }}">
-                            <span class="block text-xl font-semibold">{{ $salida->titulo() }}</span>
-                            <span class="{{ $gris }}">{{ $salida->periodoLegible() }}</span>
-                        </a>
-                    </li>
-                @endforeach
-            </ul>
-        @endif
     @endif
 @endsection

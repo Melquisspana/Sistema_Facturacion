@@ -9,8 +9,6 @@
     @php
         $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
         $puedeGestionar = auth()->user()?->can('rutas.gestionar');
-        // El jefe de vendedores termina días y rutas, pero no edita, cancela ni reabre.
-        $puedeTerminar = $puedeGestionar || auth()->user()?->can('rutas.salidas.terminar');
         $hechos = $resumen['entregados'] + $resumen['no_entregados'];
         $porcentaje = $resumen['total'] ? (int) round($hechos * 100 / $resumen['total']) : 0;
         $planificada = $salida->estado === \App\Enums\EstadoSalidaRuta::Planificada;
@@ -55,7 +53,8 @@
                     </div>
                 </div>
 
-                @if (($puedeGestionar || ($puedeTerminar && ! $planificada)) && ! $salida->estado->esTerminal())
+                {{-- Las salidas de antes ya no se terminan ni se liquidan acá (11/11/2026): quedan para leer. --}}
+                @if (! $salida->estado->esTerminal() && ($puedeGestionar || $salida->esAutomatica()))
                     <div class="mt-5 flex flex-wrap items-center gap-3">
                         @if ($futura)
                             <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-center text-sm font-medium text-gray-700 dark:bg-ink-700 dark:text-paper-100">
@@ -66,10 +65,7 @@
                                 @csrf @method('PATCH')
                                 <button class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700">Salir ahora</button>
                             </form>
-                        @elseif (\App\Services\Rutas\LiquidacionSalida::seLiquida($salida))
-                            {{-- Solo las salidas armadas a mano de antes: lo que sobró lleva su motivo y se liquida todo junto. --}}
-                            <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="flex-1 rounded-lg bg-gray-800 px-4 py-3 text-center text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar ruta</a>
-                        @else
+                        @elseif ($salida->esAutomatica())
                             {{-- El viaje no se liquida acá. --}}
                             <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-ink-700 dark:text-paper-100">Se cierra solo cuando todo está entregado. El dinero se entrega con el PDF del día, firmado.</p>
                         @endif
@@ -81,11 +77,6 @@
                             </form>
                         @endif
                     </div>
-                @endif
-
-
-                @if ($puedeTerminar && $salida->estaLiquidada())
-                    <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-green-700 px-4 py-3 text-sm font-medium text-white hover:bg-green-800">Liquidación de la ruta</a>
                 @endif
 
                 @if ($salida->observaciones)

@@ -23,7 +23,6 @@ use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\LiquidacionSalida;
 use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\TableroViajes;
 use App\Services\Rutas\Viajes;
@@ -176,10 +175,10 @@ class FlujoUnicoRutasTest extends TestCase
         $manual = SalidaRuta::create(['ruta_id' => $this->zona->id, 'fecha_inicio' => '2026-11-12', 'estado' => EstadoSalidaRuta::Planificada]);
         $manual->participantes()->create(['rutas_personal_id' => $this->persona->id, 'rol' => RolEnSalida::Responsable]);
 
-        // El vendedor: la hoja del viaje y «Tu próxima salida» ya no existen.
+        // El vendedor: ni el viaje ni la salida de antes tienen hoja, y «Tu próxima salida» ya no existe.
         $this->actingAs($this->vendedor);
-        $this->get('/rutas/mi-salida/'.$viaje->id)->assertRedirect(route('rutas.mi-salida.index'));
-        $this->get('/rutas/mi-salida/'.$manual->id)->assertRedirect(route('rutas.mi-salida.index'));
+        $this->get('/rutas/mi-salida/'.$viaje->id)->assertNotFound();
+        $this->get('/rutas/mi-salida/'.$manual->id)->assertNotFound();
         $this->post('/rutas/mi-salida/'.$manual->id.'/empezar')->assertNotFound();
         $this->assertSame(EstadoSalidaRuta::Planificada, $manual->refresh()->estado);
 
@@ -398,7 +397,6 @@ class FlujoUnicoRutasTest extends TestCase
         $dte = $this->ccf($this->sala('Sala de prueba Oriente'));
         $this->entrega($viaje, $dte, ['forma_cobro' => 'efectivo', 'monto_esperado' => '50.00', 'monto_cobrado' => '50.00']);
         $entrega = $viaje->entregas()->sole();
-        $this->assertFalse(LiquidacionSalida::seLiquida($viaje));
 
         $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
         $this->actingAs($admin);
@@ -410,10 +408,10 @@ class FlujoUnicoRutasTest extends TestCase
                 ->assertSee('Volver al tablero')->assertSee('Lunes · San Miguel')->assertDontSee('Hoja del viaje')
                 ->assertDontSee('Terminar ruta')->assertDontSee('Terminar día')->assertDontSee('Cambiar quiénes van')
                 ->assertDontSee('Buscar CCF nuevos de la ruta');
-            $this->post(route('rutas.salidas.liquidar', $viaje), ['entrega_dinero_personal_id' => $this->persona->id])
-                ->assertSessionHasErrors(['salida' => 'El viaje no se liquida: el dinero se entrega con el PDF del día.']);
-            $this->post(route('rutas.salidas.cerrar', $viaje), ['fecha' => '2026-11-10',
-                'entregas' => [$entrega->id => ['monto_cobrado' => '50.00', 'forma_cobro' => 'efectivo']]])->assertSessionHasErrors('cierre');
+            // Las pantallas de cierre y liquidación ya no existen para nadie (11/11/2026).
+            $this->post('/rutas/salidas/'.$viaje->id.'/terminar', ['entrega_dinero_personal_id' => $this->persona->id])->assertNotFound();
+            $this->post('/rutas/salidas/'.$viaje->id.'/cierre', ['fecha' => '2026-11-10',
+                'entregas' => [$entrega->id => ['monto_cobrado' => '50.00', 'forma_cobro' => 'efectivo']]])->assertNotFound();
             $this->get(route('rutas.dashboard'))->assertOk()->assertDontSee('por liquidar');
             $this->get(route('rutas.salidas.index'))->assertOk()->assertDontSee('Por liquidar')->assertDontSee('Solo por liquidar');
         }
@@ -423,20 +421,69 @@ class FlujoUnicoRutasTest extends TestCase
         $this->assertFalse($viaje->diaCerrado());
     }
 
-    public function test_una_salida_de_antes_en_camino_se_sigue_pudiendo_terminar(): void
+    /**
+     * La salida armada a mano de antes, ya terminada y liquidada con el flujo viejo (hay una así
+     * en producción): se sigue abriendo en «Todos los viajes» y en su detalle, solo para leer,
+     * aunque ya no existan las pantallas de cierre de día ni la liquidación.
+     */
+    public function test_una_salida_de_antes_ya_liquidada_se_abre_solo_para_leer(): void
+    {
+        $manual = SalidaRuta::create([
+            'ruta_id' => $this->zona->id, 'fecha_inicio' => '2026-10-05', 'fecha_fin_real' => '2026-10-07', 'estado' => EstadoSalidaRuta::Finalizada,
+            'liquidada_en' => '2026-10-07 18:00:00', 'liquidada_por' => $this->oficina->id, 'entrega_dinero_personal_id' => $this->persona->id,
+        ]);
+        $manual->participantes()->create(['rutas_personal_id' => $this->persona->id, 'rol' => RolEnSalida::Responsable]);
+        $sala = $this->sala('Sala de prueba Oriente');
+        $entregado = $this->ccf($sala, '2026-10-04');
+        $this->entrega($manual, $entregado, ['fecha_resultado' => '2026-10-05 10:00:00', 'origen_registro' => 'oficina',
+            'forma_cobro' => 'efectivo', 'monto_esperado' => '50.00', 'monto_cobrado' => '50.00']);
+        // Una entrega que quedó sin origen ni resultado.
+        $suelta = $this->ccf($sala, '2026-10-04');
+        $manual->entregas()->create(['dte_id' => $suelta->id, 'cliente_sucursal_id' => $sala->id]);
+        foreach (['2026-10-05', '2026-10-06'] as $dia) {
+            $manual->cierres()->create(['fecha' => $dia, 'efectivo_esperado' => '50.00', 'efectivo_cobrado' => '50.00', 'a_entregar' => '50.00',
+                'cerrado_por' => $this->oficina->id, 'cerrado_en' => $dia.' 18:00:00']);
+        }
+
+        foreach ([$this->oficina, $this->jefe, User::factory()->create(['activo' => true])->assignRole('administrador')] as $usuario) {
+            $this->actingAs($usuario)->get(route('rutas.salidas.index'))->assertOk()
+                ->assertSee('Todos los viajes')->assertSee('href="'.route('rutas.salidas.show', $manual).'"', false);
+            $detalle = $this->get(route('rutas.salidas.show', $manual))->assertOk()
+                ->assertSee('Hoja de la salida')->assertSee('San Miguel')->assertSee('Cerrada')
+                ->assertSee($entregado->numero_control)->assertSee($suelta->numero_control)
+                ->assertViewHas('resumen', ['total' => 2, 'entregados' => 1, 'no_entregados' => 0, 'sin_registrar' => 1]);
+            // Nada del flujo viejo, y nada que la cambie.
+            foreach (['Terminar ruta', 'Terminar día', 'Liquidación de la ruta', 'Salir ahora', 'Reabrir', 'Día 05/10/2026',
+                'Quitar de la salida', '¿Falta un CCF?', 'Deshacer', '>Cancelar</button>', '+ Agregar gasto', '>Entregado</button>'] as $accion) {
+                $detalle->assertDontSee($accion, false);
+            }
+        }
+
+        // Las pantallas del flujo viejo ya no existen, tampoco escribiendo la dirección.
+        foreach (['cierre', 'cierre/2026-10-05/pdf', 'terminar', 'terminar/pdf'] as $resto) {
+            $this->get('/rutas/salidas/'.$manual->id.'/'.$resto)->assertNotFound();
+        }
+        $this->post('/rutas/salidas/'.$manual->id.'/cierre')->assertNotFound();
+        $this->post('/rutas/salidas/'.$manual->id.'/terminar')->assertNotFound();
+        $this->post('/rutas/salidas/'.$manual->id.'/cierre/2026-10-05/reabrir', ['motivo' => 'Corregir el cobro'])->assertNotFound();
+        // Y lo que sí existe no la toca: está cerrada y liquidada.
+        $this->patch(route('rutas.salidas.cancelar', $manual))->assertSessionHas('error');
+        $this->patch(route('rutas.salidas.entregas.deshacer', [$manual, $manual->entregas()->entregadas()->sole()]))->assertSessionHasErrors('cierre');
+        $this->assertSame([EstadoSalidaRuta::Finalizada, 2, 1], [$manual->refresh()->estado, $manual->cierres()->count(), $manual->entregas()->entregadas()->count()]);
+    }
+
+    /** La que hubiera quedado en camino ya no se termina ni se liquida: la oficina solo puede cancelarla. */
+    public function test_una_salida_de_antes_en_camino_no_ofrece_terminar_y_la_oficina_la_cancela(): void
     {
         $manual = SalidaRuta::create(['ruta_id' => $this->zona->id, 'fecha_inicio' => '2026-11-09', 'estado' => EstadoSalidaRuta::EnCurso]);
         $manual->participantes()->create(['rutas_personal_id' => $this->persona->id, 'rol' => RolEnSalida::Responsable]);
-        $this->assertTrue(LiquidacionSalida::seLiquida($manual));
 
         $this->actingAs($this->jefe)->get(route('rutas.salidas.show', $manual))->assertOk()
-            ->assertSee('Hoja de la salida')->assertSee('href="'.route('rutas.salidas.terminar', $manual).'"', false);
-        $this->post(route('rutas.salidas.liquidar', $manual))->assertSessionHasNoErrors();
-        $this->assertTrue($manual->refresh()->estaLiquidada());
-        // Liquidada, queda de solo lectura en el historial.
-        $this->actingAs($this->oficina)->get(route('rutas.salidas.index'))->assertOk()
-            ->assertSee('Todos los viajes')->assertSee('href="'.route('rutas.salidas.show', $manual).'"', false);
-        $this->post(route('rutas.salidas.liquidar', $manual))->assertSessionHasErrors('salida');
+            ->assertSee('Hoja de la salida')->assertDontSee('Terminar ruta')->assertDontSee('Terminar día')->assertDontSee('>Cancelar</button>', false);
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $manual))->assertOk()
+            ->assertDontSee('Terminar ruta')->assertDontSee('Terminar día')->assertSee('>Cancelar</button>', false);
+        $this->patch(route('rutas.salidas.cancelar', $manual))->assertSessionHas('status');
+        $this->assertSame(EstadoSalidaRuta::Cancelada, $manual->refresh()->estado);
     }
 
     // ══════════════════════════════ el nombre del viaje

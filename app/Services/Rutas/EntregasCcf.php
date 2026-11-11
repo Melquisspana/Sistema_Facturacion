@@ -720,6 +720,6 @@ class EntregasCcf
     {
         // Lectura bloqueante: registrarSala pudo abrir antes una foto de REPEATABLE READ.
         $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->first();
-        abort_if($cierre?->estaCerrado(), 403, 'El día está cerrado. La oficina debe reabrirlo antes de modificar entregas.');
+        abort_if($cierre?->estaCerrado(), 403, 'Ese día de la salida ya está cerrado: sus entregas no se cambian.');
     }
 }

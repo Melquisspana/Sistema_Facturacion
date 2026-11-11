@@ -4,7 +4,7 @@
     $totalGastos = $gastosDia->sum(fn ($gasto) => \App\Services\Rutas\CierreDia::centavos($gasto->monto));
     $prefijoGastos = ($modoVendedor ?? false) ? 'rutas.mi-salida.' : 'rutas.salidas.';
     // En la hoja de la oficina los gastos se anotan y se borran solo con `rutas.gestionar`:
-    // el jefe de vendedores los ve para terminar el día, pero no toca los de salidas ajenas.
+    // el jefe de vendedores los ve, pero no toca los de salidas ajenas.
     $editaGastos = ! ($soloListaGastos ?? false) && (($modoVendedor ?? false) || auth()->user()->can('rutas.gestionar'));
     $agregarGasto = $editaGastos && auth()->user()->can('agregarGasto', [$salida, $fechaGastos]);
 @endphp

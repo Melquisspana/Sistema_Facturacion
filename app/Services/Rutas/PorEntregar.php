@@ -102,7 +102,7 @@ class PorEntregar
                     return null;
                 }
                 // Lo que quedó sin marcar (si la oficina le cargó CCF) no se entregó: queda libre
-                // para otra salida, y «Terminar ruta» no pide motivos que ya no se pueden anotar.
+                // para otra salida.
                 $sueltos = $salida->entregas()->pendientes()->lockForUpdate()->get();
                 if ($sueltos->isNotEmpty()) {
                     $sueltos->each->delete();
@@ -334,6 +334,6 @@ class PorEntregar
 
     public static function diaCerrado(SalidaRuta $salida): string
     {
-        return 'Va en '.$salida->conArticulo().', que ya cerró el día de hoy: pedile a la oficina que lo reabra.';
+        return 'Va en '.$salida->conArticulo().', que ya cerró el día de hoy: no recibe más entregas.';
     }
 }

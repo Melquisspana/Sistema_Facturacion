@@ -109,18 +109,11 @@ class JefeVendedoresTest extends TestCase
             ->assertSee('Menú del vendedor');
     }
 
-    public function test_usa_mi_salida_solo_en_las_salidas_donde_va(): void
+    public function test_en_el_celular_no_anota_gastos_en_las_salidas_donde_no_va(): void
     {
-        $suya = $this->salida($this->ficha);
         $ajena = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
 
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $suya));
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.show', $suya))->assertOk();
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.cierre', $suya))->assertOk();
-
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.show', $ajena))->assertForbidden();
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.cierre', $ajena))->assertForbidden();
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.terminar', $ajena))->assertForbidden();
+        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.index'))->assertOk();
         $this->actingAs($this->jefe)
             ->post(route('rutas.mi-salida.gastos.store', $ajena), ['fecha' => now()->toDateString(), 'categoria' => 'comida', 'monto' => '5.00'])
             ->assertForbidden();
@@ -147,17 +140,13 @@ class JefeVendedoresTest extends TestCase
         $this->actingAs($this->jefe)
             ->post(route('rutas.salidas.gastos.store', $salida), ['fecha' => now()->toDateString(), 'categoria' => 'comida', 'monto' => '5.00'])
             ->assertForbidden();
-        // Termina días (JefeTerminaSalidaTest), pero no los reabre.
-        $this->actingAs($this->jefe)
-            ->post(route('rutas.salidas.reabrir', [$salida, now()->toDateString()]), ['motivo' => 'Corregir el cobro'])
-            ->assertForbidden();
         // No cancela salidas.
         $this->actingAs($this->jefe)->patch(route('rutas.salidas.cancelar', $salida))->assertForbidden();
         $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
     }
 
-    /** Ya no arma salidas; termina las armadas a mano de antes con `rutas.salidas.terminar`. */
-    public function test_no_arma_salidas_y_termina_las_de_antes_pero_no_las_cancela(): void
+    /** Ya no arma salidas, y las armadas a mano de antes ya no se terminan ni se liquidan (11/11/2026). */
+    public function test_no_arma_ni_termina_ni_cancela_salidas(): void
     {
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
@@ -172,16 +161,18 @@ class JefeVendedoresTest extends TestCase
 
         $this->actingAs($this->jefe)->get(route('rutas.salidas.show', $salida))
             ->assertOk()
-            ->assertSee(route('rutas.salidas.terminar', $salida))
-            ->assertSee('Terminar ruta')
+            ->assertDontSee('Terminar ruta')
+            ->assertDontSee('Terminar día')
             ->assertDontSee('Cambiar quiénes van')
             ->assertDontSee(route('rutas.salidas.cancelar', $salida));
 
-        // Una planificada todavía no se termina: no ve «Salir ahora» ni «Terminar ruta».
+        // Con una planificada tampoco: no ve «Salir ahora» ni «Terminar ruta».
         $planificada = $this->salida(PersonalRuta::create(['nombre' => 'Pedro Ficticio']), EstadoSalidaRuta::Planificada);
         $this->actingAs($this->jefe)->get(route('rutas.salidas.show', $planificada))
             ->assertOk()
             ->assertDontSee('Salir ahora')
-            ->assertDontSee(route('rutas.salidas.terminar', $planificada));
+            ->assertDontSee('Terminar ruta');
+        $this->actingAs($this->jefe)->get('/rutas/salidas/'.$salida->id.'/terminar')->assertNotFound();
+        $this->actingAs($this->jefe)->get('/rutas/salidas/'.$salida->id.'/cierre')->assertNotFound();
     }
 }

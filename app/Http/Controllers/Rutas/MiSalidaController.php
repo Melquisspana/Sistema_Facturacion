@@ -3,11 +3,9 @@
 namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
-use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Http\Controllers\Controller;
 use App\Models\ClienteSucursal;
-use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
@@ -27,9 +25,8 @@ use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * El celular del vendedor (flujo único del 10/11/2026): su inicio, «Terminar el día» con el
- * PDF y, para las salidas armadas a mano de antes que sigan en camino, su hoja de siempre.
- * El viaje no tiene hoja: lo suyo está en «Sacar pedido» y «Por entregar».
+ * El celular del vendedor (flujo único del 10/11/2026): su inicio y «Terminar el día» con el
+ * PDF. El viaje no tiene hoja: lo suyo está en «Sacar pedido» y «Por entregar».
  */
 class MiSalidaController extends Controller
 {
@@ -56,18 +53,13 @@ class MiSalidaController extends Controller
 
     /**
      * El inicio del vendedor (maqueta del 10/11/2026): su viaje, «Sacar pedido» y «Por
-     * entregar», lo de hoy y «Terminar el día». Debajo, las salidas armadas a mano de antes
-     * que sigan en camino, hasta que se terminen.
+     * entregar», lo de hoy y «Terminar el día».
      */
     public function index(Request $request): View
     {
         app(FichaVendedor::class)->asegurar($request->user());
         $persona = $this->persona($request);
         $viaje = $persona ? $this->viajes->abierto($persona) : null;
-        $salidas = $persona ? SalidaRuta::with('ruta')->enEstado(EstadoSalidaRuta::EnCurso)
-            ->where('automatica', false)->where(fn ($q) => $q->whereNull('observaciones')->orWhere('observaciones', '!=', SalidaRuta::OBSERVACION_AUTOMATICA))
-            ->whereHas('personal', fn ($q) => $q->where('rutas_personal.id', $persona->id))
-            ->orderBy('fecha_inicio')->orderBy('id')->get() : collect();
 
         return view('rutas.mi-salida.index', [
             'persona' => $persona,
@@ -77,7 +69,6 @@ class MiSalidaController extends Controller
             'salasConPedido' => $viaje ? $viaje->pedidos()->vigentes()->distinct()->count('cliente_sucursal_id') : 0,
             'hoy' => $persona ? $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()) : null,
             'porEntregar' => $persona ? $this->cuantosPorEntregar($viaje) : 0,
-            'salidas' => $salidas,
         ]);
     }
 
@@ -187,54 +178,6 @@ class MiSalidaController extends Controller
         return redirect()->route('rutas.mi-salida.index')->with('status', $sigue
             ? 'Listo. Mañana tus pedidos se siguen sumando a este viaje.'
             : 'Listo. Este viaje ya no suma pedidos; queda abierto para entregar.');
-    }
-
-    /**
-     * La hoja de una salida armada a mano de antes, mientras siga en camino. Lo demás (el
-     * viaje, una salida que quedó programada o una ya cerrada) no tiene hoja: va al inicio,
-     * para quien tenga el enlace guardado.
-     */
-    public function show(Request $request, SalidaRuta $salida): View|RedirectResponse
-    {
-        if ($salida->esAutomatica() || $salida->estado !== EstadoSalidaRuta::EnCurso) {
-            return redirect()->route('rutas.mi-salida.index');
-        }
-
-        Gate::authorize('view', $salida);
-        $persona = $this->persona($request);
-        $salida->load(['ruta', 'participantes.personal']);
-        // Los facturados después de entregar (registros viejos) solo se ven en la hoja de la oficina.
-        $entregas = $salida->entregas()->sinFacturadosDespues()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
-        $resoluciones = $this->entregas->resolucionesAlbaran($entregas);
-
-        return view('rutas.mi-salida.show', [
-            'salida' => $salida,
-            'persona' => $persona,
-            'porSala' => $entregas->sortBy(fn ($e) => [$e->sala?->nombre ?? '', $e->dte?->numero_control ?? ''])->groupBy('cliente_sucursal_id'),
-            'participantes' => $salida->participantes->filter(fn ($p) => $p->personal?->activo),
-            'resoluciones' => $resoluciones,
-            'noVigentes' => $this->entregas->noVigentes($entregas),
-            'resumen' => $this->entregas->resumen($entregas, $resoluciones),
-            'motivos' => MotivoNoEntrega::opciones(),
-            'modoVendedor' => true,
-            'puedeGestionar' => false,
-            'registrable' => ! $salida->diaCerrado(),
-            'abierta' => true,
-            // Los pedidos de esta salida (los del viaje); sacar uno nuevo es desde «Sacar pedido».
-            'pedidosPorSala' => $salida->proposito->sacaPedido()
-                ? $salida->pedidos()->vigentes()->withExists('envios')->with(['sala:id,nombre', 'lineas.producto:id,nombre'])->orderBy('id')->get()
-                    ->each(fn (PedidoSala $p) => $p->setRelation('salida', $salida))
-                : collect(),
-        ]);
-    }
-
-    public function update(Request $request, SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
-    {
-        Gate::authorize('registrar', $salida);
-        $registrada = $this->entregas->registrar($entrega, $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota'])
-            + ['entregado_por_id' => $this->quienEntrega($request)], $request->user(), OrigenRegistroEntrega::Vendedor);
-
-        return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().'.');
     }
 
     public function deshacer(SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse

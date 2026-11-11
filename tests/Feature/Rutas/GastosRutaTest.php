@@ -3,10 +3,6 @@
 namespace Tests\Feature\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
-use App\Models\Cliente;
-use App\Models\Dte;
-use App\Models\Empresa;
-use App\Models\Establecimiento;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
@@ -70,7 +66,8 @@ class GastosRutaTest extends TestCase
         $this->assertMatchesRegularExpression('~^rutas/gastos/'.$this->salida->id.'/[a-f0-9-]+\.jpg$~', $gasto->archivo_ruta);
         Storage::disk('local')->assertExists($gasto->archivo_ruta);
         $this->get(route('rutas.mi-salida.gastos.foto', [$this->salida, $gasto]))->assertOk()->assertHeader('Content-Type', 'image/jpeg')->assertHeader('X-Content-Type-Options', 'nosniff')->assertHeader('Content-Disposition', 'inline');
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Gastos de hoy')->assertSee('Tomar foto');
+        // La oficina los ve en el detalle de la salida, y ahí los anota.
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk()->assertSee('Gastos de hoy')->assertSee('Tomar foto');
     }
 
     public function test_validaciones_de_monto_concepto_detalle_y_archivo(): void
@@ -86,7 +83,7 @@ class GastosRutaTest extends TestCase
         $this->assertSame(0, SalidaRutaGasto::count());
         $this->alta(['concepto' => 'otro', 'detalle' => 'Reparación menor'])->assertRedirect();
         $this->assertNull(SalidaRutaGasto::sole()->archivo_ruta);
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('Sin comprobante');
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertSee('Sin comprobante');
     }
 
     public function test_acceso_ajeno_scope_y_login(): void
@@ -125,33 +122,18 @@ class GastosRutaTest extends TestCase
         $this->alta()->assertForbidden();
     }
 
-    public function test_dia_solo_gastos_cierre_reapertura_recierre_y_pdf(): void
+    /** Ya nadie cierra ni reabre días; el que una salida de antes dejó cerrado sigue sin tocarse. */
+    public function test_en_un_dia_que_quedo_cerrado_no_se_tocan_los_gastos(): void
     {
         $this->alta()->assertRedirect();
         $gasto = SalidaRutaGasto::sole();
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('Terminar día');
-        $this->postJson(route('rutas.mi-salida.cerrar', $this->salida))->assertRedirect();
-        $cierre = $this->salida->cierreDelDia();
-        $this->assertSame('30.10', $cierre->gastos_total);
-        $this->assertSame('-30.10', $cierre->a_entregar);
-        $this->get(route('rutas.mi-salida.cierre', $this->salida))->assertOk()->assertSee('Efectivo del día menos gastos: −$30.10')->assertSee('Sin comprobante');
+        $this->salida->cierres()->create(['fecha' => HoraNegocio::fechaHoy(), 'gastos_total' => '30.10', 'a_entregar' => '-30.10', 'cerrado_por' => $this->oficina->id, 'cerrado_en' => now()]);
         $this->alta()->assertForbidden();
         $this->deleteJson(route('rutas.mi-salida.gastos.destroy', [$this->salida, $gasto]))->assertForbidden();
         $this->actingAs($this->oficina);
         $this->alta([], 'rutas.salidas.')->assertForbidden();
         $this->deleteJson(route('rutas.salidas.gastos.destroy', [$this->salida, $gasto]))->assertForbidden();
-        $this->post(route('rutas.salidas.reabrir', [$this->salida, HoraNegocio::fechaHoy()]), ['motivo' => 'Corregir gastos'])->assertRedirect();
-        $this->actingAs($this->vendedor);
-        $this->deleteJson(route('rutas.mi-salida.gastos.destroy', [$this->salida, $gasto]))->assertRedirect();
-        $this->alta(['monto' => '0.05'])->assertRedirect();
-        $this->postJson(route('rutas.mi-salida.cerrar', $this->salida))->assertRedirect();
-        $this->assertSame('0.05', $cierre->refresh()->gastos_total);
-        $this->assertSame('-0.05', $cierre->a_entregar);
-        $html = view('rutas.cierres.pdf', ['salida' => $this->salida, 'fecha' => HoraNegocio::fechaHoy(), 'cierre' => $cierre, 'entregas' => collect(), 'empresa' => null])->render();
-        foreach (['Parqueo', 'Sin comprobante', 'Efectivo cobrado $0.00', 'gastos $0.05', 'Efectivo del día menos gastos: −$0.05'] as $texto) {
-            $this->assertStringContainsString($texto, $html);
-        }
-        $this->get(route('rutas.mi-salida.liquidacion', [$this->salida, HoraNegocio::fechaHoy()]))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertSame(1, SalidaRutaGasto::count());
     }
 
     public function test_borrar_solo_propios_oficina_cualquiera_archivo_despues_del_commit(): void
@@ -175,29 +157,8 @@ class GastosRutaTest extends TestCase
         $this->alta()->assertRedirect();
         $this->actingAs($this->oficina);
         $this->alta(['fecha' => '2026-10-27', 'monto' => '99.99'], 'rutas.salidas.')->assertRedirect();
-        $this->assertSame(3010, app(CierreDia::class)->gastos($this->salida, HoraNegocio::fechaHoy())->sum(fn ($gasto) => CierreDia::centavos($gasto->monto)));
+        $this->assertSame(3010, $this->salida->gastos()->whereDate('fecha', HoraNegocio::fechaHoy())->get()->sum(fn ($gasto) => CierreDia::centavos($gasto->monto)));
         $this->assertSame('70.15', CierreDia::decimal(CierreDia::centavos('100.25') - CierreDia::centavos('30.10')));
-    }
-
-    public function test_cierre_resta_gastos_del_efectivo_y_no_de_otras_fechas(): void
-    {
-        $cliente = Cliente::factory()->create();
-        $sala = $cliente->sucursales()->create(['nombre' => 'Sala centro']);
-        $empresa = Empresa::create(['razon_social' => 'Pruebas', 'ambiente' => '01', 'activo' => true]);
-        $establecimiento = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa', 'activo' => true]);
-        $dte = Dte::create(['establecimiento_id' => $establecimiento->id, 'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01', 'cliente_id' => $cliente->id, 'cliente_sucursal_id' => $sala->id, 'numero_control' => 'DTE-03-M001P002-000000000000999', 'fecha_emision' => HoraNegocio::fechaHoy(), 'hora_emision' => '10:00:00', 'total_pagar' => '100.25']);
-        $entrega = $this->salida->entregas()->create(['dte_id' => $dte->id, 'cliente_sucursal_id' => $sala->id, 'resultado' => 'entregado', 'fecha_resultado' => now(), 'monto_esperado' => '100.25', 'monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo']);
-        $this->alta()->assertRedirect();
-        $this->actingAs($this->oficina);
-        $this->alta(['fecha' => '2026-10-27', 'monto' => '99.99'], 'rutas.salidas.')->assertRedirect();
-        $this->postJson(route('rutas.salidas.cerrar', $this->salida), ['entrega_dinero_personal_id' => $this->persona->id, 'entregas' => [$entrega->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo']]])->assertRedirect();
-        $this->assertSame('30.10', $this->salida->cierreDelDia()->gastos_total);
-        $this->assertSame('70.15', $this->salida->cierreDelDia()->a_entregar);
-        $this->post(route('rutas.salidas.reabrir', [$this->salida, HoraNegocio::fechaHoy()]), ['motivo' => 'Faltaba un gasto'])->assertRedirect();
-        $this->alta(['monto' => '100.00'], 'rutas.salidas.')->assertRedirect();
-        $this->postJson(route('rutas.salidas.cerrar', $this->salida), ['entrega_dinero_personal_id' => $this->persona->id, 'entregas' => [$entrega->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo']]])->assertRedirect();
-        $this->assertSame('-29.85', $this->salida->cierreDelDia()->a_entregar);
-        $this->get(route('rutas.salidas.cierre', $this->salida))->assertOk()->assertSee('Efectivo del día menos gastos: −$29.85');
     }
 
     public function test_rollback_de_borrado_conserva_archivo_y_gasto(): void

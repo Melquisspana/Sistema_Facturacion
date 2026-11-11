@@ -10,10 +10,8 @@ use App\Http\Controllers\Rutas\RutaCoberturaController;
 use App\Http\Controllers\Rutas\RutaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
 use App\Http\Controllers\Rutas\SalidaCcfController;
-use App\Http\Controllers\Rutas\SalidaCierreController;
 use App\Http\Controllers\Rutas\SalidaEntregaController;
 use App\Http\Controllers\Rutas\SalidaGastoController;
-use App\Http\Controllers\Rutas\SalidaLiquidacionController;
 use App\Http\Controllers\Rutas\SalidaRutaController;
 use App\Http\Controllers\Rutas\VentasController;
 use App\Http\Controllers\Rutas\ViajesController;
@@ -25,7 +23,8 @@ use Illuminate\Support\Facades\Route;
 | Rutas — la operación de campo. Desde el 10/11/2026 el viaje se arma solo con el primer
 | pedido del vendedor (docs/decisiones/0010-el-viaje-reemplaza-a-la-ruta-fija.md): nadie arma
 | salidas ni asigna salas, y las rutas quedan como catálogo de zonas. Las salidas armadas a
-| mano de antes siguen como historial y se pueden terminar.
+| mano de antes siguen como historial, solo para leer: ya no se cierran días ni se liquidan
+| (11/11/2026).
 |
 | Qué NO hace: emitir DTE, generar JSON, firmar, transmitir, tocar correlativos o
 | enviar correo. Tampoco toca PPQ ni Planta. El seguimiento de CCF (albarán, quedan,
@@ -38,8 +37,7 @@ use Illuminate\Support\Facades\Route;
 |
 | Un tercer candado, INLINE en cada ruta que escribe:
 |   3. permission:rutas.gestionar -> crear/editar zonas y su cobertura, y corregir las
-|                                  salidas. Terminar las salidas viejas acepta además el
-|                                  permiso del jefe de vendedores (`rutas.salidas.terminar`).
+|                                  salidas.
 |
 | El selector superior de áreas y los botones de las vistas son solo presentación
 | y NUNCA autorizan.
@@ -70,17 +68,6 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         Route::post('{salida}/gastos', [SalidaGastoController::class, 'store'])->name('gastos.store');
         Route::delete('{salida}/gastos/{gasto}', [SalidaGastoController::class, 'destroy'])->name('gastos.destroy');
         Route::get('{salida}/gastos/{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('gastos.foto');
-        Route::get('{salida}/cierre', [SalidaCierreController::class, 'cierre'])->name('cierre');
-        Route::post('{salida}/cierre', [SalidaCierreController::class, 'cerrar'])->name('cerrar');
-        Route::get('{salida}/cierre/{fecha}/pdf', [SalidaCierreController::class, 'liquidacion'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('liquidacion');
-        Route::get('{salida}/terminar', [SalidaLiquidacionController::class, 'show'])->name('terminar');
-        Route::post('{salida}/terminar', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
-        Route::get('{salida}/terminar/pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
-        // El PDF de un CCF de la salida: solo de esta salida y solo si va en ella.
-        Route::get('{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('ccf');
-        // La hoja de una salida vieja en camino. El viaje no tiene hoja: lleva al inicio.
-        Route::get('{salida}', [MiSalidaController::class, 'show'])->name('show');
-        Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
         // «Terminar el día» del viaje: ¿mañana sigue en la misma zona? Si no, deja de sumar pedidos.
@@ -178,22 +165,6 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             Route::post('/', [SalidaGastoController::class, 'store'])->middleware('permission:rutas.gestionar')->name('store');
             Route::delete('{gasto}', [SalidaGastoController::class, 'destroy'])->middleware('permission:rutas.gestionar')->name('destroy');
             Route::get('{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('foto');
-        });
-        // «Terminar día» y «Terminar ruta» de la oficina: también el jefe de vendedores
-        // (`rutas.salidas.terminar`), aunque no haya ido. Reabrir un día sigue siendo solo
-        // de `rutas.gestionar`, igual que los gastos de arriba.
-        Route::prefix('salidas/{salida}/cierre')->name('salidas.')->middleware('permission:rutas.gestionar|rutas.salidas.terminar')->group(function () {
-            Route::get('/', [SalidaCierreController::class, 'cierre'])->name('cierre');
-            Route::post('/', [SalidaCierreController::class, 'cerrar'])->name('cerrar');
-            Route::get('{fecha}/pdf', [SalidaCierreController::class, 'liquidacion'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('liquidacion');
-            Route::post('{fecha}/reabrir', [SalidaCierreController::class, 'reabrir'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('reabrir')
-                ->middleware('permission:rutas.gestionar');
-        });
-        // «Terminar ruta»: liquidación de la salida completa. También el vendedor, desde «Mi salida».
-        Route::prefix('salidas/{salida}/terminar')->name('salidas.')->middleware('permission:rutas.gestionar|rutas.salidas.terminar')->group(function () {
-            Route::get('/', [SalidaLiquidacionController::class, 'show'])->name('terminar');
-            Route::post('/', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
-            Route::get('pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
         });
         // Ya no se arman salidas: el viaje se abre solo con el primer pedido.
         Route::get('salidas/crear', fn () => redirect()->route('rutas.viajes')

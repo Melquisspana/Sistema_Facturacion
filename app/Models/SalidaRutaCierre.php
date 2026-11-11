@@ -5,6 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * El cierre de un día de una salida armada a mano. Desde el 11/11/2026 no se crean ni se
+ * reabren: quedan los ya guardados, que se leen para saber si un día está cerrado.
+ */
 class SalidaRutaCierre extends Model
 {
     protected $table = 'salida_ruta_cierres';
@@ -36,10 +40,5 @@ class SalidaRutaCierre extends Model
     public function salida(): BelongsTo
     {
         return $this->belongsTo(SalidaRuta::class, 'salida_ruta_id');
-    }
-
-    public function entregaDinero(): BelongsTo
-    {
-        return $this->belongsTo(PersonalRuta::class, 'entrega_dinero_personal_id');
     }
 }

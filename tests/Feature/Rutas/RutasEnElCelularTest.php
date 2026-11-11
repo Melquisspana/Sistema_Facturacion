@@ -141,8 +141,6 @@ class RutasEnElCelularTest extends TestCase
         $salida = $this->salida($ruta, '2026-11-02', EstadoSalidaRuta::EnCurso, [$mario, $kevin, $fichaJefe], $mario);
 
         $this->assertSame('Mario Inventado (encabeza), Ernesto Ficticio y Kevin Ejemplo', $salida->quienesVan());
-        // En «Mi salida» no se nombra a quien mira; quien encabeza sigue marcado.
-        $this->assertSame('Mario Inventado (encabeza) y Kevin Ejemplo', $salida->quienesVan($fichaJefe->id));
         // Sin nadie que encabece, por nombre y sin marca.
         $sinCabeza = $this->salida(Ruta::create(['nombre' => 'Ruta Norte']), '2026-11-02', EstadoSalidaRuta::EnCurso, [$mario, $kevin]);
         $this->assertSame('Kevin Ejemplo y Mario Inventado', $sinCabeza->quienesVan());
@@ -150,7 +148,6 @@ class RutasEnElCelularTest extends TestCase
         $nombres = 'Mario Inventado (encabeza), Ernesto Ficticio y Kevin Ejemplo';
         $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('Ruta Costa · '.$nombres);
         $this->actingAs($jefe)->get(route('rutas.salidas.show', $salida))->assertSee($nombres)->assertDontSee('Inventado y Kevin Ejemplo y');
-        $this->actingAs($jefe)->get(route('rutas.mi-salida.show', $salida))->assertSee('Vas con Mario Inventado (encabeza) y Kevin Ejemplo');
     }
 
     public function test_un_no_entregado_va_en_singular_en_el_tablero_y_en_la_hoja(): void
@@ -176,11 +173,11 @@ class RutasEnElCelularTest extends TestCase
         $salida = $this->salida(Ruta::create(['nombre' => 'Ruta Costa']), '2026-11-03', EstadoSalidaRuta::EnCurso, [$fichaJefe, $fichaVendedor]);
 
         $this->assertTrue($jefe->can('rutas.ver'));
-        $this->actingAs($jefe)->get(route('rutas.mi-salida.show', $salida))
+        $this->actingAs($jefe)->get(route('rutas.mi-salida.index'))
             ->assertOk()->assertSee('Volver al tablero')->assertSee('href="'.route('rutas.dashboard').'"', false);
 
         $this->assertFalse($vendedor->can('rutas.ver'));
-        $this->actingAs($vendedor)->get(route('rutas.mi-salida.show', $salida))
+        $this->actingAs($vendedor)->get(route('rutas.mi-salida.index'))
             ->assertOk()->assertDontSee('Volver al tablero');
     }
 

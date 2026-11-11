@@ -183,8 +183,8 @@ class PorEntregarTest extends TestCase
         $this->assertSame(1, SalidaRuta::count());
         $this->assertSame([$primero->id, $segundo->id], $salida->entregas()->orderBy('id')->pluck('dte_id')->all());
 
-        // La automática no tiene hoja: el enlace viejo lleva al inicio, y nada carga el resto de la zona.
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.show', $salida))->assertRedirect(route('rutas.mi-salida.index'));
+        // La automática no tiene hoja, y nada carga el resto de la zona.
+        $this->actingAs($this->vendedor)->get('/rutas/mi-salida/'.$salida->id)->assertNotFound();
         $this->assertSame(2, $salida->entregas()->count());
 
         // Lo marcado hoy queda abajo con «Deshacer»; el entregado ya no está por entregar.
@@ -322,7 +322,7 @@ class PorEntregarTest extends TestCase
         $deHoy->finalizar('2026-11-06');
         $viaje->finalizar('2026-11-06');
         $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()
-            ->assertDontSee(route('rutas.mi-salida.show', $proxima))->assertDontSee('Próximas salidas');
+            ->assertDontSee('/rutas/mi-salida/'.$proxima->id)->assertDontSee('Próximas salidas');
 
         // Temprano cada día y sin pisarse.
         $evento = collect(app(Schedule::class)->events())->first(fn ($e) => str_contains((string) $e->command, 'rutas:finalizar-automaticas'));
@@ -407,7 +407,7 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
 
-        $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.show', $auto))->followingRedirects()
+        $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.index'))->followingRedirects()
             ->patch(route('rutas.mi-salida.deshacer', [$auto, $auto->entregas()->sole()]))
             ->assertOk()->assertSee('Se deshizo: el CCF vuelve a Por entregar.')->assertSee($dte->numero_control);
         $this->assertSame(EstadoSalidaRuta::Cancelada, $auto->refresh()->estado);

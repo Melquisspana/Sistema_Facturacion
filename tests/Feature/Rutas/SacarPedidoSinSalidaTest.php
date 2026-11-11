@@ -201,9 +201,9 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->get(route('rutas.mi-salida.index'))->assertOk()
             ->assertSee('Tu viaje')->assertSee('Lunes · San Miguel')->assertSee('Día 2 · 2 salas con pedido')
             // El viaje no tiene hoja propia: lo suyo está en «Sacar pedido» y «Por entregar».
-            ->assertDontSee('href="'.route('rutas.mi-salida.show', $viaje).'"', false)
+            ->assertDontSee('href="'.url('/rutas/mi-salida/'.$viaje->id).'"', false)
             ->assertSee('href="'.route('rutas.mi-salida.dia').'"', false);
-        $this->get(route('rutas.mi-salida.show', $viaje))->assertRedirect(route('rutas.mi-salida.index'));
+        $this->get('/rutas/mi-salida/'.$viaje->id)->assertNotFound();
         // La pregunta está en «Terminar el día», con el resumen y el PDF.
         $this->get(route('rutas.mi-salida.dia'))->assertOk()
             ->assertSee('¿Mañana seguís en la misma zona?')

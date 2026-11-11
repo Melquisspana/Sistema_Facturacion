@@ -73,41 +73,15 @@ class SalidaCcfTest extends TestCase
         return $salida->entregas()->create(['dte_id' => $dte->id, 'cliente_sucursal_id' => $this->sala->id]);
     }
 
-    public function test_el_vendedor_abre_el_ccf_de_su_salida_en_el_navegador(): void
-    {
-        $salida = $this->salida($this->persona);
-        $entrega = $this->entrega($salida);
-        $url = route('rutas.mi-salida.ccf', [$salida, $entrega]);
-
-        // La tarjeta enlaza al PDF desde la sala y desde el número.
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.show', $salida))
-            ->assertOk()
-            ->assertSee('href="'.$url.'"', false)
-            ->assertSee('Josefina 14');
-
-        $respuesta = $this->actingAs($this->vendedor)->get($url)->assertOk();
-        $this->assertSame('application/pdf', $respuesta->headers->get('Content-Type'));
-        // Se descarga, no se abre en el navegador (pedido de los vendedores).
-        $this->assertStringStartsWith('attachment;', (string) $respuesta->headers->get('Content-Disposition'));
-    }
-
-    public function test_el_vendedor_no_abre_ccf_de_otras_salidas_ni_otros_documentos(): void
+    /** El vendedor baja sus CCF desde «Por entregar» (PorEntregarTest); la hoja de antes ya no existe. */
+    public function test_el_vendedor_no_abre_el_ccf_de_una_salida(): void
     {
         $suya = $this->salida($this->persona);
-        $this->entrega($suya);
-        $ajena = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
-        $deLaAjena = $this->entrega($ajena);
+        $entrega = $this->entrega($suya);
 
-        // Salida donde no va: 403.
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.ccf', [$ajena, $deLaAjena]))->assertForbidden();
-        // Un CCF de otra salida colgado de la suya, o un id cualquiera: 404.
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.ccf', [$suya, $deLaAjena]))->assertNotFound();
-        $this->actingAs($this->vendedor)->get('/rutas/mi-salida/'.$suya->id.'/ccf/999999')->assertNotFound();
         // La ruta de la oficina pide rutas.ver: el vendedor no la tiene.
-        $this->actingAs($this->vendedor)->get(route('rutas.salidas.ccf', [$suya, $suya->entregas()->first()]))->assertForbidden();
-        // Si su persona de Rutas está inactiva, ya no.
-        $this->persona->update(['activo' => false]);
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.ccf', [$suya, $suya->entregas()->first()]))->assertForbidden();
+        $this->actingAs($this->vendedor)->get(route('rutas.salidas.ccf', [$suya, $entrega]))->assertForbidden();
+        $this->actingAs($this->vendedor)->get('/rutas/mi-salida/'.$suya->id.'/ccf/'.$entrega->id)->assertNotFound();
     }
 
     public function test_la_oficina_abre_el_ccf_de_cualquier_salida(): void
@@ -118,7 +92,9 @@ class SalidaCcfTest extends TestCase
         $url = route('rutas.salidas.ccf', [$salida, $entrega]);
 
         $this->actingAs($oficina)->get(route('rutas.salidas.show', $salida))->assertOk()->assertSee('href="'.$url.'"', false);
-        $this->actingAs($oficina)->get($url)->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $respuesta = $this->actingAs($oficina)->get($url)->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        // Se descarga, no se abre en el navegador (pedido de los vendedores).
+        $this->assertStringStartsWith('attachment;', (string) $respuesta->headers->get('Content-Disposition'));
 
         // Otro CCF que no va en esa salida: 404.
         $otra = $this->salida($this->persona);
@@ -134,7 +110,7 @@ class SalidaCcfTest extends TestCase
         $salida = $this->salida($this->persona);
         $entrega = $this->entrega($salida, ['estado' => 'invalidado']);
 
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.ccf', [$salida, $entrega]))
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'))->get(route('rutas.salidas.ccf', [$salida, $entrega]))
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
         $this->assertStringContainsString('INVALIDADO', app(DtePdfService::class)->html($entrega->dte));
