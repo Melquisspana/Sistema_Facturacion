@@ -8,6 +8,29 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.11] - 2026-11-11
+
+Primer despliegue con el servidor ya en Linux. Los CCF y las NC entran al seguimiento de cobros en el momento en que Hacienda los acepta (#330), se puede anular un gasto sin borrarlo (#316), Asistencia imprime la hoja diaria de Producción (#321) y el tablero de Rutas muestra el ritmo de visita real de cada sala (#323). Trae 1 migración (`2026_11_10_120000`) y ningún permiso nuevo.
+
+### Agregado
+
+- Gastos: «Anular gasto» desde la ficha, con motivo obligatorio. El gasto queda Anulado, con quién, cuándo y por qué, y deja de contar en totales, avisos y resúmenes. No se anula con pagos vigentes (hay que revertirlos primero) ni si viene de Planilla (#316).
+- Asistencia: hoja diaria de Producción para imprimir, con entrada, salida y espacio para firmar, y un aviso solo informativo de quien llega tarde seguido o tiene horas de menos en la quincena. El horario de los avisos está en Configuración › Asistencia (#321).
+- Rutas: cada sala muestra si está «Al día», «Le toca» o «Atrasada», según cada cuánto compra, con el último pedido y la próxima visita. El tablero agrupa por zona y el modo «Dónde falta» del mapa usa ese ritmo (#323).
+- Contabilidad: el paquete mensual guarda su enlace de Drive, con «Abrir en Drive», y si el envío falla ofrece descargar el ZIP (#319).
+
+### Cambiado
+
+- Cobros: el CCF y la NC entran al seguimiento en el momento en que Hacienda los acepta, sin esperar a la tarea de cada 10 minutos, que queda como red de seguridad. Si el alta falla, el documento queda aceptado igual. La bandeja avisa cuántas facturas recién aceptadas están entrando (#330).
+- Menú: «Cobros de supermercados» pasa a ser el grupo «Seguimiento» con la opción «Facturas por cobrar», y los títulos de grupo van en una sola línea (#322, #327).
+- Compras: si el correo frena el buzón por demasiados intentos, el sistema espera cada vez más (de 5 a 60 minutos) y lo avisa, en vez de fallar como contraseña mala (#318).
+- PPQ: el archivo de quedan lee la sala y el tipo de entrega una sola vez (#313).
+- Pruebas: nombres claramente ficticios en lugar de nombres que parecen reales (#314).
+
+### Corregido
+
+- Gastos: el historial de pagos muestra bien el importe repartido entre varios gastos, y el rojo de «Revertir» se lee en modo oscuro (#320).
+
 ## [2026.11.10] - 2026-11-10
 
 Pedidos de sala de punta a punta: la fábrica marca lo que manda, la oficina ve «Llegó de la fábrica», imprime la hoja de cada sala y factura con «Facturar» un solo CCF con todo lo que llegó (#291, #293, #296), con el correo diario de las 5 pm (#292). También el mapa de ventas por zona en Rutas (#298), los feriados de Hacienda en Configuración (#297), la numeración por ejercicio en el TXT de pronto pago (#289) y una tanda de arreglos de Cobros, Planilla, Gastos y Facturación. Trae 2 migraciones (`2026_11_09_100000` y `2026_11_09_200000`) y los permisos `fabrica.pedidos.mandar` y `rutas.mapa.ver`, con el rol Fábrica.
