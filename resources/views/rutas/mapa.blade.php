@@ -22,7 +22,7 @@
         $mesAnterior = \Illuminate\Support\Carbon::parse($periodo['anteriorDesde'])->locale('es')->translatedFormat('F');
         $diaFin = (int) substr($periodo['anteriorHasta'], 8, 2);
         $contraCorto = 'vs. '.($datos['enCurso'] ? ($diaFin === 1 ? '1' : '1 al '.$diaFin).' de '.$mesAnterior : $mesAnterior);
-        // En un mes pasado, los días sin compra y la última entrega se cuentan al cierre del mes.
+        // En un mes pasado, el ritmo de cada sala y la última entrega se cuentan al cierre del mes.
         $corte = $datos['enCurso'] ? null : \Illuminate\Support\Carbon::parse($periodo['hasta'])->format('d/m');
         $alCorte = $corte ? ' al '.$corte : '';
         $sinLugar = $datos['sinUbicacion'];
@@ -181,10 +181,13 @@
                         <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-800">{{ $t['compraron'] }} de {{ $t['salas'] }}</span>
                         <span class="mt-0.5 block text-xs text-gray-500">{{ $rutaElegida ? 'en '.$rutaElegida['nombre'] : 'en todas las rutas' }}</span>
                     </div>
+                    @php
+                        $leTocan = $t['faltan'] - $t['atrasadas'];
+                    @endphp
                     <div class="{{ $caja }} p-4">
-                        <span class="block text-sm text-gray-600">Salas sin compra 30+ días</span>
-                        <span class="mt-1 block text-2xl font-semibold tabular-nums {{ $t['sinCompra'] > 0 ? 'text-red-700' : 'text-gray-800' }}">{{ $t['sinCompra'] }}</span>
-                        <span class="mt-0.5 block text-xs text-gray-500">hace 30 días o más{{ $corte ? ', contados al '.$corte.', el cierre del mes' : '' }}; van primero en «Dónde falta»</span>
+                        <span class="block text-sm text-gray-600">Salas atrasadas</span>
+                        <span class="mt-1 block text-2xl font-semibold tabular-nums {{ $t['atrasadas'] > 0 ? 'text-red-700' : 'text-gray-800' }}">{{ $t['atrasadas'] }}</span>
+                        <span class="mt-0.5 block text-xs text-gray-500">y a {{ $leTocan }} {{ $leTocan === 1 ? 'le toca' : 'les toca' }} visita, según cada cuánto compra cada una{{ $corte ? ', contados al '.$corte.', el cierre del mes' : '' }}; van primero en «Dónde falta»</span>
                     </div>
                     <div class="{{ $caja }} p-4">
                         <span class="block text-sm text-gray-600">Distritos sin ninguna sala</span>
@@ -233,10 +236,11 @@
                     <h2 id="mapa-falta" class="text-base font-semibold text-gray-800">Dónde falta</h2>
                     @foreach ($niveles as $nivel => $zonas)
                         @php
-                            $faltan = collect($zonas)->filter(fn ($z) => $z['sinCompra'] > 0)
-                                ->sortBy([fn ($a, $b) => $b['sinCompra'] <=> $a['sinCompra'], fn ($a, $b) => $b['anterior'] <=> $a['anterior']])
+                            // Las zonas con más salas atrasadas y a las que les toca, por su ritmo.
+                            $faltan = collect($zonas)->filter(fn ($z) => $z['faltan'] > 0)
+                                ->sortBy([fn ($a, $b) => $b['atrasadas'] <=> $a['atrasadas'], fn ($a, $b) => $b['faltan'] <=> $a['faltan'], fn ($a, $b) => $b['anterior'] <=> $a['anterior']])
                                 ->take(5);
-                            $maximo = max(1, (int) $faltan->max('sinCompra'));
+                            $maximo = max(1, (int) $faltan->max('faltan'));
                             // Por donde pasa una ruta (la elegida, si hay una) y sin ninguna sala de
                             // ninguna ruta: con el filtro, las zonas de otras rutas no están vacías.
                             $vacias = collect($zonas)->filter(fn ($z) => $z['todas'] === 0 && ($rutaElegida ? in_array($rutaElegida['id'], $z['rutas'], true) : $z['rutas'] !== []))->sortBy('nombre');
@@ -248,16 +252,16 @@
                                     <button type="button" data-zona="{{ $clave }}" class="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left hover:bg-gray-50">
                                         <span class="flex items-center justify-between gap-3">
                                             <span class="font-semibold text-gray-800">{{ $zona['nombre'] }}@if ($nivel === 'dis')<span class="font-normal text-gray-500"> · {{ $datos['departamentos'][$zona['dep']]['nombre'] ?? '' }}</span>@endif</span>
-                                            <span class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-700"><span class="mv-punto" style="background:var(--mal)"></span>{{ $zona['sinCompra'] }} de {{ $zona['salas'] }}</span>
+                                            <span class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-700"><span class="mv-punto" style="background:var({{ $zona['atrasadas'] > 0 ? '--mal' : '--ojo' }})"></span>{{ $zona['faltan'] }} de {{ $zona['salas'] }}</span>
                                         </span>
                                         <span class="mt-0.5 block text-xs text-gray-500">
-                                            {{ $zona['sinCompra'] === 1 ? 'sala sin compra' : 'salas sin compra' }} hace 30 días o más{{ $alCorte }} · {{ $rutasTexto($zona['rutas']) ?: 'sin ruta' }}
+                                            {{ $zona['atrasadas'] }} {{ $zona['atrasadas'] === 1 ? 'atrasada' : 'atrasadas' }} · a {{ $zona['leToca'] }} {{ $zona['leToca'] === 1 ? 'le toca' : 'les toca' }}{{ $alCorte }} · {{ $rutasTexto($zona['rutas']) ?: 'sin ruta' }}
                                         </span>
-                                        <span class="mv-barra mt-1.5 block"><span style="width: {{ round($zona['sinCompra'] / $maximo * 100) }}%"></span></span>
+                                        <span class="mv-barra mt-1.5 block"><span style="width: {{ round($zona['faltan'] / $maximo * 100) }}%"></span></span>
                                     </button>
                                 </li>
                             @empty
-                                <li class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500">Ninguna sala lleva 30 días o más sin comprar.</li>
+                                <li class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500">Ninguna sala está atrasada ni le toca visita todavía.</li>
                             @endforelse
                             <li class="mv-falta-vacias rounded-lg border border-gray-200 px-3 py-2">
                                 <span class="block text-sm text-gray-800"><strong>{{ $vacias->count() }} {{ $palabra }}</strong> {{ $rutaElegida ? 'de '.$rutaElegida['nombre'].' sin ninguna sala' : 'con ruta y sin ninguna sala' }}</span>
@@ -321,7 +325,7 @@
                                                     <span class="shrink-0 tabular-nums text-gray-800">{{ $plata($zona['ventas']) }}</span>
                                                 </span>
                                                 <span class="mt-0.5 block text-sm text-gray-600">
-                                                    {{ $zona['cambioTexto'] }} {{ $contraCorto }} · {{ $zona['salas'] }} {{ $zona['salas'] === 1 ? 'sala' : 'salas' }} · <span class="{{ $zona['sinCompra'] > 0 ? 'font-medium text-red-700' : '' }}">{{ $zona['sinCompra'] }} sin compra 30+ días{{ $alCorte }}</span>
+                                                    {{ $zona['cambioTexto'] }} {{ $contraCorto }} · {{ $zona['salas'] }} {{ $zona['salas'] === 1 ? 'sala' : 'salas' }} · <span class="{{ $zona['atrasadas'] > 0 ? 'font-medium text-red-700' : '' }}">{{ $zona['atrasadas'] }} {{ $zona['atrasadas'] === 1 ? 'atrasada' : 'atrasadas' }}, a {{ $zona['leToca'] }} {{ $zona['leToca'] === 1 ? 'le toca' : 'les toca' }}{{ $alCorte }}</span>
                                                 </span>
                                                 <span class="block text-sm text-gray-500">{{ $rutasTexto($zona['rutas']) ?: 'Sin ruta' }} · última entrega {{ $zona['entregaTexto'] ?? '—' }}</span>
                                             </button>
@@ -336,7 +340,8 @@
                                             <th scope="col" class="px-3 py-2 text-right">Vendido</th>
                                             <th scope="col" class="px-3 py-2 text-right">{{ $contraCorto }}</th>
                                             <th scope="col" class="px-3 py-2 text-right">Salas</th>
-                                            <th scope="col" class="px-3 py-2 text-right">Sin compra 30+ días</th>
+                                            <th scope="col" class="px-3 py-2 text-right">Atrasadas</th>
+                                            <th scope="col" class="px-3 py-2 text-right">Les toca</th>
                                             <th scope="col" class="px-3 py-2">Ruta</th>
                                             <th scope="col" class="px-3 py-2 text-right">Última entrega</th>
                                         </tr>
@@ -348,7 +353,8 @@
                                                 <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-800">{{ $plata($zona['ventas']) }}</td>
                                                 <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{{ $zona['cambioTexto'] }}</td>
                                                 <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{{ $zona['salas'] }}</td>
-                                                <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums {{ $zona['sinCompra'] > 0 ? 'font-medium text-red-700' : 'text-gray-700' }}">{{ $zona['sinCompra'] }}</td>
+                                                <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums {{ $zona['atrasadas'] > 0 ? 'font-medium text-red-700' : 'text-gray-700' }}">{{ $zona['atrasadas'] }}</td>
+                                                <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums {{ $zona['leToca'] > 0 ? 'font-medium text-amber-800' : 'text-gray-700' }}">{{ $zona['leToca'] }}</td>
                                                 <td class="px-3 py-2 text-gray-700">{{ $rutasTexto($zona['rutas']) ?: '—' }}</td>
                                                 <td class="whitespace-nowrap px-3 py-2 text-right text-gray-700">
                                                     @if ($zona['entregaTexto'])
@@ -368,8 +374,9 @@
                     <p class="mt-3 text-xs text-gray-500">
                         Las ventas son las nacionales sin IVA, como en Ventas: la exportación no entra y las notas de crédito restan en el mes del CCF que corrigen.
                         La última entrega sale de las entregas de Rutas.
+                        Una sala está atrasada si pasó su fecha de visita, contada por cada cuánto compra; sin tres visitas todavía no tiene ritmo.
                         @if ($corte)
-                            En un mes pasado, los días sin compra y la última entrega se cuentan al {{ $corte }}, el cierre del mes.
+                            En un mes pasado, el ritmo de cada sala y la última entrega se cuentan al {{ $corte }}, el cierre del mes.
                         @endif
                         Mapa: <a href="https://www.geoboundaries.org" class="underline" rel="noopener" target="_blank">geoBoundaries</a> (distritos) y © <a href="https://www.openstreetmap.org/copyright" class="underline" rel="noopener" target="_blank">OpenStreetMap</a> (departamentos, CC BY-SA).
                     </p>

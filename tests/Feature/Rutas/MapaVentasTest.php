@@ -19,6 +19,7 @@ use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\MapaVentas;
+use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\VentasRutas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -229,22 +230,42 @@ class MapaVentasTest extends TestCase
         $this->assertSame(110.0, $mapa['distritos']['06-14']['ventas']);
         $this->assertSame(75.0, $mapa['distritos']['06-15']['anterior']);
         $this->assertSame(1, $mapa['distritos']['06-15']['salas']);
-        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'dias' => 39]], $mapa['distritos']['06-15']['peores']);
+        $this->assertSame(1, $mapa['distritos']['06-15']['sinRitmo']);
     }
 
-    public function test_sin_compra_hace_30_dias_o_mas_y_ultima_entrega(): void
+    /**
+     * «Dónde falta» ya no es «sin compra 30 días»: cada sala con su ritmo (la mediana de días
+     * entre sus visitas). Le toca si llegó su fecha; atrasada si pasó con margen.
+     */
+    public function test_donde_falta_cuenta_las_salas_que_les_toca_o_estan_atrasadas(): void
     {
         $this->ventasDeEjemplo();
+        // Norte: 05/10, 20/10 y 03/11, más la entrega del 04/11: cada 15 días, al día.
+        // Sur: cada 10 días hasta el 01/10: atrasada 29 días.
+        foreach (['2026-09-01', '2026-09-11', '2026-09-21'] as $fecha) {
+            $this->documento($this->sur, $fecha, 10);
+        }
+        // Este: cada 7 días; la última visita hace 7: le toca hoy.
+        $este = $this->sala('Sala de prueba Este', $this->oriente, Distrito::where('codigo', '14')->first());
+        foreach (['2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02'] as $fecha) {
+            $this->documento($este, $fecha, 10);
+        }
 
         $mapa = $this->mapa();
 
-        // Sur compró el 01/10: 39 días al 09/11. Norte, el 03/11.
-        $this->assertSame(1, $mapa['distritos']['06-15']['sinCompra']);
-        $this->assertSame(0, $mapa['distritos']['06-14']['sinCompra']);
-        $this->assertSame(1, $mapa['departamentos']['06']['sinCompra']);
-        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'dias' => 39]], $mapa['distritos']['06-15']['peores']);
-        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'dias' => 39], ['nombre' => 'Sala de prueba Norte', 'dias' => 6]], $mapa['departamentos']['06']['peores']);
-        $this->assertSame(1, $mapa['totales']['sinCompra']);
+        $sur = ['nombre' => 'Sala de prueba Sur', 'estado' => Ritmo::ATRASADA, 'dias' => 39, 'faltan' => -29];
+        $leToca = ['nombre' => 'Sala de prueba Este', 'estado' => Ritmo::PRONTO, 'dias' => 7, 'faltan' => 0];
+        $this->assertSame([1, 0, 1], [$mapa['distritos']['06-15']['faltan'], $mapa['distritos']['06-15']['leToca'], $mapa['distritos']['06-15']['atrasadas']]);
+        $this->assertSame([1, 1, 0], [$mapa['distritos']['06-14']['faltan'], $mapa['distritos']['06-14']['leToca'], $mapa['distritos']['06-14']['atrasadas']]);
+        $this->assertSame([$sur], $mapa['distritos']['06-15']['porVisitar']);
+        $this->assertSame([$leToca], $mapa['distritos']['06-14']['porVisitar']);
+        // Las atrasadas primero.
+        $this->assertSame([$sur, $leToca], $mapa['departamentos']['06']['porVisitar']);
+        $this->assertSame([2, 1], [$mapa['totales']['faltan'], $mapa['totales']['atrasadas']]);
+
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()->getContent();
+        $this->assertStringContainsString('Salas atrasadas', $html);
+        $this->assertStringNotContainsString('30+ días', $html);
 
         // La última entrega sale de las entregas de Rutas.
         $this->assertSame('2026-11-04', $mapa['distritos']['06-14']['entrega']);
@@ -253,12 +274,13 @@ class MapaVentasTest extends TestCase
         $this->assertNull($mapa['distritos']['06-15']['entrega']);
     }
 
-    public function test_una_sala_que_nunca_compro_cuenta_como_sin_compra(): void
+    /** Sin 3 visitas no hay ritmo: no se la da por atrasada, se cuenta aparte. */
+    public function test_una_sala_que_nunca_compro_no_tiene_ritmo_todavia(): void
     {
         $mapa = $this->mapa();
 
-        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'dias' => null]], $mapa['distritos']['06-15']['peores']);
-        $this->assertSame(2, $mapa['departamentos']['06']['sinCompra']);
+        $this->assertSame([], $mapa['distritos']['06-15']['porVisitar']);
+        $this->assertSame([0, 2], [$mapa['departamentos']['06']['faltan'], $mapa['departamentos']['06']['sinRitmo']]);
         $this->assertSame(0.0, $mapa['totales']['ventas']);
     }
 
@@ -373,13 +395,12 @@ class MapaVentasTest extends TestCase
         // Norte, Sur y la sala sin lugar; la nueva no existía.
         $this->assertSame(3, $octubre['totales']['salas']);
         $this->assertSame(2, $octubre['totales']['compraron']);
-        $this->assertSame(1, $octubre['distritos']['06-14']['salas']);
-        $this->assertSame([['nombre' => 'Sala de prueba Norte', 'dias' => 11]], $octubre['distritos']['06-14']['peores']);
+        $this->assertSame([1, 1], [$octubre['distritos']['06-14']['salas'], $octubre['distritos']['06-14']['sinRitmo']]);
 
-        // En noviembre sí está y, como nunca compró, va primero entre las que más llevan sin comprar.
+        // En noviembre sí está, todavía sin ritmo; Norte ya tiene el suyo.
         $noviembre = $this->mapa();
         $this->assertSame(4, $noviembre['totales']['salas']);
-        $this->assertSame([['nombre' => 'Sala de prueba nueva', 'dias' => null], ['nombre' => 'Sala de prueba Norte', 'dias' => 6]], $noviembre['distritos']['06-14']['peores']);
+        $this->assertSame([2, 1], [$noviembre['distritos']['06-14']['salas'], $noviembre['distritos']['06-14']['sinRitmo']]);
     }
 
     /**
@@ -425,9 +446,13 @@ class MapaVentasTest extends TestCase
         $this->assertSame(0.0, $mapa['distritos']['06-14']['anterior']);
         $this->assertFalse($mapa['enCurso']);
         $this->assertSame(['desde' => '2026-10-01', 'hasta' => '2026-10-31', 'anteriorDesde' => '2026-09-01', 'anteriorHasta' => '2026-09-30'], $mapa['periodo']);
-        // Al 31/10, Sur compró hace 30 días: ya cuenta como sin compra.
-        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'dias' => 30]], $mapa['distritos']['06-15']['peores']);
-        $this->assertSame(1, $mapa['distritos']['06-15']['sinCompra']);
+        // Sur compra cada 10 días: al 31/10 lleva 30 sin visita, atrasada 20.
+        foreach (['2026-09-11', '2026-09-21'] as $fecha) {
+            $this->documento($this->sur, $fecha, 10);
+        }
+        $mapa = $this->mapa('2026-10');
+        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'estado' => Ritmo::ATRASADA, 'dias' => 30, 'faltan' => -20]], $mapa['distritos']['06-15']['porVisitar']);
+        $this->assertSame(1, $mapa['distritos']['06-15']['atrasadas']);
     }
 
     public function test_el_mismo_tramo_no_se_pasa_del_fin_del_mes_anterior(): void
@@ -484,7 +509,11 @@ class MapaVentasTest extends TestCase
 
     public function test_la_pantalla_lleva_los_datos_escapados_y_la_atribucion(): void
     {
-        $this->sala('Sala </script><b>de prueba</b>', $this->oriente, Distrito::where('codigo', '14')->first());
+        $rara = $this->sala('Sala </script><b>de prueba</b>', $this->oriente, Distrito::where('codigo', '14')->first());
+        // Atrasada: su nombre viaja en la lista de la ficha.
+        foreach (['2026-09-11', '2026-09-21', '2026-10-01'] as $fecha) {
+            $this->documento($rara, $fecha, 10);
+        }
 
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()
             ->assertSee('<h1', false)

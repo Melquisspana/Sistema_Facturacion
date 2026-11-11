@@ -4,12 +4,14 @@ namespace App\Services\Rutas;
 
 use App\Enums\TipoNotaCredito;
 use App\Models\Dte;
+use App\Models\PedidoSalaEnvio;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * La fuente de hoy: la fecha de emisión de los CCF, que es casi la del pedido. Usa el
+ * Lo que completa a los pedidos de sala ({@see FuentePedidosSala}): la fecha de emisión de
+ * los CCF que no salieron de un pedido, que es casi la de la visita. Usa el
  * mismo filtro que las entregas ({@see EntregasCcf::baseCcf()}): aceptados de verdad por
  * Hacienda, sin invalidados ni archivados, del ambiente operativo.
  *
@@ -112,10 +114,16 @@ class FuentePedidosCcf implements FuentePedidos
         return array_filter($productos);
     }
 
-    /** @param  array<int, int>  $salaIds */
+    /**
+     * Sin los CCF que se le facturaron a un pedido de sala (un envío vigente enlazado): esa
+     * visita ya la cuenta el pedido ({@see FuentePedidosSala}).
+     *
+     * @param  array<int, int>  $salaIds
+     */
     private function ccfs(array $salaIds, CarbonImmutable $desde, CarbonImmutable $hasta): Builder
     {
         return $this->entregas->baseCcf()
+            ->whereNotIn('id', PedidoSalaEnvio::vigentes()->whereNotNull('dte_id')->select('dte_id'))
             ->whereIn('cliente_sucursal_id', $salaIds)
             ->whereDate('fecha_emision', '>=', $desde->toDateString())
             ->whereDate('fecha_emision', '<=', $hasta->toDateString());

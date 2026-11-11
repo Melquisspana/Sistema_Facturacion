@@ -131,7 +131,7 @@ class RitmoRutasTest extends TestCase
             ->assertSee('Suele ir cada 15 días (cargado a mano)')
             // Sin vendedores no se puede salir: se dice qué falta.
             ->assertSee('Agregá un vendedor para salir')
-            ->assertSee('1 sala activa sin ruta.');
+            ->assertSee('1 sala activa sin zona.');
 
         PersonalRuta::create(['nombre' => 'Carlos']);
 
