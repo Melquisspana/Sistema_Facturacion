@@ -159,7 +159,17 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 
 - Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
 - Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
-- En la barra lateral de la oficina, los mismos títulos van primero y solo para quien tiene el permiso de vendedor. Después: Tablero, Pedidos, Ventas, Viajes anteriores y Zonas.
+- En la barra lateral de la oficina, los mismos títulos van primero y solo para quien tiene el permiso de vendedor. Después: Tablero, Pedidos, Ventas, Todos los viajes y Zonas.
+
+### Las palabras de Rutas
+
+De la revisión del 11/11/2026. En todo Rutas, y en Fábrica y Facturación cuando nombran lo mismo:
+
+- **Zona** es lo que antes se llamaba ruta (el catálogo). Sin zona se dice «Sin zona». En el mapa, el departamento o distrito es el **lugar**, y el selector se llama «Ver por».
+- **Viaje** es lo que antes se llamaba salida. El enlace dice «Ver viaje». «Salida» queda solo para las armadas a mano de antes del 10/11/2026.
+- El viaje está **Abierto** o **Cerrado** (o Cancelado). No se mezcla con «en curso», «finalizada» ni «en camino». Sale de `SalidaRuta::estadoLegible()`.
+- **Sugerido** es solo la hoja que firma el gerente de la sala. La pantalla del celular se llama «Pedido de <sala>».
+- Las fechas de un viaje van como todas: `dd/mm/aaaa`, y un rango, «14/08/2026 al 16/08/2026».
 
 ### Mapas y gráficos
 
