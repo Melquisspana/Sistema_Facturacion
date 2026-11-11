@@ -13,7 +13,12 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Rutas\PedidosSala;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
@@ -71,6 +76,77 @@ class SacarPedidoSinSalidaTest extends TestCase
             ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false)
             ->assertSee('href="'.route('rutas.por-entregar.index').'"', false)
             ->assertDontSee('¿Mañana seguís en la misma zona?');
+    }
+
+    /**
+     * Las consultas de `guardar()` desde que abre su transacción. En MySQL la primera lectura
+     * sin candado fija la foto de la transacción: si va antes de los candados, el segundo
+     * vendedor no ve el pedido que el primero acaba de guardar y la sala queda con dos.
+     *
+     * @return list<string>
+     */
+    private function consultasAlGuardar(?ClienteSucursal $sala, array $datos): array
+    {
+        $consultas = null;
+        Event::listen(TransactionBeginning::class, function () use (&$consultas) {
+            $consultas ??= [];
+        });
+        DB::listen(function (QueryExecuted $q) use (&$consultas) {
+            if ($consultas !== null) {
+                $consultas[] = $q->sql;
+            }
+        });
+        app(PedidosSala::class)->guardar($sala, $datos + ['lineas' => [['producto_id' => $this->galleta->id, 'cantidad' => '12']]], $this->vendedor);
+
+        return $consultas;
+    }
+
+    public function test_al_sacar_pedido_lo_primero_son_los_candados_de_la_persona_y_la_sala(): void
+    {
+        $consultas = $this->consultasAlGuardar($this->sala, []);
+
+        // Con comillas (SQLite) o backticks (MySQL).
+        $this->assertMatchesRegularExpression('/^select \* from ["`]rutas_personal["`] where ["`]rutas_personal["`]\.["`]id["`] = \?/', $consultas[0], 'Primero, el candado de la persona.');
+        $this->assertMatchesRegularExpression('/^select \* from ["`]cliente_sucursales["`] where ["`]cliente_sucursales["`]\.["`]id["`] = \?/', $consultas[1], 'Después, el de la sala.');
+        if (DB::getDriverName() === 'mysql') {
+            $this->assertStringEndsWith('for update', $consultas[0]);
+            $this->assertStringEndsWith('for update', $consultas[1]);
+        }
+        $this->assertSame(1, PedidoSala::count());
+    }
+
+    public function test_la_tienda_nueva_tambien_empieza_por_el_candado_de_la_persona(): void
+    {
+        $consultas = $this->consultasAlGuardar(null, ['sala_nueva_nombre' => 'Tienda La Chapina']);
+
+        $this->assertMatchesRegularExpression('/^select \* from ["`]rutas_personal["`] where ["`]rutas_personal["`]\.["`]id["`] = \?/', $consultas[0]);
+    }
+
+    public function test_el_doble_toque_en_la_tienda_nueva_no_crea_dos_pedidos(): void
+    {
+        $guardar = fn (string $nombre) => $this->post(route('rutas.sacar-pedido.tienda-nueva.store'), ['sala_nueva_nombre' => $nombre, 'cantidades' => [$this->galleta->id => '12']]);
+
+        $guardar('Tienda La Chapina')->assertSessionHasNoErrors();
+        // El segundo toque (o el mismo nombre con otras mayúsculas y espacios): no crea otro.
+        $guardar('Tienda La Chapina')->assertSessionHasErrors(['lineas' => 'El pedido de «Tienda La Chapina» ya está sacado. Si cambió algo, corregilo.']);
+        $guardar('  tienda   la CHAPINA ')->assertSessionHasErrors('lineas');
+        $this->assertSame(1, PedidoSala::count());
+
+        // Otra tienda, otro vendedor o el mismo nombre otro día sí son otro pedido.
+        $guardar('Tienda El Roble')->assertSessionHasNoErrors();
+        $otro = User::factory()->create(['activo' => true])->assignRole('vendedor');
+        PersonalRuta::create(['nombre' => 'Dora Ficticia', 'user_id' => $otro->id]);
+        $this->actingAs($otro)->post(route('rutas.sacar-pedido.tienda-nueva.store'), ['sala_nueva_nombre' => 'Tienda La Chapina', 'cantidades' => [$this->galleta->id => '6']])
+            ->assertSessionHasNoErrors();
+        $this->travelTo('2026-11-10 09:00:00');
+        $this->actingAs($this->vendedor);
+        $guardar('Tienda La Chapina')->assertSessionHasNoErrors();
+        $this->assertSame(4, PedidoSala::count());
+
+        // Anulado el de hoy, se saca de nuevo.
+        PedidoSala::where('sacado_por_id', $this->persona->id)->whereDate('fecha', '2026-11-10')->sole()->update(['estado' => EstadoPedidoSala::Anulado]);
+        $guardar('Tienda La Chapina')->assertSessionHasNoErrors();
+        $this->assertSame(5, PedidoSala::count());
     }
 
     public function test_busca_cualquier_sala_y_saca_el_pedido_sin_salida_armada(): void

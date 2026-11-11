@@ -51,14 +51,24 @@ class PedidosSala
      *
      * Sin `$sala` es una tienda nueva (10/11/2026): lleva solo el nombre que escribió el
      * vendedor (`sala_nueva_nombre`) y la oficina la enlaza al facturar ({@see enlazarSala()}).
-     * No se frena por repetida: sin sala no hay con qué compararla.
+     * Sin sala no hay con qué compararla con la de otro vendedor; sí se frena el doble toque:
+     * el mismo vendedor, hoy, con el mismo nombre ({@see exigirTiendaSinSacar()}).
+     *
+     * El permiso y la persona se resuelven ANTES de abrir la transacción, y adentro lo primero
+     * son los candados (la persona y después la sala). En MySQL (REPEATABLE READ) la primera
+     * lectura sin candado fija la foto de la transacción: si fuera antes de los candados, el
+     * que espera la sala no vería el pedido que el otro acaba de guardar y la sala quedaría
+     * con dos. El candado de la persona pone en fila los toques del mismo vendedor.
      *
      * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, numero_orden_compra?: ?string, notas?: ?string, sala_nueva_nombre?: ?string}  $datos
      */
     public function guardar(?ClienteSucursal $sala, array $datos, User $usuario, ?PedidoSala $pedido = null): PedidoSala
     {
-        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido) {
-            Gate::forUser($usuario)->authorize('create', PedidoSala::class);
+        Gate::forUser($usuario)->authorize('create', PedidoSala::class);
+        $personaId = self::persona($usuario)?->id ?? abort(403);
+
+        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido, $personaId) {
+            $persona = PersonalRuta::whereKey($personaId)->where('user_id', $usuario->id)->where('activo', true)->lockForUpdate()->first() ?? abort(403);
             if ($sala !== null) {
                 $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
             }
@@ -81,10 +91,7 @@ class PedidosSala
                 $pedido->update($campos);
                 $pedido->lineas()->delete();
             } else {
-                $persona = self::persona($usuario);
-                if ($sala !== null) {
-                    $this->exigirSinSacar($sala, $usuario);
-                }
+                $sala !== null ? $this->exigirSinSacar($sala, $usuario) : $this->exigirTiendaSinSacar($persona, $campos['sala_nueva_nombre']);
                 $viaje = $this->viajes->paraPedido($persona, $sala, $usuario);
                 $pedido = $viaje->pedidos()->create($campos + [
                     'cliente_sucursal_id' => $sala?->id,
@@ -180,6 +187,23 @@ class PedidosSala
         throw ValidationException::withMessages(['lineas' => self::loSaco($usuario, $sacado)
             ? 'El pedido de «'.$sala->nombre.'» ya está sacado. Si cambió algo, corregilo.'
             : 'El pedido de «'.$sala->nombre.'» ya lo sacó hoy '.($sacado->sacadoPor?->nombre ?? 'otro vendedor').'.']);
+    }
+
+    /**
+     * El doble toque en «Guardar pedido» de una tienda nueva: el mismo vendedor, hoy, con un
+     * pedido vigente y todavía sin sala del mismo nombre, no crea otro. El nombre se compara
+     * acá, sin mayúsculas ni espacios de más, para que no dependa de la collation. Con la
+     * persona ya bloqueada.
+     */
+    private function exigirTiendaSinSacar(PersonalRuta $persona, string $nombre): void
+    {
+        $igual = fn (?string $n) => mb_strtolower((string) preg_replace('/\s+/u', ' ', trim((string) $n)));
+        $repetida = PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->where('sacado_por_id', $persona->id)
+            ->whereDate('fecha', HoraNegocio::fechaHoy())->pluck('sala_nueva_nombre')
+            ->contains(fn (?string $n) => $igual($n) === $igual($nombre));
+        if ($repetida) {
+            throw ValidationException::withMessages(['lineas' => 'El pedido de «'.$nombre.'» ya está sacado. Si cambió algo, corregilo.']);
+        }
     }
 
     /** Anula el pedido. Se conserva con sus líneas, para la oficina. */
