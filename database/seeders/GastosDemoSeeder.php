@@ -129,14 +129,14 @@ class GastosDemoSeeder extends Seeder
         $universidad = $this->gasto($ana, [
             'beneficiario' => 'Universidad Centroamericana',
             'concepto' => 'Cuota mensual de la carrera '.self::MARCA,
-            'categoria' => 'Educación', 'ambito' => 'personal', 'persona' => 'Andrea',
+            'categoria' => 'Educación', 'ambito' => 'personal', 'persona' => 'Ana Ficticia',
             'naturaleza' => 'operativo', 'importe' => '210.00', 'documentacion' => 'adjunto',
         ], [['210.00', $hoy->copy()->addDays(8)->toDateString()]]);
 
         $this->gasto($ana, [
             'beneficiario' => 'Instituto de Inglés',
             'concepto' => 'Clases particulares '.self::MARCA,
-            'categoria' => 'Educación', 'ambito' => 'personal', 'persona' => 'Andrea',
+            'categoria' => 'Educación', 'ambito' => 'personal', 'persona' => 'Ana Ficticia',
             'naturaleza' => 'operativo', 'importe' => '60.00', 'documentacion' => 'no_entregaron',
         ], [['60.00', $hoy->copy()->subDays(2)->toDateString()]]);
 
@@ -153,7 +153,7 @@ class GastosDemoSeeder extends Seeder
         $librosPersonal = $this->gasto($ana, [
             'beneficiario' => 'Librería Universitaria',
             'concepto' => 'Libros de texto '.self::MARCA,
-            'categoria' => 'Educación', 'ambito' => 'personal', 'persona' => 'Andrea',
+            'categoria' => 'Educación', 'ambito' => 'personal', 'persona' => 'Ana Ficticia',
             'naturaleza' => 'compra', 'importe' => '100.00', 'documentacion' => 'adjunto',
         ], [['100.00', $hoy->copy()->subDays(3)->toDateString()]]);
 

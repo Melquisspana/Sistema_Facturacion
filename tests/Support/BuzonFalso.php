@@ -116,6 +116,15 @@ class BuzonFalso implements MailboxClient
         return $this;
     }
 
+    /** El buzón vuelve a funcionar (Yahoo levantó el freno, por ejemplo). */
+    public function sinFalla(): self
+    {
+        $this->falla = null;
+        $this->fallarDespuesDe = null;
+
+        return $this;
+    }
+
     /** El buzón funciona `$n` lecturas y después se cae: simula el corte a mitad. */
     public function queFallaDespuesDe(int $n, BuzonException $e): self
     {

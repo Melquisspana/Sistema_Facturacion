@@ -59,7 +59,7 @@ class AdministracionHuellasTest extends TestCase
             ->givePermissionTo(PermisoSistema::AsistenciaVer->value);
     }
 
-    private function empleado(string $nombres = 'Ana', string $apellidos = 'Pérez'): AsistenciaEmpleado
+    private function empleado(string $nombres = 'Ana', string $apellidos = 'Prueba'): AsistenciaEmpleado
     {
         return AsistenciaEmpleado::factory()->create(['nombres' => $nombres, 'apellidos' => $apellidos]);
     }
@@ -96,13 +96,13 @@ class AdministracionHuellasTest extends TestCase
      */
     public function test_una_ranura_ocupada_se_rechaza_diciendo_quien_la_tiene(): void
     {
-        $this->asignar($this->empleado('Ana', 'Pérez'), 7);
+        $this->asignar($this->empleado('Ana', 'Prueba'), 7);
 
-        $beto = $this->empleado('Beto', 'Ramos');
+        $beto = $this->empleado('Beto', 'Relleno');
         $respuesta = $this->asignar($beto, 7);
 
         $respuesta->assertSessionHas('error');
-        $this->assertStringContainsString('Ana Pérez', session('error'));
+        $this->assertStringContainsString('Ana Prueba', session('error'));
         $this->assertStringContainsString('lector-entrada', session('error'));
 
         // Y no se creó nada.
@@ -112,7 +112,7 @@ class AdministracionHuellasTest extends TestCase
 
     public function test_una_ranura_liberada_se_puede_reasignar_desde_la_web(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
+        $ana = $this->empleado('Ana', 'Prueba');
         $this->asignar($ana, 7);
         $deAna = AsistenciaHuella::sole();
 
@@ -120,7 +120,7 @@ class AdministracionHuellasTest extends TestCase
             ->patch(route('asistencia.huellas.liberar', $deAna))
             ->assertSessionHas('status');
 
-        $beto = $this->empleado('Beto', 'Ramos');
+        $beto = $this->empleado('Beto', 'Relleno');
         $this->asignar($beto, 7)->assertSessionHas('status');
 
         // Dos filas: la histórica de Ana y la vigente de Beto.

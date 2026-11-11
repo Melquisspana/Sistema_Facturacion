@@ -8,6 +8,7 @@ use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
+use App\Exceptions\DocumentosRecibidos\BuzonFrenadoException;
 use App\Exceptions\DocumentosRecibidos\BuzonInaccesibleException;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
@@ -19,6 +20,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqConciliacion;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\DocumentosRecibidos\BuzonConFreno;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -377,6 +379,21 @@ class CobrosTxtPorCorreoTest extends TestCase
 
         $this->buscar()->assertRedirect(route('cobros.index', ['cliente_id' => $this->cliente->id]))
             ->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'El servidor no respondió.'));
+    }
+
+    /** Yahoo frenó el login (#162): mensaje claro y, mientras dure la espera, el botón no vuelve a entrar. */
+    public function test_si_yahoo_frena_el_login_pide_esperar_y_no_suma_intentos(): void
+    {
+        $this->escenario();
+        $this->buzon->queFalla(new BuzonFrenadoException('Too many login failures'));
+        $this->app->instance(MailboxClient::class, new BuzonConFreno($this->buzon));
+
+        foreach ([1, 2] as $vez) {
+            $this->buscar()->assertRedirect(route('cobros.index', ['cliente_id' => $this->cliente->id]))
+                ->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'Yahoo pidió esperar')
+                    && ! str_contains($mensaje, 'contraseña en Configuración'));
+        }
+        $this->assertSame(1, $this->buzon->llamadas(), 'el segundo clic no tenía que volver a entrar al buzón');
     }
 
     public function test_si_el_buzon_no_esta_configurado_se_informa(): void

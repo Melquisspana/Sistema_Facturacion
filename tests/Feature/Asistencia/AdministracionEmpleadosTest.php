@@ -61,12 +61,12 @@ class AdministracionEmpleadosTest extends TestCase
 
     public function test_el_listado_muestra_a_las_personas(): void
     {
-        AsistenciaEmpleado::factory()->create(['nombres' => 'Ana María', 'apellidos' => 'Pérez Rivas']);
+        AsistenciaEmpleado::factory()->create(['nombres' => 'Ana María', 'apellidos' => 'Prueba Rótulo']);
 
         $this->actingAs($this->admin())
             ->get(route('personal.empleados'))
             ->assertOk()
-            ->assertSee('Ana María Pérez Rivas');
+            ->assertSee('Ana María Prueba Rótulo');
     }
 
     /**
@@ -93,20 +93,20 @@ class AdministracionEmpleadosTest extends TestCase
 
     public function test_el_listado_filtra_por_texto_y_por_estado(): void
     {
-        AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
-        AsistenciaEmpleado::factory()->inactivo()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
+        AsistenciaEmpleado::factory()->inactivo()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
 
         $this->actingAs($this->admin())
             ->get(route('personal.empleados', ['q' => 'Beto']))
             ->assertOk()
-            ->assertSee('Beto Ramos')
-            ->assertDontSee('Ana Pérez');
+            ->assertSee('Beto Relleno')
+            ->assertDontSee('Ana Prueba');
 
         $this->actingAs($this->admin())
             ->get(route('personal.empleados', ['activo' => '1']))
             ->assertOk()
-            ->assertSee('Ana Pérez')
-            ->assertDontSee('Beto Ramos');
+            ->assertSee('Ana Prueba')
+            ->assertDontSee('Beto Relleno');
     }
 
     public function test_el_listado_vacio_lo_explica(): void
@@ -131,7 +131,7 @@ class AdministracionEmpleadosTest extends TestCase
 
         $this->post(route('asistencia.empleados.store'), [
             'nombres' => 'Ana María',
-            'apellidos' => 'Pérez Rivas',
+            'apellidos' => 'Prueba Rótulo',
             'codigo' => 'RH-014',
             'fecha_ingreso' => '2026-01-15',
         ])->assertSessionHasErrors('nombres');
@@ -145,7 +145,7 @@ class AdministracionEmpleadosTest extends TestCase
 
         $this->actingAs($this->admin())
             ->post(route('asistencia.empleados.store'), [
-                'nombres' => 'Beto', 'apellidos' => 'Ramos', 'codigo' => 'RH-014',
+                'nombres' => 'Beto', 'apellidos' => 'Relleno', 'codigo' => 'RH-014',
             ])
             ->assertSessionHasErrors('codigo');
 
@@ -170,11 +170,11 @@ class AdministracionEmpleadosTest extends TestCase
     {
         $otro = User::factory()->create();
         // Una ficha suelta de antes de Personal: se sigue corrigiendo acá.
-        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
+        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
 
         $this->actingAs($this->admin())
             ->put(route('asistencia.empleados.update', $empleado), [
-                'nombres' => 'Ana', 'apellidos' => 'Pérez', 'user_id' => $otro->id,
+                'nombres' => 'Ana', 'apellidos' => 'Prueba', 'user_id' => $otro->id,
             ])
             ->assertSessionHasNoErrors();
 
@@ -195,11 +195,11 @@ class AdministracionEmpleadosTest extends TestCase
 
         $this->actingAs($this->admin())
             ->put(route('asistencia.empleados.update', $empleado), [
-                'nombres' => 'Ana María', 'apellidos' => 'Pérez',
+                'nombres' => 'Ana María', 'apellidos' => 'Prueba',
             ])
             ->assertSessionHasNoErrors();
 
-        $this->assertSame('Ana María Pérez', $empleado->fresh()->nombreCompleto());
+        $this->assertSame('Ana María Prueba', $empleado->fresh()->nombreCompleto());
         $this->assertTrue($huella->fresh()->activo, 'Corregir un nombre no toca sus ranuras.');
     }
 
@@ -209,7 +209,7 @@ class AdministracionEmpleadosTest extends TestCase
 
         $this->actingAs($this->admin())
             ->put(route('asistencia.empleados.update', $empleado), [
-                'nombres' => 'Ana', 'apellidos' => 'Pérez', 'codigo' => 'RH-014',
+                'nombres' => 'Ana', 'apellidos' => 'Prueba', 'codigo' => 'RH-014',
             ])
             ->assertSessionHasNoErrors();
     }
@@ -253,10 +253,10 @@ class AdministracionEmpleadosTest extends TestCase
     public function test_alta_edicion_y_desactivacion_quedan_auditadas(): void
     {
         // El alta ya no es de Asistencia (es de Personal); la ficha suelta de antes se sigue auditando.
-        $empleado = AsistenciaEmpleado::create(['nombres' => 'Ana', 'apellidos' => 'Pérez', 'activo' => true]);
+        $empleado = AsistenciaEmpleado::create(['nombres' => 'Ana', 'apellidos' => 'Prueba', 'activo' => true]);
 
         $this->actingAs($this->admin())
-            ->put(route('asistencia.empleados.update', $empleado), ['nombres' => 'Ana María', 'apellidos' => 'Pérez']);
+            ->put(route('asistencia.empleados.update', $empleado), ['nombres' => 'Ana María', 'apellidos' => 'Prueba']);
         $this->actingAs($this->admin())
             ->patch(route('asistencia.empleados.toggle-activo', $empleado));
 
@@ -289,14 +289,14 @@ class AdministracionEmpleadosTest extends TestCase
     #[DataProvider('accionesDeEscritura')]
     public function test_sin_permiso_de_gestion_no_se_puede_escribir(string $verbo, string $ruta, array $datos): void
     {
-        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
+        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
         $url = str_contains($ruta, '{empleado}')
             ? route(str_replace('{empleado}', '', $ruta), $empleado)
             : route($ruta);
 
         $this->actingAs($this->soloVer())->$verbo($url, $datos)->assertForbidden();
 
-        $this->assertSame('Ana Pérez', $empleado->fresh()->nombreCompleto());
+        $this->assertSame('Ana Prueba', $empleado->fresh()->nombreCompleto());
         $this->assertTrue($empleado->fresh()->activo);
     }
 

@@ -51,7 +51,7 @@ class AutorizacionFinaTest extends TestCase
     private function compra(User $u, string $importe): Gasto
     {
         return app(CuentaProveedor::class)->agregarCompra($u, [
-            'clave' => (string) Str::uuid(), 'beneficiario' => 'Juan Pérez',
+            'clave' => (string) Str::uuid(), 'beneficiario' => 'Juan Prueba',
             'concepto' => 'Compra', 'importe' => $importe, 'fecha' => now()->toDateString(),
             'ambito' => 'empresarial', 'moneda' => 'USD',
         ]);
@@ -72,7 +72,7 @@ class AutorizacionFinaTest extends TestCase
         $proteccion->shouldReceive('ocultosPara')->andReturn(Gasto::query()->select('id')->whereKey($protegido->id)->toBase());
         $this->app->instance(ProteccionDeGastos::class, $proteccion);
 
-        $ids = app(CuentaProveedor::class)->abiertas($u, 'Juan Pérez', 'USD')->pluck('gasto_id')->all();
+        $ids = app(CuentaProveedor::class)->abiertas($u, 'Juan Prueba', 'USD')->pluck('gasto_id')->all();
 
         $this->assertSame([$visible->id], $ids);
     }

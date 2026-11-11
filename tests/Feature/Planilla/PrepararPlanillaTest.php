@@ -73,7 +73,7 @@ class PrepararPlanillaTest extends TestCase
         ]));
     }
 
-    private function empleado(User $u, string $nombre = 'Ana Mendoza', array $extra = []): PlanillaEmpleado
+    private function empleado(User $u, string $nombre = 'Ana Muestra', array $extra = []): PlanillaEmpleado
     {
         return app(RegistrarEmpleado::class)->registrar($u, array_replace([
             'nombre' => $nombre, 'cargo' => 'Ventas', 'salario_referencia' => '225.00',
@@ -141,14 +141,14 @@ class PrepararPlanillaTest extends TestCase
 
         $u = $this->gestor();
         // Persona SIN ninguna huella registrada.
-        $asistencia = AsistenciaEmpleado::create(['nombres' => 'Sofia', 'apellidos' => 'Martinez', 'activo' => true]);
+        $asistencia = AsistenciaEmpleado::create(['nombres' => 'Sofia', 'apellidos' => 'Maqueta', 'activo' => true]);
         $this->assertSame(0, $asistencia->huellas()->count());
 
-        $empleado = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Sofia Martinez', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        $empleado = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Sofia Maqueta', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
 
         $this->assertNotNull($empleado->id);
         // Y las pantallas de planilla abren igual con el módulo de Asistencia apagado.
-        $this->actingAs($u)->get(route('personal.empleados'))->assertOk()->assertSee('Sofia Martinez');
+        $this->actingAs($u)->get(route('personal.empleados'))->assertOk()->assertSee('Sofia Maqueta');
         $this->actingAs($u)->get(route('planilla.index'))->assertOk();
     }
 
@@ -164,9 +164,9 @@ class PrepararPlanillaTest extends TestCase
     public function test_una_persona_de_rutas_tambien_se_reutiliza(): void
     {
         $u = $this->gestor();
-        $ruta = PersonalRuta::create(['nombre' => 'Carlos Rivas', 'activo' => true]);
+        $ruta = PersonalRuta::create(['nombre' => 'Carlos Rótulo', 'activo' => true]);
 
-        $empleado = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Carlos Rivas', 'origen_tipo' => 'ruta', 'origen_id' => $ruta->id]);
+        $empleado = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Carlos Rótulo', 'origen_tipo' => 'ruta', 'origen_id' => $ruta->id]);
 
         $this->assertSame($ruta->id, $empleado->personal_ruta_id);
         $this->assertSame('Personal de Rutas', $empleado->origenIdentidad());
@@ -220,13 +220,13 @@ class PrepararPlanillaTest extends TestCase
     public function test_los_avisos_de_una_misma_persona_salen_en_un_solo_renglon(): void
     {
         $html = view('planilla.partials.avisos-por-persona', ['lista' => [
-            'Ana Mendoza: falta el importe de ISSS.',
-            'Ana Mendoza: falta el importe de AFP.',
+            'Ana Muestra: falta el importe de ISSS.',
+            'Ana Muestra: falta el importe de AFP.',
             'Aviso sin persona.',
         ]])->render();
 
-        $this->assertStringContainsString('<strong>Ana Mendoza</strong>: falta el importe de ISSS · falta el importe de AFP.', $html);
-        $this->assertSame(1, substr_count($html, 'Ana Mendoza'));
+        $this->assertStringContainsString('<strong>Ana Muestra</strong>: falta el importe de ISSS · falta el importe de AFP.', $html);
+        $this->assertSame(1, substr_count($html, 'Ana Muestra'));
         $this->assertStringContainsString('Aviso sin persona.', $html);
     }
 
@@ -302,7 +302,7 @@ class PrepararPlanillaTest extends TestCase
 
         $detalle = PlanillaDetalle::firstOrFail();
 
-        $this->assertSame('Ana Mendoza', $detalle->nombre_snapshot);
+        $this->assertSame('Ana Muestra', $detalle->nombre_snapshot);
         $this->assertSame('260.50', $detalle->total_ingresos);
         $this->assertSame('40.00', $detalle->descuentos);
         $this->assertSame('220.50', $detalle->a_pagar);
@@ -365,7 +365,7 @@ class PrepararPlanillaTest extends TestCase
         $u = $this->gestor();
         $planilla = $this->planilla($u);
         $ana = $this->empleado($u);
-        $carlos = $this->empleado($u, 'Carlos Rivas');
+        $carlos = $this->empleado($u, 'Carlos Rótulo');
 
         app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
             ['planilla_empleado_id' => $ana->id, 'salario' => '100.00', 'conceptos' => [
@@ -436,7 +436,7 @@ class PrepararPlanillaTest extends TestCase
         // Ya no hace falta explicar que no se suman: la resta lo dice sola.
         $respuesta->assertDontSee('No se suman entre sí', false);
         $respuesta->assertSee('no calcula', false);
-        $respuesta->assertSee('Ana Mendoza');
+        $respuesta->assertSee('Ana Muestra');
     }
 
     public function test_la_planilla_dice_que_calcula_y_que_no_en_cada_pantalla(): void

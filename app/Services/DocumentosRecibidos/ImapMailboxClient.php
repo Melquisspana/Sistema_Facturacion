@@ -5,6 +5,7 @@ namespace App\Services\DocumentosRecibidos;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Exceptions\DocumentosRecibidos\AutenticacionBuzonException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
+use App\Exceptions\DocumentosRecibidos\BuzonFrenadoException;
 use App\Exceptions\DocumentosRecibidos\BuzonInaccesibleException;
 use App\Services\DocumentosRecibidos\Buzon\EstadoBuzon;
 use App\Services\DocumentosRecibidos\Buzon\PaginaMensajes;
@@ -36,6 +37,9 @@ use Throwable;
  */
 class ImapMailboxClient implements MailboxClient
 {
+    /** Lo que dice Yahoo cuando frena los logins seguidos: pasajero, no credencial mala. */
+    private const SENAL_FRENO = 'too many login failures';
+
     /** Fragmentos del error de IMAP que significan "credenciales rechazadas". */
     private const SENALES_AUTENTICACION = [
         'authenticationfailed', 'authentication failed', 'invalid credentials',
@@ -247,7 +251,7 @@ class ImapMailboxClient implements MailboxClient
      * operador tiene que ir a Configuración, y reintentar no sirve; con "inaccesible"
      * el reintento es exactamente lo que corresponde.
      *
-     * @throws AutenticacionBuzonException|BuzonInaccesibleException
+     * @throws BuzonException
      */
     private function abortarSiHuboError(string $prefijo): void
     {
@@ -256,19 +260,31 @@ class ImapMailboxClient implements MailboxClient
             return;
         }
 
-        $motivo = BuzonException::sanear((string) end($errores), $this->password());
+        throw self::excepcionPara(BuzonException::sanear((string) end($errores), $this->password()), $prefijo);
+    }
 
+    /**
+     * La excepción que corresponde a un motivo de IMAP ya saneado.
+     *
+     * El freno va primero: Yahoo lo informa como «[AUTHENTICATIONFAILED] Too many login
+     * failures», que la señal «login failure» tomaría por credenciales malas (#162).
+     */
+    public static function excepcionPara(string $motivo, string $prefijo): BuzonException
+    {
         $comparable = mb_strtolower($motivo);
+        if (str_contains($comparable, self::SENAL_FRENO)) {
+            return new BuzonFrenadoException($prefijo.': '.$motivo);
+        }
         foreach (self::SENALES_AUTENTICACION as $senal) {
             if (str_contains($comparable, $senal)) {
-                throw new AutenticacionBuzonException(
+                return new AutenticacionBuzonException(
                     'El buzón rechazó las credenciales: '.$motivo
                     .'. Revisá usuario y contraseña en Configuración > Integraciones > Documentos recibidos.'
                 );
             }
         }
 
-        throw new BuzonInaccesibleException($prefijo.': '.$motivo);
+        return new BuzonInaccesibleException($prefijo.': '.$motivo);
     }
 
     /** Cierra sin expunge (no borra nada) y vacía el buffer de errores. */

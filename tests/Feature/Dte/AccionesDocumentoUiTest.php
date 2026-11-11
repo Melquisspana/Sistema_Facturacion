@@ -71,7 +71,7 @@ class AccionesDocumentoUiTest extends TestCase
         config()->set('dte.invalidacion.mock', true);
         config()->set('dte.invalidacion.protegidos_numero_control', []);
         config()->set('dte.invalidacion.protegidos_codigo_generacion', []);
-        config()->set('dte.invalidacion.responsable', ['nombre' => 'Melqui Administrador', 'tipo_doc' => '13', 'num_doc' => '040000000']);
+        config()->set('dte.invalidacion.responsable', ['nombre' => 'Responsable de Prueba', 'tipo_doc' => '13', 'num_doc' => '040000000']);
         config()->set('dte.invalidacion.solicita', ['nombre' => 'Calleja CxP', 'tipo_doc' => '36', 'num_doc' => '06145555551015']);
         $this->credencialesApitestFicticias();
     }

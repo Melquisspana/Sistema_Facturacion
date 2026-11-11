@@ -54,8 +54,8 @@ class ConsultaJornadasTest extends TestCase
         config()->set('asistencia.enabled', true);
 
         $this->lector = AsistenciaDispositivo::factory()->create(['codigo' => 'entrada', 'nombre' => 'Entrada principal']);
-        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
-        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
+        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
     }
 
     private function consulta(): ConsultaJornadas
@@ -431,7 +431,7 @@ class ConsultaJornadasTest extends TestCase
             $filtro = FiltroAsistencia::vacio()->ascendente($ascendente);
             $apellidos = $this->consulta()->porRango($filtro)->map(fn ($j) => $j->empleado->apellidos)->all();
 
-            $this->assertSame(['Pérez', 'Ramos'], $apellidos,
+            $this->assertSame(['Prueba', 'Relleno'], $apellidos,
                 'El orden de fechas no puede invertir el de las personas.');
         }
     }
@@ -443,7 +443,7 @@ class ConsultaJornadasTest extends TestCase
         $datos = $this->consulta()->porRango($this->dia('2026-03-05'))->sole()->toArray();
 
         $this->assertSame('2026-03-05', $datos['fecha']);
-        $this->assertSame('Ana Pérez', $datos['empleado']);
+        $this->assertSame('Ana Prueba', $datos['empleado']);
         $this->assertSame(9.0, $datos['trabajado_horas']);
         $this->assertSame('completa', $datos['estado']);
         $this->assertTrue($datos['tiempo_exacto']);

@@ -53,7 +53,7 @@ class ClienteRequestTest extends TestCase
         $sv = Pais::where('codigo', 'SV')->firstOrFail();
 
         return [
-            'nombre' => 'Juan Pérez',
+            'nombre' => 'Juan Prueba',
             'pais_id' => $sv->id,
             'departamento_id' => $sansal->id,
             'municipio_id' => $muni->id,
