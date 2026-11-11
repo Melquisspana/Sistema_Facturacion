@@ -18,7 +18,6 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\RitmoRutas;
 use Carbon\CarbonImmutable;
@@ -28,6 +27,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Tests\Support\CcfDeLaRuta;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -86,7 +86,7 @@ class PorEntregarTest extends TestCase
     private function salidaFormal(string $ruta, PersonalRuta $persona, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso, string $fecha = '2026-11-06', array $acompanantes = []): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->rutas[$ruta]->id, 'fecha_inicio' => $fecha, 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id, ...array_map(fn (PersonalRuta $p) => $p->id, $acompanantes)], $persona->id);
+        SalidaDePrueba::participantes($salida, [$persona->id, ...array_map(fn (PersonalRuta $p) => $p->id, $acompanantes)], $persona->id);
 
         return $salida;
     }

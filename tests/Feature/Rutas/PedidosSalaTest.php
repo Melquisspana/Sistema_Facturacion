@@ -19,12 +19,12 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -89,7 +89,7 @@ class PedidosSalaTest extends TestCase
     private function salidaCon(PropositoSalida $proposito, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-05', 'estado' => $estado, 'proposito' => $proposito]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->persona->id, $this->otraPersona->id], null);
+        SalidaDePrueba::participantes($salida, [$this->persona->id, $this->otraPersona->id], null);
 
         return $salida;
     }
@@ -148,7 +148,7 @@ class PedidosSalaTest extends TestCase
         $this->assertSame(PropositoSalida::Entregar, $vieja->proposito);
         $this->assertSame(PropositoSalida::Entregar, SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-05', 'estado' => EstadoSalidaRuta::EnCurso])->proposito);
 
-        app(ParticipantesSalida::class)->sincronizar($vieja, [$this->persona->id], null);
+        SalidaDePrueba::participantes($vieja, [$this->persona->id], null);
         // El pedido ya no va a una salida armada: se suma al viaje del vendedor.
         $this->sacar()->assertSessionHasNoErrors();
         $this->assertSame(0, $vieja->pedidos()->count());

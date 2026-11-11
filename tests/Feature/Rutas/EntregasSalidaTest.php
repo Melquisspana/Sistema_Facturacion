@@ -18,11 +18,11 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Support\CcfDeLaRuta;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -99,7 +99,7 @@ class EntregasSalidaTest extends TestCase
             'fecha_inicio' => now()->toDateString(),
             'estado' => $estado,
         ]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id], $this->carlos->id);
+        SalidaDePrueba::participantes($salida, [$this->carlos->id], $this->carlos->id);
 
         return $salida->load('ruta');
     }
@@ -504,7 +504,7 @@ class EntregasSalidaTest extends TestCase
         $sinRegistrar = $this->ccf();
         $salida = $this->salida();
         $ana = PersonalRuta::create(['nombre' => 'Ana']);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
+        SalidaDePrueba::participantes($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
         $this->cargarCcfDeLaRuta($salida);
         $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
         PpqAlbaran::create([

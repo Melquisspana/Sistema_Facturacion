@@ -13,9 +13,9 @@ use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Rutas\FichaVendedor;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -48,7 +48,7 @@ class JefeVendedoresTest extends TestCase
     private function salida(PersonalRuta $persona, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => now()->toDateString(), 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id], $persona->id);
+        SalidaDePrueba::participantes($salida, [$persona->id], $persona->id);
 
         return $salida;
     }

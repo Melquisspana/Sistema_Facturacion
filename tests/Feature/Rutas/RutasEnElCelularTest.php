@@ -15,10 +15,10 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -79,7 +79,7 @@ class RutasEnElCelularTest extends TestCase
     private function salida(Ruta $ruta, string $fecha, EstadoSalidaRuta $estado, array $van, ?PersonalRuta $encabeza = null): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => $fecha, 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, array_map(fn (PersonalRuta $p) => $p->id, $van), $encabeza?->id);
+        SalidaDePrueba::participantes($salida, array_map(fn (PersonalRuta $p) => $p->id, $van), $encabeza?->id);
 
         return $salida;
     }

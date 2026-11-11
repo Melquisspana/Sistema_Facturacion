@@ -18,10 +18,10 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 class VendedorMiSalidaTest extends TestCase
@@ -50,7 +50,7 @@ class VendedorMiSalidaTest extends TestCase
     private function salida(bool $propia = true, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-10-05', 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [($propia ? $this->persona : PersonalRuta::create(['nombre' => 'Ana']))->id], null);
+        SalidaDePrueba::participantes($salida, [($propia ? $this->persona : PersonalRuta::create(['nombre' => 'Ana']))->id], null);
 
         return $salida;
     }
@@ -121,7 +121,7 @@ class VendedorMiSalidaTest extends TestCase
         $this->assertTrue($entrega->refresh()->estaPendiente());
         $otra = $this->salida();
         $this->patch(route('rutas.mi-salida.deshacer', [$otra, $entrega]))->assertNotFound();
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->persona->id, $ajeno->id], null);
+        SalidaDePrueba::participantes($salida, [$this->persona->id, $ajeno->id], null);
         $this->actingAs($oficina)->patch(route('rutas.salidas.entregas.update', [$salida, $entrega]), ['resultado' => 'entregado', 'entregado_por_id' => $ajeno->id])->assertSessionHas('status');
         $this->assertSame($ajeno->id, $entrega->refresh()->entregado_por_id);
         // Lo que anotó la oficina no lo deshace el vendedor.

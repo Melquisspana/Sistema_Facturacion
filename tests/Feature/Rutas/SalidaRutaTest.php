@@ -7,10 +7,10 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -61,7 +61,7 @@ class SalidaRutaTest extends TestCase
             'estado' => now()->toDateString() < '2026-08-14' ? EstadoSalidaRuta::Planificada : EstadoSalidaRuta::EnCurso,
             'created_by' => $admin->id,
         ] + $extra);
-        app(ParticipantesSalida::class)->sincronizar($salida, $personal, null);
+        SalidaDePrueba::participantes($salida, $personal, null);
 
         return $salida;
     }

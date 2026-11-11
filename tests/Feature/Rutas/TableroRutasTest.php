@@ -14,10 +14,10 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -211,7 +211,7 @@ class TableroRutasTest extends TestCase
                     $this->pedidos($this->sala('Sala '.Str::random(6), $ruta), ['2026-09-29', '2026-10-06', '2026-10-13', '2026-10-20']);
                 }
                 $salida = SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => '2026-11-02', 'estado' => EstadoSalidaRuta::EnCurso]);
-                app(ParticipantesSalida::class)->sincronizar($salida, [$vendedor->id], $vendedor->id);
+                SalidaDePrueba::participantes($salida, [$vendedor->id], $vendedor->id);
                 $dte = $this->ccf($ruta->sucursales()->first(), '2026-11-01');
                 $salida->entregas()->create(['dte_id' => $dte->id, 'cliente_sucursal_id' => $dte->cliente_sucursal_id]);
                 // Una entrega hecha y un pedido sacado: la última visita de cada sala y vendedor.

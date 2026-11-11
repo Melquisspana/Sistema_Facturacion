@@ -9,13 +9,13 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaGasto;
 use App\Models\User;
 use App\Services\Rutas\CierreDia;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 class GastosRutaTest extends TestCase
@@ -42,7 +42,7 @@ class GastosRutaTest extends TestCase
         $this->persona = PersonalRuta::create(['nombre' => 'Carlos', 'user_id' => $this->vendedor->id]);
         $this->otra = PersonalRuta::create(['nombre' => 'Ana']);
         $this->salida = SalidaRuta::create(['ruta_id' => Ruta::create(['nombre' => 'Centro'])->id, 'fecha_inicio' => HoraNegocio::fechaHoy(), 'estado' => EstadoSalidaRuta::EnCurso]);
-        app(ParticipantesSalida::class)->sincronizar($this->salida, [$this->persona->id, $this->otra->id], null);
+        SalidaDePrueba::participantes($this->salida, [$this->persona->id, $this->otra->id], null);
         $this->actingAs($this->vendedor);
     }
 

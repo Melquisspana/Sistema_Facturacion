@@ -14,9 +14,9 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Dte\DtePdfService;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -52,7 +52,7 @@ class SalidaCcfTest extends TestCase
     private function salida(PersonalRuta $persona): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-03', 'estado' => EstadoSalidaRuta::EnCurso]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id], $persona->id);
+        SalidaDePrueba::participantes($salida, [$persona->id], $persona->id);
 
         return $salida;
     }

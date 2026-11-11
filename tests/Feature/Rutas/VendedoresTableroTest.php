@@ -9,9 +9,9 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -56,7 +56,7 @@ class VendedoresTableroTest extends TestCase
     private function salida(Ruta $ruta, PersonalRuta $persona, string $inicio, EstadoSalidaRuta $estado = EstadoSalidaRuta::Finalizada, ?string $regreso = null): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => $inicio, 'fecha_fin_real' => $regreso, 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id], $persona->id);
+        SalidaDePrueba::participantes($salida, [$persona->id], $persona->id);
 
         return $salida;
     }
