@@ -22,6 +22,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\CuentaLecturasDeAjustes;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -32,6 +33,7 @@ use Tests\TestCase;
  */
 class QuedanCallejaExporterTest extends TestCase
 {
+    use CuentaLecturasDeAjustes;
     use PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -168,6 +170,30 @@ class QuedanCallejaExporterTest extends TestCase
         config(['ppq.quedan.salas_confirmadas' => ['DTE-03-M001P002-000000000000247' => '0620']]);
         $this->expectExceptionMessage('sala confirmada 0620, pero el número del albarán indica 0262');
         $this->exportador()->generar($lote->fresh());
+    }
+
+    /** Dónde va la sala dentro de la orden de compra se lee una vez por archivo, no por CCF. */
+    public function test_no_consulta_los_ajustes_otra_vez_por_cada_ccf(): void
+    {
+        $loteCon = function (int $cuantos, int $desde): PpqLote {
+            $lote = $this->lote();
+            foreach (range($desde, $desde + $cuantos - 1) as $n) {
+                $this->ccf($lote, 'DTE-03-M001P002-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT), self::OC_A, $this->albaran('AC01/0230/00/'.$n, self::OC_A));
+            }
+
+            return $lote->fresh();
+        };
+        $generar = function (PpqLote $lote): void {
+            @unlink($this->exportador()->generar($lote));
+        };
+        $uno = $loteCon(1, 100);
+        $cinco = $loteCon(5, 200);
+
+        $this->assertSame(
+            $this->lecturasDeAjustes(fn () => $generar($uno)),
+            $this->lecturasDeAjustes(fn () => $generar($cinco)),
+            'Cinco CCF cuestan las mismas lecturas de ajustes que uno.',
+        );
     }
 
     public function test_genera_encabezados_hoja_tipos_y_orden_de_la_plantilla(): void

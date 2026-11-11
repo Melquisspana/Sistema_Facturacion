@@ -64,6 +64,7 @@ final class RegistrarAjuste
             // un ajuste y un pago simultáneos no puedan cruzarse.
             $gasto = Gasto::whereKey($cuota->gasto_id)->lockForUpdate()->firstOrFail();
             abort_unless($this->acceso->ver($usuario, $gasto), 403);
+            $this->exigirQueNoEsteAnulado($gasto);
 
             $cuota = Cuota::whereKey($cuota->id)->lockForUpdate()->firstOrFail();
 
@@ -156,6 +157,7 @@ final class RegistrarAjuste
             if (! $ajuste->vigente()) {
                 return; // ya revertido: repetir no cambia nada ni duplica el evento
             }
+            $this->exigirQueNoEsteAnulado($gasto);
 
             // Quitar un CRÉDITO sube la deuda: nunca la deja en negativo. Quitar un DÉBITO
             // la baja, y si ese débito ya se pagó, lo pagado queda por encima de lo que
@@ -190,5 +192,15 @@ final class RegistrarAjuste
                 'created_at' => now(),
             ]);
         });
+    }
+
+    /** Un gasto anulado ya no es deuda: ajustarlo cambiaría una cifra que no cuenta en ningún lado. */
+    private function exigirQueNoEsteAnulado(Gasto $gasto): void
+    {
+        if ($gasto->anulado()) {
+            throw ValidationException::withMessages([
+                'importe' => 'Este gasto está anulado: ya no se debe y no se le registran ajustes.',
+            ]);
+        }
     }
 }

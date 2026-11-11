@@ -82,7 +82,7 @@ class NavigationTest extends TestCase
     /**
      * La sidebar SIN el selector de áreas: la lista de secciones del área activa.
      * Elegir un área y navegar dentro de una son operaciones distintas: «Rutas»
-     * identifica el área y «Cobros de supermercados» es un grupo de secciones que también
+     * identifica el área y «Seguimiento» es un grupo de secciones que también
      * aparece en la barra de Facturación.
      */
     private function seccionesDelSidebar(string $html): string
@@ -121,7 +121,7 @@ class NavigationTest extends TestCase
         foreach ([
             'Inicio',
             'Ventas y facturación',
-            'Cobros de supermercados',
+            'Seguimiento',
             'Contabilidad',
         ] as $categoria) {
             $resp->assertSee($categoria);
@@ -436,8 +436,8 @@ class NavigationTest extends TestCase
         $lecturaOperativa = [
             'dashboard',
             'clientes.index', 'productos.index', 'facturacion.index',
-            // SALE 'ppq.index' y ENTRA 'cobros.index': el seguimiento de CCF de
-            // Cobros de supermercados reemplazó la búsqueda de PPQ como primera fila;
+            // SALE 'ppq.index' y ENTRA 'cobros.index': Facturas por cobrar, del
+            // grupo Seguimiento, reemplazó la búsqueda de PPQ como primera fila;
             // se conserva el mismo permiso ppq.ver.
             'cobros.index', 'ppq.lotes.index',
             'documentos-recibidos.index', 'contabilidad.paquete',
@@ -534,7 +534,7 @@ class NavigationTest extends TestCase
 
     /**
      * El área Rutas presenta solo sus pantallas —Rutas, Ventas, Salidas anteriores y
-     * Configurar rutas—. Cobros de supermercados salió de esta barra (28/10/2026): sigue en la de
+     * Configurar rutas—. Facturas por cobrar salió de esta barra (28/10/2026): sigue en la de
      * Facturación.
      */
     public function test_el_area_rutas_presenta_solo_sus_enlaces(): void
@@ -565,7 +565,7 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe($html);
         $this->assertStringContainsString('Salidas anteriores', $sidebar);
         $this->assertStringContainsString('Configurar rutas', $sidebar);
-        $this->assertStringNotContainsString('Cobros de supermercados', $sidebar);
+        $this->assertStringNotContainsString('Facturas por cobrar', $sidebar);
         // La custodia del papel se retiró (26/09/2026).
         $this->assertStringNotContainsString('Recepción de CCF', $sidebar);
         $this->assertStringNotContainsString('Excepciones', $sidebar);
@@ -577,7 +577,7 @@ class NavigationTest extends TestCase
         // NO Administración, Configuración ni Sistema.
         $resp = $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk();
 
-        $resp->assertSee('Cobros de supermercados');
+        $resp->assertSee('Facturas por cobrar');
         $resp->assertSee('Contabilidad');
         // Exportaciones ya no es una sección; su parte visible es la fila de listas.
         $resp->assertSee('Listas de empaque');
@@ -788,13 +788,13 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El grupo «Cobros de supermercados» en la barra de Facturación cuelga
+     * El grupo «Seguimiento» en la barra de Facturación cuelga
      * sus dos opciones directamente, sin subtítulo intermedio.
      *
      * Primero se llamó «Cobros», luego «Pronto pago» al limitarse a PPQ y retirar
-     * el subtítulo «Prontos Pagos». Ahora contiene el ciclo de cobro completo,
-     * desde el seguimiento del CCF hasta el pago, junto al historial de PPQ:
-     * por eso se llama «Cobros de supermercados», igual que en la barra del área Rutas.
+     * el subtítulo «Prontos Pagos», después «Cobros de supermercados» y
+     * «Seguimiento de facturas». El 10/11/2026 el usuario pidió un título que entre
+     * en una línea: «Seguimiento», con «Facturas por cobrar» como primera opción.
      */
     public function test_cobros_calleja_es_un_grupo_plano_en_la_barra_de_facturacion(): void
     {
@@ -804,26 +804,34 @@ class NavigationTest extends TestCase
             $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
         );
 
-        $this->assertStringContainsString('Cobros de supermercados', $secciones);
+        // El título del grupo va en una línea: si no entrara, se corta con «…» y el
+        // texto completo queda en el title del botón.
+        $this->assertMatchesRegularExpression(
+            '/<button[^>]*title="Seguimiento"[^>]*>.*?<span class="min-w-0 truncate">Seguimiento<\/span>/su',
+            $secciones,
+        );
 
-        // Ni el rótulo viejo del grupo ni el subtítulo que llevaba dentro.
+        // Ni los rótulos viejos del grupo ni el subtítulo que llevaba dentro.
+        $this->assertStringNotContainsString('Cobros de supermercados', $secciones);
         $this->assertStringNotContainsString('Pronto pago', $secciones);
         $this->assertStringNotContainsString('Prontos Pagos', $secciones);
+        $this->assertStringNotContainsString('Seguimiento de facturas', $secciones);
+        $this->assertStringNotContainsString('Seguimiento de CCF', $secciones);
 
-        // La búsqueda es un botón dentro del Seguimiento, no una fila del menú.
+        // La búsqueda es un botón dentro de Facturas por cobrar, no una fila del menú.
         $this->assertStringNotContainsString('Buscar CCF / NC', $secciones);
 
         // Las dos opciones cuelgan directamente del grupo, en este orden.
         $this->assertMatchesRegularExpression(
-            '/Cobros de supermercados.*Seguimiento de CCF.*Historial de PPQ/su',
+            '/>Seguimiento<\/span>.*Facturas por cobrar.*Historial de PPQ/su',
             $secciones,
-            'Bajo «Cobros de supermercados» deben colgar Seguimiento de CCF e Historial de PPQ, en ese orden.',
+            'Bajo «Seguimiento» deben colgar Facturas por cobrar e Historial de PPQ, en ese orden.',
         );
     }
 
     /**
      * El ÁREA se llama «Rutas» desde el 26/09/2026 (antes «Cobros», cuando cargaba la
-     * custodia del CCF físico). Cobros de supermercados ya no aparece en su barra, pero sigue
+     * custodia del CCF físico). Facturas por cobrar ya no aparece en su barra, pero sigue
      * entero en la de Facturación con el mismo rótulo.
      */
     public function test_el_area_se_llama_rutas_y_cobros_calleja_queda_en_facturacion(): void
@@ -832,9 +840,9 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe($html);
 
         $this->assertSame('Rutas', AreaSistema::Rutas->label());
-        $this->assertStringNotContainsString('Cobros de supermercados', $sidebar);
+        $this->assertStringNotContainsString('Facturas por cobrar', $sidebar);
         $facturacion = $this->sidebarDe($this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent());
-        $this->assertStringContainsString('Cobros de supermercados', $facturacion);
+        $this->assertStringContainsString('Facturas por cobrar', $facturacion);
         $this->get(route('cobros.index'))->assertOk();
         $this->assertStringNotContainsString('Prontos Pagos', $sidebar);
     }

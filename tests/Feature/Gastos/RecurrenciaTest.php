@@ -3,16 +3,15 @@
 namespace Tests\Feature\Gastos;
 
 use App\Enums\PermisoSistema;
-use App\Models\Gastos\Ajuste;
 use App\Models\Gastos\Gasto;
 use App\Models\Gastos\Ocurrencia;
 use App\Models\Gastos\Pago;
 use App\Models\Gastos\Regla;
 use App\Models\User;
+use App\Services\Gastos\AnularGasto;
 use App\Services\Gastos\Recurrencia\AdministrarReglas;
 use App\Services\Gastos\Recurrencia\CalendarioRecurrencia;
 use App\Services\Gastos\Recurrencia\GenerarObligaciones;
-use App\Services\Gastos\RegistrarAjuste;
 use App\Services\Gastos\SaldosGastos;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -555,8 +554,8 @@ class RecurrenciaTest extends TestCase
     }
 
     /**
-     * El aviso mandaba a «anular esa obligación», y anular no existe en el sistema. Tiene
-     * que nombrar algo que SÍ se puede hacer, y ese camino tiene que dejar la deuda en cero.
+     * El aviso tiene que nombrar algo que SÍ se puede hacer, y ese camino tiene que dejar
+     * la deuda en cero. Hasta que existió «Anular gasto» mandaba a un ajuste de crédito.
      */
     public function test_el_aviso_de_un_periodo_ya_generado_indica_un_camino_que_existe(): void
     {
@@ -568,21 +567,21 @@ class RecurrenciaTest extends TestCase
             app(AdministrarReglas::class)->omitir($u, $regla, '2026-03', 'Me equivoqué al generarlo.');
             $this->fail('Omitir un período generado tendría que rechazarse.');
         } catch (ValidationException $e) {
-            $this->assertStringNotContainsStringIgnoringCase('anul', $e->getMessage());
-            $this->assertStringContainsString('ajuste de crédito', $e->getMessage());
-            $this->assertStringContainsString(Ajuste::TIPOS['correccion'], $e->getMessage());
+            $this->assertStringContainsString('Anular gasto', $e->getMessage());
+            $this->assertStringNotContainsString('ajuste de crédito', $e->getMessage());
         }
 
         // Lo que el aviso indica, hecho: la obligación sigue en el historial y ya no se debe.
         $gasto = Gasto::firstOrFail();
-        app(RegistrarAjuste::class)->registrar($u, $gasto->cuotas->first(), [
-            'clave' => (string) Str::uuid(), 'direccion' => 'credito', 'tipo' => 'correccion',
-            'importe' => '400.00', 'motivo' => 'Este período no correspondía',
-        ]);
+        app(AnularGasto::class)->anular($u, $gasto, 'Este período no correspondía');
 
         $resumen = app(SaldosGastos::class)->resumen($gasto->fresh(), '2026-03-05');
         $this->assertSame(0, $resumen['pendiente']);
-        $this->assertSame('saldada_por_ajuste', $resumen['liquidacion']);
+        $this->assertSame('anulada', $resumen['liquidacion']);
+        $this->assertSame(1, Gasto::count());
+
+        // Y la corrida siguiente no lo vuelve a generar: el período sigue ocupado.
+        $this->generar($regla, '2026-03-06');
         $this->assertSame(1, Gasto::count());
     }
 

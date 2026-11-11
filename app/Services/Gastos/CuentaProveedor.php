@@ -64,6 +64,7 @@ final class CuentaProveedor
             ->where('g.moneda', $moneda)
             ->where('g.naturaleza', 'compra')
             ->whereNotNull('g.importe')
+            ->whereNull('g.anulado_at')
             ->when(! $usuario->can('gastos.personales'), fn ($q) => $q->where('g.ambito', 'empresarial'))
             // Las obligaciones de planilla también son gastos con el nombre del empleado como
             // beneficiario: sin este recorte, escribir ese nombre en «proveedor» mostraba la
@@ -289,6 +290,7 @@ final class CuentaProveedor
         $consulta = Gasto::query()
             ->join('gastos_cuotas as c', 'c.gasto_id', '=', 'gastos.id')
             ->whereNotNull('gastos.importe')
+            ->whereNull('gastos.anulado_at')
             ->where('gastos.naturaleza', 'compra');
 
         if (! $usuario->can('gastos.personales')) {

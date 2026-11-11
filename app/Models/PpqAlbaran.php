@@ -90,11 +90,14 @@ class PpqAlbaran extends Model
      * que volvió. Y un albarán sin tipo tampoco: no se sabe qué es, y suponerlo de entrega
      * es justo el error caro. Los dos casos responden que no, por motivos distintos que
      * ResolucionAlbaran sí distingue.
+     *
+     * `$tipoDeEntrega` es el de {@see tipoDeEntrega()} ya leído: quien recorre muchos
+     * albaranes lo lee una vez en lugar de consultar los ajustes en cada uno.
      */
-    public function esDeEntrega(): bool
+    public function esDeEntrega(?string $tipoDeEntrega = null): bool
     {
         return filled($this->tipo_codigo)
-            && strtoupper((string) $this->tipo_codigo) === self::tipoDeEntrega();
+            && strtoupper((string) $this->tipo_codigo) === ($tipoDeEntrega ?? self::tipoDeEntrega());
     }
 
     /** Solo los albaranes que prueban entrega. */

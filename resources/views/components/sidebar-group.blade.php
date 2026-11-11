@@ -31,6 +31,11 @@
          layouts/app.blade.php): sin JS se pierde el colapso, nunca los enlaces.
       4. Esto es PRESENTACIÓN. Quién VE cada grupo lo decide el @if/@can de quien
          lo incluye; quién puede ENTRAR lo decide el middleware de cada ruta.
+      5. El título va SIEMPRE en una línea (pedido del usuario, 10/11/2026: no
+         quería ver un título partido en dos renglones). Si no entra, se corta con
+         «…» y el texto completo queda en el `title` (al pasar el mouse) y en el
+         texto del botón, que es lo que leen los lectores de pantalla. Lo normal es
+         que entre: los títulos se eligen cortos (docs/GUIA_PANTALLAS.md).
 --}}
 @php
     // Mismo título de grupo de siempre: letra pequeña, mayúsculas espaciadas y
@@ -52,13 +57,13 @@
     @endif>
 
     @if ($clave)
-        <button type="button" @click="alternar()"
+        <button type="button" @click="alternar()" title="{{ $titulo }}"
                 :aria-expanded="abierto ? 'true' : 'false'" aria-controls="{{ $idPanel }}"
                 class="{{ $claseTitulo }} rounded transition hover:text-gray-600 dark:hover:text-paper-300">
             @if ($icono)
                 <x-sidebar-icon :name="$icono" />
             @endif
-            <span>{{ $titulo }}</span>
+            <span class="min-w-0 truncate">{{ $titulo }}</span>
             <svg class="ms-auto h-3.5 w-3.5 shrink-0 transition-transform duration-150"
                  :class="abierto ? 'rotate-180' : ''"
                  xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -72,11 +77,11 @@
             {{ $slot }}
         </div>
     @else
-        <p class="{{ $claseTitulo }}">
+        <p class="{{ $claseTitulo }}" title="{{ $titulo }}">
             @if ($icono)
                 <x-sidebar-icon :name="$icono" />
             @endif
-            <span>{{ $titulo }}</span>
+            <span class="min-w-0 truncate">{{ $titulo }}</span>
         </p>
 
         <div class="space-y-0.5">

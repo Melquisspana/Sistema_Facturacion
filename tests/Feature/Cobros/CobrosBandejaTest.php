@@ -34,7 +34,7 @@ use Tests\Feature\Ppq\NcExportacionAutorizacionTest;
 use Tests\TestCase;
 
 /**
- * La BANDEJA de Cobros de supermercados: qué se ve, en qué orden y qué no se pisa.
+ * La BANDEJA de Facturas por cobrar: qué se ve, en qué orden y qué no se pisa.
  *
  * Las tres cosas que protege:
  *

@@ -17,7 +17,7 @@ class AuditoriaPaquete
      * @param  array<string, mixed>  $resumen
      * @param  array<string, mixed>|null  $cobertura
      */
-    public function registrar(?User $usuario, string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error, ?int $comprasMarcadas = null, ?array $cobertura = null, ?string $archivoDriveId = null, ?string $errorTecnico = null): void
+    public function registrar(?User $usuario, string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error, ?int $comprasMarcadas = null, ?array $cobertura = null, ?string $archivoDriveId = null, ?string $errorTecnico = null, ?string $driveEnlace = null): void
     {
         activity('paquete_contabilidad')
             ->causedBy($usuario)
@@ -36,6 +36,8 @@ class AuditoriaPaquete
                 'dias_faltantes' => $cobertura === null ? null : collect($cobertura['dias_pendientes'])->pluck('dia')->all(),
                 'zip' => $nombreZip,
                 'drive_archivo_id' => $archivoDriveId,
+                // Enlace para abrir el ZIP en Drive sin buscarlo en la carpeta (#60).
+                'drive_enlace' => $driveEnlace,
                 'estado' => $estado,
                 'error' => $error,
                 // Motivo técnico ya saneado (clase, código y reason de Google), para diagnosticar.

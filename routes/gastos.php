@@ -234,6 +234,10 @@ Route::middleware(['auth', 'modulo.gastos', 'permission:gastos.ver'])
         // no crea otra, que es lo que dejaría dos filas por la misma deuda.
         Route::post('{gasto}/completar', [GastoController::class, 'completar'])
             ->whereNumber('gasto')->middleware($registrar)->name('completar');
+        // Anular: deja de ser deuda sin borrarse. Permiso de administrar y motivo
+        // obligatorio; con pagos vigentes se frena y dice cuáles revertir primero.
+        Route::post('{gasto}/anular', [GastoController::class, 'anular'])
+            ->whereNumber('gasto')->middleware($administrar)->name('anular');
         // «Este gasto se repite» desde la ficha. Exige el permiso de repeticiones y
         // que su esquema exista; el gasto original y sus pagos no se tocan.
         // Pago rápido de un pendiente: el formulario corto, sin volver a pedir los

@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Route;
 |
 | Qué NO hace: emitir DTE, generar JSON, firmar, transmitir, tocar correlativos o
 | enviar correo. Tampoco toca PPQ ni Planta. El seguimiento de CCF (albarán, quedan,
-| pago) vive en Cobros de supermercados (`/cobros`), no acá.
+| pago) vive en Facturas por cobrar (`/cobros`, barra de Facturación), no acá.
 |
 | Dos candados de BACKEND, en orden:
 |   1. auth                     -> invitado va al login.

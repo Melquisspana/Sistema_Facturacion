@@ -75,6 +75,10 @@ final class RepetirGasto
      */
     public function motivoNoRepetible(Gasto $gasto): ?string
     {
+        if ($gasto->anulado()) {
+            return 'Este gasto está anulado, así que no se repite. Si se vuelve a deber, registrá uno nuevo.';
+        }
+
         if ($this->reglaDe($gasto) !== null) {
             return 'Este gasto ya viene de uno que se repite.';
         }

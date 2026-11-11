@@ -307,6 +307,27 @@
                             <p class="mt-1 text-xs">Puede tardar unos minutos. Esta pantalla se actualiza sola.</p>
                         @else
                             <p>{{ $estadoEnvio['mensaje'] ?? '' }} <span class="text-xs">({{ $estadoEnvio['terminado_en'] ?? '' }})</span></p>
+                            {{-- #60: el enlace de Drive queda a la vista; si el envío falló, el ZIP ya
+                                 armado se baja desde este mismo aviso. --}}
+                            @php $enlaceDrive = (string) ($estadoEnvio['drive_enlace'] ?? ''); @endphp
+                            @if (str_starts_with($enlaceDrive, 'https://') || $zipEnvioFallido || ($estadoEnvio['estado'] ?? null) === 'envio_fallido')
+                                <div class="mt-2 flex flex-wrap items-center gap-3">
+                                    @if (str_starts_with($enlaceDrive, 'https://'))
+                                        <a href="{{ $enlaceDrive }}" target="_blank" rel="noopener"
+                                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                            Abrir en Drive
+                                        </a>
+                                    @endif
+                                    @if ($zipEnvioFallido)
+                                        <a href="{{ route('contabilidad.paquete.descargar', $filtros + ['tipo' => 'envio']) }}"
+                                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                            Descargar {{ $estadoEnvio['nombre_descarga'] }}
+                                        </a>
+                                    @elseif (($estadoEnvio['estado'] ?? null) === 'envio_fallido')
+                                        <p class="text-xs">Para bajar el paquete, usá «Generar ZIP».</p>
+                                    @endif
+                                </div>
+                            @endif
                         @endif
                     </div>
                 @endif

@@ -5,7 +5,7 @@
                 {{ $documento->numero_control }}
             </h2>
             <a href="{{ route('cobros.index', ['cliente_id' => $documento->cliente_id]) }}"
-               class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Cobros de supermercados</a>
+               class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Facturas por cobrar</a>
         </div>
     </x-slot>
 

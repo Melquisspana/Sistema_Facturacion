@@ -480,7 +480,8 @@ final class PanelGastos
      */
     private function recortado(User $usuario, array $filtros): Builder
     {
-        $consulta = Gasto::query();
+        // Un gasto anulado ya no es deuda ni espera recibo: no entra en ningún grupo.
+        $consulta = Gasto::query()->whereNull('gastos.anulado_at');
 
         // Candado real: quien no tiene el permiso no RECIBE las filas personales. El
         // chip de arriba es comodidad; esto es el candado.
