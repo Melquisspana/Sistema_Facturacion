@@ -59,6 +59,9 @@ class EntregasCcf
     /** Forma de pago elegible al entregar: no se cobra ahora (quedan o crédito). */
     public const SIN_COBRO = 'sin_cobro';
 
+    /** Al vendedor, en el viaje o la automática, le falta decir cómo le pagaron. */
+    public const FALTA_FORMA_COBRO = 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.';
+
     /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
     public const DIAS_POR_ENTREGAR = 45;
 
@@ -222,8 +225,9 @@ class EntregasCcf
      * Anota qué pasó con un CCF.
      *
      * `forma_cobro` es cómo pagó la sala ESTA vez: una {@see FormaCobroEntrega} o
-     * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente. No toca
-     * la ficha del cliente. En «Entregado», `nota` es la observación (una devolución); en
+     * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente, salvo
+     * cuando registra el vendedor en su viaje o en la automática: ahí es obligatoria (y en el
+     * supermercado del portal siempre es sin cobro). No toca la ficha del cliente. En «Entregado», `nota` es la observación (una devolución); en
      * «No entregado», el detalle del motivo.
      *
      * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
@@ -267,6 +271,17 @@ class EntregasCcf
                     ]);
                 }
 
+                // El vendedor, en su viaje o en la automática, dice cómo le pagaron: ahí no hay
+                // «la habitual del cliente» (el PDF del día es el control del dinero). Salvo en
+                // el supermercado que cobra por el portal: no se cobra al entregar y la forma que
+                // llegue se ignora. La regla va acá para que valga por cualquier pantalla.
+                if ($origen === OrigenRegistroEntrega::Vendedor && $salida->esAutomatica()) {
+                    if (DiaVendedor::esPortal($dte)) {
+                        $datos['forma_cobro'] = self::SIN_COBRO;
+                    } elseif (! filled($datos['forma_cobro'] ?? null)) {
+                        throw ValidationException::withMessages(['forma_cobro' => self::FALTA_FORMA_COBRO]);
+                    }
+                }
                 $forma = $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
                 $quedan = $forma === null ? $this->quedan($datos) : ['quedan_numero' => null, 'quedan_fecha_pago' => null];
                 // La observación de la entrega (una devolución, por ejemplo): opcional.

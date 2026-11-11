@@ -7,7 +7,6 @@ use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\PermisoSistema;
-use App\Enums\ResultadoEntrega;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\PedidoSalaEnvio;
@@ -26,7 +25,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -141,7 +139,7 @@ class PorEntregarController extends Controller
      *
      * «Entregado» pide cómo pagaron (efectivo, cheque, transferencia o quedan), salvo en el
      * supermercado que cobra por el portal: ahí no se cobra al entregar y la forma que llegue
-     * se ignora.
+     * se ignora. Esa regla es de {@see EntregasCcf::registrar()}: vale por cualquier pantalla.
      */
     public function marcar(Request $request, Dte $dte): RedirectResponse
     {
@@ -151,17 +149,7 @@ class PorEntregarController extends Controller
         }
         abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);
 
-        $portal = DiaVendedor::esPortal($dte);
-        $request->validate([
-            'forma_cobro' => [
-                Rule::requiredIf(fn () => $request->input('resultado') === ResultadoEntrega::Entregado->value && ! $portal),
-                'nullable', Rule::in([...array_column(FormaCobroEntrega::cases(), 'value'), EntregasCcf::SIN_COBRO]),
-            ],
-        ], ['forma_cobro.*' => 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.']);
         $datos = $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
-        if ($portal) {
-            $datos['forma_cobro'] = EntregasCcf::SIN_COBRO;
-        }
 
         $registrada = DB::transaction(function () use ($request, $dte, $persona, $datos) {
             $entrega = $this->porEntregar->entregaPara($dte, $persona, $request->user());

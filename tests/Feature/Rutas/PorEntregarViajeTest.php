@@ -6,6 +6,7 @@ use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
+use App\Enums\OrigenRegistroEntrega;
 use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Models\Cliente;
@@ -29,6 +30,7 @@ use App\Services\Rutas\Viajes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -293,6 +295,68 @@ class PorEntregarViajeTest extends TestCase
             ->assertSessionHasNoErrors();
         $entrega = SalidaRutaEntrega::sole();
         $this->assertSame(ResultadoEntrega::Entregado, $entrega->resultado);
+        $this->assertNull($entrega->forma_cobro);
+        $this->assertNull($entrega->monto_cobrado);
+    }
+
+    // ---------------------------------------------------------------- la forma de pago es regla del servicio
+
+    public function test_en_el_viaje_el_vendedor_no_entrega_sin_forma_de_pago_por_ningun_camino(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        // La oficina le cargó dos CCF al viaje: quedan sin registrar en él.
+        $entrega = app(EntregasCcf::class)->meterCcf($viaje, $this->ccf($this->salas['San Miguel'], '80.00')->id);
+        $otra = app(EntregasCcf::class)->meterCcf($viaje, $this->ccf($this->salas['San Miguel'], '20.00')->id);
+        $falta = ['forma_cobro' => 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.'];
+
+        // La hoja de antes («Mi salida») también llega al viaje escribiendo la dirección.
+        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $entrega]), ['resultado' => 'entregado'])
+            ->assertSessionHasErrors($falta);
+        $this->actingAs($this->ana)->post(route('rutas.mi-salida.sala', [$viaje, $this->salas['San Miguel']]))
+            ->assertSessionHasErrors($falta);
+        $this->assertSame(0, SalidaRutaEntrega::whereNotNull('resultado')->count());
+
+        // La regla vive en el servicio: el vendedor, en el viaje, dice cómo le pagaron.
+        try {
+            app(EntregasCcf::class)->registrar($entrega, ['resultado' => 'entregado', 'entregado_por_id' => $this->personaAna->id], $this->ana, OrigenRegistroEntrega::Vendedor);
+            $this->fail('Tenía que pedir la forma de pago.');
+        } catch (ValidationException $e) {
+            $this->assertSame($falta['forma_cobro'], $e->errors()['forma_cobro'][0]);
+        }
+
+        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $entrega]), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(FormaCobroEntrega::Efectivo, $entrega->refresh()->forma_cobro);
+        $this->assertSame('80.00', $entrega->monto_cobrado);
+        // «No se pudo» no mueve dinero: no pide forma de pago.
+        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $otra]), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_la_oficina_registra_en_el_viaje_con_la_forma_habitual_del_cliente(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        $this->cliente->update(['cobro_en_entrega' => 'cheque']);
+        $entrega = app(EntregasCcf::class)->meterCcf($viaje, $this->ccf($this->salas['San Miguel'], '80.00')->id);
+        $oficina = User::factory()->create(['activo' => true])->assignRole('facturacion');
+
+        app(EntregasCcf::class)->registrar($entrega, ['resultado' => 'entregado', 'entregado_por_id' => $this->personaAna->id], $oficina, OrigenRegistroEntrega::Oficina);
+
+        $this->assertSame(FormaCobroEntrega::Cheque, $entrega->refresh()->forma_cobro);
+    }
+
+    public function test_el_portal_no_cobra_al_entregar_tampoco_desde_el_servicio(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        $super = Cliente::factory()->create(['nombre' => 'Súper de prueba', 'cobro_en_entrega' => 'efectivo']);
+        config(['ppq.cliente_default_id' => $super->id]);
+        $salaSuper = $super->sucursales()->create(['nombre' => 'Súper de prueba Oriente', 'ruta_id' => $this->rutas['San Miguel']->id]);
+        $entrega = app(EntregasCcf::class)->meterCcf($viaje, $this->ccf($salaSuper, '310.80', $super)->id);
+
+        // Sin forma de pago, o con una: en el supermercado del portal nunca se cobra al entregar.
+        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $entrega]), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(ResultadoEntrega::Entregado, $entrega->refresh()->resultado);
         $this->assertNull($entrega->forma_cobro);
         $this->assertNull($entrega->monto_cobrado);
     }
