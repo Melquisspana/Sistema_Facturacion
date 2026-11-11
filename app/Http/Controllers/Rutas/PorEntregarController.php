@@ -9,13 +9,17 @@ use App\Enums\OrigenRegistroEntrega;
 use App\Enums\PermisoSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
+use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
-use App\Models\SalidaRuta;
+use App\Models\Ruta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaParticipante;
 use App\Services\Dte\DtePdfService;
+use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\FacturarPedido;
 use App\Services\Rutas\PorEntregar;
+use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +29,7 @@ use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * «Por entregar» (Melqui, 06/11/2026): los CCF que faltan entregar, por la ruta de su sala,
+ * «Por entregar» (Melqui, 06/11/2026): los CCF que faltan entregar, por la zona de su sala,
  * para que el vendedor los marque sin que nadie arme la salida. Qué está por entregar lo
  * decide {@see EntregasCcf::porEntregar()}; en qué salida queda, {@see PorEntregar}; y el
  * registro, {@see EntregasCcf::registrar()}, el mismo de «Mi salida». Deshacer usa la ruta
@@ -33,12 +37,18 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Mirar: el vendedor (`rutas.entregas.registrar`) y la oficina (`rutas.ver`). Marcar: solo el
  * vendedor con su persona de Rutas activa.
+ *
+ * Desde el 10/11/2026 cualquier vendedor entrega cualquier CCF: con su viaje en curso, arriba
+ * elige «Este viaje» (lo que salió de sus pedidos) o «Toda la zona» (lo de las zonas del
+ * viaje, haya salido de un pedido o no); «Todas» es la lista completa por zona. Al entregar
+ * dice cómo le pagaron, salvo en el supermercado que cobra por el portal. La zona de una sala
+ * es su ruta o la que cubre su lugar ({@see Viajes::zonaId()}); sin zona se entrega igual.
  */
 class PorEntregarController extends Controller
 {
     private const SIN_RUTA = 'sin';
 
-    public function __construct(private readonly EntregasCcf $entregas, private readonly PorEntregar $porEntregar) {}
+    public function __construct(private readonly EntregasCcf $entregas, private readonly PorEntregar $porEntregar, private readonly Viajes $viajes) {}
 
     private function persona(Request $request): ?PersonalRuta
     {
@@ -57,8 +67,19 @@ class PorEntregarController extends Controller
             ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))
             ->orderByDesc('fecha_resultado')->get() : collect();
 
-        $dtes = $this->entregas->porEntregar()->whereNotIn('id', $marcados->pluck('dte_id'))
-            ->load(['clienteSucursal:id,nombre,ruta_id', 'clienteSucursal.ruta:id,nombre', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
+        $todos = $this->entregas->porEntregar()->whereNotIn('id', $marcados->pluck('dte_id'))
+            ->load(['clienteSucursal:id,nombre,ruta_id,distrito_id,departamento_id', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
+        // El pedido de cada CCF: quién lo sacó («lo sacó otro vendedor») y lo que no vino.
+        $pedidos = PedidoSalaEnvio::vigentes()->whereIn('dte_id', $todos->modelKeys())
+            ->with(['pedido.sacadoPor:id,nombre', 'pedido.lineas.producto:id,nombre', 'pedido.lineas.envioLineasVigentes'])
+            ->orderBy('id')->get()->mapWithKeys(fn (PedidoSalaEnvio $e) => [$e->dte_id => $e->pedido]);
+
+        // Con su viaje en curso: «Este viaje» y «Toda la zona»; si no, todo, como antes.
+        $viaje = $persona ? $this->viajes->abierto($persona) : null;
+        $vistas = $viaje ? $this->porEntregar->vistas($viaje, $todos) : [];
+        $ver = array_key_exists((string) $request->query('ver'), $vistas) || $request->query('ver') === 'todas'
+            ? (string) $request->query('ver') : (array_key_first($vistas) ?? 'todas');
+        $dtes = $ver === 'todas' ? $todos : $vistas[$ver];
         // Los que ya van en una salida abierta: se marcan en ella (o esperan a que empiece).
         $enCamino = SalidaRutaEntrega::with('salida.ruta:id,nombre')->whereIn('dte_id', $dtes->pluck('id'))->pendientes()
             ->whereHas('salida', fn ($q) => $q->abiertas())->get()->keyBy('dte_id');
@@ -73,10 +94,13 @@ class PorEntregarController extends Controller
             default => null,
         })->filter();
 
-        $grupos = $dtes->groupBy(fn (Dte $d) => $d->clienteSucursal?->ruta_id ?? self::SIN_RUTA)
+        // Por zona: la ruta de la sala o la que cubre su lugar. Los nombres, en una consulta.
+        $zonaDe = fn (Dte $d) => $d->clienteSucursal ? $this->viajes->zonaId($d->clienteSucursal) : null;
+        $zonas = Ruta::whereKey($dtes->map($zonaDe)->filter()->unique()->all())->pluck('nombre', 'id');
+        $grupos = $dtes->groupBy(fn (Dte $d) => $zonaDe($d) ?? self::SIN_RUTA)
             ->map(fn ($lista, $clave) => [
                 'clave' => (string) $clave,
-                'nombre' => $clave === self::SIN_RUTA ? 'Sin ruta' : $lista->first()->clienteSucursal->ruta->nombre,
+                'nombre' => $clave === self::SIN_RUTA ? 'Sin zona' : $zonas[$clave],
                 'dtes' => $lista,
             ])
             ->sortBy(fn (array $g) => [$g['clave'] === self::SIN_RUTA ? 1 : 0, mb_strtolower($g['nombre'])])
@@ -87,6 +111,12 @@ class PorEntregarController extends Controller
         $ruta = $grupos->contains(fn (array $g) => $g['clave'] === $ruta) ? $ruta : null;
 
         return view('rutas.por-entregar.index', [
+            'vistas' => array_map(fn ($lista) => $lista->count(), $vistas) + ($vistas ? ['todas' => $todos->count()] : []),
+            'ver' => $ver,
+            'pedidos' => $pedidos,
+            // La factura que no se pudo entregar dos veces o más: aviso para el jefe.
+            'fallas' => $this->entregas->fallas($dtes->modelKeys()),
+            'portal' => DiaVendedor::clientePortal(),
             'grupos' => $grupos,
             'visibles' => $ruta === null ? $grupos : $grupos->where('clave', $ruta)->values(),
             'ruta' => $ruta,
@@ -94,22 +124,22 @@ class PorEntregarController extends Controller
             'total' => $dtes->count(),
             'enCamino' => $enCamino,
             'trabados' => $trabados,
-            // Su automática de hoy ya cobró: el efectivo se rinde cuando la oficina la termina.
-            'cobroHoy' => $puedeMarcar && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->where('observaciones', SalidaRuta::OBSERVACION_AUTOMATICA)
-                ->whereDate('fecha_inicio', HoraNegocio::fechaHoy())
-                ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id))
-                ->whereHas('entregas', fn ($q) => $q->entregadas()->where('forma_cobro', FormaCobroEntrega::Efectivo->value))->exists(),
+            // Ya cobró efectivo hoy: se entrega a la oficina con el PDF del día.
+            'cobroHoy' => $marcados->contains(fn (SalidaRutaEntrega $e) => $e->forma_cobro === FormaCobroEntrega::Efectivo),
             'marcados' => $marcados,
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,
             'motivos' => MotivoNoEntrega::opciones(),
-            'sinRuta' => self::SIN_RUTA,
         ]);
     }
 
     /**
      * Marca el CCF. Todo en una transacción: si el registro no pasa (falta el motivo, el día
      * está cerrado), no queda una salida armada ni el vendedor sumado a ella.
+     *
+     * «Entregado» pide cómo pagaron (efectivo, cheque, transferencia o quedan), salvo en el
+     * supermercado que cobra por el portal: ahí no se cobra al entregar y la forma que llegue
+     * se ignora. Esa regla es de {@see EntregasCcf::registrar()}: vale por cualquier pantalla.
      */
     public function marcar(Request $request, Dte $dte): RedirectResponse
     {
@@ -119,15 +149,31 @@ class PorEntregarController extends Controller
         }
         abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);
 
-        $registrada = DB::transaction(function () use ($request, $dte, $persona) {
+        $datos = $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
+
+        $registrada = DB::transaction(function () use ($request, $dte, $persona, $datos) {
             $entrega = $this->porEntregar->entregaPara($dte, $persona, $request->user());
             Gate::authorize('registrar', $entrega->salida);
 
-            return $this->entregas->registrar($entrega, $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota'])
-                + ['entregado_por_id' => $persona->id], $request->user(), OrigenRegistroEntrega::Vendedor);
+            return $this->entregas->registrar($entrega, $datos + ['entregado_por_id' => $persona->id], $request->user(), OrigenRegistroEntrega::Vendedor);
         });
 
-        return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().' (salida '.$registrada->salida->descripcionCorta().').');
+        // Solo el viaje se nombra: la salida que se arma sola para entregar no le dice nada al vendedor.
+        $salida = $registrada->salida;
+
+        return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().($salida->esViaje() ? ' (viaje '.$salida->nombreViaje().')' : '').'.');
+    }
+
+    /**
+     * La hoja del pedido de un CCF de la lista (el sugerido en limpio, con la F en lo que
+     * faltó), para que el vendedor la imprima y la firme el gerente. Sin pedido, 404.
+     */
+    public function hoja(Dte $dte, FacturarPedido $facturar): View
+    {
+        abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);
+        $pedido = PedidoSalaEnvio::vigentes()->where('dte_id', $dte->id)->latest('id')->first()?->pedido ?? abort(404);
+
+        return view('rutas.pedidos.hoja', PedidoSalaController::datosHoja($pedido, $facturar, null) + ['volverPorEntregar' => true]);
     }
 
     /** El PDF, solo de un CCF de la lista: cualquier otro documento da 404. */

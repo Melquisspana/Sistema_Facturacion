@@ -1,10 +1,11 @@
-{{-- Pestañas del tablero de Rutas: Resumen, Mapa y Vendedores (que es una sección del
-     Resumen). El Mapa solo se dibuja con `rutas.mapa.ver`; ocultarlo no autoriza: la ruta
+{{-- Pestañas del tablero de Rutas: Resumen, Viajes, Mapa y Vendedores (que es una sección
+     del Resumen). El Mapa solo se dibuja con `rutas.mapa.ver`; ocultarlo no autoriza: la ruta
      lleva su middleware. Mismo dibujo que las pestañas de Gastos (docs/GUIA_PANTALLAS.md,
-     «Pestañas»). Recibe `$activa`: 'resumen' o 'mapa'. --}}
+     «Pestañas»). Recibe `$activa`: 'resumen', 'viajes' o 'mapa'. --}}
 <nav aria-label="Tablero de Rutas" class="flex flex-wrap gap-1 border-b border-gray-200">
     @foreach (array_filter([
         'resumen' => ['Resumen', route('rutas.dashboard')],
+        'viajes' => ['Viajes', route('rutas.viajes')],
         'mapa' => auth()->user()->can('rutas.mapa.ver') ? ['Mapa', route('rutas.mapa')] : null,
         'vendedores' => ['Vendedores', route('rutas.dashboard').'#vendedores'],
     ]) as $clave => [$texto, $url])

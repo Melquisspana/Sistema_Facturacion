@@ -306,6 +306,24 @@ class ClienteSucursalTest extends TestCase
         $this->assertDatabaseCount('cliente_sucursales', 0);
     }
 
+    public function test_facturacion_no_edita_ni_inactiva_ni_borra_salas(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Sala de prueba', 'activo' => true]);
+        $facturacion = $this->usuario('facturacion');
+
+        $this->actingAs($facturacion)->get(route('clientes.sucursales.create', $cliente))->assertForbidden();
+        $this->actingAs($facturacion)->get(route('clientes.sucursales.edit', [$cliente, $sala]))->assertForbidden();
+        $this->actingAs($facturacion)->put(route('clientes.sucursales.update', [$cliente, $sala]), $this->datosSucursal(['nombre' => 'Otro nombre']))->assertForbidden();
+        $this->actingAs($facturacion)->patch(route('clientes.sucursales.toggle-activo', [$cliente, $sala]))->assertForbidden();
+        $this->actingAs($facturacion)->delete(route('clientes.sucursales.destroy', [$cliente, $sala]))->assertForbidden();
+
+        $sala->refresh();
+        $this->assertSame('Sala de prueba', $sala->nombre);
+        $this->assertTrue($sala->activo);
+        $this->assertNull($sala->deleted_at);
+    }
+
     public function test_sucursal_puede_requerir_orden_compra_propia(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create(['requiere_orden_compra' => false]);

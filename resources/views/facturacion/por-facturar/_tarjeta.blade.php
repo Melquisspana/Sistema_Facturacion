@@ -36,9 +36,9 @@
 <li class="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
     <div class="flex flex-wrap items-start justify-between gap-2">
         <div class="min-w-0">
-            <h2 class="text-base font-semibold text-gray-800">{{ $pedido->sala?->nombre }}</h2>
+            <h2 class="text-base font-semibold text-gray-800">{{ $pedido->nombreSala() }}</h2>
             <p class="text-sm text-gray-600">
-                {{ $pedido->sala?->codigo ? 'Código '.$pedido->sala->codigo.' · ' : '' }}{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}
+                {{ $pedido->sala?->codigo ? 'Código '.$pedido->sala->codigo.' · ' : '' }}{{ $pedido->ruta?->nombre ?? 'Sin zona' }}
             </p>
         </div>
         <div class="flex shrink-0 flex-wrap gap-2">
@@ -164,7 +164,13 @@
             <a href="{{ route('rutas.pedidos.hoja', [$pedido, 'fecha' => $fecha]) }}" target="_blank" rel="noopener"
                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
             {{-- x-primary-button es solo <button>: el enlace lleva sus clases (docs/GUIA_PANTALLAS.md). --}}
-            @if ($porFacturar->isNotEmpty() && ! $facturacion['borrador'])
+            @if ($pedido->esTiendaNueva())
+                {{-- Tienda nueva: antes de facturar se da de alta y se enlaza a su sala. --}}
+                @can('enlazarSala', $pedido)
+                    <a href="{{ route('facturacion.pedidos.tienda', $pedido) }}"
+                       class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Dar de alta la tienda</a>
+                @endcan
+            @elseif ($porFacturar->isNotEmpty() && ! $facturacion['borrador'])
                 @can('create', App\Models\Dte::class)
                     {{-- Con el filtro de la lista: «Cancelar» del formulario vuelve a lo que se miraba. --}}
                     <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id] + ($sinFacturar ? ['sin_facturar' => 1] : ['fecha' => $fecha])) }}"

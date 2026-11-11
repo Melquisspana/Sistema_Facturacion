@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -85,6 +86,21 @@ class ClienteSucursal extends Model
     public function cliente(): BelongsTo
     {
         return $this->belongsTo(Cliente::class);
+    }
+
+    /**
+     * Buscador de salas de Rutas: activas, por nombre, código, cliente o pueblo (distrito). Lo
+     * usan el buscador de la oficina y «Sacar pedido» del vendedor.
+     */
+    public function scopeBuscarTexto(Builder $query, string $texto): Builder
+    {
+        $like = '%'.addcslashes($texto, '%_\\').'%';
+
+        return $query->where('activo', true)->where(fn (Builder $q) => $q
+            ->where('nombre', 'like', $like)
+            ->orWhere('codigo', 'like', $like)
+            ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', $like))
+            ->orWhereHas('distrito', fn ($d) => $d->where('nombre', 'like', $like)));
     }
 
     /**

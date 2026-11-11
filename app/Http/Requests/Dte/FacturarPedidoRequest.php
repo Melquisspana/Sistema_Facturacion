@@ -5,6 +5,8 @@ namespace App\Http\Requests\Dte;
 use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Models\PedidoSala;
+use App\Services\Rutas\FacturarPedido;
+use Illuminate\Validation\ValidationException;
 
 /**
  * «Crear borrador» desde el pedido (Facturación › Llegó de la fábrica). Hereda TODAS las
@@ -29,6 +31,15 @@ class FacturarPedidoRequest extends CrearBorradorRequest
 
         /** @var PedidoSala $pedido */
         $pedido = $this->route('pedido');
+        // La tienda nueva sin sala: el motivo claro, no «falta el cliente». Solo a quien factura
+        // (esto corre antes que authorize()); los demás reciben el 403 de siempre.
+        if ($pedido->esTiendaNueva() && $this->authorize()) {
+            throw ValidationException::withMessages(['pedido' => FacturarPedido::SIN_SALA]);
+        }
+        // La sala se borró de Clientes: lo mismo, el motivo claro y no «falta el cliente».
+        if (! $pedido->esTiendaNueva() && $pedido->sala === null && $this->authorize()) {
+            throw ValidationException::withMessages(['pedido' => FacturarPedido::SALA_BORRADA]);
+        }
         $this->merge([
             'tipo_dte' => TipoDte::CreditoFiscal->value,
             'cliente_id' => $pedido->sala?->cliente_id,

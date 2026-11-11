@@ -1,8 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Hoja de la salida</h2>
-            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver a rutas</a>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $salida->esViaje() ? 'Viaje' : 'Hoja de la salida' }}</h1>
+            <a href="{{ route('rutas.dashboard') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Volver al tablero</a>
         </div>
     </x-slot>
 
@@ -27,11 +27,10 @@
             <div class="{{ $caja }} p-5">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <p class="text-2xl font-semibold text-gray-800 dark:text-paper-100">{{ $salida->ruta->nombre }}</p>
+                        <p class="text-2xl font-semibold text-gray-800 dark:text-paper-100">{{ $salida->titulo() }}</p>
                         <p class="mt-0.5 text-sm text-gray-500 dark:text-paper-300">
                             {{ $salida->periodoLegible() }} · {{ $salida->quienesVan() ?: 'Sin vendedores' }}
                         </p>
-                        <p class="mt-0.5 text-sm font-medium text-gray-700 dark:text-paper-100">{{ $salida->proposito->descripcion() }}</p>
                         @if ($salida->proposito->sacaPedido() && auth()->user()->can('rutas.pedidos.ver'))
                             @php($pedidosSacados = $salida->pedidos()->vigentes()->count())
                             <a href="{{ route('rutas.pedidos.index', ['salida' => $salida->id]) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 underline dark:text-indigo-400">
@@ -39,7 +38,7 @@
                             </a>
                         @endif
                     </div>
-                    <x-rutas.estado-badge :estado="$salida->estado" class="!px-3 !py-1 !text-sm" />
+                    <x-rutas.estado-badge :estado="$salida->estado" :texto="$salida->estadoLegible()" />
                 </div>
 
                 <div class="mt-4">
@@ -67,14 +66,16 @@
                                 @csrf @method('PATCH')
                                 <button class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700">Salir ahora</button>
                             </form>
-                        @else
-                            {{-- Terminar ruta: lo que sobró lleva su motivo y se liquida todo junto. --}}
+                        @elseif (\App\Services\Rutas\LiquidacionSalida::seLiquida($salida))
+                            {{-- Solo las salidas armadas a mano de antes: lo que sobró lleva su motivo y se liquida todo junto. --}}
                             <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="flex-1 rounded-lg bg-gray-800 px-4 py-3 text-center text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar ruta</a>
+                        @else
+                            {{-- El viaje no se liquida acá. --}}
+                            <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-ink-700 dark:text-paper-100">Se cierra solo cuando todo está entregado. El dinero se entrega con el PDF del día, firmado.</p>
                         @endif
                         @if ($puedeGestionar)
-                            <a href="{{ route('rutas.salidas.edit', $salida) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cambiar quiénes van</a>
                             <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
-                                  onsubmit="return confirm('¿Cancelar esta salida? Sus CCF vuelven a quedar pendientes.');">
+                                  onsubmit="return confirm('{{ $salida->esViaje() ? '¿Cancelar este viaje?' : '¿Cancelar esta salida?' }} Sus CCF vuelven a quedar pendientes.');">
                                 @csrf @method('PATCH')
                                 <button class="text-sm text-gray-400 hover:text-red-600 hover:underline dark:text-paper-500">Cancelar</button>
                             </form>
@@ -82,10 +83,7 @@
                     </div>
                 @endif
 
-                {{-- La automática de «Por entregar» se finaliza sola al pasar el día; la oficina la termina igual. --}}
-                @if ($puedeTerminar && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada && \App\Services\Rutas\LiquidacionSalida::seLiquida($salida))
-                    <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-gray-800 px-4 py-3 text-center text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar ruta</a>
-                @endif
+
                 @if ($puedeTerminar && $salida->estaLiquidada())
                     <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-green-700 px-4 py-3 text-sm font-medium text-white hover:bg-green-800">Liquidación de la ruta</a>
                 @endif
@@ -94,6 +92,26 @@
                     <p class="mt-4 whitespace-pre-line border-t border-gray-100 pt-3 text-sm text-gray-600 dark:border-ink-700 dark:text-paper-300">{{ $salida->observaciones }}</p>
                 @endif
             </div>
+
+            {{-- El viaje no se liquida: el control del dinero es el PDF de cada día, firmado. --}}
+            @if (! empty($diasPdf))
+                <section aria-labelledby="dias-pdf-titulo" class="{{ $caja }} mt-4 p-5">
+                    <h2 id="dias-pdf-titulo" class="text-base font-semibold text-gray-800 dark:text-paper-100">PDF de cada día</h2>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">El resumen que firma el vendedor al entregar el dinero: lo entregado, lo cobrado y sus gastos.</p>
+                    <ul class="mt-2 divide-y divide-gray-100 dark:divide-ink-700">
+                        @foreach ($diasPdf as $diaPdf)
+                            <li>
+                                <a href="{{ route('rutas.salidas.dia-pdf', [$salida, $diaPdf['fecha'], $diaPdf['persona']]) }}" target="_blank" rel="noopener"
+                                   class="flex min-h-11 flex-wrap items-center justify-between gap-x-3 py-2 text-sm text-indigo-600 hover:underline dark:text-indigo-400">
+                                    {{-- La fecha se arma en la misma línea: un bloque de PHP acá se confunde con el de una línea de más arriba. --}}
+                                    <span>{{ ucfirst(\Illuminate\Support\Carbon::parse($diaPdf['fecha'])->locale('es')->dayName) }} {{ \Illuminate\Support\Carbon::parse($diaPdf['fecha'])->format('d/m/Y') }} · {{ $diaPdf['persona']->nombre }}</span>
+                                    <span class="font-medium">Ver PDF</span>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
 
             @include('rutas.salidas._entregas')
 

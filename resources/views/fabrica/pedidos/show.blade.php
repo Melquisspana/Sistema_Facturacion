@@ -9,7 +9,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Qué va a {{ $pedido->sala?->nombre }}</h1>
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
         </div>
     </x-slot>
 
@@ -75,7 +75,7 @@
             <x-rutas.avisos />
 
             <p class="text-sm text-gray-600">
-                Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin ruta' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}
+                Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}
                 {{ $pedido->numero_orden_compra ? ' · OC '.$pedido->numero_orden_compra : '' }}
             </p>
             @if ($pedido->notas)

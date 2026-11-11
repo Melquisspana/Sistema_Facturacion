@@ -22,7 +22,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Spatie\Activitylog\Models\Activity;
 
 /**
  * Qué CCF hay que entregar, qué lleva cada salida y qué pasó con cada uno. Toda la regla
@@ -42,12 +44,12 @@ use Illuminate\Validation\ValidationException;
  *     caiga el albarán ya prueba la entrega aunque nadie la haya marcado;
  *   · y no está sin registrar en otra salida abierta —ya va en camino—.
  *
- * Un «no entregado» NO saca al CCF de pendientes: vuelve solo en la próxima salida.
+ * Un «no entregado» NO saca al CCF de pendientes: sigue en «Por entregar».
  *
  * ─────────────────────────── Controles ───────────────────────────
  *
- * Un CCF se entrega una sola vez y va sin registrar en una sola salida abierta. Cargar,
- * agregar, registrar y deshacer bloquean la fila del DTE (y la salida) dentro de una
+ * Un CCF se entrega una sola vez y va sin registrar en una sola salida abierta.
+ * Agregar, registrar y deshacer bloquean la fila del DTE (y la salida) dentro de una
  * transacción y vuelven a comprobar con lecturas bloqueantes: dos cargas simultáneas no
  * meten el mismo CCF en dos salidas. Solo se registra en salidas en curso, y un resultado
  * ya anotado se cambia deshaciéndolo antes.
@@ -57,18 +59,15 @@ class EntregasCcf
     /** Forma de pago elegible al entregar: no se cobra ahora (quedan o crédito). */
     public const SIN_COBRO = 'sin_cobro';
 
+    /** Al vendedor, en el viaje o la automática, le falta decir cómo le pagaron. */
+    public const FALTA_FORMA_COBRO = 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.';
+
     /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
     public const DIAS_POR_ENTREGAR = 45;
 
     public function __construct(private readonly AlbaranLocalizador $albaranes) {}
 
     // ================================================================ pendientes
-
-    /** @return Collection<int, Dte> */
-    public function pendientesDeRuta(Ruta $ruta): Collection
-    {
-        return $this->pendientesDeSalas($ruta->sucursales()->where('activo', true)->pluck('id')->all());
-    }
 
     /**
      * «Por entregar» del vendedor: lo pendiente de TODAS las salas, con ruta o sin ella, de
@@ -93,7 +92,7 @@ class EntregasCcf
      * @param  array<int, int>|null  $salas
      * @return Collection<int, Dte>
      */
-    private function pendientesDeSalas(?array $salas, ?Carbon $desde = null, bool $enCamino = false, ?int $dteId = null): Collection
+    public function pendientesDeSalas(?array $salas, ?Carbon $desde = null, bool $enCamino = false, ?int $dteId = null): Collection
     {
         if ($salas === []) {
             return collect();
@@ -147,85 +146,6 @@ class EntregasCcf
     }
 
     // ================================================================ la salida
-
-    /** Agrega a la salida los pendientes de su ruta. Devuelve cuántos agregó. */
-    public function cargarPendientes(SalidaRuta $salida, ?User $usuario = null): int
-    {
-        return DB::transaction(function () use ($salida) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-            $this->exigirAbierta($salida);
-
-            return $this->agregarPendientes($salida);
-        });
-    }
-
-    /**
-     * El CCF que se factura con la salida ya en camino entra solo: la sala hace la orden
-     * mientras los vendedores están ahí, y se entrega y cobra en esta misma salida. Se llama
-     * al abrir «Mi salida» y la hoja de la oficina.
-     *
-     * Solo en curso: la planificada carga al empezar y la terminada ya no se toca. Con el día
-     * de hoy ya terminado tampoco: hoy no se marca nada más y entra al abrir mañana. Primero
-     * mira sin bloquear; si no hay nada nuevo, no abre transacción ni bloquea la salida. Si
-     * hay, carga como «Buscar CCF nuevos» ({@see self::cargarPendientes()}), con la salida
-     * bloqueada: dos pestañas a la vez no duplican.
-     */
-    public function cargarNuevosEnCurso(SalidaRuta $salida): int
-    {
-        // La que se armó sola desde «Por entregar» lleva solo lo que se marcó: si cargara la
-        // ruta entera, la salida formal que arme la oficina ya no podría llevar esos CCF.
-        if ($salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->proposito->entrega() || $salida->diaCerrado() || $salida->esAutomatica()) {
-            return 0;
-        }
-        $nuevos = $this->pendientesDeRuta($salida->ruta)->pluck('id')
-            ->diff($salida->entregas()->pluck('dte_id'));
-        if ($nuevos->isEmpty()) {
-            return 0;
-        }
-
-        return DB::transaction(function () use ($salida) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-
-            return $salida->estado === EstadoSalidaRuta::EnCurso ? $this->agregarPendientes($salida) : 0;
-        });
-    }
-
-    /** «Se agregó 1 CCF nuevo de la ruta.», o nada si no entró ninguno. */
-    public static function avisoNuevos(int $cantidad): string
-    {
-        return match (true) {
-            $cantidad <= 0 => '',
-            $cantidad === 1 => 'Se agregó 1 CCF nuevo de la ruta.',
-            default => "Se agregaron {$cantidad} CCF nuevos de la ruta.",
-        };
-    }
-
-    /** Con la salida ya bloqueada y abierta: agrega los pendientes que no chocan con nada. */
-    private function agregarPendientes(SalidaRuta $salida): int
-    {
-        // La salida que solo saca pedido no lleva CCF: si los cargara, quedarían tomados por
-        // ella y la salida que va a entregar no los podría llevar.
-        if (! $salida->proposito->entrega()) {
-            return 0;
-        }
-        $ids = $this->pendientesDeRuta($salida->ruta)->pluck('id')->all();
-        $candidatos = Dte::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
-        $agregados = 0;
-
-        foreach ($candidatos as $dte) {
-            if ($this->conflictoCarga($salida, $dte->id) !== null) {
-                continue;
-            }
-
-            $salida->entregas()->create([
-                'dte_id' => $dte->id,
-                'cliente_sucursal_id' => $dte->cliente_sucursal_id,
-            ]);
-            $agregados++;
-        }
-
-        return $agregados;
-    }
 
     /**
      * Alta manual por número de control, de cualquier sala. No exige la fecha de corte ni
@@ -305,8 +225,10 @@ class EntregasCcf
      * Anota qué pasó con un CCF.
      *
      * `forma_cobro` es cómo pagó la sala ESTA vez: una {@see FormaCobroEntrega} o
-     * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente. No toca
-     * la ficha del cliente.
+     * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente, salvo
+     * cuando registra el vendedor en su viaje o en la automática: ahí es obligatoria (y en el
+     * supermercado del portal siempre es sin cobro). No toca la ficha del cliente. En «Entregado», `nota` es la observación (una devolución); en
+     * «No entregado», el detalle del motivo.
      *
      * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
      *
@@ -349,7 +271,24 @@ class EntregasCcf
                     ]);
                 }
 
+                // El vendedor, en su viaje o en la automática, dice cómo le pagaron: ahí no hay
+                // «la habitual del cliente» (el PDF del día es el control del dinero). Salvo en
+                // el supermercado que cobra por el portal: no se cobra al entregar y la forma que
+                // llegue se ignora. La regla va acá para que valga por cualquier pantalla.
+                if ($origen === OrigenRegistroEntrega::Vendedor && $salida->esAutomatica()) {
+                    if (DiaVendedor::esPortal($dte)) {
+                        $datos['forma_cobro'] = self::SIN_COBRO;
+                    } elseif (! filled($datos['forma_cobro'] ?? null)) {
+                        throw ValidationException::withMessages(['forma_cobro' => self::FALTA_FORMA_COBRO]);
+                    }
+                }
                 $forma = $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
+                $quedan = $forma === null ? $this->quedan($datos) : ['quedan_numero' => null, 'quedan_fecha_pago' => null];
+                // La observación de la entrega (una devolución, por ejemplo): opcional.
+                $observacion = trim((string) ($datos['nota'] ?? '')) ?: null;
+                if ($observacion !== null && mb_strlen($observacion) > 300) {
+                    throw ValidationException::withMessages(['nota' => 'La observación puede tener hasta 300 caracteres.']);
+                }
 
                 $entrega->update($comun + [
                     'forma_cobro' => $forma,
@@ -358,8 +297,8 @@ class EntregasCcf
                     'entregado_por_id' => $personaId,
                     'trae_nota_averia' => filter_var($datos['trae_nota_averia'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'motivo_no_entrega' => null,
-                    'nota' => null,
-                ]);
+                    'nota' => $observacion,
+                ] + $quedan);
 
                 $original->setRawAttributes($entrega->getAttributes(), true);
 
@@ -403,6 +342,31 @@ class EntregasCcf
             default => FormaCobroEntrega::tryFrom((string) $elegida)
                 ?? throw ValidationException::withMessages(['forma_cobro' => 'Elegí una forma de pago de la lista.']),
         };
+    }
+
+    /**
+     * El quedan que dio la sala (opcional): su número y la fecha de pago, que no puede ser
+     * anterior a hoy.
+     *
+     * @return array{quedan_numero: ?string, quedan_fecha_pago: ?string}
+     *
+     * @throws ValidationException
+     */
+    private function quedan(array $datos): array
+    {
+        $validos = Validator::make([
+            'quedan_numero' => filled($datos['quedan_numero'] ?? null) ? trim((string) $datos['quedan_numero']) : null,
+            'quedan_fecha_pago' => filled($datos['quedan_fecha_pago'] ?? null) ? (string) $datos['quedan_fecha_pago'] : null,
+        ], [
+            'quedan_numero' => ['nullable', 'string', 'max:30'],
+            'quedan_fecha_pago' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:'.HoraNegocio::fechaHoy()],
+        ], [
+            'quedan_numero.max' => 'El número del quedan puede tener hasta 30 caracteres.',
+            'quedan_fecha_pago.date_format' => 'Elegí una fecha de pago válida.',
+            'quedan_fecha_pago.after_or_equal' => 'La fecha de pago no puede ser anterior a hoy.',
+        ])->validate();
+
+        return ['quedan_numero' => $validos['quedan_numero'], 'quedan_fecha_pago' => $validos['quedan_fecha_pago']];
     }
 
     /** Toda la sala entregada, por la misma persona. Devuelve cuántos marcó. */
@@ -475,21 +439,25 @@ class EntregasCcf
                 'forma_cobro' => null,
                 'monto_esperado' => null,
                 'monto_cobrado' => null,
+                'quedan_numero' => null,
+                'quedan_fecha_pago' => null,
             ]);
             $original->setRawAttributes($entrega->getAttributes(), true);
         });
     }
 
     /**
-     * La automática en curso, o finalizada sin liquidar, que quedó sin entregas, gastos ni
-     * cierres no fue una salida: se cancela (no cuenta como visita en el tablero ni queda por
-     * liquidar). Con la salida ya bloqueada.
+     * La automática en curso, o que se cerró sola, que quedó sin entregas, gastos, cierres
+     * ni pedidos vigentes no fue una salida: se cancela (no cuenta como visita en el
+     * tablero). El viaje con pedidos sigue: espera que se entreguen. Con
+     * la salida ya bloqueada.
      */
     public function cancelarAutomaticaVacia(SalidaRuta $salida): bool
     {
         $anterior = $salida->estado;
-        if (! $salida->esAutomatica() || ! ($anterior === EstadoSalidaRuta::EnCurso || $salida->esPorLiquidar())
-            || $salida->entregas()->exists() || $salida->gastos()->exists() || $salida->cierres()->exists()) {
+        if (! $salida->esAutomatica() || ! ($anterior === EstadoSalidaRuta::EnCurso || $salida->seCerroSola())
+            || $salida->entregas()->exists() || $salida->gastos()->exists() || $salida->cierres()->exists()
+            || $salida->pedidos()->vigentes()->exists()) {
             return false;
         }
         $anterior === EstadoSalidaRuta::EnCurso ? $salida->cancelar() : $salida->anularAutomaticaFinalizada();
@@ -501,6 +469,42 @@ class EntregasCcf
     }
 
     // ================================================================ lectura
+
+    /** La descripción del intento anterior que se reintenta ({@see PorEntregar}). */
+    public const REINTENTO = 'reintento desde Por entregar';
+
+    /** Desde cuántos «No se pudo» de la misma factura se avisa al jefe. */
+    public const FALLAS_AVISO = 2;
+
+    /**
+     * Cuántas veces no se pudo entregar cada CCF: los «No se pudo» anotados y los que se
+     * reintentaron después (el reintento reusa la fila y deja el intento anterior en la
+     * bitácora). Dos consultas para todos. Con {@see self::FALLAS_AVISO} o más, el jefe lo ve.
+     *
+     * @param  array<int, int>  $dteIds
+     * @return array<int, int> dte_id => fallas
+     */
+    public function fallas(array $dteIds): array
+    {
+        if ($dteIds === []) {
+            return [];
+        }
+        $fallas = SalidaRutaEntrega::whereIn('dte_id', $dteIds)->where('resultado', ResultadoEntrega::NoEntregado->value)
+            ->groupBy('dte_id')->selectRaw('dte_id, COUNT(*) as fallas')->pluck('fallas', 'dte_id')
+            ->map(fn ($n) => (int) $n)->all();
+        $buscados = array_flip($dteIds);
+        Activity::query()->where('log_name', 'salida_ruta')->where('description', self::REINTENTO)
+            ->where('created_at', '>=', Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR + 30))
+            ->get(['id', 'properties'])
+            ->each(function (Activity $a) use (&$fallas, $buscados) {
+                $dte = (int) ($a->properties['dte_id'] ?? 0);
+                if (isset($buscados[$dte])) {
+                    $fallas[$dte] = ($fallas[$dte] ?? 0) + 1;
+                }
+            });
+
+        return $fallas;
+    }
 
     /**
      * Qué dice el albarán de cada CCF de estas entregas. Una fila sin resultado propio y con

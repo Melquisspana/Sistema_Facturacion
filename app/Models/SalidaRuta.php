@@ -5,7 +5,7 @@ namespace App\Models;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\RolEnSalida;
-use App\Services\Rutas\LiquidacionSalida;
+use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,7 +18,9 @@ use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Salida de ruta: un recorrido concreto, con fechas, estado y participantes.
+ * Salida de ruta: un recorrido concreto, con fechas, estado y participantes. Desde el
+ * 10/11/2026 nadie las arma: son el viaje que se abre solo ({@see Viajes}) y la automática de
+ * «Por entregar»; las armadas a mano de antes quedan como historial.
  *
  * Las transiciones de estado NO se hacen escribiendo `estado` a mano desde el
  * controlador: se piden por {@see iniciar()}, {@see finalizar()} y
@@ -37,7 +39,11 @@ class SalidaRuta extends Model
 
     protected $table = 'salidas_ruta';
 
-    /** Observación de la salida que se arma sola desde «Por entregar» ({@see esAutomatica()}). */
+    /**
+     * Observación de la salida que se arma sola desde «Por entregar». Hasta el 10/11/2026 era
+     * la única marca de la automática; las de antes se siguen reconociendo por ella
+     * ({@see esAutomatica()}). Las nuevas llevan la columna `automatica`.
+     */
     public const OBSERVACION_AUTOMATICA = 'Se armó sola al marcar una entrega en «Por entregar».';
 
     protected $fillable = [
@@ -48,6 +54,8 @@ class SalidaRuta extends Model
         'estado',
         'proposito',
         'observaciones',
+        'automatica',
+        'suma_pedidos',
         'created_by',
         'entrega_dinero_personal_id',
         'liquidada_por',
@@ -68,6 +76,8 @@ class SalidaRuta extends Model
             'estado' => EstadoSalidaRuta::class,
             'proposito' => PropositoSalida::class,
             'liquidada_en' => 'datetime',
+            'automatica' => 'boolean',
+            'suma_pedidos' => 'boolean',
         ];
     }
 
@@ -86,9 +96,13 @@ class SalidaRuta extends Model
             });
     }
 
+    /**
+     * La ruta de la salida; en el viaje, la zona de su primera sala. El viaje de una sala sin
+     * zona no tiene ruta: se ve como «Sin zona», así las pantallas que la nombran no se rompen.
+     */
     public function ruta(): BelongsTo
     {
-        return $this->belongsTo(Ruta::class, 'ruta_id');
+        return $this->belongsTo(Ruta::class, 'ruta_id')->withDefault(['nombre' => 'Sin zona']);
     }
 
     /** Quién REGISTRÓ la salida (no quién viaja: eso son los `participantes`). */
@@ -165,12 +179,49 @@ class SalidaRuta extends Model
     }
 
     /**
-     * La que se armó sola al marcar una entrega en «Por entregar» (06/11/2026). Sin columna
-     * propia: la marca es esta observación. Si la oficina la edita, pasa a ser una salida más.
+     * La que nadie armó: el viaje ({@see esViaje()}) y la de «Por entregar». Desde el
+     * 10/11/2026 la marca es la columna `automatica`; las de antes, la observación.
      */
     public function esAutomatica(): bool
     {
-        return $this->observaciones === self::OBSERVACION_AUTOMATICA;
+        return $this->automatica || $this->observaciones === self::OBSERVACION_AUTOMATICA;
+    }
+
+    /**
+     * El viaje que se abrió solo con el primer pedido del vendedor ({@see Viajes}): la
+     * automática que saca pedido. La de «Por entregar» es solo para entregar.
+     */
+    public function esViaje(): bool
+    {
+        return $this->esAutomatica() && $this->proposito->sacaPedido();
+    }
+
+    /**
+     * «Lunes · San Miguel»: el día en que empezó y las zonas de sus pedidos, en el orden en
+     * que se sumaron («San Salvador y La Libertad»). Sin pedidos con zona, la de la salida.
+     * Con los pedidos (y su ruta) ya cargados no consulta: el tablero nombra muchos viajes.
+     */
+    public function nombreViaje(): string
+    {
+        $pedidos = $this->relationLoaded('pedidos')
+            ? $this->pedidos->filter(fn (PedidoSala $p) => $p->estaVigente() && $p->ruta_id !== null)->sortBy('id')
+            : $this->pedidos()->vigentes()->whereNotNull('ruta_id')->with('ruta:id,nombre')->orderBy('id')->get(['id', 'ruta_id']);
+        $nombres = $pedidos->map(fn (PedidoSala $p) => $p->ruta?->nombre)->filter()->unique()->values();
+        if ($nombres->isEmpty()) {
+            $nombres = collect([$this->ruta->nombre]);
+        }
+
+        return ucfirst($this->fecha_inicio->copy()->locale('es')->dayName).' · '.$nombres->join(', ', ' y ');
+    }
+
+    /**
+     * Cómo se nombra la salida en todas las pantallas: el viaje por su nombre («Lunes · San
+     * Miguel»), nunca por la ruta de la salida, que en el viaje puede estar vacía. En listas,
+     * cargar antes `pedidos` y `pedidos.ruta` ({@see nombreViaje()}).
+     */
+    public function titulo(): string
+    {
+        return $this->esViaje() ? $this->nombreViaje() : $this->ruta->nombre;
     }
 
     /** Ruta terminada y liquidada: ya no se tocan sus días, entregas ni gastos. */
@@ -180,10 +231,10 @@ class SalidaRuta extends Model
     }
 
     /**
-     * La automática que se finalizó sola y espera que la oficina haga «Terminar ruta». Misma
-     * condición que {@see scopePorLiquidar()} y que {@see LiquidacionSalida::seLiquida()}.
+     * La automática que se finalizó sola. No espera liquidación (el dinero se entrega con el
+     * PDF del día firmado): solo cuenta para anularla si después queda vacía.
      */
-    public function esPorLiquidar(): bool
+    public function seCerroSola(): bool
     {
         return $this->estado === EstadoSalidaRuta::Finalizada && $this->esAutomatica() && ! $this->estaLiquidada();
     }
@@ -196,7 +247,7 @@ class SalidaRuta extends Model
      */
     public function anularAutomaticaFinalizada(): bool
     {
-        if (! $this->esPorLiquidar()) {
+        if (! $this->seCerroSola()) {
             return false;
         }
 
@@ -256,14 +307,15 @@ class SalidaRuta extends Model
 
     /**
      * Quiénes van, para leer: «Ana Ficticia (encabeza), Beto Ejemplo y Carla Inventada».
-     * Quien encabeza va primero y marcado (solo si van varios); los demás, por nombre.
+     * Quien encabeza va primero y marcado (solo si van varios y no es un viaje); los demás, por nombre.
      * Con `$sin` se deja afuera a una persona: en «Mi salida», «Vas con …» no se nombra a
      * quien mira. Usa `personal` (con el rol en el pivote): cargarlo antes en listas.
      */
     public function quienesVan(?int $sin = null): string
     {
         $encabeza = fn (PersonalRuta $p) => $p->pivot?->rol === RolEnSalida::Responsable->value;
-        $marcar = $this->personal->count() > 1;
+        // En el viaje nadie encabeza: es de quien lo abrió y los demás solo entregaron algo suyo.
+        $marcar = ! $this->esViaje() && $this->personal->count() > 1;
 
         return $this->personal
             ->reject(fn (PersonalRuta $p) => $p->id === $sin)
@@ -272,10 +324,10 @@ class SalidaRuta extends Model
             ->join(', ', ' y ');
     }
 
-    /** Etiqueta breve para mensajes: «San Miguel · 14–16 ago 2026». */
+    /** Etiqueta breve para mensajes: «San Miguel · 14/08/2026 al 16/08/2026»; el viaje, por su nombre. */
     public function descripcionCorta(): string
     {
-        return ($this->ruta?->nombre ?? 'Salida').' · '.$this->periodoLegible();
+        return $this->esViaje() ? $this->nombreViaje() : $this->ruta->nombre.' · '.$this->periodoLegible();
     }
 
     // ----------------------------------------------------------------- scopes
@@ -285,11 +337,11 @@ class SalidaRuta extends Model
         return $query->where('estado', $estado->value);
     }
 
-    /** Automáticas finalizadas sin liquidar: la oficina tiene que hacer «Terminar ruta». */
-    public function scopePorLiquidar(Builder $query): Builder
+    /** Las que nadie armó, con la columna o, las de antes del 10/11/2026, con la observación. */
+    public function scopeAutomaticas(Builder $query): Builder
     {
-        return $query->where('estado', EstadoSalidaRuta::Finalizada->value)
-            ->where('observaciones', self::OBSERVACION_AUTOMATICA)->whereNull('liquidada_en');
+        return $query->where(fn (Builder $q) => $q->where('automatica', true)
+            ->orWhere('observaciones', self::OBSERVACION_AUTOMATICA));
     }
 
     /** Salidas todavía abiertas: planificadas o en curso. */
@@ -302,22 +354,38 @@ class SalidaRuta extends Model
     }
 
     /**
-     * Rango de fechas legible: «14–16 ago 2026», o solo la de inicio si todavía no
-     * hay regreso conocido. Se usa en el encabezado del detalle y en el listado.
+     * Las fechas de la salida, en dd/mm/aaaa como todo el sistema: «14/08/2026 al 16/08/2026»,
+     * o solo la de inicio si todavía no hay regreso conocido. Se usa en el encabezado del
+     * detalle y en los mensajes.
      */
     public function periodoLegible(): string
     {
         $fin = $this->fecha_fin_real ?? $this->fecha_fin_estimada;
+        $inicio = $this->fecha_inicio->format('d/m/Y');
 
-        if ($fin === null) {
-            return $this->fecha_inicio->translatedFormat('d M Y');
-        }
+        return $fin === null || $fin->isSameDay($this->fecha_inicio) ? $inicio : $inicio.' al '.$fin->format('d/m/Y');
+    }
 
-        // Mismo mes y año: no se repite el mes ("14–16 ago 2026").
-        if ($this->fecha_inicio->isSameMonth($fin)) {
-            return $this->fecha_inicio->translatedFormat('d').'–'.$fin->translatedFormat('d M Y');
-        }
+    /**
+     * El estado, como se lee en las pantallas de Rutas. El viaje está «Abierto» o «Cerrado»
+     * (o «Cancelado»): un solo nombre, sin mezclarlo con «en curso», «finalizada» ni «en
+     * camino». La salida armada a mano de antes dice lo mismo, en femenino.
+     */
+    public function estadoLegible(): string
+    {
+        $viaje = $this->esViaje();
 
-        return $this->fecha_inicio->translatedFormat('d M').' – '.$fin->translatedFormat('d M Y');
+        return match ($this->estado) {
+            EstadoSalidaRuta::Planificada => 'Programada',
+            EstadoSalidaRuta::EnCurso => $viaje ? 'Abierto' : 'Abierta',
+            EstadoSalidaRuta::Finalizada => $viaje ? 'Cerrado' : 'Cerrada',
+            EstadoSalidaRuta::Cancelada => $viaje ? 'Cancelado' : 'Cancelada',
+        };
+    }
+
+    /** Para una frase: «el viaje Lunes · San Miguel» o «la salida San Miguel · 14/08/2026». */
+    public function conArticulo(): string
+    {
+        return ($this->esViaje() ? 'el viaje ' : 'la salida ').$this->descripcionCorta();
     }
 }

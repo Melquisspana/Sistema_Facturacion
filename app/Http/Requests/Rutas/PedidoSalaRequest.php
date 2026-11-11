@@ -12,7 +12,8 @@ use Illuminate\Validation\Rule;
  * (`cantidades[producto_id]`); las que quedan vacías no se pidieron. Quién puede guardarlo,
  * en qué salida y en qué sala lo decide {@see PedidosSala}.
  *
- * La OC es opcional y su forma solo avisa (#169): no se valida acá.
+ * La OC es opcional y su forma solo avisa (#169): no se valida acá. La tienda nueva
+ * (10/11/2026) lleva además su nombre, con los espacios de más quitados.
  */
 class PedidoSalaRequest extends FormRequest
 {
@@ -31,6 +32,18 @@ class PedidoSalaRequest extends FormRequest
             }
         }
         $this->merge(['lineas' => $lineas]);
+        if ($this->has('sala_nueva_nombre')) {
+            $this->merge(['sala_nueva_nombre' => preg_replace('/\s+/u', ' ', trim((string) $this->input('sala_nueva_nombre')))]);
+        }
+    }
+
+    /** ¿Es el pedido de una tienda nueva (sin sala)? El que se saca o el que se corrige. */
+    private function esTiendaNueva(): bool
+    {
+        $pedido = $this->route('pedido');
+
+        return $this->routeIs('rutas.sacar-pedido.tienda-nueva.store')
+            || ($pedido instanceof PedidoSala && $pedido->esTiendaNueva());
     }
 
     /** @return array<string, mixed> */
@@ -43,6 +56,7 @@ class PedidoSalaRequest extends FormRequest
             'lineas.*.cantidad' => ['required', 'numeric', 'regex:/^\d+(?:\.\d{1,4})?$/', 'gt:0', 'max:'.PedidoSala::CANTIDAD_MAXIMA],
             'numero_orden_compra' => ['nullable', 'string', 'max:30'],
             'notas' => ['nullable', 'string', 'max:500'],
+            'sala_nueva_nombre' => $this->esTiendaNueva() ? ['required', 'string', 'min:3', 'max:100'] : ['exclude'],
         ];
     }
 
@@ -59,6 +73,10 @@ class PedidoSalaRequest extends FormRequest
             'lineas.*.cantidad.*' => 'Cada cantidad tiene que ser un número mayor que cero, con hasta 4 decimales.',
             'numero_orden_compra.max' => 'El número de orden de compra puede tener hasta 30 caracteres.',
             'notas.max' => 'Las notas pueden tener hasta 500 caracteres.',
+            'sala_nueva_nombre.required' => 'Escribí el nombre de la tienda.',
+            'sala_nueva_nombre.min' => 'El nombre de la tienda tiene que tener al menos 3 letras.',
+            'sala_nueva_nombre.max' => 'El nombre de la tienda puede tener hasta 100 caracteres.',
+            'sala_nueva_nombre.*' => 'Escribí el nombre de la tienda.',
         ];
     }
 }

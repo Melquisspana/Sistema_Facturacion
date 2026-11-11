@@ -87,7 +87,7 @@ class VentasRutas
                     }
                 }
             }
-            foreach (($exportacion ? ['productos' => ['producto', 'Presentación sin descripción'], 'clientes' => ['cliente', 'Sin cliente']] : ['productos' => ['producto', 'Ajustes sin producto'], 'salas' => ['sala', 'Sin sala'], 'rutas' => ['ruta', 'Sin ruta']]) as $grupo => [$prefijo, $sinNombre]) {
+            foreach (($exportacion ? ['productos' => ['producto', 'Presentación sin descripción'], 'clientes' => ['cliente', 'Sin cliente']] : ['productos' => ['producto', 'Ajustes sin producto'], 'salas' => ['sala', 'Sin sala'], 'rutas' => ['ruta', 'Sin zona']]) as $grupo => [$prefijo, $sinNombre]) {
                 $id = $linea->{$prefijo.'_id'} ?? 0;
                 $grupos[$grupo][$id] ??= $this->vacio() + ['id' => $id, 'nombre' => $linea->{$prefijo.'_nombre'} ?? $sinNombre, 'cliente' => $grupo === 'salas' ? $linea->cliente_nombre : null];
                 $grupos[$grupo][$id][$campo] += $monto;

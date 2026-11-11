@@ -89,6 +89,8 @@ class RolesSeederTest extends TestCase
 
         // Solo lectura en clientes/productos; nada de admin, invalidar ni enviar paquete.
         $this->assertFalse($fact->can('clientes.gestionar'));
+        // Solo el alta de la tienda nueva de un pedido, al facturar (Melqui, 10/11/2026).
+        $this->assertTrue($fact->can('clientes.alta'));
         $this->assertFalse($fact->can('productos.gestionar'));
         $this->assertFalse($fact->can('dte.invalidar'));
         $this->assertFalse($fact->can('contabilidad.enviar'));

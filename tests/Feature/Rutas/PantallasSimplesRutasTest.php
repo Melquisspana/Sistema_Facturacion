@@ -78,26 +78,6 @@ class PantallasSimplesRutasTest extends TestCase
 
     // ══════════════════════════════ salir a una ruta
 
-    public function test_salir_a_una_ruta_desde_el_tablero_la_deja_en_camino(): void
-    {
-        $ruta = $this->rutaAtrasada();
-        $carlos = PersonalRuta::create(['nombre' => 'Carlos']);
-
-        $this->actingAs($this->usuario('jefatura'))
-            ->post(route('rutas.salidas.store'), ['ruta_id' => $ruta->id, 'personal' => [(string) $carlos->id]])
-            ->assertSessionHasNoErrors();
-
-        $salida = SalidaRuta::latest('id')->first();
-        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->estado);
-        $this->assertTrue($salida->fecha_inicio->isToday());
-
-        $this->actingAs($this->usuario())
-            ->get(route('rutas.dashboard'))
-            ->assertSee('Puerto · Carlos')
-            ->assertSee('En camino desde hoy')
-            ->assertSee('Abrir hoja');
-    }
-
     // ══════════════════════════════ configurar rutas
 
     public function test_configurar_rutas_reune_rutas_y_sugerencias(): void
@@ -112,8 +92,13 @@ class PantallasSimplesRutasTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('rutas.rutas.index'))
             ->assertOk()
+            ->assertSee('Zonas')
             ->assertSee('Puerto')
-            ->assertSee('Asignar 1 sala sugerida');
+            ->assertSee('La Libertad')
+            // Ya no se asignan salas ni se cargan días: solo nombre y cobertura.
+            ->assertDontSee('Asignar 1 sala sugerida')
+            ->assertDontSee('Agregar salas por nombre')
+            ->assertDontSee('frecuencia_objetivo_dias');
     }
 
     public function test_desde_configurar_rutas_se_crea_una_ruta_sin_salir_de_la_pagina(): void
@@ -122,10 +107,16 @@ class PantallasSimplesRutasTest extends TestCase
 
         $this->actingAs($usuario)
             ->from(route('rutas.rutas.index'))
-            ->post(route('rutas.rutas.store'), ['nombre' => 'San Marcos', 'frecuencia_objetivo_dias' => 12, 'en_linea' => 1])
-            ->assertRedirect(route('rutas.rutas.index'));
+            ->post(route('rutas.rutas.store'), ['nombre' => 'San Marcos', 'frecuencia_objetivo_dias' => 12, 'activa' => 1, 'en_linea' => 1])
+            ->assertRedirect();
 
-        $this->assertSame(12, Ruta::where('nombre', 'San Marcos')->sole()->frecuencia_objetivo_dias);
+        $zona = Ruta::where('nombre', 'San Marcos')->sole();
+        $this->assertNull($zona->frecuencia_objetivo_dias, 'Los días aproximados ya no se cargan.');
+        $this->assertTrue($zona->activa);
+        // Guardar el nombre desde la tarjeta no la desactiva.
+        $this->actingAs($usuario)->put(route('rutas.rutas.update', $zona), ['nombre' => 'San Marcos Sur', 'activa' => 1, 'en_linea' => 1])
+            ->assertRedirect(route('rutas.rutas.index').'#ruta-'.$zona->id);
+        $this->assertSame(['San Marcos Sur', true], [$zona->refresh()->nombre, $zona->activa]);
     }
 
     public function test_el_personal_tiene_puerta_propia_y_ya_no_vive_en_configurar_rutas(): void

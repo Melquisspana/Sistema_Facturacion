@@ -17,7 +17,10 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * «Terminar ruta»: la liquidación de la salida completa. En una salida de varios días el
+ * «Terminar ruta» de una salida armada a mano (las de antes del 10/11/2026). El viaje y la
+ * automática de «Por entregar» no se liquidan: su control es el PDF del día firmado.
+ *
+ * Es la liquidación de la salida completa. En una salida de varios días el
  * dinero se entrega una sola vez, al volver: lo cobrado en todos los días menos los gastos
  * de todos los días. Los importes salen de los cierres de cada día ({@see CierreDia}), así
  * que antes de liquidar todo día con entregas o gastos tiene que estar terminado, y lo que
@@ -100,14 +103,13 @@ class LiquidacionSalida
     }
 
     /**
-     * Se puede hacer «Terminar ruta»: en curso, o una automática de «Por entregar» que se
-     * finalizó sola al pasar el día ({@see PorEntregar::finalizarAutomaticasViejas()}) y
-     * todavía no se liquidó. La regla de los días es la misma: cada día con entregas o gastos
-     * se termina antes, y la oficina puede terminar los días de una salida finalizada.
+     * Se puede hacer «Terminar ruta»: una salida armada a mano, en curso y sin liquidar. Las
+     * automáticas (el viaje y la de «Por entregar») nunca: el dinero se entrega con el PDF del
+     * día. Cada día con entregas o gastos se termina antes.
      */
     public static function seLiquida(SalidaRuta $salida): bool
     {
-        return ($salida->estado === EstadoSalidaRuta::EnCurso && ! $salida->estaLiquidada()) || $salida->esPorLiquidar();
+        return $salida->estado === EstadoSalidaRuta::EnCurso && ! $salida->estaLiquidada() && ! $salida->esAutomatica();
     }
 
     /**
@@ -124,6 +126,9 @@ class LiquidacionSalida
             $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
             if ($salida->estaLiquidada()) {
                 throw ValidationException::withMessages(['salida' => 'Esta ruta ya está terminada.']);
+            }
+            if ($salida->esAutomatica()) {
+                throw ValidationException::withMessages(['salida' => 'El viaje no se liquida: el dinero se entrega con el PDF del día.']);
             }
             if (! self::seLiquida($salida)) {
                 throw ValidationException::withMessages(['salida' => 'Solo se termina una ruta en curso.']);
@@ -164,10 +169,7 @@ class LiquidacionSalida
                 throw ValidationException::withMessages(['entrega_dinero_personal_id' => 'Elegí quién entrega el dinero entre los que van en la salida.']);
             }
 
-            // La automática ya finalizada conserva su regreso: no se finaliza de nuevo.
-            if ($salida->estado === EstadoSalidaRuta::EnCurso) {
-                $salida->finalizar();
-            }
+            $salida->finalizar();
             $salida->update([
                 'entrega_dinero_personal_id' => $hayCobro ? (int) $validados['entrega_dinero_personal_id'] : null,
                 'liquidada_por' => $usuario->id,

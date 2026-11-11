@@ -38,10 +38,11 @@ class RutasAccesoTest extends TestCase
             $this->actingAs($usuario)
                 ->get(route('rutas.dashboard'))
                 ->assertOk()
-                ->assertSee('Configurar rutas');
+                ->assertSee('Zonas')
+                ->assertDontSee('Configurar rutas');
 
-            $this->actingAs($usuario)->get(route('rutas.salidas.create'))->assertOk();
-            $this->actingAs($usuario)->get(route('rutas.asignacion.index'))->assertOk();
+            $this->actingAs($usuario)->get(route('rutas.rutas.index'))->assertOk();
+            $this->actingAs($usuario)->get(route('rutas.salidas.index'))->assertOk()->assertSee('Todos los viajes');
         }
     }
 
@@ -63,9 +64,14 @@ class RutasAccesoTest extends TestCase
         $urls = [
             route('rutas.dashboard'),
             route('rutas.rutas.index'),
-            route('rutas.rutas.show', $ruta),
+            // Las pantallas retiradas redirigen, pero no para quien no entra a Rutas.
+            '/rutas/rutas/'.$ruta->id,
+            '/rutas/rutas/'.$ruta->id.'/editar',
+            '/rutas/rutas/crear',
+            '/rutas/rutas/asignacion',
+            '/rutas/salidas/crear',
             route('rutas.salidas.index'),
-            route('rutas.asignacion.index'),
+            route('rutas.viajes'),
         ];
 
         foreach (self::ROLES_SIN_ACCESO as $rol) {
@@ -92,15 +98,13 @@ class RutasAccesoTest extends TestCase
         $ruta = Ruta::create(['nombre' => 'Santa Ana']);
 
         $this->actingAs($usuario)->get(route('rutas.rutas.index'))->assertOk();
-        $this->actingAs($usuario)->get(route('rutas.rutas.show', $ruta))->assertOk();
-
-        $this->actingAs($usuario)->get(route('rutas.rutas.create'))->assertForbidden();
         $this->actingAs($usuario)->post(route('rutas.rutas.store'), ['nombre' => 'X'])->assertForbidden();
+        $this->actingAs($usuario)->put(route('rutas.rutas.update', $ruta), ['nombre' => 'X'])->assertForbidden();
         $this->actingAs($usuario)->patch(route('rutas.rutas.toggle-activa', $ruta))->assertForbidden();
-        $this->actingAs($usuario)->post(route('rutas.rutas.salas.store', $ruta), ['sucursales' => [1]])->assertForbidden();
-        $this->actingAs($usuario)->get(route('rutas.salidas.create'))->assertForbidden();
         $this->actingAs($usuario)->post(route('rutas.rutas.cobertura.store', $ruta), ['departamento_id' => 1])->assertForbidden();
-        $this->actingAs($usuario)->post(route('rutas.asignacion.aplicar'), ['sucursales' => [1]])->assertForbidden();
+        // Asignar salas a una ruta ya no existe para nadie.
+        $this->actingAs($usuario)->post('/rutas/rutas/'.$ruta->id.'/salas', ['sucursales' => [1]])->assertNotFound();
+        $this->actingAs($usuario)->post('/rutas/rutas/asignacion', ['sucursales' => [1]])->assertStatus(405);
 
         // Y nada se escribió por el intento.
         $this->assertSame(1, Ruta::count());
@@ -126,18 +130,10 @@ class RutasAccesoTest extends TestCase
 
         $pantallas = [
             route('rutas.dashboard'),
+            route('rutas.viajes'),
             route('rutas.rutas.index'),
-            route('rutas.rutas.create'),
-            route('rutas.rutas.show', $ruta),
-            // Con búsqueda activa se dibuja además el panel de resultados.
-            route('rutas.rutas.show', [$ruta, 'q' => 'sala']),
-            route('rutas.rutas.edit', $ruta),
             route('rutas.salidas.index'),
-            route('rutas.salidas.create'),
             route('rutas.salidas.show', $salida),
-            route('rutas.salidas.edit', $salida),
-            route('rutas.asignacion.index'),
-            route('rutas.asignacion.index', ['ruta_id' => $ruta->id]),
         ];
 
         foreach ($pantallas as $url) {

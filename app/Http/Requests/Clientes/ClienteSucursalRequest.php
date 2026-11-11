@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Clientes;
 
+use App\Models\Cliente;
+use App\Services\Rutas\PedidosSala;
 use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -27,7 +29,18 @@ class ClienteSucursalRequest extends FormRequest
     {
         // Gestionar salas/sucursales = gestionar el cliente (permiso clientes.gestionar,
         // solo admin). Autoriza antes de validar; el controlador vuelve a autorizar.
-        return (bool) $this->user()?->can('clientes.gestionar');
+        //
+        // Solo en el ALTA (POST), `clientes.alta` también vale, y únicamente con la tienda
+        // nueva de un pedido por enlazar (ClientePolicy::crearSala). Editar sigue igual.
+        $usuario = $this->user();
+        $cliente = $this->route('cliente');
+        if ($usuario === null) {
+            return false;
+        }
+
+        return $usuario->can('clientes.gestionar') || ($this->isMethod('POST') && $cliente instanceof Cliente && $usuario->can('crearSala', [
+            $cliente, app(PedidosSala::class)->tiendaNuevaPorEnlazar($this->input('pedido_sala'), $usuario),
+        ]));
     }
 
     public function rules(): array

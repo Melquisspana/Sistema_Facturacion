@@ -12,25 +12,13 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * Los CCF de una salida, desde la oficina: cargarlos, agregar o quitar uno, y registrar
+ * Los CCF de una salida, desde la oficina: agregar o quitar uno, y registrar
  * qué pasó con cada uno. La regla vive en {@see EntregasCcf}; acá solo se traduce a
  * pantalla. Todo lo registrado desde acá queda con origen «oficina».
  */
 class SalidaEntregaController extends Controller
 {
     public function __construct(private readonly EntregasCcf $entregas) {}
-
-    public function cargar(Request $request, SalidaRuta $salida): RedirectResponse
-    {
-        $salida->loadMissing('ruta');
-        $agregados = $this->entregas->cargarPendientes($salida, $request->user());
-
-        return back()->with('status', match ($agregados) {
-            0 => 'No hay CCF pendientes nuevos para esta ruta.',
-            1 => '1 CCF pendiente cargado a la salida.',
-            default => "{$agregados} CCF pendientes cargados a la salida.",
-        });
-    }
 
     public function store(Request $request, SalidaRuta $salida): RedirectResponse
     {

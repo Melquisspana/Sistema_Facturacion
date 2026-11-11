@@ -2,9 +2,9 @@
     <x-slot name="header">
         <div class="flex items-center justify-between gap-4">
             <div class="min-w-0">
-                <h2 class="truncate font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $personal->nombre }}</h2>
+                <h1 class="truncate font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $personal->nombre }}</h1>
                 <p class="text-sm text-gray-500 dark:text-paper-300">
-                    {{ $personal->activo ? 'Disponible para salidas' : 'Inactivo: no se le asignan salidas' }}
+                    {{ $personal->activo ? 'Disponible para viajes' : 'Inactivo: no sale en viajes' }}
                 </p>
             </div>
             @can('rutas.personal.gestionar')
@@ -14,7 +14,7 @@
                         Editar
                     </a>
                     <form method="POST" action="{{ route('rutas.personal.toggle-activo', $personal) }}"
-                          onsubmit="return confirm('{{ $personal->activo ? '¿Marcar como inactivo? No se le podrán asignar salidas nuevas.' : '¿Volver a activar a esta persona?' }}')">
+                          onsubmit="return confirm('{{ $personal->activo ? '¿Marcar como inactivo? Ya no podrá sacar pedidos ni entregar.' : '¿Volver a activar a esta persona?' }}')">
                         @csrf @method('PATCH')
                         <button class="rounded-md px-3 py-2 text-sm font-medium {{ $personal->activo ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300' }}">
                             {{ $personal->activo ? 'Desactivar' : 'Activar' }}
@@ -80,16 +80,16 @@
                 @endif
             </div>
 
-            {{-- Historial de salidas --}}
+            {{-- Historial de viajes (y de las salidas armadas a mano de antes) --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
                 <div class="border-b border-gray-200 px-5 py-3 dark:border-ink-600">
-                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-100">Salidas ({{ $personal->participaciones->count() }})</h3>
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-100">Viajes ({{ $personal->participaciones->count() }})</h3>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
                             <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-300 dark:border-ink-600">
-                                <th class="py-2.5 px-4">Salida</th>
+                                <th class="py-2.5 px-4">Viaje</th>
                                 <th class="py-2.5 px-4">Papel</th>
                                 <th class="py-2.5 px-4 text-center">Estado</th>
                             </tr>
@@ -101,7 +101,7 @@
                                         <a href="{{ route('rutas.salidas.show', $participacion->salida_ruta_id) }}" class="hover:underline">
                                             {{-- La ruta y, abajo, el día de salida en d/m/Y (guía) entero: la fecha no se parte. --}}
                                             @if ($participacion->salida)
-                                                <span class="block">{{ $participacion->salida->ruta?->nombre ?? 'Salida' }}</span>
+                                                <span class="block">{{ $participacion->salida->titulo() }}</span>
                                                 <span class="block whitespace-nowrap text-gray-500 dark:text-paper-300">{{ $participacion->salida->fecha_inicio->format('d/m/Y') }}</span>
                                             @else
                                                 —
@@ -109,16 +109,16 @@
                                         </a>
                                     </td>
                                     <td class="py-2 px-4">
-                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $participacion->rol->clase() }}">{{ $participacion->rol->label() }}</span>
+                                        <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $participacion->rol->clase() }}">{{ $participacion->rol->label() }}</span>
                                     </td>
                                     <td class="py-2 px-4 text-center">
                                         @if ($participacion->salida)
-                                            <x-rutas.estado-badge :estado="$participacion->salida->estado" />
+                                            <x-rutas.estado-badge :estado="$participacion->salida->estado" :texto="$participacion->salida->estadoLegible()" />
                                         @endif
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="3" class="py-8 text-center text-gray-400 dark:text-paper-500">Todavía no participó en ninguna salida.</td></tr>
+                                <tr><td colspan="3" class="py-8 text-center text-gray-400 dark:text-paper-500">Todavía no fue en ningún viaje.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

@@ -147,11 +147,29 @@ Tomado de Planta (tabla, filtros y «Limpiar») y de Gastos (lista en tarjetas e
 
 ### Pestañas
 
-Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Mapa y Vendedores).
+Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Viajes, Mapa y Vendedores).
 
 - Una fila de enlaces dentro de un `<nav>` con `aria-label`: `flex flex-wrap gap-1 border-b border-gray-200`.
 - Cada pestaña: `inline-flex min-h-11 items-center rounded-t-md px-3 text-sm`. La elegida lleva `border-b-2 border-indigo-600 font-semibold text-indigo-700` y `aria-current="page"`; las otras, `text-gray-600 hover:text-gray-900`.
 - Si una pestaña pide un permiso, sin él no se dibuja. La ruta igual lleva su candado.
+
+### Menú del celular del vendedor
+
+Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan barra lateral: arriba va una fila de pastillas con sus tres pantallas, siempre en este orden: **Inicio**, **Sacar pedido** y **Por entregar**.
+
+- Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
+- Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
+- En la barra lateral de la oficina, los mismos títulos van primero y solo para quien tiene el permiso de vendedor. Después: Tablero, Pedidos, Ventas, Todos los viajes y Zonas.
+
+### Las palabras de Rutas
+
+De la revisión del 11/11/2026. En todo Rutas, y en Fábrica y Facturación cuando nombran lo mismo:
+
+- **Zona** es lo que antes se llamaba ruta (el catálogo). Sin zona se dice «Sin zona». En el mapa, el departamento o distrito es el **lugar**, y el selector se llama «Ver por».
+- **Viaje** es lo que antes se llamaba salida. El enlace dice «Ver viaje». «Salida» queda solo para las armadas a mano de antes del 10/11/2026.
+- El viaje está **Abierto** o **Cerrado** (o Cancelado). No se mezcla con «en curso», «finalizada» ni «en camino». Sale de `SalidaRuta::estadoLegible()`.
+- **Sugerido** es solo la hoja que firma el gerente de la sala. La pantalla del celular se llama «Pedido de <sala>».
+- Las fechas de un viaje van como todas: `dd/mm/aaaa`, y un rango, «14/08/2026 al 16/08/2026».
 
 ### Mapas y gráficos
 

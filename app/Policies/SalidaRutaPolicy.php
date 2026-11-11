@@ -4,18 +4,18 @@ namespace App\Policies;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PermisoSistema;
+use App\Enums\RolEnSalida;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaGasto;
 use App\Models\User;
-use App\Services\Rutas\PedidosSala;
+use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 
 /**
  * Lo que puede hacer un VENDEDOR en una salida: solo en las suyas (participa con su
- * persona de Rutas activa) y solo mientras la salida está en curso. Una planificada
- * solo se mira («Tu próxima salida») hasta que él mismo la empieza. La oficina
+ * persona de Rutas activa) y solo mientras la salida está en curso. La oficina
  * gestiona gastos con `rutas.gestionar` y consulta sus fotos con `rutas.ver`.
  */
 class SalidaRutaPolicy
@@ -25,35 +25,21 @@ class SalidaRutaPolicy
         return $this->participa($usuario, $salida) && $salida->estado === EstadoSalidaRuta::EnCurso;
     }
 
-    /** «Tu próxima salida»: la planificada, solo para mirar, a quien va en ella. */
-    public function verProxima(User $usuario, SalidaRuta $salida): bool
-    {
-        return $this->participa($usuario, $salida) && $salida->estado === EstadoSalidaRuta::Planificada;
-    }
-
-    /**
-     * «Empezar ruta»: solo quien va en ella. Que sea el día y que la salida siga
-     * planificada lo valida el controlador, con un mensaje y no con un 403.
-     */
-    public function empezar(User $usuario, SalidaRuta $salida): bool
-    {
-        return $this->participa($usuario, $salida);
-    }
-
     public function registrar(User $usuario, SalidaRuta $salida): bool
     {
         return $this->view($usuario, $salida) && ! $salida->diaCerrado();
     }
 
     /**
-     * «Sacar pedido» en las salas: quien va en la salida, con ella en curso y si sale para
-     * sacar pedido. Que la sala sea de la salida lo valida {@see PedidosSala}.
+     * «Terminar el día» del viaje: solo quien lo abrió (va como responsable), con el viaje en
+     * curso. Quien entregó un CCF de ese viaje va de acompañante y no lo corta. Lo que contesta
+     * (si mañana sigue en la zona) lo guarda {@see Viajes::terminarDia()}.
      */
-    public function sacarPedido(User $usuario, SalidaRuta $salida): bool
+    public function terminarDia(User $usuario, SalidaRuta $salida): bool
     {
-        return $usuario->can(PermisoSistema::RutasPedidosRegistrar->value)
-            && $salida->proposito->sacaPedido()
-            && $this->view($usuario, $salida);
+        return $salida->esViaje() && $this->view($usuario, $salida)
+            && $salida->participantes()->where('rol', RolEnSalida::Responsable->value)
+                ->whereIn('rutas_personal_id', PersonalRuta::query()->where('user_id', $usuario->id)->where('activo', true)->select('id'))->exists();
     }
 
     public function liquidacion(User $usuario, SalidaRuta $salida): bool
@@ -101,10 +87,16 @@ class SalidaRutaPolicy
                 ->where('user_id', $usuario->id)->where('activo', true)->select('id'))->exists();
     }
 
+    /**
+     * Deshacer lo que él mismo registró. En el viaje y en la automática (duran varios días y
+     * no cierran el día), solo lo de HOY: lo de días anteriores ya salió en el PDF del día que
+     * firmó al entregar el dinero, y lo deshace solo la oficina.
+     */
     public function deshacer(User $usuario, SalidaRuta $salida, SalidaRutaEntrega $entrega): bool
     {
         return $this->registrar($usuario, $salida)
             && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString()))
+            && (! $salida->esAutomatica() || $entrega->fecha_resultado?->toDateString() === HoraNegocio::fechaHoy())
             && (int) $entrega->salida_ruta_id === (int) $salida->id
             && (int) $entrega->registrado_por === (int) $usuario->id;
     }

@@ -25,6 +25,7 @@ class PedidoSala extends Model
 
     protected $fillable = [
         'cliente_sucursal_id',
+        'sala_nueva_nombre',
         'ruta_id',
         'salida_ruta_id',
         'sacado_por_id',
@@ -51,9 +52,32 @@ class PedidoSala extends Model
         ];
     }
 
+    /** La sala del pedido. Vacía en la tienda nueva hasta que la oficina la enlaza ({@see esTiendaNueva()}). */
     public function sala(): BelongsTo
     {
         return $this->belongsTo(ClienteSucursal::class, 'cliente_sucursal_id');
+    }
+
+    /**
+     * La tienda que el vendedor anotó solo con el nombre (10/11/2026): todavía sin cliente ni
+     * sala. No se factura hasta que la oficina la da de alta y la enlaza.
+     */
+    public function esTiendaNueva(): bool
+    {
+        return $this->cliente_sucursal_id === null;
+    }
+
+    /**
+     * Cómo se nombra el pedido en las pantallas, la hoja y el correo: la sala o, si todavía
+     * no tiene, el nombre que escribió el vendedor con «(tienda nueva)».
+     */
+    public function nombreSala(): string
+    {
+        if (! $this->esTiendaNueva()) {
+            return (string) ($this->sala?->nombre ?? 'Sala sin nombre');
+        }
+
+        return ($this->sala_nueva_nombre ?? 'Tienda sin nombre').' (tienda nueva)';
     }
 
     public function ruta(): BelongsTo

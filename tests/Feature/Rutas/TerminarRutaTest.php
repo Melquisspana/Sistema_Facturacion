@@ -101,7 +101,7 @@ class TerminarRutaTest extends TestCase
 
         // Día 2: sigue la misma salida. Cobra con cheque y paga parqueo; algo sobra.
         $this->travel(1)->days();
-        $this->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $this->salida));
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $this->salida));
         $cheque = $this->entrega('cheque');
         $sobra = $this->entrega();
         $this->entregar($cheque);
@@ -136,7 +136,7 @@ class TerminarRutaTest extends TestCase
         $totales = app(LiquidacionSalida::class)->totales($this->salida);
         $this->assertSame([10025, 10025, 0, 1500, 8525], [$totales['efectivo'], $totales['cheques'], $totales['transferencias'], $totales['gastos'], $totales['a_entregar']]);
         $this->get(route('rutas.mi-salida.terminar', $this->salida))->assertOk()->assertSee('Efectivo a entregar $85.25')->assertSee('Más los cheques por $100.25')
-            ->assertSee('Sala cerrada')->assertDontSee('Sobraron');
+            ->assertSee('Estaba cerrada')->assertDontSee('Sobraron');
 
         $pdf = $this->get(route('rutas.mi-salida.liquidacion-final', $this->salida))->assertOk()->assertHeader('content-type', 'application/pdf');
         $this->assertStringContainsString('liquidacion-ruta-san-miguel-2026-11-04.pdf', $pdf->headers->get('content-disposition'));
@@ -145,7 +145,7 @@ class TerminarRutaTest extends TestCase
             'totales' => $totales, 'entregadas' => app(LiquidacionSalida::class)->entregadas($this->salida),
             'noEntregadas' => app(LiquidacionSalida::class)->noEntregadas($this->salida), 'gastos' => $this->salida->gastos,
         ])->render();
-        foreach (['Liquidación de la ruta', '04/11/2026', '05/11/2026', 'Gasolina', 'Parqueo', 'Sala cerrada', $sobra->dte->numero_control, 'Efectivo a entregar $85.25', 'Entrega: Carlos',
+        foreach (['Liquidación de la ruta', '04/11/2026', '05/11/2026', 'Gasolina', 'Parqueo', 'Estaba cerrada', $sobra->dte->numero_control, 'Efectivo a entregar $85.25', 'Entrega: Carlos',
             // Los documentos de la salida: los entregados con su forma, lo cobrado y quién los entregó.
             'Entregados:</strong> 2 · $200.50', 'No entregados:</strong> 1 · $100.25', $efectivo->dte->numero_control, $cheque->dte->numero_control,
             '<td>Efectivo</td><td class="dinero">$100.25</td><td>Carlos</td>', '<td>Cheque</td><td class="dinero">$100.25</td><td>Carlos</td>'] as $texto) {

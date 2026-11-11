@@ -153,7 +153,7 @@
 
             <section aria-label="Detalle de ventas" class="space-y-4">
                 <nav aria-label="Agrupar ventas" class="grid grid-cols-2 gap-1 rounded-2xl bg-gray-100 p-1 dark:bg-ink-800 sm:grid-cols-4">
-                    @foreach (($exportacion ? ['productos' => 'Presentaciones', 'clientes' => 'Clientes'] : ['productos' => 'Productos', 'salas' => 'Salas', 'rutas' => 'Rutas', 'devoluciones' => 'Devoluciones']) as $clave => $nombre)
+                    @foreach (($exportacion ? ['productos' => 'Presentaciones', 'clientes' => 'Clientes'] : ['productos' => 'Productos', 'salas' => 'Salas', 'rutas' => 'Zonas', 'devoluciones' => 'Devoluciones']) as $clave => $nombre)
                         <a href="{{ $url(['vista' => $clave]) }}" @if ($vista === $clave) aria-current="page" @endif class="{{ $pastilla }} {{ $vista === $clave ? 'bg-white text-indigo-700 shadow-sm dark:bg-ink-600 dark:text-indigo-300' : 'text-gray-600 hover:bg-white dark:text-paper-300 dark:hover:bg-ink-700' }}">{{ $nombre }}</a>
                     @endforeach
                 </nav>

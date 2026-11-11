@@ -20,7 +20,7 @@
                 @else
                     <span class="text-sm text-amber-800 dark:text-amber-300">Sin comprobante</span>
                 @endif
-                <div class="min-w-0 flex-1 break-words"><p class="font-semibold">{{ $gasto->concepto->label() }} · ${{ number_format((float) $gasto->monto, 2) }}</p><p class="text-sm text-gray-600 dark:text-paper-300">{{ $gasto->detalle }}</p></div>
+                <div class="min-w-0 flex-1 break-words"><p class="whitespace-nowrap font-semibold">{{ $gasto->concepto->label() }} · ${{ number_format((float) $gasto->monto, 2) }}</p><p class="text-sm text-gray-600 dark:text-paper-300">{{ $gasto->detalle }}</p></div>
                 @if ($editaGastos && auth()->user()->can('borrarGasto', [$salida, $gasto]))
                     <form method="POST" action="{{ route($prefijoGastos.'gastos.destroy', [$salida, $gasto]) }}">
                         @csrf @method('DELETE')

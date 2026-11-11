@@ -141,7 +141,7 @@ class ResumenDiarioPedidos
     {
         $salas = [];
         $sala = function (PedidoSala $pedido) use (&$salas): string {
-            $nombre = (string) ($pedido->sala?->nombre ?? 'Sala sin nombre');
+            $nombre = $pedido->nombreSala();
             $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'por_mandar' => []];
 
             return $nombre;

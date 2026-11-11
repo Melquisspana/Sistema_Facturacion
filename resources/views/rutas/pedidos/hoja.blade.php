@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Hoja del pedido {{ $pedido->id }} · {{ $pedido->sala?->nombre }}</title>
+    <title>Hoja del pedido {{ $pedido->id }} · {{ $pedido->nombreSala() }}</title>
     {{--
         La hoja de lo que salió: el «sugerido» en limpio que antes copiaba a mano la fábrica.
         Todo lo que pidió el vendedor, lo que llegó en cada envío vigente y una «F» en lo que
@@ -116,6 +116,10 @@
         .leyenda-rojo { border-color: var(--rojo); background: var(--rojo-claro); color: var(--rojo); }
         .leyenda-ambar { border-color: var(--ambar); background: var(--ambar-claro); color: var(--ambar); }
 
+        .observaciones { margin-top: 18px; border: 1px solid var(--borde, #d1d5db); border-radius: 8px; padding: 10px 14px; page-break-inside: avoid; }
+        .observaciones h2 { margin: 0 0 6px; font-size: 13px; }
+        .observaciones ul { margin: 0; padding-left: 18px; }
+        .observaciones li { margin: 3px 0; font-size: 12px; }
         .firma { margin-top: 56px; display: flex; flex-wrap: wrap; gap: 32px 48px; }
         .firma div { flex: 1 1 200px; border-top: 2px solid var(--indigo); padding-top: 4px; text-align: center; font-size: 11px; color: var(--suave); }
 
@@ -168,7 +172,11 @@
     @can('viewAny', App\Models\Dte::class)
         <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de la fábrica»</a>
     @endcan
-    <a href="{{ route('rutas.pedidos.show', $pedido) }}">Volver al pedido</a>
+    @if ($volverPorEntregar ?? false)
+        <a href="{{ route('rutas.por-entregar.index') }}">Volver a «Por entregar»</a>
+    @else
+        <a href="{{ route('rutas.pedidos.show', $pedido) }}">Volver al pedido</a>
+    @endif
     <button type="button" onclick="window.print()">Imprimir</button>
 </div>
 
@@ -188,10 +196,13 @@
     @endif
 
     <dl class="datos">
-        <div class="ancho"><dt>Sala</dt><dd>{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
+        <div class="ancho"><dt>Sala</dt><dd>{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
         <div><dt>Estado</dt><dd><span class="insignia insignia-{{ $estado->color() }}">{{ $estado->label() }}</span></dd></div>
         <div><dt>Orden de compra</dt><dd class="mono">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
-        <div><dt>Ruta</dt><dd>{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</dd></div>
+        {{-- La zona de la sala; si no tiene, la cajita no va (antes decía «Ruta: Sin ruta»). --}}
+        @if ($pedido->ruta)
+            <div><dt>Zona</dt><dd>{{ $pedido->ruta->nombre }}</dd></div>
+        @endif
         <div><dt>Vendedor</dt><dd>{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
         <div><dt>Fecha del pedido</dt><dd>{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
         <div><dt>Envíos</dt><dd>
@@ -277,9 +288,25 @@
         <p class="leyenda leyenda-ambar">Mandado en parte: lo que falta todavía va a salir en otro envío.</p>
     @endif
 
+    {{-- Observaciones en palabras de lo que vino de menos (Melqui, 10/11/2026): solo con el
+         pedido cerrado o mandado en parte, como la F. Sin precios. --}}
+    @php
+        $deMenos = ($cerrado || $parcial) ? $pedido->lineas->filter->tienePendiente() : collect();
+    @endphp
+    @if ($deMenos->isNotEmpty())
+        <section class="observaciones" aria-labelledby="observaciones-titulo">
+            <h2 id="observaciones-titulo">Observaciones</h2>
+            <ul>
+                @foreach ($deMenos as $linea)
+                    <li>{{ $linea->producto?->nombre }}: se pidieron {{ $linea->cantidadLegible() }}, vinieron {{ \App\Models\PedidoSalaLinea::legible($linea->mandado()) }} ({{ $cerrado ? 'faltaron' : 'faltan' }} {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}).@if ($cerrado && filled($linea->motivo_no_enviado)) Motivo: {{ $linea->motivo_no_enviado }}.@elseif (! $cerrado) Va en otro envío.@endif</li>
+                @endforeach
+            </ul>
+        </section>
+    @endif
+
     <div class="firma">
-        <div>Firma de quien entrega</div>
-        <div>Firma de quien recibe</div>
+        <div>Entrega</div>
+        <div>Recibe (gerente de la sala)</div>
     </div>
 </main>
 

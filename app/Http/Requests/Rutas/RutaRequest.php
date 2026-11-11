@@ -6,8 +6,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Alta y edición de una ruta. La autorización la resuelve el middleware
- * `permission:rutas.gestionar` de la ruta, no este request.
+ * Alta y edición de una zona: solo su nombre y si está activa. La autorización la resuelve el
+ * middleware `permission:rutas.gestionar` de la ruta, no este request. Los días aproximados
+ * (`frecuencia_objetivo_dias`) ya no se cargan (10/11/2026): no se validan ni se guardan.
  */
 class RutaRequest extends FormRequest
 {
@@ -28,8 +29,6 @@ class RutaRequest extends FormRequest
                 'required', 'string', 'max:120',
                 Rule::unique('rutas', 'nombre')->ignore($rutaId),
             ],
-            // Referencia operativa, no una regla: el sistema no agenda nada con esto.
-            'frecuencia_objetivo_dias' => ['nullable', 'integer', 'min:1', 'max:365'],
             'activa' => ['boolean'],
         ];
     }
@@ -45,8 +44,7 @@ class RutaRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'nombre' => 'nombre de la ruta',
-            'frecuencia_objetivo_dias' => 'frecuencia objetivo',
+            'nombre' => 'nombre de la zona',
         ];
     }
 
@@ -54,7 +52,7 @@ class RutaRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'nombre.unique' => 'Ya existe una ruta con ese nombre.',
+            'nombre.unique' => 'Ya existe una zona con ese nombre.',
         ];
     }
 }

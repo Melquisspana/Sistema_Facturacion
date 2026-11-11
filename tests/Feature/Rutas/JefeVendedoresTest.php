@@ -5,6 +5,7 @@ namespace Tests\Feature\Rutas;
 use App\Enums\AreaSistema;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\FuncionPersonalRuta;
+use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
@@ -56,7 +57,9 @@ class JefeVendedoresTest extends TestCase
     {
         $this->assertSame('Jefe de vendedores', RolSistema::JefeVendedores->label());
         // El mapa del tablero lleva montos (09/11/2026), pero `rutas.ventas.ver` sigue afuera.
-        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar', 'rutas.salidas.terminar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver', 'rutas.mapa.ver'], RolSistema::JefeVendedores->permisos());
+        // `rutas.salidas.armar` se retiró el 10/11/2026: ya no se arman salidas.
+        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.salidas.terminar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver', 'rutas.mapa.ver'], RolSistema::JefeVendedores->permisos());
+        $this->assertNotContains('rutas.salidas.armar', PermisoSistema::todos());
 
         foreach (['rutas.gestionar', 'rutas.personal.ver', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
             $this->assertFalse($this->jefe->can($permiso), "El jefe no debería tener {$permiso}.");
@@ -100,11 +103,10 @@ class JefeVendedoresTest extends TestCase
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSee('Oriente')
-            ->assertDontSee(route('rutas.mi-salida.index'));
-
-        // Cuando va en una salida en curso, el tablero le ofrece «Mi salida».
-        $this->salida($this->ficha);
-        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertSee(route('rutas.mi-salida.index'));
+            // También sale a vender: su menú lo lleva al inicio del vendedor y a sacar pedido,
+            // tenga o no un viaje abierto (el viaje se abre con el primer pedido).
+            ->assertSee('href="'.route('rutas.mi-salida.index').'"', false)
+            ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false);
     }
 
     public function test_usa_mi_salida_solo_en_las_salidas_donde_va(): void
@@ -112,7 +114,7 @@ class JefeVendedoresTest extends TestCase
         $suya = $this->salida($this->ficha);
         $ajena = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
 
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $suya));
+        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $suya));
         $this->actingAs($this->jefe)->get(route('rutas.mi-salida.show', $suya))->assertOk();
         $this->actingAs($this->jefe)->get(route('rutas.mi-salida.cierre', $suya))->assertOk();
 
@@ -149,19 +151,22 @@ class JefeVendedoresTest extends TestCase
         $this->actingAs($this->jefe)
             ->post(route('rutas.salidas.reabrir', [$salida, now()->toDateString()]), ['motivo' => 'Corregir el cobro'])
             ->assertForbidden();
-        // Arma salidas (ArmarSalidaTest), pero no las edita ni las cancela.
-        $this->actingAs($this->jefe)->get(route('rutas.salidas.edit', $salida))->assertForbidden();
+        // No cancela salidas.
         $this->actingAs($this->jefe)->patch(route('rutas.salidas.cancelar', $salida))->assertForbidden();
         $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
     }
 
-    /** Arma salidas con `rutas.salidas.armar` y las termina con `rutas.salidas.terminar`. */
-    public function test_ve_salir_a_esta_ruta_y_terminar_ruta_pero_no_editar_ni_cancelar(): void
+    /** Ya no arma salidas; termina las armadas a mano de antes con `rutas.salidas.terminar`. */
+    public function test_no_arma_salidas_y_termina_las_de_antes_pero_no_las_cancela(): void
     {
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSee('Salir a esta ruta')
-            ->assertSee('Salir hoy');
+            ->assertDontSee('Salir a esta ruta')
+            ->assertDontSee('Salir hoy')
+            ->assertDontSee('Armar salida');
+        // El enlace viejo de «Armar salida» lleva a los viajes, con el aviso.
+        $this->actingAs($this->jefe)->get('/rutas/salidas/crear')->assertRedirect(route('rutas.viajes'))->assertSessionHas('status');
+        $this->actingAs($this->jefe)->post('/rutas/salidas', ['ruta_id' => 1])->assertStatus(405);
 
         $salida = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
 

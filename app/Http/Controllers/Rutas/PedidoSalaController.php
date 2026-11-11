@@ -40,9 +40,12 @@ class PedidoSalaController extends Controller
             // Lo que llegó ese día: un envío VIGENTE de la fábrica con esa fecha.
             ->when($filtros['mandado_el'] ?? null, fn (Builder $q, $f) => $q->whereHas('envios', fn (Builder $e) => $e
                 ->whereNull('anulado_en')->whereDate('fecha', $f)))
-            ->when($filtros['sala'] ?? null, fn (Builder $q, $texto) => $q->whereHas('sala', fn (Builder $s) => $s
-                ->where('nombre', 'like', '%'.addcslashes($texto, '%_\\').'%')
-                ->orWhere('codigo', 'like', '%'.addcslashes($texto, '%_\\').'%')))
+            // La sala por nombre o código; la tienda nueva, por el nombre que escribió el vendedor.
+            ->when($filtros['sala'] ?? null, fn (Builder $q, $texto) => $q->where(fn (Builder $w) => $w
+                ->whereHas('sala', fn (Builder $s) => $s
+                    ->where('nombre', 'like', '%'.addcslashes($texto, '%_\\').'%')
+                    ->orWhere('codigo', 'like', '%'.addcslashes($texto, '%_\\').'%'))
+                ->orWhere('sala_nueva_nombre', 'like', '%'.addcslashes($texto, '%_\\').'%')))
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->paginate(25)
@@ -79,14 +82,25 @@ class PedidoSalaController extends Controller
         ], [
             'fecha.date_format' => 'Elegí un día válido.',
         ])['fecha'] ?? null;
+
+        return view('rutas.pedidos.hoja', self::datosHoja($pedido, $facturar, $fecha));
+    }
+
+    /**
+     * Lo que lleva la hoja. La usan la oficina (acá) y el vendedor desde «Por entregar».
+     *
+     * @return array{pedido: PedidoSala, regresa: array, volverAl: ?string}
+     */
+    public static function datosHoja(PedidoSala $pedido, FacturarPedido $facturar, ?string $fecha): array
+    {
         $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'sacadoPor:id,nombre', 'lineas.producto:id,codigo,nombre',
             'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->whereNull('anulado_en')->orderBy('numero'), 'envios.lineas', 'envios.dte']);
 
-        return view('rutas.pedidos.hoja', [
+        return [
             'pedido' => $pedido,
             'regresa' => $facturar->regresa($pedido),
             'volverAl' => $fecha ?? $pedido->envios->last()?->fecha?->format('Y-m-d'),
-        ]);
+        ];
     }
 
     /** Agregar o corregir la OC, que suele llegar después por EDI. Avisa si su forma no cuadra. */

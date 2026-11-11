@@ -341,15 +341,15 @@ class MapaVentasTest extends TestCase
 
         // Sin filtro: San Miguel (Costa la cubre) no tiene ninguna sala.
         $html = $this->actingAs($admin)->get(route('rutas.mapa'))->assertOk()->getContent();
-        $this->assertStringContainsString('<strong>1 distrito</strong> con ruta y sin ninguna sala', $html);
-        $this->assertStringContainsString('<strong>1 departamento</strong> con ruta y sin ninguna sala', $html);
+        $this->assertStringContainsString('<strong>1 distrito</strong> con zona y sin ninguna sala', $html);
+        $this->assertStringContainsString('<strong>1 departamento</strong> con zona y sin ninguna sala', $html);
         $this->assertStringContainsString('data-zona="12-01"', $html);
         $this->assertStringContainsString('Ver cuáles', $html);
 
         // Con Oriente: el distrito de Sur (Costa) no está vacío y San Miguel no es de Oriente.
         $html = $this->actingAs($admin)->get(route('rutas.mapa', ['ruta' => $this->oriente->id]))->assertOk()->getContent();
         $this->assertStringContainsString('<strong>0 distritos</strong> de Ruta Oriente sin ninguna sala', $html);
-        $this->assertStringContainsString('Cada lugar por donde pasa esta ruta ya tiene salas.', $html);
+        $this->assertStringContainsString('Cada lugar que cubre esta zona ya tiene salas.', $html);
         $this->assertStringNotContainsString('data-zona="06-15"', $html);
         $this->assertStringNotContainsString('data-zona="12-01"', $html);
 
@@ -517,7 +517,7 @@ class MapaVentasTest extends TestCase
 
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()
             ->assertSee('<h1', false)
-            ->assertSee('Mapa de ventas por zona')
+            ->assertSee('Mapa de ventas')
             ->assertSee('vendor/d3/d3.min.js', false)
             ->assertSee('geoBoundaries')
             ->assertSee('OpenStreetMap')

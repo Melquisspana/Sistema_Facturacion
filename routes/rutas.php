@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\Rutas\AsignacionSalasController;
 use App\Http\Controllers\Rutas\MapaVentasController;
 use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
@@ -9,7 +8,6 @@ use App\Http\Controllers\Rutas\PersonalRutaController;
 use App\Http\Controllers\Rutas\PorEntregarController;
 use App\Http\Controllers\Rutas\RutaCoberturaController;
 use App\Http\Controllers\Rutas\RutaController;
-use App\Http\Controllers\Rutas\RutaSalaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
 use App\Http\Controllers\Rutas\SalidaCcfController;
 use App\Http\Controllers\Rutas\SalidaCierreController;
@@ -18,11 +16,16 @@ use App\Http\Controllers\Rutas\SalidaGastoController;
 use App\Http\Controllers\Rutas\SalidaLiquidacionController;
 use App\Http\Controllers\Rutas\SalidaRutaController;
 use App\Http\Controllers\Rutas\VentasController;
+use App\Http\Controllers\Rutas\ViajesController;
+use App\Models\Ruta;
+use App\Models\SalidaRuta;
 use Illuminate\Support\Facades\Route;
 
 /*
-| Rutas — la operación de campo: qué ruta atiende cada sala, cada cuánto se sale,
-| qué salidas se hacen y quién va en ellas (docs/DISENO_MODULO_RUTAS_20260926.md).
+| Rutas — la operación de campo. Desde el 10/11/2026 el viaje se arma solo con el primer
+| pedido del vendedor (docs/decisiones/0010-el-viaje-reemplaza-a-la-ruta-fija.md): nadie arma
+| salidas ni asigna salas, y las rutas quedan como catálogo de zonas. Las salidas armadas a
+| mano de antes siguen como historial y se pueden terminar.
 |
 | Qué NO hace: emitir DTE, generar JSON, firmar, transmitir, tocar correlativos o
 | enviar correo. Tampoco toca PPQ ni Planta. El seguimiento de CCF (albarán, quedan,
@@ -34,10 +37,9 @@ use Illuminate\Support\Facades\Route;
 |                                  también escribiendo la URL a mano.
 |
 | Un tercer candado, INLINE en cada ruta que escribe:
-|   3. permission:rutas.gestionar -> crear/editar rutas, su cobertura, asignar salas,
-|                                  crear salidas y moverles el estado. Armar y terminar
-|                                  salidas aceptan además los permisos propios del jefe
-|                                  de vendedores (`rutas.salidas.armar|terminar`).
+|   3. permission:rutas.gestionar -> crear/editar zonas y su cobertura, y corregir las
+|                                  salidas. Terminar las salidas viejas acepta además el
+|                                  permiso del jefe de vendedores (`rutas.salidas.terminar`).
 |
 | El selector superior de áreas y los botones de las vistas son solo presentación
 | y NUNCA autorizan.
@@ -48,6 +50,9 @@ use Illuminate\Support\Facades\Route;
 |
 | Las rutas literales van ANTES que las paramétricas (regla del repo), por eso
 | `salidas/crear` se declara antes que `salidas/{salida}`.
+|
+| Las pantallas que se retiraron redirigen a su equivalente, para quien tenga un enlace
+| guardado: no dan 404.
 */
 
 // El área se llamó «Cobros» y vivía en /rutas-cobros. Los enlaces guardados siguen
@@ -59,6 +64,9 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
     ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
     ->group(function () {
         Route::get('/', [MiSalidaController::class, 'index'])->name('index');
+        // «Terminar el día» del vendedor: su resumen y el PDF (antes que las de {salida}).
+        Route::get('dia', [MiSalidaController::class, 'dia'])->name('dia');
+        Route::get('dia/pdf', [MiSalidaController::class, 'diaPdf'])->name('dia.pdf');
         Route::post('{salida}/gastos', [SalidaGastoController::class, 'store'])->name('gastos.store');
         Route::delete('{salida}/gastos/{gasto}', [SalidaGastoController::class, 'destroy'])->name('gastos.destroy');
         Route::get('{salida}/gastos/{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('gastos.foto');
@@ -70,21 +78,32 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         Route::get('{salida}/terminar/pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
         // El PDF de un CCF de la salida: solo de esta salida y solo si va en ella.
         Route::get('{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('ccf');
+        // La hoja de una salida vieja en camino. El viaje no tiene hoja: lleva al inicio.
         Route::get('{salida}', [MiSalidaController::class, 'show'])->name('show');
-        // «Empezar ruta»: la planificada pasa a en curso, solo quien va y desde el día de la salida.
-        Route::post('{salida}/empezar', [MiSalidaController::class, 'empezar'])->name('empezar');
         Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
-        // «Sacar pedido» en una sala de la salida (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10). Que
-        // vaya en la salida, en curso y para sacar pedido lo pide la policy; la sala, PedidosSala.
-        Route::middleware('permission:rutas.pedidos.registrar')->name('pedidos.')->group(function () {
-            Route::get('{salida}/sala/{sucursal}/pedido', [MiPedidoController::class, 'create'])->name('create')->withoutScopedBindings();
-            Route::post('{salida}/sala/{sucursal}/pedido', [MiPedidoController::class, 'store'])->name('store')->withoutScopedBindings();
-            Route::get('{salida}/pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');
-            Route::put('{salida}/pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
-            Route::patch('{salida}/pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
-        });
+        // «Terminar el día» del viaje: ¿mañana sigue en la misma zona? Si no, deja de sumar pedidos.
+        Route::post('{salida}/terminar-dia', [MiSalidaController::class, 'terminarDia'])->name('terminar-dia');
+    });
+
+/*
+| «Sacar pedido» (10/11/2026): el vendedor busca cualquier sala y saca el pedido sin salida
+| armada; el pedido se suma solo a su viaje. Que tenga su ficha de Rutas, que la sala esté
+| activa y quién corrige lo deciden la policy y PedidosSala.
+*/
+Route::middleware(['auth', 'permission:rutas.pedidos.registrar', 'cache.headers:no_store;private'])
+    ->prefix('rutas/sacar-pedido')->name('rutas.sacar-pedido.')
+    ->group(function () {
+        Route::get('/', [MiPedidoController::class, 'index'])->name('index');
+        // Tienda nueva: solo el nombre; la oficina la da de alta y la enlaza al facturar.
+        Route::get('tienda-nueva', [MiPedidoController::class, 'createTiendaNueva'])->name('tienda-nueva.create');
+        Route::post('tienda-nueva', [MiPedidoController::class, 'storeTiendaNueva'])->name('tienda-nueva.store');
+        Route::get('sala/{sucursal}', [MiPedidoController::class, 'create'])->name('create');
+        Route::post('sala/{sucursal}', [MiPedidoController::class, 'store'])->name('store');
+        Route::get('pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');
+        Route::put('pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
+        Route::patch('pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
     });
 
 /*
@@ -98,6 +117,8 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', 'cac
     ->group(function () {
         Route::get('/', [PorEntregarController::class, 'index'])->name('index');
         Route::get('{dte}/pdf', [PorEntregarController::class, 'pdf'])->name('pdf');
+        // La hoja del pedido del CCF (el sugerido con la F), para que la firme el gerente.
+        Route::get('{dte}/hoja', [PorEntregarController::class, 'hoja'])->name('hoja');
         Route::post('{dte}/marcar', [PorEntregarController::class, 'marcar'])->name('marcar')
             ->middleware('permission:rutas.entregas.registrar');
     });
@@ -107,6 +128,8 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
     ->name('rutas.')
     ->group(function () {
         Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+        // La pestaña «Viajes» del tablero: en qué paso va cada pedido de cada viaje (10/11/2026).
+        Route::get('viajes', [ViajesController::class, 'index'])->name('viajes');
         // La pestaña «Mapa» del tablero: ventas por zona, con montos (09/11/2026).
         Route::get('mapa', [MapaVentasController::class, 'index'])
             ->middleware('permission:rutas.mapa.ver')->name('mapa');
@@ -118,46 +141,26 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             ->middleware('permission:rutas.ventas.ver')->name('ventas.pdf');
 
         /*
-        | Catálogo de rutas. Sin `destroy`: una ruta no se elimina, se desactiva
-        | (conserva las salas asignadas y el historial de salidas).
+        | «Zonas»: el catálogo de rutas, con su nombre y los lugares que cubre. La zona le pone
+        | nombre al viaje y agrupa el tablero y el mapa. Sin `destroy`: una zona no se elimina,
+        | se desactiva. Todo se hace en la misma página; las pantallas de antes (crear, ver,
+        | editar y asignar salas) llevan a ella.
         */
         Route::get('rutas', [RutaController::class, 'index'])->name('rutas.index');
-
-        /*
-        | Asignación de salas por cobertura: el sistema PROPONE la ruta de cada sala a
-        | partir de lo que cubre cada ruta, y el usuario confirma las que quiere.
-        */
-        Route::get('rutas/asignacion', [AsignacionSalasController::class, 'index'])->name('asignacion.index');
-        Route::post('rutas/asignacion', [AsignacionSalasController::class, 'aplicar'])->name('asignacion.aplicar')
-            ->middleware('permission:rutas.gestionar');
-
-        Route::get('rutas/crear', [RutaController::class, 'create'])->name('rutas.create')
-            ->middleware('permission:rutas.gestionar');
+        Route::get('rutas/asignacion', fn () => redirect()->route('rutas.rutas.index'));
+        Route::get('rutas/crear', fn () => redirect()->route('rutas.rutas.index'));
         Route::post('rutas', [RutaController::class, 'store'])->name('rutas.store')
             ->middleware('permission:rutas.gestionar');
-        Route::get('rutas/{ruta}', [RutaController::class, 'show'])->name('rutas.show');
-        Route::get('rutas/{ruta}/editar', [RutaController::class, 'edit'])->name('rutas.edit')
-            ->middleware('permission:rutas.gestionar');
+        Route::get('rutas/{ruta}/editar', fn (Ruta $ruta) => redirect()->to(route('rutas.rutas.index').'#ruta-'.$ruta->id));
+        Route::get('rutas/{ruta}', fn (Ruta $ruta) => redirect()->to(route('rutas.rutas.index').'#ruta-'.$ruta->id));
         Route::put('rutas/{ruta}', [RutaController::class, 'update'])->name('rutas.update')
             ->middleware('permission:rutas.gestionar');
         Route::patch('rutas/{ruta}/toggle-activa', [RutaController::class, 'toggleActiva'])->name('rutas.toggle-activa')
             ->middleware('permission:rutas.gestionar');
 
         /*
-        | Salas habituales de una ruta. Asignar y quitar son acciones sobre
-        | `cliente_sucursales.ruta_id`: NO crean ni modifican salas, solo escriben
-        | esa columna.
-        */
-        // Buscador instantáneo (solo consulta): nombre, código, cliente o pueblo.
-        Route::get('salas/buscar', [RutaSalaController::class, 'buscar'])->name('salas.buscar');
-        Route::post('rutas/{ruta}/salas', [RutaSalaController::class, 'store'])->name('rutas.salas.store')
-            ->middleware('permission:rutas.gestionar');
-        Route::delete('rutas/{ruta}/salas/{sucursal}', [RutaSalaController::class, 'destroy'])->name('rutas.salas.destroy')
-            ->middleware('permission:rutas.gestionar');
-
-        /*
-        | Cobertura: departamentos completos y distritos sueltos que atiende la ruta.
-        | No asigna nada por sí sola; alimenta la propuesta de asignación.
+        | Cobertura: departamentos completos y distritos sueltos de la zona. Con ella se sabe
+        | de qué zona es una sala que no tiene una puesta.
         */
         Route::post('rutas/{ruta}/cobertura', [RutaCoberturaController::class, 'store'])->name('rutas.cobertura.store')
             ->middleware('permission:rutas.gestionar');
@@ -166,8 +169,9 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             ->scopeBindings();
 
         /*
-        | Salidas de ruta. Los cambios de estado son acciones con nombre propio
-        | (iniciar / finalizar / cancelar), no un campo editable del formulario.
+        | «Viajes anteriores»: los viajes y las salidas de antes, como historial. Los cambios de
+        | estado son acciones con nombre propio (iniciar / finalizar / cancelar) y quedan para
+        | cerrar las salidas viejas; ya no se arman salidas.
         */
         Route::get('salidas', [SalidaRutaController::class, 'index'])->name('salidas.index');
         Route::prefix('salidas/{salida}/gastos')->name('salidas.gastos.')->scopeBindings()->group(function () {
@@ -191,20 +195,17 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             Route::post('/', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
             Route::get('pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
         });
-        // Armar una salida: la oficina (`rutas.gestionar`) o el jefe de vendedores
-        // (`rutas.salidas.armar`, que no da nada más). Editarla y cancelarla siguen abajo.
-        Route::get('salidas/crear', [SalidaRutaController::class, 'create'])->name('salidas.create')
-            ->middleware('permission:rutas.gestionar|rutas.salidas.armar');
-        Route::post('salidas', [SalidaRutaController::class, 'store'])->name('salidas.store')
-            ->middleware('permission:rutas.gestionar|rutas.salidas.armar');
+        // Ya no se arman salidas: el viaje se abre solo con el primer pedido.
+        Route::get('salidas/crear', fn () => redirect()->route('rutas.viajes')
+            ->with('status', 'Ya no se arman salidas: el viaje se abre solo cuando un vendedor saca el primer pedido.'));
+        // El PDF del día de quien va en un viaje, para la oficina y el jefe.
+        Route::get('salidas/{salida}/dia/{fecha}/{persona}/pdf', [ViajesController::class, 'diaPdf'])
+            ->where('fecha', '\d{4}-\d{2}-\d{2}')->name('salidas.dia-pdf');
         Route::get('salidas/{salida}', [SalidaRutaController::class, 'show'])->name('salidas.show');
         // El PDF de un CCF de la salida, para verlo al tocar su tarjeta. Solo lectura.
         Route::get('salidas/{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('salidas.ccf')
             ->scopeBindings();
-        Route::get('salidas/{salida}/editar', [SalidaRutaController::class, 'edit'])->name('salidas.edit')
-            ->middleware('permission:rutas.gestionar');
-        Route::put('salidas/{salida}', [SalidaRutaController::class, 'update'])->name('salidas.update')
-            ->middleware('permission:rutas.gestionar');
+        Route::get('salidas/{salida}/editar', fn (SalidaRuta $salida) => redirect()->route('rutas.salidas.show', $salida));
         Route::patch('salidas/{salida}/iniciar', [SalidaRutaController::class, 'iniciar'])->name('salidas.iniciar')
             ->middleware('permission:rutas.gestionar');
         Route::patch('salidas/{salida}/finalizar', [SalidaRutaController::class, 'finalizar'])->name('salidas.finalizar')
@@ -222,7 +223,6 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             ->scopeBindings()
             ->group(function () {
                 // Literales antes que paramétricas (regla del repo).
-                Route::post('cargar', [SalidaEntregaController::class, 'cargar'])->name('cargar');
                 Route::post('sala/{sucursal}', [SalidaEntregaController::class, 'sala'])->name('sala')
                     ->withoutScopedBindings();
                 Route::post('/', [SalidaEntregaController::class, 'store'])->name('store');

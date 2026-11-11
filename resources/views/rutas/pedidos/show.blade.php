@@ -10,7 +10,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedido de {{ $pedido->sala?->nombre }}</h1>
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedido de {{ $pedido->nombreSala() }}</h1>
             <a href="{{ route('rutas.pedidos.index') }}"
                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a pedidos</a>
         </div>
@@ -41,7 +41,13 @@
                             <a href="{{ route('rutas.pedidos.hoja', $pedido) }}" target="_blank" rel="noopener"
                                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
                         @endif
-                        @if ($puedeFacturar)
+                        @if ($pedido->esTiendaNueva() && $pedido->estaVigente())
+                            {{-- Tienda nueva: antes de facturar se da de alta y se enlaza a su sala. --}}
+                            @can('enlazarSala', $pedido)
+                                <a href="{{ route('facturacion.pedidos.tienda', $pedido) }}"
+                                   class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Dar de alta la tienda</a>
+                            @endcan
+                        @elseif ($puedeFacturar)
                             @can('create', App\Models\Dte::class)
                                 <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']) }}"
                                    class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
@@ -53,12 +59,13 @@
                     <p class="mt-3 text-sm text-amber-800">{{ \App\Services\Rutas\FacturarPedido::LLEGO_DESPUES_DEL_BORRADOR }}</p>
                 @endif
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
+                    <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
-                    <div><dt class="{{ $dt }}">Ruta</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</dd></div>
-                    <div><dt class="{{ $dt }}">Salida</dt><dd class="{{ $dd }}">
+                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</dd></div>
+                    {{-- El viaje, por su nombre («Lunes · San Miguel»); una salida armada a mano de antes, por su fecha. --}}
+                    <div><dt class="{{ $dt }}">{{ $pedido->salida && ! $pedido->salida->esViaje() ? 'Salida' : 'Viaje' }}</dt><dd class="{{ $dd }}">
                         @if ($pedido->salida)
-                            <a href="{{ route('rutas.salidas.show', $pedido->salida) }}" class="text-indigo-600 underline">{{ $pedido->salida->fecha_inicio->format('d/m/Y') }}</a>
+                            <a href="{{ route('rutas.salidas.show', $pedido->salida) }}" class="text-indigo-600 underline">{{ $pedido->salida->esViaje() ? $pedido->salida->nombreViaje() : $pedido->salida->fecha_inicio->format('d/m/Y') }}</a>
                         @else
                             —
                         @endif

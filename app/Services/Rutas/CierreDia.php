@@ -50,6 +50,11 @@ class CierreDia
             // antes o después de cerrar el último día. Solo una cancelada no se cierra.
             abort_unless(in_array($salida->estado, [EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada], true), 422, 'Una salida cancelada no se liquida.');
             self::exigirSinLiquidar($salida);
+            // El viaje y la automática de «Por entregar» no cierran días: el dinero se entrega
+            // con el PDF del día, y un día cerrado frenaría las entregas de los demás.
+            if ($salida->esAutomatica()) {
+                throw ValidationException::withMessages(['cierre' => 'El viaje no cierra el día acá: usá «Terminar el día» y su PDF.']);
+            }
             $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->first();
             if ($cierre?->estaCerrado()) {
                 throw ValidationException::withMessages(['cierre' => 'El día ya está cerrado. Reabrilo antes de corregirlo.']);

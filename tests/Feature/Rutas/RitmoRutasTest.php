@@ -129,15 +129,16 @@ class RitmoRutasTest extends TestCase
             ->assertSee('San Miguel')
             ->assertSee('Atrasada 5 días')
             ->assertSee('Suele ir cada 15 días (cargado a mano)')
-            // Sin vendedores no se puede salir: se dice qué falta.
-            ->assertSee('Agregá un vendedor para salir')
+            // Ya nadie arma salidas desde el tablero.
+            ->assertDontSee('Agregá un vendedor para salir')
+            ->assertDontSee('Salir a esta ruta')
             ->assertSee('1 sala activa sin zona.');
 
         PersonalRuta::create(['nombre' => 'Carlos']);
 
         $this->actingAs(User::factory()->create()->assignRole('administrador'))
             ->get(route('rutas.dashboard'))
-            ->assertSee('Salir a esta ruta')
+            ->assertDontSee('Salir a esta ruta')
             ->assertSee('Carlos');
     }
 }

@@ -17,12 +17,12 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\CierreDia;
-use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\LiquidacionSalida;
 use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Tests\Support\CcfDeLaRuta;
 use Tests\TestCase;
 
 /**
@@ -33,6 +33,7 @@ use Tests\TestCase;
  */
 class FacturadoDespuesTest extends TestCase
 {
+    use CcfDeLaRuta;
     use RefreshDatabase;
 
     private User $vendedor;
@@ -166,7 +167,7 @@ class FacturadoDespuesTest extends TestCase
 
         $this->assertDatabaseMissing('salida_ruta_entregas', ['id' => $fila->id]);
         $this->assertEquals($antes, $this->dinero());
-        $this->assertContains($dte->id, app(EntregasCcf::class)->pendientesDeRuta($this->salida->ruta)->pluck('id')->all());
+        $this->assertContains($dte->id, $this->pendientesDeLaRuta($this->salida->ruta)->pluck('id')->all());
         $this->assertDatabaseHas('activity_log', ['log_name' => 'salida_ruta_entrega', 'description' => 'deshizo el CCF facturado después de entregar', 'subject_id' => $fila->id]);
     }
 

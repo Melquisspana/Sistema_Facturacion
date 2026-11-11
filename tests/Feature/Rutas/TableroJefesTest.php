@@ -314,7 +314,7 @@ class TableroJefesTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['1', 'ruta atrasada', '1 al día de 2', '0', 'salas atrasadas', '0 al día de 2'])
+            ->assertSeeInOrder(['1', 'zona atrasada', '1 al día de 2', '0', 'salas atrasadas', '0 al día de 2'])
             ->assertSeeInOrder(['Facturado en los últimos 30 días:', '$200.00'])
             ->assertSeeInOrder(['Ruta Sur', 'Facturado en 30 días:', '$0.00', 'Ruta Norte', 'Facturado en 30 días:', '$200.00']);
     }

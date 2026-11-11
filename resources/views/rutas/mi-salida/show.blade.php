@@ -1,8 +1,8 @@
 @extends('layouts.vendedor')
 
 @section('content')
-    <h1 class="text-3xl font-bold">{{ $salida->ruta->nombre }}</h1>
-    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }} · {{ $salida->proposito->descripcion() }}</p>
+    <h1 class="text-3xl font-bold">{{ $salida->titulo() }}</h1>
+    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }}</p>
     @php
         $companeros = $salida->quienesVan($persona?->id);
     @endphp
@@ -23,13 +23,4 @@
         @include('rutas.mi-salida._pedidos')
     @endif
     @include('rutas.salidas._entregas')
-
-    {{-- La salida en curso manda; la próxima («Tu próxima salida») queda como enlace. --}}
-    @if ($proxima)
-        <a href="{{ route('rutas.mi-salida.show', $proxima) }}" class="mt-6 block min-h-11 rounded-2xl bg-white p-5 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
-            <span class="block text-sm text-gray-600 dark:text-paper-300">Tu próxima salida</span>
-            <span class="block text-xl font-semibold">{{ $proxima->ruta->nombre }}</span>
-            <span class="text-sm text-gray-600 dark:text-paper-300">{{ ucfirst($proxima->fecha_inicio->copy()->locale('es')->dayName) }} {{ $proxima->fecha_inicio->format('d/m/Y') }}</span>
-        </a>
-    @endif
 @endsection

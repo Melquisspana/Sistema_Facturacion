@@ -13,8 +13,9 @@ use Illuminate\Support\Collection;
 /**
  * ¿A qué zona toca ir? Una fila por ruta activa, que hace de ZONA (ver {@see tablero()}):
  * su última visita, cuántos días pasaron y cómo va contra el RITMO de la zona, calculado
- * con los pedidos de sus salas ({@see RitmoPedidos}). Los días aproximados cargados a mano (`frecuencia_objetivo_dias`)
- * se usan solo de respaldo, mientras la ruta no tenga ritmo (decisión 4 del plan).
+ * con los pedidos de sus salas ({@see RitmoPedidos}). Los días aproximados que una zona ya
+ * tuviera cargados (`frecuencia_objetivo_dias`) quedan solo de respaldo, mientras no tenga
+ * ritmo; desde el 10/11/2026 ya no se cargan ni se editan.
  *
  * Esto avisa, no agenda: no hay calendario ni fecha obligatoria. El semáforo es el de
  * {@see Ritmo::estado()}, más:
@@ -210,25 +211,31 @@ class RitmoRutas
     }
 
     /**
-     * Las salas activas de UNA ruta con su ritmo al día dado, las más urgentes primero.
-     * «Tu próxima salida» lo pide para el día de la salida: qué salas tocan sacar pedido.
+     * El ritmo y la última visita de estas salas, con la regla del tablero ({@see filaSala()}).
+     * Es la ÚNICA fuente de «Le toca»: la usan el tablero, el buscador de «Sacar pedido» y la
+     * historia de la sala en el sugerido. Las mismas consultas para una sala que para veinte.
      *
-     * @return Collection<int, array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool}>
+     * @param  Collection<int, ClienteSucursal>  $salas
+     * @return array<int, array> sala_id => fila de {@see filaSala()}
      */
-    public function salasDeRuta(Ruta $ruta, CarbonImmutable $dia): Collection
+    public function deSalas(Collection $salas, ?CarbonImmutable $hoy = null): array
     {
-        $salas = ClienteSucursal::query()
-            ->where('activo', true)
-            ->where('ruta_id', $ruta->id)
-            ->orderBy('nombre')
-            ->get(['id', 'ruta_id', 'nombre', 'codigo']);
-        $ritmos = $this->pedidos->porSala($salas->pluck('id')->all(), $dia);
+        $hoy ??= CarbonImmutable::today();
+        $ids = $salas->modelKeys();
+        $ritmos = $this->pedidos->porSala($ids, $hoy);
+        $visitas = $this->visitas($ids);
 
-        return self::ordenarSalas($salas->map(fn (ClienteSucursal $sala) => self::filaSala($sala, $ritmos[$sala->id], $dia)));
+        return $salas->mapWithKeys(fn (ClienteSucursal $sala) => [$sala->id => self::filaSala($sala, $ritmos[$sala->id], $hoy, $visitas[$sala->id])])->all();
+    }
+
+    /** ¿Le toca visita? Pronto o atrasada, según su ritmo. */
+    public static function leToca(array $fila): bool
+    {
+        return in_array($fila['estado'], [Ritmo::PRONTO, Ritmo::ATRASADA], true);
     }
 
     /**
-     * Una sala con su ritmo a una fecha. La comparten el tablero y «Tu próxima salida».
+     * Una sala con su ritmo a una fecha.
      *
      * Con `$visita` (la de {@see porRuta()}), los días se cuentan desde la última visita:
      * la entrega o el pedido sacado más nuevo. Sin ella, desde el último pedido del ritmo.

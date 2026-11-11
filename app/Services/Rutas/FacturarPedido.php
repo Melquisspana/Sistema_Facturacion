@@ -50,6 +50,12 @@ class FacturarPedido
     /** En la tarjeta y el detalle del pedido: hay un borrador abierto y llegó otro envío. */
     public const LLEGO_DESPUES_DEL_BORRADOR = 'Llegó algo después del borrador. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo.';
 
+    /** La tienda nueva (10/11/2026) no se factura hasta que tiene su sala. */
+    public const SIN_SALA = 'Es una tienda nueva: antes de facturar, dala de alta en Clientes y enlazala al pedido.';
+
+    /** La sala del pedido se borró de Clientes después de sacarlo: sin sala no hay a quién facturar. */
+    public const SALA_BORRADA = 'La sala de este pedido ya no está en Clientes (la borraron). Sin sala no se factura: pedile a quien maneja Clientes que la revise.';
+
     /** Bitácora de {@see pasarAlCcfQueCorrige()}. */
     public const PASO_AL_QUE_CORRIGE = 'el CCF que corrige se quedó con lo que llegó del pedido';
 
@@ -111,6 +117,13 @@ class FacturarPedido
             }
             if (! $pedido->estaVigente()) {
                 throw ValidationException::withMessages(['pedido' => PedidosFabrica::ANULADO]);
+            }
+            // Leído de la fila bloqueada: nunca un CCF sin cliente ni sala.
+            if ($pedido->esTiendaNueva()) {
+                throw ValidationException::withMessages(['pedido' => self::SIN_SALA]);
+            }
+            if ($pedido->sala === null) {
+                throw ValidationException::withMessages(['pedido' => self::SALA_BORRADA]);
             }
             if ($this->borradorAbierto($pedido) !== null) {
                 throw ValidationException::withMessages(['pedido' => self::BORRADOR_ABIERTO]);
@@ -311,7 +324,11 @@ class FacturarPedido
 
         $sala = $pedido->sala;
         $lineas = [];
-        $problemas = [];
+        $problemas = match (true) {
+            $pedido->esTiendaNueva() => [self::SIN_SALA],
+            $sala === null => [self::SALA_BORRADA],
+            default => [],
+        };
         foreach ($porProducto as $p) {
             $producto = $p['producto'];
             $nombre = $producto?->nombre ?? 'Un producto';

@@ -249,8 +249,7 @@ class JefeTerminaSalidaTest extends TestCase
         $this->post(route('rutas.salidas.reabrir', [$salida, self::FECHA]), ['motivo' => 'Corregir el cobro'])->assertForbidden();
         $this->assertTrue($salida->diaCerrado(self::FECHA));
 
-        // Tampoco edita ni cancela la salida.
-        $this->get(route('rutas.salidas.edit', $salida))->assertForbidden();
+        // Tampoco cancela la salida.
         $this->patch(route('rutas.salidas.cancelar', $salida))->assertForbidden();
 
         // La oficina sí reabre.

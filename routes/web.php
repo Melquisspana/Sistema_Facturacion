@@ -41,6 +41,7 @@ use App\Http\Controllers\Facturacion\ListaEmpaqueController;
 use App\Http\Controllers\Facturacion\OrdenCompraRecibidaController;
 use App\Http\Controllers\Facturacion\PorFacturarController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
+use App\Http\Controllers\Facturacion\TiendaNuevaController;
 use App\Http\Controllers\Ppq\NcExportacionController;
 use App\Http\Controllers\Ppq\PpqBusquedaController;
 use App\Http\Controllers\Ppq\PpqGmailController;
@@ -232,6 +233,10 @@ Route::middleware('auth')->group(function () {
         Route::get('llego-de-fabrica', [PorFacturarController::class, 'index'])->name('llego-de-fabrica');
         // «Crear borrador» del CCF con todo lo que llegó del pedido y no se facturó (dte.gestionar).
         Route::post('pedidos/{pedido}/facturar', [FacturarPedidoController::class, 'store'])->name('pedidos.facturar');
+        // Tienda nueva: enlazar el pedido a su sala (una que ya existe o la que se da de alta en
+        // Clientes). Sin sala no se factura. Permiso: PedidoSalaPolicy::enlazarSala.
+        Route::get('pedidos/{pedido}/tienda', [TiendaNuevaController::class, 'show'])->name('pedidos.tienda');
+        Route::post('pedidos/{pedido}/tienda', [TiendaNuevaController::class, 'enlazar'])->name('pedidos.tienda.enlazar');
         Route::get('ccf/crear', [DteController::class, 'createCcf'])->name('create-ccf');
         Route::post('ccf', [DteController::class, 'storeCcf'])->name('store-ccf');
         Route::get('factura/crear', [DteController::class, 'createFactura'])->name('create-factura');

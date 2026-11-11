@@ -52,6 +52,11 @@ enum PermisoSistema: string
     // Comercial.
     case ClientesVer = 'clientes.ver';
     case ClientesGestionar = 'clientes.gestionar';
+    // Dar de alta el cliente y la sala de la TIENDA NUEVA de un pedido, al facturar (Melqui,
+    // 10/11/2026). Solo eso: vale únicamente con un pedido de tienda nueva vigente y sin
+    // enlazar que el usuario pueda enlazar ({@see \App\Policies\ClientePolicy::create()}).
+    // No edita, no inactiva, no borra ni toca el perfil documental: eso es `clientes.gestionar`.
+    case ClientesAlta = 'clientes.alta';
     case ProductosVer = 'productos.ver';
     case ProductosGestionar = 'productos.gestionar';
 
@@ -123,23 +128,22 @@ enum PermisoSistema: string
     case PlantaExistenciasVer = 'planta.existencias.ver';
     case PlantaMovimientosVer = 'planta.movimientos.ver';
 
-    // Rutas. Área de campo: qué ruta atiende cada sala, cada cuánto se sale, qué
-    // salidas se hacen y quién va en ellas. NO emite DTE, no toca correlativos,
-    // firma, transmisión, PPQ ni Planta.
+    // Rutas. Área de campo: los viajes de los vendedores, de sacar pedido a entregar. NO
+    // emite DTE, no toca correlativos, firma, transmisión, PPQ ni Planta.
     //
-    // `ver` para entrar y consultar, `gestionar` para lo que escribe: rutas y su
-    // cobertura, asignar salas, crear salidas y moverles el estado.
+    // `ver` para entrar y consultar, `gestionar` para lo que escribe: las zonas y su
+    // cobertura, y corregir las salidas y sus entregas. Desde el 10/11/2026 nadie arma
+    // salidas: el viaje se abre solo con el primer pedido.
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
     // Vendedor: registrar sus entregas, sin acceso a la gestión de oficina.
     case RutasEntregasRegistrar = 'rutas.entregas.registrar';
-    // Armar una salida (ruta, día y quiénes van), sin el resto de `rutas.gestionar`:
-    // no edita ni cancela salidas, no reabre días ni configura rutas. Para el jefe de
-    // vendedores (docs/PLAN_TABLERO_RUTAS.md, PR 6).
-    case RutasSalidasArmar = 'rutas.salidas.armar';
-    // «Terminar día» y «Terminar ruta» de cualquier salida desde la hoja de la oficina,
-    // aunque no haya ido. No da reabrir días, gastos ajenos ni editar o cancelar salidas,
-    // y no lo hace recibir el dinero: lo recibe la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 7).
+    // `rutas.salidas.armar` se retiró el 10/11/2026: ya no se arman salidas.
+    //
+    // «Terminar día» y «Terminar ruta» de una salida armada a mano de antes, desde la hoja de
+    // la oficina, aunque no haya ido. Sigue mientras quede alguna abierta; el viaje no se
+    // liquida. No da reabrir días, gastos ajenos ni cancelar salidas, y no lo hace recibir
+    // el dinero: lo recibe la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 7).
     case RutasSalidasTerminar = 'rutas.salidas.terminar';
     // Pedidos de sala (docs/PLAN_TABLERO_RUTAS.md, etapa 3). `registrar`: sacar el pedido
     // en la sala desde «Mi salida», solo en las salidas donde va. `ver`: la lista y el
@@ -254,12 +258,12 @@ enum PermisoSistema: string
             //
             // Sin `rutas.gestionar` (reabrir días, gastos ajenos, configurar rutas), sin
             // nada de Planilla (decisión de Melqui, 03/11/2026) y sin las fichas de los
-            // empleados, ni las de Rutas: son solo de la administración (04/11/2026). Elige
-            // a quién lleva al armar la salida. El dinero lo recibe la oficina, nunca él.
+            // empleados, ni las de Rutas: son solo de la administración (04/11/2026). Ya no
+            // arma salidas (10/11/2026). El dinero lo recibe la oficina, nunca él.
             RolSistema::JefeVendedores => self::valores([
                 self::RutasVer,
                 self::RutasEntregasRegistrar,
-                self::RutasSalidasArmar,
+                // Solo para terminar las salidas armadas a mano de antes que sigan abiertas.
                 self::RutasSalidasTerminar,
                 self::RutasPedidosRegistrar,
                 self::RutasPedidosVer,
@@ -270,8 +274,8 @@ enum PermisoSistema: string
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
             // no sincroniza, no administra.
             //
-            // La excepción es Rutas: organiza las salidas, así que las planifica y
-            // asigna salas (decisión del usuario, 26/09/2026). No le abre nada fiscal.
+            // La excepción es Rutas: configura las zonas y corrige las salidas (decisión
+            // del usuario, 26/09/2026). No le abre nada fiscal.
             RolSistema::Jefatura => self::valores([
                 self::DashboardVer,
                 self::DteVer,
@@ -284,7 +288,7 @@ enum PermisoSistema: string
                 self::RutasVer,
                 self::RutasGestionar,
                 // Ya no da de alta a los vendedores: los empleados son solo de la
-                // administración (04/11/2026). Los sigue eligiendo al armar la salida.
+                // administración (04/11/2026).
                 self::RutasVentasVer,
                 self::RutasPedidosVer,
                 self::RutasMapaVer,
@@ -299,6 +303,10 @@ enum PermisoSistema: string
                 self::DteEmitir,
                 self::DteEnviarCorreo,
                 self::ClientesVer,
+                // Da de alta el cliente y la sala de la tienda nueva de un pedido, al facturar
+                // (decisión de Melqui, 10/11/2026). Nada más de Clientes: no edita, no borra
+                // ni toca el perfil documental (`clientes.gestionar` sigue siendo del administrador).
+                self::ClientesAlta,
                 self::ProductosVer,
                 self::PpqVer,
                 self::PpqGestionar,
@@ -312,8 +320,8 @@ enum PermisoSistema: string
                 self::DocumentosRecibidosVer,
                 self::ReportesVer,
                 self::PreparacionVer,
-                // Quien factura los CCF también arma la salida que los lleva y elige quién
-                // va. Las fichas de los empleados son solo de la administración (04/11/2026).
+                // Quien factura los CCF también mira los viajes que los llevan y corrige sus
+                // entregas. Las fichas de los empleados son solo de la administración (04/11/2026).
                 self::RutasVer,
                 self::RutasGestionar,
                 // Y consulta las ventas por producto y sala (decisión del usuario, 28/10/2026).

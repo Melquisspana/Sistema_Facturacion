@@ -241,10 +241,10 @@
         }
         return 'var(' + RAMPA.ventas[Math.min(d3.bisectRight(cortes, z.ventas), 4)] + ')';
     };
-    const sinSalasCorto = (z) => (z.todas ? 'Ninguna sala de esta ruta; ' + z.todas + ' de otras rutas' : 'Todavía no hay salas aquí');
+    const sinSalasCorto = (z) => (z.todas ? 'Ninguna sala de esta zona; ' + z.todas + ' de otras zonas' : 'Todavía no hay salas aquí');
     const textoTip = (z) => '<b>' + esc(z.nombre) + '</b>' + (st.nivel === 'dis' ? ' · ' + esc(nombreDep(z.dep)) : '')
         + '<br>' + (z.salas ? plata(z.ventas) + ' en el mes<br>' + z.salas + (z.salas === 1 ? ' sala' : ' salas') + ' · ' + atrasadasTexto(z) : sinSalasCorto(z))
-        + '<br>Ruta: ' + esc(rutasDe(z).join(', ') || 'ninguna');
+        + '<br>Zona: ' + esc(rutasDe(z).join(', ') || 'ninguna');
 
     const dibujar = () => {
         if (!hayD3 || !rasgos.dep.length) {
@@ -288,10 +288,10 @@
     const leyenda = () => {
         const L = $('mapa-leyenda');
         const rayado = '<div class="mv-muestra"><i class="mv-rayado"></i>'
-            + (st.modo === 'rutas' ? 'Ninguna ruta pasa' : D.ruta ? 'Sin salas de esta ruta' : 'Sin salas todavía') + '</div>';
+            + (st.modo === 'rutas' ? 'Ninguna zona lo cubre' : D.ruta ? 'Sin salas de esta zona' : 'Sin salas todavía') + '</div>';
         if (st.modo === 'rutas') {
-            L.innerHTML = '<div class="text-xs font-semibold">' + esc(unaRuta || 'Por dónde pasan las rutas') + '</div>'
-                + (unaRuta ? muestra('var(--r-on)', 'Zonas de esta ruta') + muestra('var(--mv-vacia)', 'Otras rutas') : muestra('var(--r-cover)', 'Alguna ruta pasa'))
+            L.innerHTML = '<div class="text-xs font-semibold">' + esc(unaRuta || 'Qué cubre cada zona') + '</div>'
+                + (unaRuta ? muestra('var(--r-on)', 'Lo que cubre esta zona') + muestra('var(--mv-vacia)', 'Otras zonas') : muestra('var(--r-cover)', 'Lo cubre alguna zona'))
                 + rayado;
             return;
         }
@@ -318,11 +318,11 @@
 
     const titulos = () => {
         const n = st.nivel === 'dep' ? 'departamento' : 'distrito';
-        $('mapa-titulo').textContent = { ventas: 'Ventas del mes por ' + n, falta: 'Dónde falta, por ' + n, rutas: unaRuta ? 'Zonas de ' + unaRuta : 'Por dónde pasan las rutas' }[st.modo];
+        $('mapa-titulo').textContent = { ventas: 'Ventas del mes por ' + n, falta: 'Dónde falta, por ' + n, rutas: unaRuta ? 'Lo que cubre ' + unaRuta : 'Qué cubre cada zona' }[st.modo];
         $('mapa-sub').textContent = {
-            ventas: 'Color más intenso, más vendido. Tocá una zona para ver su ficha.',
-            falta: 'Color más intenso, más salas atrasadas o que les toca visita según cada cuánto compra cada una' + alCorte + '. Las rayadas no tienen salas ' + (D.ruta ? 'de esta ruta.' : 'todavía.'),
-            rutas: 'Elegí una ruta arriba o en la ficha para ver sus zonas.',
+            ventas: 'Color más intenso, más vendido. Tocá un lugar para ver su ficha.',
+            falta: 'Color más intenso, más salas atrasadas o que les toca visita según cada cuánto compra cada una' + alCorte + '. Las rayadas no tienen salas ' + (D.ruta ? 'de esta zona.' : 'todavía.'),
+            rutas: 'Elegí una zona arriba o en la ficha para ver qué cubre.',
         }[st.modo];
     };
 
@@ -336,12 +336,12 @@
     };
     const sinSalasLargo = (z) => {
         if (z.todas) {
-            return esc(unaRuta || 'Esta ruta') + ' no tiene salas en esta zona. Hay ' + z.todas + (z.todas === 1 ? ' sala' : ' salas') + ' de otras rutas.';
+            return esc(unaRuta || 'Esta zona') + ' no tiene salas en este lugar. Hay ' + z.todas + (z.todas === 1 ? ' sala' : ' salas') + ' de otras zonas.';
         }
         if (z.ventas || z.anterior) {
-            return 'Ya no quedan salas activas en esta zona.';
+            return 'Ya no quedan salas activas en este lugar.';
         }
-        return 'Todavía no vendemos en esta zona. ' + (z.rutas.length ? 'Una ruta ya pasa por aquí: se podría visitar.' : 'Ninguna ruta pasa por aquí.');
+        return 'Todavía no vendemos en este lugar. ' + (z.rutas.length ? 'Una zona ya lo cubre: se podría visitar.' : 'Ninguna zona lo cubre.');
     };
     const fichaHtml = (z) => {
         const pct = cambio(z);
@@ -351,8 +351,8 @@
         const rutas = z.rutas.length
             ? z.rutas.map((id) => '<a href="' + esc(enlaceRuta(id)) + '" data-con-hash class="inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium '
                 + (D.ruta === id ? 'bg-indigo-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50') + '"'
-                + (D.ruta === id ? ' aria-current="true" title="Ver todas las rutas"' : '') + '>' + esc(nombreRuta.get(id)) + '</a>').join('')
-            : '<span class="text-sm text-gray-500">Ninguna ruta pasa por aquí.</span>';
+                + (D.ruta === id ? ' aria-current="true" title="Ver todas las zonas"' : '') + '>' + esc(nombreRuta.get(id)) + '</a>').join('')
+            : '<span class="text-sm text-gray-500">Ninguna zona lo cubre.</span>';
         const dato = (valorHtml, texto) => '<div class="rounded-lg border border-gray-200 bg-gray-50 p-3"><span class="block text-lg font-semibold tabular-nums text-gray-800">'
             + valorHtml + '</span><span class="block text-xs text-gray-500">' + texto + '</span></div>';
         // En un mes pasado, la fecha de la entrega: «hoy» o «ayer» serían del cierre del mes.
@@ -381,7 +381,7 @@
                     + '</div>'
                 : '')
             + (z.salas ? '' : '<p class="text-sm text-gray-600">' + sinSalasLargo(z) + '</p>')
-            + '<div><h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Rutas</h4><div class="mt-1 flex flex-wrap gap-2">' + rutas + '</div></div>'
+            + '<div><h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Zonas</h4><div class="mt-1 flex flex-wrap gap-2">' + rutas + '</div></div>'
             + salas
             + '</div>';
     };
@@ -390,7 +390,7 @@
     let fichaActual = '';
     const ficha = () => {
         const z = st.sel ? zona(st.sel) : null;
-        const html = z ? fichaHtml(z) : '<p class="text-sm text-gray-500">Tocá una zona del mapa o de la tabla para ver su ficha.</p>';
+        const html = z ? fichaHtml(z) : '<p class="text-sm text-gray-500">Tocá un lugar del mapa o de la tabla para ver su ficha.</p>';
         if (html !== fichaActual) {
             $('mapa-ficha').innerHTML = html;
             fichaActual = html;
