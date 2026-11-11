@@ -7,6 +7,8 @@ use App\Enums\PermisoSistema;
 use App\Enums\ResultadoEntrega;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Departamento;
+use App\Models\Distrito;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
@@ -15,6 +17,7 @@ use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\PpqAlbaran;
 use App\Models\Ruta;
+use App\Models\RutaCobertura;
 use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
@@ -22,6 +25,7 @@ use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -154,7 +158,7 @@ class TableroJefesTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Súper Ficticio Centro', 'Toca ir', 'Última entrega', 'hace 11 días', 'Compra cada 13 días']);
+            ->assertSeeInOrder(['Súper Ficticio Centro', 'Le toca', 'Última entrega', 'hace 11 días', 'Compra cada 13 días']);
     }
 
     public function test_la_sala_cuenta_desde_el_ccf_la_entrega_de_rutas_o_el_pedido_sacado(): void
@@ -187,7 +191,7 @@ class TableroJefesTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Tienda Inventada Uno', 'Toca ir', 'Última entrega', 'hace 14 días'])
+            ->assertSeeInOrder(['Tienda Inventada Uno', 'Le toca', 'Última entrega', 'hace 14 días'])
             ->assertSeeInOrder(['Tienda Inventada Tres', 'Al día', 'Última entrega', 'hace 14 días', 'Pedido sacado', 'ayer'])
             ->assertSee('title="30/10/2026"', false);
     }
@@ -291,7 +295,7 @@ class TableroJefesTest extends TestCase
             ->assertSeeInOrder([
                 'Ruta Muy Atrasada', 'Atrasada 10 días',
                 'Ruta Poco Atrasada', 'Atrasada 3 días',
-                'Ruta Toca Ir', 'Toca ir', 'faltan 1 día',
+                'Ruta Toca Ir', 'Le toca', 'faltan 1 día',
                 'Ruta Al Día', 'Al día',
             ]);
     }
@@ -359,5 +363,95 @@ class TableroJefesTest extends TestCase
             ->assertOk()
             ->assertSeeInOrder(['Vendedores', 'Luis Inventado', 'href="tel:71112222"', 'Tel. 7111-2222', 'Última entrega', 'hace 2 días'], false)
             ->assertDontSee('7000-0000');
+    }
+
+    /**
+     * Las rutas configuradas son el catálogo de ZONAS. Una sala sin ruta cuenta en la zona que
+     * cubre su distrito o su departamento; sin ninguna, sale igual en la lista, «Sin zona».
+     */
+    public function test_la_sala_sin_ruta_cuenta_en_la_zona_que_cubre_su_lugar(): void
+    {
+        $oriente = Departamento::updateOrCreate(['codigo' => '12'], ['nombre' => 'Departamento de prueba', 'activo' => true]);
+        $distrito = Distrito::create(['departamento_id' => $oriente->id, 'municipio' => 'Municipio de prueba', 'codigo' => '01', 'nombre' => 'Distrito de prueba', 'activo' => true]);
+        $zona = Ruta::create(['nombre' => 'Ruta Oriente']);
+        RutaCobertura::create(['ruta_id' => $zona->id, 'departamento_id' => $oriente->id]);
+        $apagada = Ruta::create(['nombre' => 'Ruta Vieja', 'activa' => false]);
+
+        $sinRuta = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Tienda Inventada Sin Ruta', 'departamento_id' => $oriente->id, 'distrito_id' => $distrito->id, 'activo' => true]);
+        $deRutaApagada = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Tienda Inventada Vieja', 'ruta_id' => $apagada->id, 'departamento_id' => $oriente->id, 'distrito_id' => $distrito->id, 'activo' => true]);
+        $sinLugar = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Tienda Inventada Sin Lugar', 'activo' => true]);
+        foreach ([$sinRuta, $deRutaApagada, $sinLugar] as $sala) {
+            $this->ccfs($sala, ['2026-09-22', '2026-10-06', '2026-10-20']);
+        }
+
+        $fila = $this->rutas()['Ruta Oriente'];
+        $this->assertEqualsCanonicalizing(['Tienda Inventada Sin Ruta', 'Tienda Inventada Vieja'], $fila['salas']->pluck('nombre')->all());
+        $this->assertSame([14, '2026-10-20'], [$fila['ritmo'], $fila['ritmoSalas'][$sinRuta->id]->ultima()->toDateString()]);
+
+        $this->actingAs($this->admin())->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Tienda Inventada Sin Lugar', 'Sin zona'])
+            ->assertSeeInOrder(['Tienda Inventada Sin Ruta', 'Ruta Oriente'])
+            ->assertSee('1 sala activa sin zona.')
+            ->assertDontSee('sin ruta.');
+    }
+
+    /** La historia de la sala: último pedido, última entrega, cada cuánto compra y la próxima visita. */
+    public function test_la_sala_dice_su_proxima_visita_y_si_le_toca_o_esta_atrasada(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Ruta Norte']);
+        // Cada 14 días. Le toca: la última el 20/10, la próxima el 03/11 (hoy).
+        $this->ccfs($this->sala('Tienda Inventada Le Toca', $ruta), ['2026-09-22', '2026-10-06', '2026-10-20']);
+        // Atrasada: la próxima era el 20/10; pasó con margen (3 días).
+        $this->ccfs($this->sala('Tienda Inventada Atrasada', $ruta), ['2026-09-08', '2026-09-22', '2026-10-06']);
+        // Al día: un pedido sacado el 01/11 cuenta como la visita.
+        $alDia = $this->sala('Tienda Inventada Al Dia', $ruta);
+        $this->ccfs($alDia, ['2026-09-22', '2026-10-06', '2026-10-20']);
+        $this->pedido($alDia, '2026-11-01');
+
+        $salas = $this->salas();
+
+        $this->assertSame(['2026-11-03', Ritmo::PRONTO], [$salas['Tienda Inventada Le Toca']['proxima']->toDateString(), $salas['Tienda Inventada Le Toca']['estado']]);
+        $this->assertSame(['2026-10-20', Ritmo::ATRASADA], [$salas['Tienda Inventada Atrasada']['proxima']->toDateString(), $salas['Tienda Inventada Atrasada']['estado']]);
+        $this->assertSame(['2026-11-15', Ritmo::AL_DIA], [$salas['Tienda Inventada Al Dia']['proxima']->toDateString(), $salas['Tienda Inventada Al Dia']['estado']]);
+
+        $this->actingAs($this->admin())->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Tienda Inventada Atrasada', 'Atrasada 14 días', 'Próxima visita', '20/10/2026'])
+            ->assertSeeInOrder(['Tienda Inventada Le Toca', 'Le toca', 'Próxima visita', '03/11/2026'])
+            ->assertSeeInOrder(['Tienda Inventada Al Dia', 'Al día', 'Última entrega', 'Compra cada', 'Pedido sacado', 'Próxima visita', '15/11/2026']);
+    }
+
+    public function test_el_tablero_hace_las_mismas_consultas_con_mas_zonas_y_salas(): void
+    {
+        $departamento = Departamento::updateOrCreate(['codigo' => '12'], ['nombre' => 'Departamento de prueba', 'activo' => true]);
+        $nueva = function (int $n) use ($departamento) {
+            $zona = Ruta::create(['nombre' => 'Ruta de prueba '.$n]);
+            $distrito = Distrito::create(['departamento_id' => $departamento->id, 'municipio' => 'Municipio de prueba', 'codigo' => str_pad((string) $n, 2, '0', STR_PAD_LEFT), 'nombre' => 'Distrito '.$n, 'activo' => true]);
+            RutaCobertura::create(['ruta_id' => $zona->id, 'distrito_id' => $distrito->id]);
+            $this->ccfs($this->sala('Tienda Inventada '.$n, $zona), ['2026-10-01', '2026-10-15']);
+            $sinRuta = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Tienda Sin Ruta '.$n, 'departamento_id' => $departamento->id, 'distrito_id' => $distrito->id, 'activo' => true]);
+            $this->ccf($sinRuta, '2026-10-20');
+            $this->pedido($sinRuta, '2026-11-01');
+            $this->salida($zona, '2026-10-20');
+        };
+        $consultas = function () {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            app(RitmoRutas::class)->tablero($this->hoy);
+            DB::disableQueryLog();
+
+            return count(DB::getQueryLog());
+        };
+
+        $nueva(1);
+        $consultas(); // La primera vez se cargan los ajustes en caché; no es del tablero.
+        $pocas = $consultas();
+        foreach ([2, 3, 4] as $n) {
+            $nueva($n);
+        }
+
+        $this->assertSame($pocas, $consultas());
+        $this->assertCount(8, app(RitmoRutas::class)->tablero($this->hoy)['salas']->whereNotNull('ruta'));
     }
 }

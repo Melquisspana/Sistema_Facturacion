@@ -232,7 +232,7 @@ class EstimadoPedidosTest extends TestCase
         $tercera = $this->nuevaSala('Súper Ficticio Sur');
         $this->documento('2026-10-21', [[$this->chicle, 1]], [], $tercera);
 
-        $this->assertSame(3, $pocas, 'Fechas, líneas de los CCF y notas de crédito.');
+        $this->assertSame(5, $pocas, 'Fechas y líneas de los pedidos; fechas, líneas de los CCF y notas de crédito.');
         $this->assertSame($pocas, $consultas([$this->sala->id, $otra->id, $tercera->id]));
     }
 }

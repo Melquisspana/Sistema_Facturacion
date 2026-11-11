@@ -24,7 +24,7 @@ use App\Services\Gastos\Contracts\ProteccionDeGastos;
 use App\Services\Gastos\InstalacionGastos;
 use App\Services\Planilla\ProteccionPlanilla;
 use App\Services\Rutas\FuentePedidos;
-use App\Services\Rutas\FuentePedidosCcf;
+use App\Services\Rutas\FuentePedidosSala;
 use App\Support\PasswordRules;
 use App\Support\Sistema\NotificacionesRespaldo;
 use App\Support\WorkerHeartbeat;
@@ -79,9 +79,9 @@ class AppServiceProvider extends ServiceProvider
         // las pruebas que no quieren saber nada de planilla.
         $this->app->singleton(ProteccionDeGastos::class, ProteccionPlanilla::class);
 
-        // De dónde salen las fechas de pedido para el ritmo de Rutas. Hoy, los CCF; con los
-        // pedidos reales (etapa 3 de docs/PLAN_TABLERO_RUTAS.md) se cambia acá.
-        $this->app->bind(FuentePedidos::class, FuentePedidosCcf::class);
+        // De dónde salen las fechas de pedido para el ritmo de Rutas: los pedidos de sala,
+        // completados con los CCF que no salieron de un pedido.
+        $this->app->bind(FuentePedidos::class, FuentePedidosSala::class);
 
         // Perfil documental del cliente. Singleton por la misma razón que el resolver de
         // ajustes: memoriza qué clientes tienen perfil, y recalcular una nota de crédito

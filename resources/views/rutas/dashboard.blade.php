@@ -17,11 +17,11 @@
         $R = \App\Services\Rutas\RitmoRutas::class;
         $S = \App\Services\Rutas\Ritmo::class;
 
-        // Colores de la guía: rojo atrasada, ámbar toca ir, verde al día, gris sin
+        // Colores de la guía: rojo atrasada, ámbar le toca, verde al día, gris sin
         // ritmo, celeste en camino. Clases completas para que Tailwind las vea.
         $insignias = [
             $R::ATRASADA => ['Atrasada', 'bg-red-100 text-red-700'],
-            $R::PRONTO => ['Toca ir', 'bg-amber-100 text-amber-800'],
+            $R::PRONTO => ['Le toca', 'bg-amber-100 text-amber-800'],
             $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700'],
             $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700'],
             $R::PROGRAMADA => ['Programada', 'bg-indigo-100 text-indigo-700'],
@@ -195,7 +195,7 @@
                                     <p>Facturado en 30 días: <span class="tabular-nums">{{ $plata($facturado[$ruta->id] ?? 0) }}</span></p>
                                     <p class="text-xs text-gray-500">
                                         {{ $pend['cantidad'] > 0 ? $pend['cantidad'].' CCF por entregar · $'.number_format($pend['monto'], 2) : 'Sin CCF por entregar' }}
-                                        · {{ $ruta->sucursales_count }} {{ $ruta->sucursales_count === 1 ? 'sala' : 'salas' }}
+                                        · {{ $fila['salas']->count() }} {{ $fila['salas']->count() === 1 ? 'sala' : 'salas' }}
                                     </p>
                                 </div>
 
@@ -309,11 +309,11 @@
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <p class="font-medium text-gray-800">{{ $sala->nombre }}</p>
-                                            <p class="text-sm text-gray-500">{{ $fila['ruta']->nombre }}</p>
+                                            <p class="text-sm text-gray-500">{{ $fila['ruta']?->nombre ?? 'Sin zona' }}</p>
                                         </div>
                                         <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto($fila['estado'], $fila['faltan']) }}</span>
                                     </div>
-                                    <dl class="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-600 sm:grid-cols-3">
+                                    <dl class="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
                                         {{-- El último CCF facturado o la última entrega marcada en Rutas, la más nueva. --}}
                                         <div>
                                             <dt class="sr-only">Última entrega</dt>
@@ -335,6 +335,12 @@
                                             <div>
                                                 <dt class="sr-only">Último pedido sacado</dt>
                                                 <dd>Pedido sacado <time datetime="{{ $pedido->toDateString() }}" title="{{ $pedido->format('d/m/Y') }}">{{ $hace($desdeHoy($pedido)) }}</time></dd>
+                                            </div>
+                                        @endif
+                                        @if ($fila['proxima'])
+                                            <div>
+                                                <dt class="sr-only">Próxima visita</dt>
+                                                <dd class="{{ $fila['estado'] === $S::ATRASADA ? 'font-medium text-red-700' : '' }}">Próxima visita <time datetime="{{ $fila['proxima']->toDateString() }}">{{ $fila['proxima']->format('d/m/Y') }}</time></dd>
                                             </div>
                                         @endif
                                     </dl>
@@ -404,11 +410,12 @@
                 @endif
             </section>
 
-            @if ($salasSinRuta > 0)
+            {{-- Sin ruta y sin cobertura de su lugar: sale en la lista, pero no en ninguna zona. --}}
+            @if ($salasSinZona > 0)
                 <a href="{{ route('rutas.rutas.index') }}"
                    class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
-                    <span><strong>{{ $salasSinRuta }} {{ $salasSinRuta === 1 ? 'sala activa' : 'salas activas' }} sin ruta.</strong> No cuentan en ninguna ruta hasta asignarlas.</span>
-                    <span class="shrink-0 font-medium">Asignar</span>
+                    <span><strong>{{ $salasSinZona }} {{ $salasSinZona === 1 ? 'sala activa' : 'salas activas' }} sin zona.</strong> Ninguna ruta cubre su distrito ni su departamento.</span>
+                    <span class="shrink-0 font-medium">Ver coberturas</span>
                 </a>
             @endif
 

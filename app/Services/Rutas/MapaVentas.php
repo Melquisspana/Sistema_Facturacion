@@ -8,20 +8,23 @@ use App\Models\Distrito;
 use App\Models\Ruta;
 use App\Models\RutaCobertura;
 use App\Support\HoraNegocio;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
  * El mapa de ventas por zona del tablero de Rutas (paso 1, aprobado por Melqui el
  * 09/11/2026): por departamento y por distrito, lo vendido en el mes, cuántas salas hay,
- * cuántas compraron, cuántas no compran hace 30 días o más, la última entrega y qué rutas
- * pasan. Nada se inventa acá:
+ * cuántas compraron, a cuántas les toca visita o están atrasadas, la última entrega y qué
+ * rutas pasan. Nada se inventa acá:
  *
  *  · Ventas: {@see VentasRutas::porSala()}, las reglas de la pantalla de Ventas. Solo
  *    nacional, sin IVA, sin invalidados, y la NC en el mes del documento que corrige.
- *  · Sin compra: días desde el último CCF que cuenta en Rutas ({@see EntregasCcf::baseCcf()},
- *    el mismo filtro del ritmo) hasta el último día del tramo. Una sala que nunca compró
- *    también cuenta.
+ *  · Dónde falta: el estado de cada sala por su RITMO ({@see RitmoPedidos}, el del tablero)
+ *    al último día del tramo: «le toca» si llegó su fecha y «atrasada» si pasó con margen
+ *    ({@see Ritmo::estado()}). Se cuenta desde su última visita: el último pedido o CCF del
+ *    ritmo, el último CCF o la última entrega, la más nueva. Sin 3 visitas no hay ritmo: la
+ *    sala se cuenta aparte, sin darla por atrasada.
  *  · Última entrega: {@see EntregasCcf::ultimaVisitaPorSala()}, la de las entregas de Rutas,
  *    hasta el último día del tramo. Así, en un mes pasado todo se cuenta al cierre del mes.
  *  · Rutas que pasan: la cobertura de las rutas activas ({@see RutaCobertura}) y la ruta de
@@ -37,15 +40,17 @@ use Illuminate\Support\Str;
  */
 class MapaVentas
 {
-    public const DIAS_SIN_COMPRA = 30;
-
     /** Meses que se pueden elegir: el actual y los doce anteriores. */
     public const MESES = 13;
 
-    /** Salas que la ficha de una zona muestra como las que más llevan sin comprar. */
-    private const PEORES = 5;
+    /** Salas que la ficha de una zona lista: las atrasadas y después a las que les toca. */
+    private const POR_VISITAR = 5;
 
-    public function __construct(private readonly VentasRutas $ventas, private readonly EntregasCcf $entregas) {}
+    public function __construct(
+        private readonly VentasRutas $ventas,
+        private readonly EntregasCcf $entregas,
+        private readonly RitmoPedidos $ritmo,
+    ) {}
 
     /**
      * Los meses del filtro, el actual primero: «Noviembre 2026 (va del 1 al 9)».
@@ -73,7 +78,7 @@ class MapaVentas
      * @return array{
      *     mes: string, hoy: string, enCurso: bool,
      *     periodo: array{desde: string, hasta: string, anteriorDesde: string, anteriorHasta: string},
-     *     totales: array{ventas: float, anterior: float, salas: int, compraron: int, sinCompra: int, distritosSinSalas: int},
+     *     totales: array{ventas: float, anterior: float, salas: int, compraron: int, faltan: int, atrasadas: int, distritosSinSalas: int},
      *     sinUbicacion: array{salas: int, ventas: float, sinSala: float},
      *     rutas: array<int, array{id: int, nombre: string}>,
      *     departamentos: array<string, array>,
@@ -120,6 +125,7 @@ class MapaVentas
             ->selectRaw('cliente_sucursal_id, MAX(fecha_emision) as ultima')
             ->pluck('ultima', 'cliente_sucursal_id');
         $entregas = $this->entregas->ultimaVisitaPorSala($ids, $hasta);
+        $ritmos = $this->ritmo->porSala($ids, CarbonImmutable::parse($hasta->toDateString()));
 
         $departamentos = Departamento::orderBy('codigo')->get(['id', 'codigo', 'nombre']);
         $distritos = Distrito::query()
@@ -182,12 +188,19 @@ class MapaVentas
         // siempre; como sala solo cuenta la activa que ya existía en el tramo o la que compró
         // en él: una que se desactivó no es una sala «sin compra», y una dada de alta después
         // no estaba. Cuándo se desactivó una sala no queda guardado: para eso vale cómo está hoy.
-        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'sinCompra' => 0, 'distritosSinSalas' => 0];
+        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'faltan' => 0, 'atrasadas' => 0, 'distritosSinSalas' => 0];
         $sinUbicacion = ['salas' => 0, 'ventas' => 0.0];
         foreach ($salas as $sala) {
             $venta = $ventas[$sala->id] ?? ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
-            $ultima = isset($ultimoCcf[$sala->id]) ? Carbon::parse($ultimoCcf[$sala->id], HoraNegocio::zona())->startOfDay() : null;
-            $dias = $ultima === null ? null : max(0, (int) $ultima->diffInDays($hasta));
+            // La última visita: el último pedido o CCF del ritmo, el último CCF o la última entrega.
+            $ritmo = $ritmos[$sala->id];
+            $ultima = collect([
+                $ritmo->ultima()?->toDateString(),
+                isset($ultimoCcf[$sala->id]) ? substr((string) $ultimoCcf[$sala->id], 0, 10) : null,
+                isset($entregas[$sala->id]) ? $entregas[$sala->id]->toDateString() : null,
+            ])->filter()->max();
+            $dias = $ultima === null ? null : max(0, (int) Carbon::parse($ultima, HoraNegocio::zona())->diffInDays($hasta));
+            $estado = $ritmo->dias === null ? Ritmo::SIN_RITMO : Ritmo::estado($ritmo->dias, (int) $dias);
             $abierta = (bool) $sala->activo && $sala->deleted_at === null;
             $existia = $sala->created_at === null || substr((string) $sala->created_at, 0, 10) <= $hasta->toDateString();
             $cuenta = ($abierta && $existia) || $venta['compro'];
@@ -213,7 +226,9 @@ class MapaVentas
                 'actual' => $venta['actual'],
                 'anterior' => $venta['anterior'],
                 'compro' => $venta['compro'],
-                'sinCompra' => $cuenta && ($dias === null || $dias >= self::DIAS_SIN_COMPRA),
+                'estado' => $estado,
+                // Días para la fecha esperada; negativo = días de atraso.
+                'faltan' => $ritmo->dias === null ? null : $ritmo->dias - (int) $dias,
                 'entrega' => isset($entregas[$sala->id]) ? $entregas[$sala->id]->toDateString() : null,
             ];
 
@@ -221,7 +236,8 @@ class MapaVentas
             $totales['ventas'] += $fila['actual'];
             $totales['anterior'] += $fila['anterior'];
             $totales['compraron'] += (int) $fila['compro'];
-            $totales['sinCompra'] += (int) $fila['sinCompra'];
+            $totales['faltan'] += (int) ($cuenta && in_array($estado, [Ritmo::PRONTO, Ritmo::ATRASADA], true));
+            $totales['atrasadas'] += (int) ($cuenta && $estado === Ritmo::ATRASADA);
 
             if (! $ubicada) {
                 $sinUbicacion['salas'] += (int) $cuenta;
@@ -265,7 +281,7 @@ class MapaVentas
 
     private static function zona(string $nombre, string $departamento): array
     {
-        return ['nombre' => $nombre, 'dep' => $departamento, 'ventas' => 0.0, 'anterior' => 0.0, 'salas' => 0, 'todas' => 0, 'compraron' => 0, 'sinCompra' => 0, 'entrega' => null, 'rutas' => [], 'lista' => []];
+        return ['nombre' => $nombre, 'dep' => $departamento, 'ventas' => 0.0, 'anterior' => 0.0, 'salas' => 0, 'todas' => 0, 'compraron' => 0, 'faltan' => 0, 'leToca' => 0, 'atrasadas' => 0, 'sinRitmo' => 0, 'entrega' => null, 'rutas' => [], 'lista' => []];
     }
 
     private static function sumar(array &$zona, array $fila): void
@@ -277,16 +293,20 @@ class MapaVentas
         }
         $zona['salas']++;
         $zona['compraron'] += (int) $fila['compro'];
-        $zona['sinCompra'] += (int) $fila['sinCompra'];
+        $zona['leToca'] += (int) ($fila['estado'] === Ritmo::PRONTO);
+        $zona['atrasadas'] += (int) ($fila['estado'] === Ritmo::ATRASADA);
+        $zona['sinRitmo'] += (int) ($fila['estado'] === Ritmo::SIN_RITMO);
         if ($fila['entrega'] !== null && ($zona['entrega'] === null || $fila['entrega'] > $zona['entrega'])) {
             $zona['entrega'] = $fila['entrega'];
         }
-        $zona['lista'][] = ['nombre' => $fila['nombre'], 'dias' => $fila['dias']];
+        if (in_array($fila['estado'], [Ritmo::PRONTO, Ritmo::ATRASADA], true)) {
+            $zona['lista'][] = ['nombre' => $fila['nombre'], 'estado' => $fila['estado'], 'dias' => $fila['dias'], 'faltan' => $fila['faltan']];
+        }
     }
 
     /**
-     * Redondea, ordena las rutas como la lista de rutas y deja las 5 salas que más llevan sin
-     * comprar: las que nunca compraron primero.
+     * Redondea, ordena las rutas como la lista de rutas y deja las 5 salas que toca visitar:
+     * las atrasadas primero y, en cada grupo, la que más pasó de su fecha.
      *
      * @param  array<int, int>  $orden  ids de las rutas activas, por nombre
      * @param  Carbon  $hasta  el último día del tramo, el mismo de los días sin compra
@@ -294,7 +314,9 @@ class MapaVentas
     private static function cerrar(array $zona, array $orden, Carbon $hasta): array
     {
         $lista = $zona['lista'];
-        usort($lista, fn ($a, $b) => ($b['dias'] ?? PHP_INT_MAX) <=> ($a['dias'] ?? PHP_INT_MAX) ?: strcmp($a['nombre'], $b['nombre']));
+        usort($lista, fn ($a, $b) => ($b['estado'] === Ritmo::ATRASADA) <=> ($a['estado'] === Ritmo::ATRASADA)
+            ?: $a['faltan'] <=> $b['faltan']
+            ?: strcmp($a['nombre'], $b['nombre']));
         unset($zona['lista']);
 
         return array_merge($zona, [
@@ -302,7 +324,8 @@ class MapaVentas
             'anterior' => round($zona['anterior'], 2),
             'entregaDias' => $zona['entrega'] === null ? null : max(0, (int) Carbon::parse($zona['entrega'], HoraNegocio::zona())->diffInDays($hasta)),
             'rutas' => array_values(array_filter($orden, fn (int $id) => isset($zona['rutas'][$id]))),
-            'peores' => array_slice($lista, 0, self::PEORES),
+            'faltan' => $zona['leToca'] + $zona['atrasadas'],
+            'porVisitar' => array_slice($lista, 0, self::POR_VISITAR),
         ]);
     }
 }
