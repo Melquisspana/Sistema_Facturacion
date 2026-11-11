@@ -37,7 +37,8 @@ class RutaCrudTest extends TestCase
 
         $ruta = Ruta::sole();
         $this->assertSame('San Miguel', $ruta->nombre);
-        $this->assertSame(15, $ruta->frecuencia_objetivo_dias);
+        // Los días aproximados ya no se cargan (10/11/2026): lo que llegue se ignora.
+        $this->assertNull($ruta->frecuencia_objetivo_dias);
         $this->assertTrue($ruta->activa);
     }
 
@@ -76,7 +77,8 @@ class RutaCrudTest extends TestCase
             ->assertRedirect()
             ->assertSessionHasNoErrors();
 
-        $this->assertSame(21, $ruta->refresh()->frecuencia_objetivo_dias);
+        // El valor que la zona ya tenía se conserva: no hay pantalla que lo cambie.
+        $this->assertSame(7, $ruta->refresh()->frecuencia_objetivo_dias);
     }
 
     public function test_activar_y_desactivar_la_ruta(): void
@@ -99,16 +101,6 @@ class RutaCrudTest extends TestCase
 
         $this->assertFalse($ruta->refresh()->activa);
         $this->assertSame($ruta->id, $sala->refresh()->ruta_id);
-    }
-
-    public function test_el_listado_muestra_cuantas_salas_tiene_cada_ruta(): void
-    {
-        [$ruta] = $this->rutaConSala();
-
-        $respuesta = $this->actingAs($this->admin())->get(route('rutas.rutas.index'));
-
-        $respuesta->assertOk();
-        $this->assertSame(1, $respuesta->viewData('rutas')->firstWhere('id', $ruta->id)->sucursales_count);
     }
 
     public function test_el_alta_y_la_edicion_quedan_auditadas(): void

@@ -7,113 +7,51 @@ use App\Http\Requests\Rutas\RutaRequest;
 use App\Models\Departamento;
 use App\Models\Distrito;
 use App\Models\Ruta;
-use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PropuestaRutas;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
 /**
- * Catálogo de rutas. CRUD sin eliminación: la acción visible es activar/desactivar,
- * que conserva las salas asignadas y el historial de salidas.
+ * «Zonas»: el catálogo de rutas. Desde el 10/11/2026 una ruta es una zona: un nombre y los
+ * lugares que cubre ({@see RutaCoberturaController}). Le pone nombre al viaje y agrupa el
+ * tablero y el mapa. Ya no se asignan salas a mano ni se cargan días aproximados: las
+ * columnas se conservan con sus datos, sin pantalla que las edite.
  *
- * El detalle de una ruta ({@see show()}) es además la pantalla donde se administran
- * sus salas habituales; el alta/baja concreta la hace {@see RutaSalaController}.
+ * Sin `destroy`: una zona no se elimina, se desactiva. Todo pasa en una sola página.
  */
 class RutaController extends Controller
 {
-    /**
-     * «Configurar rutas»: todo lo que se toca de vez en cuando, en una sola página. Cada
-     * ruta con su frecuencia, los lugares que cubre y las salas que la cobertura le
-     * sugiere. El usuario pidió menos pantallas (27/09/2026); el personal quedó en su propia
-     * pantalla, con puerta en la barra (29/10/2026).
-     */
     public function index(PropuestaRutas $propuestas): View
     {
-        $clasificacion = $propuestas->clasificar();
-
         return view('rutas.rutas.index', [
             'rutas' => Ruta::query()
                 ->with(['coberturas.departamento:id,nombre', 'coberturas.distrito:id,nombre,departamento_id', 'coberturas.distrito.departamento:id,nombre'])
-                ->withCount('sucursales')
                 ->orderByDesc('activa')
                 ->orderBy('nombre')
                 ->get(),
-            // Salas sin ruta que la cobertura le propone a cada ruta: ruta_id => [sala_id, …].
-            'sugeridas' => $clasificacion['proponer']
-                ->groupBy(fn ($fila) => $fila['ruta']->id)
-                ->map(fn ($filas) => $filas->map(fn ($fila) => $fila['sala']->id)->all()),
-            'sinCobertura' => $clasificacion['sinCobertura'],
+            // Las salas activas que ninguna zona cubre, por departamento: dice qué falta cubrir.
+            'sinCobertura' => $propuestas->clasificar()['sinCobertura'],
             'departamentos' => Departamento::orderBy('nombre')->get(['id', 'nombre']),
             'distritos' => Distrito::with('departamento:id,nombre')->orderBy('nombre')->get(['id', 'nombre', 'departamento_id'])
                 ->groupBy(fn ($d) => $d->departamento?->nombre ?? '—')
                 ->sortKeys(),
         ]);
-    }
-
-    public function create(): View
-    {
-        return view('rutas.rutas.create');
     }
 
     public function store(RutaRequest $request): RedirectResponse
     {
         $ruta = Ruta::create($request->validated());
 
-        if ($request->boolean('en_linea')) {
-            return back()->with('status', "Ruta «{$ruta->nombre}» creada. Agregale los lugares que cubre.");
-        }
-
-        return redirect()
-            ->route('rutas.rutas.show', $ruta)
-            ->with('status', "Ruta «{$ruta->nombre}» creada.");
-    }
-
-    /**
-     * Detalle de la ruta: sus salas, su cobertura y la última visita de cada sala. Las
-     * salas se agregan con el buscador instantáneo ({@see RutaSalaController::buscar()}).
-     */
-    public function show(Ruta $ruta, EntregasCcf $entregas): View
-    {
-        $asignadas = $ruta->sucursales()
-            ->with('cliente:id,nombre')
-            ->orderBy('nombre')
-            ->get();
-
-        $coberturas = $ruta->coberturas()
-            ->with(['departamento:id,nombre', 'distrito:id,nombre,departamento_id', 'distrito.departamento:id,nombre'])
-            ->get()
-            // Departamentos completos primero; después los distritos, por nombre.
-            ->sortBy(fn ($c) => [$c->esDepartamento() ? 0 : 1, $c->etiqueta()])
-            ->values();
-
-        return view('rutas.rutas.show', [
-            'ruta' => $ruta,
-            'coberturas' => $coberturas,
-            'ultimasVisitas' => $entregas->ultimaVisitaPorSala($asignadas->pluck('id')->all()),
-            'departamentos' => Departamento::orderBy('nombre')->get(['id', 'nombre']),
-            'distritos' => Distrito::with('departamento:id,nombre')->orderBy('nombre')->get(['id', 'nombre', 'departamento_id'])
-                ->groupBy(fn ($d) => $d->departamento?->nombre ?? '—')
-                ->sortKeys(),
-            'asignadas' => $asignadas,
-        ]);
-    }
-
-    public function edit(Ruta $ruta): View
-    {
-        return view('rutas.rutas.edit', ['ruta' => $ruta]);
+        return redirect()->to(route('rutas.rutas.index').'#ruta-'.$ruta->id)
+            ->with('status', "Zona «{$ruta->nombre}» creada. Agregale los lugares que cubre.");
     }
 
     public function update(RutaRequest $request, Ruta $ruta): RedirectResponse
     {
         $ruta->update($request->validated());
 
-        if ($request->boolean('en_linea')) {
-            return back()->with('status', "Ruta «{$ruta->nombre}» actualizada.");
-        }
-
-        return redirect()
-            ->route('rutas.rutas.show', $ruta)
-            ->with('status', "Ruta «{$ruta->nombre}» actualizada.");
+        return redirect()->to(route('rutas.rutas.index').'#ruta-'.$ruta->id)
+            ->with('status', "Zona «{$ruta->nombre}» actualizada.");
     }
 
     public function toggleActiva(Ruta $ruta): RedirectResponse
@@ -123,8 +61,8 @@ class RutaController extends Controller
         return back()->with(
             'status',
             $ruta->activa
-                ? "Ruta «{$ruta->nombre}» activada."
-                : "Ruta «{$ruta->nombre}» desactivada. Sus salas y su historial se conservan."
+                ? "Zona «{$ruta->nombre}» activada."
+                : "Zona «{$ruta->nombre}» desactivada. Su historial se conserva."
         );
     }
 }

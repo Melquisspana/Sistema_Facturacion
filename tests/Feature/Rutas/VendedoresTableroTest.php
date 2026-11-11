@@ -88,8 +88,8 @@ class VendedoresTableroTest extends TestCase
         $respuesta = $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertOk();
 
         $respuesta->assertSeeInOrder(['Vendedores', 'Jefe Inventado', 'Luis Inventado', 'Rosa Ficticia']);
-        $respuesta->assertSeeInOrder(['Luis Inventado', 'href="tel:70000000"', 'Tel. 7000-0000', 'Ahora: Ruta Norte, desde hoy', 'Sus rutas: Ruta Oriente, Ruta Norte'], false);
-        $respuesta->assertSeeInOrder(['Rosa Ficticia', 'href="tel:70000001"', 'Última: Ruta Costa, 28/10/2026', 'Sus rutas: Ruta Costa'], false);
+        $respuesta->assertSeeInOrder(['Luis Inventado', 'href="tel:70000000"', 'Tel. 7000-0000', 'Ahora: Ruta Norte, desde hoy', 'Sus zonas: Ruta Oriente, Ruta Norte'], false);
+        $respuesta->assertSeeInOrder(['Rosa Ficticia', 'href="tel:70000001"', 'Última: Ruta Costa, 28/10/2026', 'Sus zonas: Ruta Costa'], false);
     }
 
     public function test_vendedor_sin_telefono_ni_salidas(): void

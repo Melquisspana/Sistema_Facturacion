@@ -116,6 +116,9 @@ class PersonalRutaController extends Controller
             'user:id,name',
             'empleado:id,nombres,apellidos',
             'participaciones.salida.ruta:id,nombre',
+            // Los pedidos con su zona: el viaje se nombra con ellos («Lunes · San Miguel»).
+            'participaciones.salida.pedidos:id,salida_ruta_id,ruta_id,estado',
+            'participaciones.salida.pedidos.ruta:id,nombre',
         ]);
 
         return view('rutas.personal.show', ['personal' => $personal, 'enPersonal' => $this->fichaDePersonal($personal)]);

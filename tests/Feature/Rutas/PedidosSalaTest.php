@@ -19,7 +19,6 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
-use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -150,7 +149,8 @@ class PedidosSalaTest extends TestCase
         $this->assertSame(PropositoSalida::Entregar, SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-05', 'estado' => EstadoSalidaRuta::EnCurso])->proposito);
 
         app(ParticipantesSalida::class)->sincronizar($vieja, [$this->persona->id], null);
-        $this->get(route('rutas.mi-salida.show', $vieja))->assertOk()->assertSee('Para entregar')->assertDontSee('Sacar pedido');
+        // La salida de antes conserva su hoja mientras siga en camino; el propósito ya no se muestra.
+        $this->get(route('rutas.mi-salida.show', $vieja))->assertOk()->assertDontSee('Para entregar');
         // El pedido ya no va a una salida armada: se suma al viaje del vendedor.
         $this->sacar()->assertSessionHasNoErrors();
         $this->assertSame(0, $vieja->pedidos()->count());
@@ -158,35 +158,12 @@ class PedidosSalaTest extends TestCase
         $this->assertTrue($this->viaje()->esViaje());
     }
 
-    public function test_armar_salida_elige_el_proposito_y_la_de_pedido_no_lleva_ccf(): void
-    {
-        $this->ccf($this->sala);
-        $jefe = User::factory()->create(['activo' => true])->assignRole('jefe_vendedores');
-        $this->actingAs($jefe)->get(route('rutas.salidas.create'))->assertOk()
-            ->assertSee('¿Para qué sale?')->assertSee('Sacar pedido')->assertSee('Las dos');
-
-        $datos = ['ruta_id' => $this->ruta->id, 'dia' => 'hoy', 'personal' => [$this->persona->id]];
-        $this->post(route('rutas.salidas.store'), $datos + ['proposito' => 'pedido'])->assertSessionHasNoErrors()
-            ->assertSessionHas('status', 'Salida en camino para sacar pedido.');
-        $pedido = SalidaRuta::latest('id')->first();
-        $this->assertSame(PropositoSalida::Pedido, $pedido->proposito);
-        $this->assertSame(0, $pedido->entregas()->count());
-        $this->assertSame(0, app(EntregasCcf::class)->cargarNuevosEnCurso($pedido));
-        $this->get(route('rutas.salidas.show', $pedido))->assertOk()->assertSee('Para sacar pedido')->assertDontSee('Esta salida no lleva CCF');
-
-        // La de entregar se lleva el CCF: la de pedido no lo había tomado.
-        $this->post(route('rutas.salidas.store'), $datos)->assertSessionHas('status', 'Salida en camino con 1 CCF por entregar.');
-        $this->assertSame(PropositoSalida::Entregar, SalidaRuta::latest('id')->first()->proposito);
-
-        $this->post(route('rutas.salidas.store'), $datos + ['proposito' => 'repartir'])->assertSessionHasErrors('proposito');
-    }
-
     // ══════════════════════════════ sacar pedido
 
     public function test_mi_salida_muestra_sacar_pedido_y_el_formulario_del_sugerido(): void
     {
         $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()
-            ->assertSee('Para entregar y sacar pedido')
+            ->assertDontSee('Para entregar y sacar pedido')
             // Sacar pedido ya no lista las salas de la ruta: lleva al buscador de cualquier sala.
             ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false);
 
@@ -222,7 +199,8 @@ class PedidosSalaTest extends TestCase
         $this->assertSame('sacó el pedido de la sala', $actividad->description);
         $this->assertSame($this->galleta->id, $actividad->properties['lineas'][0]['producto_id']);
 
-        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertSee('Pedido sacado')->assertSee('Galleta de prueba')
+        // El viaje no tiene hoja: lo sacado hoy se ve, se corrige y se anula en «Sacar pedido».
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tus pedidos de hoy')->assertSee('Galleta de prueba')
             ->assertSee('Anular');
 
         // Una sola vez por sala: el segundo intento no crea otro.
@@ -362,7 +340,7 @@ class PedidosSalaTest extends TestCase
             ->assertSessionHas('status', fn ($m) => str_contains($m, 'tiene 12 dígitos y deben ser de 13 a 15'));
         $pedido = PedidoSala::sole();
         $this->assertSame('261102360045', $pedido->numero_orden_compra);
-        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertSee('tiene 12 dígitos y deben ser de 13 a 15');
+        $this->get(route('rutas.sacar-pedido.index'))->assertSee('tiene 12 dígitos y deben ser de 13 a 15');
 
         $this->put(route('rutas.sacar-pedido.update', $pedido), [
             'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26080236004586',
@@ -477,8 +455,8 @@ class PedidosSalaTest extends TestCase
         $this->actingAs($ajeno)->get(route('rutas.sacar-pedido.edit', $pedido))
             ->assertForbidden();
         $this->actingAs($this->vendedor);
-        // Sigue «Pedido sacado», sin «Corregir», y no se saca otro en la misma sala.
-        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertOk()->assertSee('Pedido sacado')->assertDontSee('Corregir');
+        // Sigue en sus pedidos de hoy, sin «Corregir», y no se saca otro en la misma sala.
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tienda Centro')->assertDontSee('Corregir');
         $this->sacar()->assertSessionHasErrors('lineas');
         $this->assertSame(1, PedidoSala::count());
 
@@ -506,11 +484,11 @@ class PedidosSalaTest extends TestCase
         $this->sacar()->assertSessionHasErrors('lineas');
         $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->viaje()))->assertOk()->assertSee('2 pedidos sacados');
 
-        // Mi salida con varios pedidos no hace una consulta por pedido para «Corregir».
+        // «Sacar pedido» con varios pedidos no hace una consulta por pedido para «Corregir».
         $this->actingAs($this->vendedor);
         DB::flushQueryLog();
         DB::enableQueryLog();
-        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertOk()->assertSee('Pedido sacado');
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tus pedidos de hoy');
         DB::disableQueryLog();
         // Solo las que buscan envíos de un pedido; el ritmo de las salas también nombra la tabla
         // (deja afuera los CCF que salieron de un pedido) y es una sola consulta para todas.

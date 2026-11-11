@@ -14,8 +14,7 @@ use App\Support\HoraNegocio;
 
 /**
  * Lo que puede hacer un VENDEDOR en una salida: solo en las suyas (participa con su
- * persona de Rutas activa) y solo mientras la salida está en curso. Una planificada
- * solo se mira («Tu próxima salida») hasta que él mismo la empieza. La oficina
+ * persona de Rutas activa) y solo mientras la salida está en curso. La oficina
  * gestiona gastos con `rutas.gestionar` y consulta sus fotos con `rutas.ver`.
  */
 class SalidaRutaPolicy
@@ -23,21 +22,6 @@ class SalidaRutaPolicy
     public function view(User $usuario, SalidaRuta $salida): bool
     {
         return $this->participa($usuario, $salida) && $salida->estado === EstadoSalidaRuta::EnCurso;
-    }
-
-    /** «Tu próxima salida»: la planificada, solo para mirar, a quien va en ella. */
-    public function verProxima(User $usuario, SalidaRuta $salida): bool
-    {
-        return $this->participa($usuario, $salida) && $salida->estado === EstadoSalidaRuta::Planificada;
-    }
-
-    /**
-     * «Empezar ruta»: solo quien va en ella. Que sea el día y que la salida siga
-     * planificada lo valida el controlador, con un mensaje y no con un 403.
-     */
-    public function empezar(User $usuario, SalidaRuta $salida): bool
-    {
-        return $this->participa($usuario, $salida);
     }
 
     public function registrar(User $usuario, SalidaRuta $salida): bool

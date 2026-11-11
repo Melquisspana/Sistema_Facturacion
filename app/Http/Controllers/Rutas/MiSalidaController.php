@@ -14,14 +14,10 @@ use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PorEntregar;
-use App\Services\Rutas\Ritmo;
-use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 use App\Support\NombreEmpresa;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,14 +26,15 @@ use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * El celular del vendedor (flujo único del 10/11/2026): su inicio, «Terminar el día» con el
+ * PDF y, para las salidas armadas a mano de antes que sigan en camino, su hoja de siempre.
+ * El viaje no tiene hoja: lo suyo está en «Sacar pedido» y «Por entregar».
+ */
 class MiSalidaController extends Controller
 {
-    /** Hasta esta cantidad, «Tu próxima salida» lista los CCF uno por uno. */
-    private const CCF_EN_LISTA = 10;
-
     public function __construct(
         private readonly EntregasCcf $entregas,
-        private readonly RitmoRutas $ritmo,
         private readonly Viajes $viajes,
         private readonly PorEntregar $porEntregar,
         private readonly DiaVendedor $dia,
@@ -57,26 +54,18 @@ class MiSalidaController extends Controller
         return $request->filled('entregado_por_id') ? (int) $request->input('entregado_por_id') : $this->persona($request)->id;
     }
 
-    /** Las salidas planificadas donde va la persona, la más próxima primero. */
-    private function proximas(PersonalRuta $persona): Builder
-    {
-        return SalidaRuta::with('ruta')->enEstado(EstadoSalidaRuta::Planificada)
-            ->whereHas('personal', fn ($q) => $q->where('rutas_personal.id', $persona->id))
-            ->orderBy('fecha_inicio')->orderBy('id');
-    }
-
     /**
      * El inicio del vendedor (maqueta del 10/11/2026): su viaje, «Sacar pedido» y «Por
-     * entregar», y «Terminar el día» mientras el viaje suma pedidos. Debajo, las salidas que
-     * armó la oficina, en camino y próximas.
+     * entregar», lo de hoy y «Terminar el día». Debajo, las salidas armadas a mano de antes
+     * que sigan en camino, hasta que se terminen.
      */
     public function index(Request $request): View
     {
         $persona = $this->persona($request);
         $viaje = $persona ? $this->viajes->abierto($persona) : null;
         $salidas = $persona ? SalidaRuta::with('ruta')->enEstado(EstadoSalidaRuta::EnCurso)
+            ->where('automatica', false)->where(fn ($q) => $q->whereNull('observaciones')->orWhere('observaciones', '!=', SalidaRuta::OBSERVACION_AUTOMATICA))
             ->whereHas('personal', fn ($q) => $q->where('rutas_personal.id', $persona->id))
-            ->when($viaje, fn ($q) => $q->whereKeyNot($viaje->id))
             ->orderBy('fecha_inicio')->orderBy('id')->get() : collect();
 
         return view('rutas.mi-salida.index', [
@@ -88,7 +77,6 @@ class MiSalidaController extends Controller
             'hoy' => $persona ? $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()) : null,
             'porEntregar' => $persona ? $this->cuantosPorEntregar($viaje) : 0,
             'salidas' => $salidas,
-            'proximas' => $persona ? $this->proximas($persona)->get() : collect(),
         ]);
     }
 
@@ -102,7 +90,7 @@ class MiSalidaController extends Controller
         if ($viaje === null) {
             return $todos->count();
         }
-        $vistas = $this->porEntregar->vistas($viaje, $todos->load('clienteSucursal:id,ruta_id'));
+        $vistas = $this->porEntregar->vistas($viaje, $todos->load('clienteSucursal:id,ruta_id,distrito_id,departamento_id'));
 
         return reset($vistas)->count();
     }
@@ -121,6 +109,8 @@ class MiSalidaController extends Controller
             'resumen' => $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()),
             'viaje' => $viaje,
             'sumando' => $viaje !== null && $this->viajes->sigueSumando($viaje),
+            // Los gastos del día se anotan en el viaje y salen en el PDF.
+            'puedeAnotarGastos' => $viaje !== null && $request->user()->can('agregarGasto', [$viaje, HoraNegocio::fechaHoy()]),
         ]);
     }
 
@@ -156,19 +146,20 @@ class MiSalidaController extends Controller
             : 'Listo. Este viaje ya no suma pedidos; queda abierto para entregar.');
     }
 
-    public function show(Request $request, SalidaRuta $salida): View
+    /**
+     * La hoja de una salida armada a mano de antes, mientras siga en camino. Lo demás (el
+     * viaje, una salida que quedó programada o una ya cerrada) no tiene hoja: va al inicio,
+     * para quien tenga el enlace guardado.
+     */
+    public function show(Request $request, SalidaRuta $salida): View|RedirectResponse
     {
-        if ($salida->estado === EstadoSalidaRuta::Planificada) {
-            return $this->proxima($request, $salida);
+        if ($salida->esAutomatica() || $salida->estado !== EstadoSalidaRuta::EnCurso) {
+            return redirect()->route('rutas.mi-salida.index');
         }
 
         Gate::authorize('view', $salida);
         $persona = $this->persona($request);
         $salida->load(['ruta', 'participantes.personal']);
-        // Lo facturado con la salida en camino entra solo; se avisa junto al mensaje que ya hubiera.
-        if (($nuevos = $this->entregas->cargarNuevosEnCurso($salida)) > 0) {
-            session()->now('status', trim(session('status').' '.EntregasCcf::avisoNuevos($nuevos)));
-        }
         // Los facturados después de entregar (registros viejos) solo se ven en la hoja de la oficina.
         $entregas = $salida->entregas()->sinFacturadosDespues()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
         $resoluciones = $this->entregas->resolucionesAlbaran($entregas);
@@ -176,8 +167,6 @@ class MiSalidaController extends Controller
         return view('rutas.mi-salida.show', [
             'salida' => $salida,
             'persona' => $persona,
-            // En curso manda; la próxima queda como enlace al pie.
-            'proxima' => $this->proximas($persona)->first(),
             'porSala' => $entregas->sortBy(fn ($e) => [$e->sala?->nombre ?? '', $e->dte?->numero_control ?? ''])->groupBy('cliente_sucursal_id'),
             'participantes' => $salida->participantes->filter(fn ($p) => $p->personal?->activo),
             'resoluciones' => $resoluciones,
@@ -194,85 +183,6 @@ class MiSalidaController extends Controller
                     ->each(fn (PedidoSala $p) => $p->setRelation('salida', $salida))
                 : collect(),
         ]);
-    }
-
-    /**
-     * «Tu próxima salida»: la planificada, solo para mirar. Ruta, día, quiénes van, las
-     * salas que tocan sacar pedido ese día (las atrasadas primero, con el ritmo del
-     * tablero) y los CCF que lleva. No se registra nada hasta «Empezar ruta».
-     */
-    private function proxima(Request $request, SalidaRuta $salida): View
-    {
-        Gate::authorize('verProxima', $salida);
-        $persona = $this->persona($request);
-        $salida->load(['ruta', 'participantes.personal']);
-        $hoy = HoraNegocio::fechaHoy();
-        $fecha = $salida->fecha_inicio->toDateString();
-
-        // El ritmo al día de la salida: lo que toca cuando llegue, no lo de hoy.
-        $salas = $this->ritmo->salasDeRuta($salida->ruta, CarbonImmutable::parse(max($fecha, $hoy)));
-        [$tocan, $otras] = $salas->partition(fn (array $s) => in_array($s['estado'], [Ritmo::ATRASADA, Ritmo::PRONTO], true));
-
-        $entregas = $salida->entregas()->sinFacturadosDespues()
-            ->with(['dte:id,numero_control,total_pagar,estado', 'sala:id,nombre'])->get()
-            ->sortBy(fn ($e) => [$e->sala?->nombre ?? '', $e->dte?->numero_control ?? ''])->values();
-
-        return view('rutas.mi-salida.proxima', [
-            'salida' => $salida,
-            'companeros' => $salida->quienesVan($persona->id),
-            'tocan' => $tocan->values(),
-            'otrasSalas' => $otras->count(),
-            'entregas' => $entregas,
-            'totalCcf' => (float) $entregas->sum(fn ($e) => (float) $e->dte?->total_pagar),
-            'listarCcf' => $entregas->count() <= self::CCF_EN_LISTA,
-            'noVigentes' => $this->entregas->noVigentes($entregas),
-            'puedeEmpezar' => $fecha <= $hoy,
-            'despues' => $this->proximas($persona)->whereKeyNot($salida->id)->get(),
-        ]);
-    }
-
-    /**
-     * «Empezar ruta»: la planificada pasa a en curso, solo el día de la salida o después, y
-     * se cargan los CCF de la ruta facturados desde que se armó ({@see EntregasCcf::cargarPendientes()}).
-     * Con la salida bloqueada, para que dos toques (o el compañero a la vez) no la
-     * empiecen dos veces: si ya está en curso, no se hace nada.
-     */
-    public function empezar(Request $request, SalidaRuta $salida): RedirectResponse
-    {
-        [$tipo, $mensaje] = DB::transaction(function () use ($request, $salida) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-            Gate::authorize('empezar', $salida);
-
-            if ($salida->estado === EstadoSalidaRuta::EnCurso) {
-                return ['status', 'La ruta ya estaba en curso.'];
-            }
-            if ($salida->estado !== EstadoSalidaRuta::Planificada) {
-                return ['error', 'Esta salida está '.mb_strtolower($salida->estado->label()).': ya no se puede empezar.'];
-            }
-            if ($salida->fecha_inicio->toDateString() > HoraNegocio::fechaHoy()) {
-                return ['error', 'Esta salida es para el '.$salida->fecha_inicio->copy()->locale('es')->dayName.' '
-                    .$salida->fecha_inicio->format('d/m/Y').'. La podés empezar ese día.'];
-            }
-
-            $salida->iniciar();
-            activity('salida_ruta')
-                ->performedOn($salida)
-                ->causedBy($request->user())
-                ->withProperties([
-                    'estado_anterior' => EstadoSalidaRuta::Planificada->value,
-                    'estado_nuevo' => EstadoSalidaRuta::EnCurso->value,
-                    'desde' => 'mi_salida',
-                ])
-                ->log('empezó la ruta');
-
-            // Lo facturado para la ruta desde que se armó la salida también se lleva, como al
-            // «Salir a esta ruta». En la misma transacción: si falla, la ruta no queda empezada.
-            $nuevos = $this->entregas->cargarPendientes($salida, $request->user());
-
-            return ['status', trim('Ruta empezada. '.EntregasCcf::avisoNuevos($nuevos)).' Ya podés marcar las entregas.'];
-        });
-
-        return redirect()->route('rutas.mi-salida.show', $salida)->with($tipo, $mensaje);
     }
 
     public function update(Request $request, SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse

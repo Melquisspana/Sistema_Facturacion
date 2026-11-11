@@ -7,6 +7,7 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
+use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Activity;
@@ -51,36 +52,21 @@ class SalidaRutaTest extends TestCase
     /** @param array<string, mixed> $extra */
     private function crearSalida(User $admin, Ruta $ruta, array $personal, array $extra = []): SalidaRuta
     {
-        $this->actingAs($admin)
-            ->post(route('rutas.salidas.store'), [
-                'ruta_id' => $ruta->id,
-                'fecha_inicio' => '2026-08-14',
-                'fecha_fin_estimada' => '2026-08-16',
-                'personal' => $personal,
-            ] + $extra)
-            ->assertRedirect();
+        // Una salida armada a mano de antes: desde el 10/11/2026 no hay pantalla que las cree
+        // (el viaje se abre solo). Para un día que viene quedaba planificada.
+        $salida = SalidaRuta::create([
+            'ruta_id' => $ruta->id,
+            'fecha_inicio' => '2026-08-14',
+            'fecha_fin_estimada' => '2026-08-16',
+            'estado' => now()->toDateString() < '2026-08-14' ? EstadoSalidaRuta::Planificada : EstadoSalidaRuta::EnCurso,
+            'created_by' => $admin->id,
+        ] + $extra);
+        app(ParticipantesSalida::class)->sincronizar($salida, $personal, null);
 
-        // firstOrFail y no sole(): hay pruebas que crean más de una salida.
-        return SalidaRuta::latest('id')->firstOrFail();
+        return $salida;
     }
 
     // ------------------------------------------------------------------- alta
-
-    public function test_crea_una_salida_en_curso_con_su_creador(): void
-    {
-        $admin = $this->admin();
-        $ruta = $this->ruta();
-        $carlos = $this->vendedor('Carlos');
-
-        $salida = $this->crearSalida($admin, $ruta, [$carlos->id], ['observaciones' => 'Llevar talonarios']);
-
-        $this->assertSame($ruta->id, $salida->ruta_id);
-        // «Salir a esta ruta» es salir ahora: nace en curso (27/09/2026).
-        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->estado);
-        $this->assertSame($admin->id, $salida->created_by);
-        $this->assertNull($salida->fecha_fin_real);
-        $this->assertSame('Llevar talonarios', $salida->observaciones);
-    }
 
     public function test_una_salida_puede_llevar_varios_participantes(): void
     {
@@ -95,67 +81,6 @@ class SalidaRutaTest extends TestCase
             [$carlos->id, $jose->id, $ana->id],
             $salida->personal->pluck('id')->all(),
         );
-    }
-
-    /**
-     * Como lo manda el formulario: ids como texto. Quién la encabeza volvió el 03/11/2026
-     * con «Armar salida»; antes de normalizar los ids se rechazaba aunque fuera.
-     */
-    public function test_dos_vendedores_con_los_ids_como_texto_y_quien_la_encabeza(): void
-    {
-        $admin = $this->admin();
-        $carlos = $this->vendedor('Carlos');
-        $jose = $this->vendedor('José');
-
-        $this->actingAs($admin)
-            ->post(route('rutas.salidas.store'), [
-                'ruta_id' => (string) $this->ruta()->id,
-                'fecha_inicio' => '2026-08-14',
-                'personal' => [(string) $carlos->id, (string) $jose->id],
-                'responsable_id' => (string) $jose->id,
-            ])
-            ->assertSessionHasNoErrors()
-            ->assertRedirect();
-
-        $this->assertSame(2, SalidaRuta::sole()->participantes()->count());
-        $this->assertSame($jose->id, SalidaRuta::sole()->responsable?->rutas_personal_id);
-    }
-
-    public function test_exige_al_menos_un_participante(): void
-    {
-        $this->actingAs($this->admin())
-            ->post(route('rutas.salidas.store'), [
-                'ruta_id' => $this->ruta()->id,
-                'fecha_inicio' => '2026-08-14',
-            ])
-            ->assertSessionHasErrors('personal');
-
-        $this->assertSame(0, SalidaRuta::count());
-    }
-
-    public function test_no_acepta_una_ruta_desactivada(): void
-    {
-        $ruta = Ruta::create(['nombre' => 'Apagada', 'activa' => false]);
-
-        $this->actingAs($this->admin())
-            ->post(route('rutas.salidas.store'), [
-                'ruta_id' => $ruta->id,
-                'fecha_inicio' => '2026-08-14',
-                'personal' => [$this->vendedor('Carlos')->id],
-            ])
-            ->assertSessionHasErrors('ruta_id');
-    }
-
-    public function test_el_regreso_estimado_no_puede_ser_anterior_a_la_salida(): void
-    {
-        $this->actingAs($this->admin())
-            ->post(route('rutas.salidas.store'), [
-                'ruta_id' => $this->ruta()->id,
-                'fecha_inicio' => '2026-08-14',
-                'fecha_fin_estimada' => '2026-08-10',
-                'personal' => [$this->vendedor('Carlos')->id],
-            ])
-            ->assertSessionHasErrors('fecha_fin_estimada');
     }
 
     public function test_una_salida_puede_durar_varios_dias(): void
@@ -218,7 +143,8 @@ class SalidaRutaTest extends TestCase
 
         $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida))->assertSessionHas('error');
         $this->actingAs($admin)->patch(route('rutas.salidas.cancelar', $salida))->assertSessionHas('error');
-        $this->actingAs($admin)->get(route('rutas.salidas.edit', $salida))->assertForbidden();
+        // La pantalla de editar se retiró: el enlace viejo lleva a la hoja.
+        $this->actingAs($admin)->get('/rutas/salidas/'.$salida->id.'/editar')->assertRedirect(route('rutas.salidas.show', $salida));
 
         $this->assertSame(EstadoSalidaRuta::Finalizada, $salida->refresh()->estado);
     }
@@ -246,24 +172,6 @@ class SalidaRutaTest extends TestCase
 
     // ------------------------------------------------------------------ edición
 
-    public function test_editar_cambia_los_participantes(): void
-    {
-        $admin = $this->admin();
-        $carlos = $this->vendedor('Carlos');
-        $jose = $this->vendedor('José');
-        $salida = $this->crearSalida($admin, $ruta = $this->ruta(), [$carlos->id]);
-
-        $this->actingAs($admin)
-            ->put(route('rutas.salidas.update', $salida), [
-                'ruta_id' => $ruta->id,
-                'fecha_inicio' => '2026-08-14',
-                'personal' => [$jose->id],
-            ])
-            ->assertRedirect();
-
-        $this->assertSame([$jose->id], $salida->refresh()->personal->pluck('id')->all());
-    }
-
     // ---------------------------------------------------------------- auditoría
 
     public function test_los_cambios_de_estado_y_de_gente_quedan_auditados(): void
@@ -271,39 +179,17 @@ class SalidaRutaTest extends TestCase
         $admin = $this->admin();
         $carlos = $this->vendedor('Carlos');
         $jose = $this->vendedor('José');
-        $salida = $this->crearSalida($admin, $ruta = $this->ruta(), [$carlos->id]);
+        $salida = $this->crearSalida($admin, $this->ruta(), [$carlos->id, $jose->id]);
 
-        $this->actingAs($admin)->put(route('rutas.salidas.update', $salida), [
-            'ruta_id' => $ruta->id,
-            'fecha_inicio' => '2026-08-14',
-            'personal' => [$carlos->id, $jose->id],
-        ]);
         $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida));
 
         $descripciones = Activity::where('log_name', 'salida_ruta')->pluck('description');
 
-        $this->assertContains('definió los participantes de la salida', $descripciones);
-        $this->assertContains('cambió los participantes de la salida', $descripciones);
         $this->assertContains('finalizó la salida', $descripciones);
 
         $fin = Activity::where('description', 'finalizó la salida')->sole();
         $this->assertSame('en_curso', $fin->properties['estado_anterior']);
         $this->assertSame('finalizada', $fin->properties['estado_nuevo']);
-    }
-
-    public function test_editar_sin_cambiar_la_gente_no_ensucia_la_auditoria(): void
-    {
-        $admin = $this->admin();
-        $carlos = $this->vendedor('Carlos');
-        $salida = $this->crearSalida($admin, $ruta = $this->ruta(), [$carlos->id]);
-
-        $this->actingAs($admin)->put(route('rutas.salidas.update', $salida), [
-            'ruta_id' => $ruta->id,
-            'fecha_inicio' => '2026-08-14',
-            'personal' => [$carlos->id],
-        ]);
-
-        $this->assertSame(0, Activity::where('description', 'cambió los participantes de la salida')->count());
     }
 
     // ------------------------------------------------------------------ pantallas

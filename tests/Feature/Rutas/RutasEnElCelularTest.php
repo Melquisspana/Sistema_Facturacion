@@ -105,7 +105,7 @@ class RutasEnElCelularTest extends TestCase
 
         $this->actingAs($jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['1', 'salida en camino'])
+            ->assertSeeInOrder(['1', 'viaje en camino'])
             // «En camino» lleva la en curso; la del jueves va en «Programadas», después.
             ->assertSeeInOrder(['En camino', 'Ruta Costa · Mario Inventado', 'En camino desde el 02/11/2026', 'Programadas', 'Ruta Norte · Ernesto Ficticio', 'Sale el 05/11/2026'])
             ->assertDontSee('Programada desde');

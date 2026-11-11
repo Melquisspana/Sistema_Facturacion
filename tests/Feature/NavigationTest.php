@@ -533,8 +533,9 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El área Rutas presenta solo sus pantallas —Rutas, Ventas, Salidas anteriores y
-     * Configurar rutas—. Facturas por cobrar salió de esta barra (28/10/2026): sigue en la de
+     * El área Rutas presenta solo sus pantallas. Menú corto del flujo único (10/11/2026):
+     * Inicio, Sacar pedido y Por entregar (lo del vendedor), Tablero, Pedidos, Ventas, Viajes
+     * anteriores y Zonas. Facturas por cobrar salió de esta barra (28/10/2026): sigue en la de
      * Facturación.
      */
     public function test_el_area_rutas_presenta_solo_sus_enlaces(): void
@@ -547,11 +548,12 @@ class NavigationTest extends TestCase
                 // selector de áreas del panel, que es lo que permite volver desde un
                 // teléfono. No es una pantalla nueva para este rol.
                 'dashboard',
-                // Pocas puertas (27/09/2026): la asignación vive en Configurar rutas.
                 // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
                 // (29/10/2026), con `rutas.personal.ver`.
                 // Desde el 08/11/2026 su lista es la de Personal, que llega por el selector de áreas.
                 'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'personal.empleados',
+                // Lo del vendedor, para quien también sale a vender (el administrador tiene los dos permisos).
+                'rutas.mi-salida.index', 'rutas.sacar-pedido.index',
                 // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
                 'rutas.pedidos.index',
                 // «Por entregar» (06/11/2026): la oficina también mira lo que falta entregar.
@@ -563,8 +565,11 @@ class NavigationTest extends TestCase
         );
 
         $sidebar = $this->sidebarDe($html);
-        $this->assertStringContainsString('Salidas anteriores', $sidebar);
-        $this->assertStringContainsString('Configurar rutas', $sidebar);
+        // Los títulos nuevos, en orden; los de antes ya no están.
+        $this->assertMatchesRegularExpression('/Inicio.*Sacar pedido.*Por entregar.*Tablero.*Pedidos.*Ventas.*Viajes anteriores.*Zonas/su', $sidebar);
+        foreach (['Salidas anteriores', 'Configurar rutas', 'Armar salida', 'Asignar salas'] as $retirado) {
+            $this->assertStringNotContainsString($retirado, $sidebar);
+        }
         $this->assertStringNotContainsString('Facturas por cobrar', $sidebar);
         // La custodia del papel se retiró (26/09/2026).
         $this->assertStringNotContainsString('Recepción de CCF', $sidebar);

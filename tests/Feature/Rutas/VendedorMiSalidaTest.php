@@ -78,12 +78,12 @@ class VendedorMiSalidaTest extends TestCase
             $this->assertSame(in_array($rol, [RolSistema::Administrador, RolSistema::Vendedor, RolSistema::JefeVendedores], true), in_array(PermisoSistema::RutasEntregasRegistrar->value, $rol->permisos(), true));
         }
         $this->assertSame([AreaSistema::Rutas], AreaSistema::visiblesPara($this->usuario));
-        // Desde el 10/11/2026 entra por su inicio («Mi salida»): su viaje, «Sacar pedido» y «Por entregar».
+        // Desde el 10/11/2026 entra por su inicio: su viaje, «Sacar pedido» y «Por entregar».
         $this->assertSame('rutas.mi-salida.index', AreaSistema::Rutas->rutaInicioPara($this->usuario));
         $this->get('/')->assertRedirect(route('dashboard'));
         $this->get('/dashboard')->assertRedirect(route('rutas.mi-salida.index'));
         $this->followingRedirects()->get('/')->assertOk()->assertSee('Sacar pedido')->assertSee('Por entregar');
-        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('No tenés salidas en camino');
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Todavía no tenés un viaje abierto');
     }
 
     public function test_indice_enlace_vacio_una_y_varias_salidas(): void
@@ -91,7 +91,7 @@ class VendedorMiSalidaTest extends TestCase
         $this->persona->update(['user_id' => null]);
         $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.');
         $this->persona->update(['user_id' => $this->usuario->id]);
-        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('No tenés salidas en camino');
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('Todavía no tenés un viaje abierto');
         $una = $this->salida();
         $this->salida(false);
         $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $una));
@@ -110,10 +110,8 @@ class VendedorMiSalidaTest extends TestCase
             ->assertDontSee('Quitar de la salida')->assertDontSee('¿Quién entrega?')->assertSee('¿Quién lo entregó?')->assertDontSee('Terminar salida')->assertDontSee('sidebar');
         foreach ([EstadoSalidaRuta::Planificada, EstadoSalidaRuta::Finalizada, EstadoSalidaRuta::Cancelada] as $estado) {
             $salida->update(['estado' => $estado]);
-            // La planificada se mira («Tu próxima salida», ProximaSalidaTest); no se registra nada.
-            $estado === EstadoSalidaRuta::Planificada
-                ? $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Tu próxima salida')
-                : $this->get(route('rutas.mi-salida.show', $salida))->assertForbidden();
+            // Solo la que está en camino tiene hoja: las demás llevan al inicio y no se registra nada.
+            $this->get(route('rutas.mi-salida.show', $salida))->assertRedirect(route('rutas.mi-salida.index'));
             $this->patch(route('rutas.mi-salida.update', [$salida, $entrega]), ['resultado' => 'entregado'])->assertForbidden();
             $this->patch(route('rutas.mi-salida.deshacer', [$salida, $entrega]))->assertForbidden();
             $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]))->assertForbidden();

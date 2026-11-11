@@ -120,8 +120,8 @@ class TableroRutasTest extends TestCase
             ->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSee('<h1', false)
-            ->assertSee('Todavía no hay rutas.')
-            ->assertSee('Todavía no hay salas en las rutas.')
+            ->assertSee('Todavía no hay zonas.')
+            ->assertSee('Todavía no hay salas activas.')
             ->assertSee('rutas atrasadas')
             ->assertDontSee('En camino desde');
     }
@@ -133,7 +133,7 @@ class TableroRutasTest extends TestCase
         $respuesta = $this->actingAs($this->admin())->get(route('rutas.dashboard'))->assertOk();
 
         // Resumen: 1 ruta atrasada, 2 salas atrasadas, 1 toca esta semana, 0 en camino.
-        $respuesta->assertSeeInOrder(['1', 'ruta atrasada', '2', 'salas atrasadas', '1', 'sala toca esta semana', '0', 'salidas en camino']);
+        $respuesta->assertSeeInOrder(['1', 'ruta atrasada', '2', 'salas atrasadas', '1', 'sala toca esta semana', '0', 'viajes en camino']);
 
         // Rutas: la atrasada primero, con su ritmo calculado y sus salas.
         // Oriente se cuenta desde el regreso de su salida; Costa, que nunca salió, desde
@@ -240,8 +240,8 @@ class TableroRutasTest extends TestCase
         $muchas = $contar();
 
         $this->assertSame($pocas, $muchas, 'El tablero no debería hacer una consulta por ruta, sala o salida.');
-        // 31 hoy: todas agregadas (visitas de cada sala, pedidos sacados, facturado por zona, la
-        // cobertura de las zonas, …).
-        $this->assertLessThan(33, $muchas);
+        // 33 hoy: todas agregadas (visitas de cada sala, pedidos sacados, facturado por zona, la
+        // cobertura de las zonas, los pedidos con su zona para nombrar cada viaje, …).
+        $this->assertLessThan(35, $muchas);
     }
 }

@@ -19,6 +19,8 @@
     $puedeMarcar = ($modoVendedor || $puedeGestionar) && $registrable && $participantes->isNotEmpty();
     // «Terminar día» en la hoja de la oficina: también el jefe de vendedores, aunque no haya ido.
     $puedeTerminarDia = ! $modoVendedor && auth()->user()->canAny(['rutas.gestionar', 'rutas.salidas.terminar']);
+    // El viaje y la automática no cierran días ni se liquidan: su control es el PDF del día.
+    $cierraDias = ! $salida->esAutomatica();
     // Quién viene elegido en cada tarjeta: en «Mi salida», el vendedor; en la oficina, el
     // responsable o, si va una sola persona, ella.
     $quien = $modoVendedor ? $persona?->id : ($preseleccion ?? $participantes->first()?->rutas_personal_id);
@@ -181,7 +183,7 @@
     @if ($salida->proposito->entrega())
         <div class="{{ $caja }} mt-4 px-5 py-10 text-center">
             <p class="text-base font-medium text-gray-800 dark:text-paper-100">Esta salida no lleva CCF</p>
-            <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">No había CCF pendientes para esta ruta cuando se creó.</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Todavía no se anotó ninguna entrega en ella.</p>
         </div>
     @endif
 @endforelse
@@ -190,7 +192,7 @@
     @include('rutas.salidas._gastos')
     @if ($diaCerrado)
         @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])
-    @elseif (($registrable || (! $modoVendedor && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada)) && ($salida->entregas()->entregadas()->sinFacturadosDespues()->whereDate('fecha_resultado', $fechaHoy)->exists() || $salida->gastos()->whereDate('fecha', $fechaHoy)->exists()))
+    @elseif ($cierraDias && ($registrable || (! $modoVendedor && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada)) && ($salida->entregas()->entregadas()->sinFacturadosDespues()->whereDate('fecha_resultado', $fechaHoy)->exists() || $salida->gastos()->whereDate('fecha', $fechaHoy)->exists()))
         <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Terminar día</a>
     @endif
     @if ($modoVendedor)
@@ -217,10 +219,7 @@
     <details class="{{ $caja }} mt-4 px-5 py-4">
         <summary class="cursor-pointer text-sm font-medium text-gray-600 dark:text-paper-300">¿Falta un CCF?</summary>
         <div class="mt-3 space-y-3">
-            <form method="POST" action="{{ route('rutas.salidas.entregas.cargar', $salida) }}">
-                @csrf
-                <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 w-full rounded-lg bg-gray-100 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Buscar CCF nuevos de la ruta</button>
-            </form>
+
             <form method="POST" action="{{ route('rutas.salidas.entregas.store', $salida) }}" class="flex gap-2">
                 @csrf
                 <input name="numero_control" value="{{ old('numero_control') }}" placeholder="Número de control del CCF" aria-label="Número de control del CCF"

@@ -1,9 +1,10 @@
-{{-- «Por entregar» (06/11/2026): todos los CCF que faltan entregar, por la ruta de su sala,
+{{-- «Por entregar» (06/11/2026): todos los CCF que faltan entregar, por la zona de su sala,
      para el celular del vendedor. Desde el 10/11/2026, con su viaje en curso, arriba elige
-     «Este viaje», «Toda la zona» o «Todas»; al entregar dice cómo le pagaron. Arriba, pastillas para mirar una ruta (?ruta=, no guarda
-     nada). Cada tarjeta descarga el PDF y marca «Entregado» o «No se pudo entregar»: el
-     sistema elige o arma la salida (App\Services\Rutas\PorEntregar). Lo marcado hoy queda
-     abajo, con «Deshacer». --}}
+     «Este viaje», «Toda la zona» o «Todas»; al entregar dice cómo le pagaron. Arriba,
+     pastillas para mirar una zona (?ruta=, no guarda nada). Cada tarjeta descarga el PDF y
+     marca «Entregado» o «No se pudo entregar»: el sistema elige el viaje o arma la salida
+     (App\Services\Rutas\PorEntregar). Una sala sin zona se entrega igual. Lo marcado hoy
+     queda abajo, con «Deshacer». --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Por entregar')
@@ -18,7 +19,7 @@
     <h1 class="text-3xl font-bold">Por entregar</h1>
     <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $total }} CCF de los últimos {{ \App\Services\Rutas\EntregasCcf::DIAS_POR_ENTREGAR }} días. Los más viejos van primero.</p>
     @if ($cobroHoy)
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Al terminar, la oficina recibe el efectivo de hoy.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">El efectivo de hoy se entrega a la oficina con el PDF del día («Terminar el día»).</p>
     @endif
 
     @if (! $persona && auth()->user()->can('rutas.entregas.registrar'))
@@ -39,7 +40,7 @@
     @endif
 
     @if ($grupos->isNotEmpty() && $ver === 'todas')
-        <nav aria-label="Qué ruta mostrar" class="mt-4 flex flex-wrap gap-2">
+        <nav aria-label="Qué zona mostrar" class="mt-4 flex flex-wrap gap-2">
             <a href="{{ request()->fullUrlWithQuery(['ruta' => null]) }}" @if ($ruta === null) aria-current="page" @endif
                class="{{ $pastilla }} {{ $ruta === null ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">Todas {{ $total }}</a>
             @foreach ($grupos as $grupo)
@@ -51,7 +52,7 @@
 
     @if ($filtroInvalido)
         <div class="{{ $caja }} mt-4 px-5 py-8 text-center">
-            <p class="text-base font-medium text-gray-800 dark:text-paper-100">Esa ruta no tiene CCF por entregar.</p>
+            <p class="text-base font-medium text-gray-800 dark:text-paper-100">Esa zona no tiene CCF por entregar.</p>
             <a href="{{ request()->fullUrlWithQuery(['ruta' => null]) }}" class="mt-2 inline-flex min-h-11 items-center text-sm text-indigo-600 underline dark:text-indigo-300">Ver todas</a>
         </div>
     @elseif ($grupos->isEmpty())
@@ -111,9 +112,7 @@
                         </a>
                     </div>
 
-                    @if ($grupo['clave'] === $sinRuta && $vistas === [])
-                        <p class="mt-3 text-sm text-amber-800 dark:text-amber-300">{{ \App\Services\Rutas\PorEntregar::SIN_RUTA }}</p>
-                    @elseif ($planificada)
+                    @if ($planificada)
                         <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en la salida {{ $camino->salida->descripcionCorta() }}, que todavía no empezó: se marca cuando la empiecen.</p>
                     @elseif ($trabados->has($dte->id))
                         {{-- Día cerrado, o una salida formal donde no va: los botones siempre fallarían. --}}

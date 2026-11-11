@@ -101,7 +101,7 @@
                                         <a href="{{ route('rutas.salidas.show', $participacion->salida_ruta_id) }}" class="hover:underline">
                                             {{-- La ruta y, abajo, el día de salida en d/m/Y (guía) entero: la fecha no se parte. --}}
                                             @if ($participacion->salida)
-                                                <span class="block">{{ $participacion->salida->ruta?->nombre ?? 'Salida' }}</span>
+                                                <span class="block">{{ $participacion->salida->titulo() }}</span>
                                                 <span class="block whitespace-nowrap text-gray-500 dark:text-paper-300">{{ $participacion->salida->fecha_inicio->format('d/m/Y') }}</span>
                                             @else
                                                 —

@@ -1,17 +1,20 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Configurar rutas</h2>
-            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver a rutas</a>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Zonas</h1>
+            <a href="{{ route('rutas.dashboard') }}" class="inline-flex min-h-11 items-center text-sm text-gray-500 hover:underline dark:text-paper-300">Volver al tablero</a>
         </div>
     </x-slot>
 
-    {{-- Todo lo que se toca de vez en cuando, en una sola página: cada ruta con cada cuánto
-         se va, qué lugares cubre y qué salas le sugiere la cobertura. El personal tiene su
-         propia pantalla («Personal» en la barra). --}}
+    {{-- «Zonas» (10/11/2026): el catálogo que le pone nombre al viaje («Lunes · San Miguel») y
+         agrupa el tablero y el mapa. De cada zona se toca solo el nombre y los lugares que
+         cubre (departamentos completos o pueblos sueltos). Ya no se asignan salas a mano ni se
+         cargan días: la zona de una sala sale de su lugar y el ritmo, de sus pedidos.
+         Variables: $rutas (con coberturas), $sinCobertura, $departamentos y $distritos. --}}
     @php
         $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
-        $campo = 'rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
+        $campo = 'min-h-11 rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
+        $secundario = 'inline-flex min-h-11 items-center justify-center rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100';
         $gestiona = auth()->user()?->can('rutas.gestionar');
     @endphp
 
@@ -20,49 +23,43 @@
 
             <x-rutas.avisos />
 
-            {{-- ===================== Nueva ruta ===================== --}}
+            <p class="text-sm text-gray-600 dark:text-paper-300">Una zona es un nombre y los lugares que cubre. Con eso se nombra cada viaje y se arma el mapa. El viaje se abre solo: acá no se arma nada.</p>
+
+            {{-- ===================== Nueva zona ===================== --}}
             @if ($gestiona)
                 <form method="POST" action="{{ route('rutas.rutas.store') }}" class="{{ $caja }} flex flex-wrap items-end gap-3 p-4">
                     @csrf
                     <input type="hidden" name="en_linea" value="1">
+                    <input type="hidden" name="activa" value="1">
                     <div class="min-w-0 flex-1">
-                        <label for="nueva_nombre" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Nueva ruta</label>
-                        <input id="nueva_nombre" name="nombre" required maxlength="120" placeholder="Puerto" class="mt-1 w-full {{ $campo }}">
+                        <label for="nueva_nombre" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Nueva zona</label>
+                        <input id="nueva_nombre" name="nombre" required maxlength="120" placeholder="Puerto" value="{{ old('nombre') }}" class="mt-1 w-full {{ $campo }}">
+                        <x-input-error :messages="$errors->get('nombre')" class="mt-1" />
                     </div>
-                    <div>
-                        <label for="nueva_frecuencia" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Días aproximados (opcional)</label>
-                        <input id="nueva_frecuencia" name="frecuencia_objetivo_dias" type="number" min="1" max="365" placeholder="15" class="mt-1 w-28 {{ $campo }}">
-                    </div>
-                    <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Crear</button>
+                    <button class="inline-flex min-h-11 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">Crear</button>
                 </form>
             @endif
 
-            {{-- ===================== Una tarjeta por ruta ===================== --}}
+            {{-- ===================== Una tarjeta por zona ===================== --}}
             @forelse ($rutas as $ruta)
-                @php $deEsta = $sugeridas[$ruta->id] ?? []; @endphp
                 <div id="ruta-{{ $ruta->id }}" class="{{ $caja }} p-5 {{ $ruta->activa ? '' : 'opacity-60' }}">
 
-                    {{-- Nombre y frecuencia, editables ahí mismo --}}
+                    {{-- Nombre, editable ahí mismo --}}
                     @if ($gestiona)
                         <form method="POST" action="{{ route('rutas.rutas.update', $ruta) }}" class="flex flex-wrap items-end gap-3">
                             @csrf @method('PUT')
                             <input type="hidden" name="en_linea" value="1">
-                            <input name="nombre" value="{{ $ruta->nombre }}" required maxlength="120" aria-label="Nombre de la ruta"
-                                   class="min-w-0 flex-1 rounded-lg border-transparent bg-transparent px-2 text-lg font-semibold text-gray-800 hover:border-gray-300 focus:border-indigo-500 dark:text-paper-100">
-                            <label class="flex items-center gap-2 text-sm text-gray-500 dark:text-paper-300">
-                                cada
-                                <input name="frecuencia_objetivo_dias" type="number" min="1" max="365" value="{{ $ruta->frecuencia_objetivo_dias }}"
-                                       aria-label="Días aproximados, solo mientras la ruta no tenga ritmo" class="w-20 {{ $campo }}">
-                                días
-                            </label>
-                            <button class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Guardar</button>
+                            <input type="hidden" name="activa" value="{{ $ruta->activa ? 1 : 0 }}">
+                            <input name="nombre" value="{{ $ruta->nombre }}" required maxlength="120" aria-label="Nombre de la zona"
+                                   class="min-h-11 min-w-0 flex-1 rounded-lg border-transparent bg-transparent px-2 text-lg font-semibold text-gray-800 hover:border-gray-300 focus:border-indigo-500 dark:text-paper-100">
+                            <button class="{{ $secundario }}">Guardar nombre</button>
                         </form>
                     @else
-                        <p class="text-lg font-semibold text-gray-800 dark:text-paper-100">
-                            {{ $ruta->nombre }}
-                            <span class="text-sm font-normal text-gray-500">{{ $ruta->frecuencia_objetivo_dias ? '· cada '.$ruta->frecuencia_objetivo_dias.' días' : '' }}</span>
-                        </p>
+                        <p class="text-lg font-semibold text-gray-800 dark:text-paper-100">{{ $ruta->nombre }}</p>
                     @endif
+                    @unless ($ruta->activa)
+                        <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Zona desactivada: no nombra viajes nuevos ni sale en el tablero.</p>
+                    @endunless
 
                     {{-- Lugares que cubre --}}
                     <div class="mt-4">
@@ -93,7 +90,7 @@
                                             <option value="{{ $departamento->id }}">{{ $departamento->nombre }}</option>
                                         @endforeach
                                     </select>
-                                    <button class="rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Agregar</button>
+                                    <button class="{{ $secundario }}">Agregar</button>
                                 </form>
                                 <form method="POST" action="{{ route('rutas.rutas.cobertura.store', $ruta) }}" class="flex gap-1.5">
                                     @csrf
@@ -107,53 +104,33 @@
                                             </optgroup>
                                         @endforeach
                                     </select>
-                                    <button class="rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Agregar</button>
+                                    <button class="{{ $secundario }}">Agregar</button>
                                 </form>
                             </div>
                         @endif
                     </div>
 
-                    {{-- Salas --}}
                     <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-ink-700">
-                        <a href="{{ route('rutas.rutas.show', $ruta) }}" class="text-sm text-gray-600 hover:underline dark:text-paper-300">
-                            {{ $ruta->sucursales_count }} {{ $ruta->sucursales_count === 1 ? 'sala' : 'salas' }} · ver o cambiar
-                        </a>
-                        @if ($gestiona && count($deEsta) > 0)
-                            <form method="POST" action="{{ route('rutas.asignacion.aplicar') }}">
-                                @csrf
-                                @foreach ($deEsta as $salaId)
-                                    <input type="hidden" name="sucursales[]" value="{{ $salaId }}">
-                                @endforeach
-                                <button class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-                                    Asignar {{ count($deEsta) }} {{ count($deEsta) === 1 ? 'sala sugerida' : 'salas sugeridas' }}
-                                </button>
-                            </form>
-                        @endif
+                        <a href="{{ route('rutas.dashboard', ['ruta' => $ruta->id]) }}#salas" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline dark:text-indigo-300">Ver sus salas en el tablero</a>
                         @if ($gestiona)
-                            <details class="w-full">
-                                <summary class="cursor-pointer text-sm font-medium text-indigo-600 dark:text-indigo-400">+ Agregar salas por nombre</summary>
-                                <div class="mt-3">
-                                    <x-rutas.buscador-salas :ruta="$ruta" />
-                                </div>
-                            </details>
                             <form method="POST" action="{{ route('rutas.rutas.toggle-activa', $ruta) }}">
                                 @csrf @method('PATCH')
-                                <button class="text-xs text-gray-400 hover:underline dark:text-paper-500">{{ $ruta->activa ? 'Desactivar ruta' : 'Activar ruta' }}</button>
+                                <button class="min-h-11 text-sm text-gray-500 hover:underline dark:text-paper-300">{{ $ruta->activa ? 'Desactivar zona' : 'Activar zona' }}</button>
                             </form>
                         @endif
                     </div>
                 </div>
             @empty
                 <div class="{{ $caja }} px-6 py-10 text-center text-sm text-gray-500 dark:text-paper-300">
-                    Todavía no hay rutas. Creá la primera arriba.
+                    Todavía no hay zonas. {{ $gestiona ? 'Creá la primera arriba.' : '' }}
                 </div>
             @endforelse
 
-            {{-- ===================== Lo que ninguna ruta cubre ===================== --}}
+            {{-- ===================== Lo que ninguna zona cubre ===================== --}}
             @if ($sinCobertura->isNotEmpty())
                 <div class="{{ $caja }} p-5">
-                    <p class="text-sm font-medium text-gray-700 dark:text-paper-100">Salas sin ruta que ninguna ruta cubre</p>
-                    <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">Agregá su departamento o pueblo a alguna ruta, o asignalas a mano desde «ver o cambiar».</p>
+                    <p class="text-sm font-medium text-gray-700 dark:text-paper-100">Salas que ninguna zona cubre</p>
+                    <p class="mt-0.5 text-sm text-gray-500 dark:text-paper-300">Se les saca pedido y se les entrega igual, pero el viaje sale «Sin zona». Agregá su departamento o su pueblo a una zona.</p>
                     <div class="mt-3 flex flex-wrap gap-2">
                         @foreach ($sinCobertura as $grupo)
                             <span class="rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{{ $grupo['departamento'] }} · {{ $grupo['salas'] }}</span>

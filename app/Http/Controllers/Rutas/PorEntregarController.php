@@ -12,7 +12,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
-use App\Models\SalidaRuta;
+use App\Models\Ruta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaParticipante;
 use App\Services\Dte\DtePdfService;
@@ -31,7 +31,7 @@ use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * «Por entregar» (Melqui, 06/11/2026): los CCF que faltan entregar, por la ruta de su sala,
+ * «Por entregar» (Melqui, 06/11/2026): los CCF que faltan entregar, por la zona de su sala,
  * para que el vendedor los marque sin que nadie arme la salida. Qué está por entregar lo
  * decide {@see EntregasCcf::porEntregar()}; en qué salida queda, {@see PorEntregar}; y el
  * registro, {@see EntregasCcf::registrar()}, el mismo de «Mi salida». Deshacer usa la ruta
@@ -42,8 +42,9 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Desde el 10/11/2026 cualquier vendedor entrega cualquier CCF: con su viaje en curso, arriba
  * elige «Este viaje» (lo que salió de sus pedidos) o «Toda la zona» (lo de las zonas del
- * viaje, haya salido de un pedido o no); «Todas» es la lista completa por ruta. Al entregar
- * dice cómo le pagaron, salvo en el supermercado que cobra por el portal.
+ * viaje, haya salido de un pedido o no); «Todas» es la lista completa por zona. Al entregar
+ * dice cómo le pagaron, salvo en el supermercado que cobra por el portal. La zona de una sala
+ * es su ruta o la que cubre su lugar ({@see Viajes::zonaId()}); sin zona se entrega igual.
  */
 class PorEntregarController extends Controller
 {
@@ -69,7 +70,7 @@ class PorEntregarController extends Controller
             ->orderByDesc('fecha_resultado')->get() : collect();
 
         $todos = $this->entregas->porEntregar()->whereNotIn('id', $marcados->pluck('dte_id'))
-            ->load(['clienteSucursal:id,nombre,ruta_id', 'clienteSucursal.ruta:id,nombre', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
+            ->load(['clienteSucursal:id,nombre,ruta_id,distrito_id,departamento_id', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
         // El pedido de cada CCF: quién lo sacó («lo sacó otro vendedor») y lo que no vino.
         $pedidos = PedidoSalaEnvio::vigentes()->whereIn('dte_id', $todos->modelKeys())
             ->with(['pedido.sacadoPor:id,nombre', 'pedido.lineas.producto:id,nombre', 'pedido.lineas.envioLineasVigentes'])
@@ -95,10 +96,13 @@ class PorEntregarController extends Controller
             default => null,
         })->filter();
 
-        $grupos = $dtes->groupBy(fn (Dte $d) => $d->clienteSucursal?->ruta_id ?? self::SIN_RUTA)
+        // Por zona: la ruta de la sala o la que cubre su lugar. Los nombres, en una consulta.
+        $zonaDe = fn (Dte $d) => $d->clienteSucursal ? $this->viajes->zonaId($d->clienteSucursal) : null;
+        $zonas = Ruta::whereKey($dtes->map($zonaDe)->filter()->unique()->all())->pluck('nombre', 'id');
+        $grupos = $dtes->groupBy(fn (Dte $d) => $zonaDe($d) ?? self::SIN_RUTA)
             ->map(fn ($lista, $clave) => [
                 'clave' => (string) $clave,
-                'nombre' => $clave === self::SIN_RUTA ? 'Sin ruta' : $lista->first()->clienteSucursal->ruta->nombre,
+                'nombre' => $clave === self::SIN_RUTA ? 'Sin zona' : $zonas[$clave],
                 'dtes' => $lista,
             ])
             ->sortBy(fn (array $g) => [$g['clave'] === self::SIN_RUTA ? 1 : 0, mb_strtolower($g['nombre'])])
@@ -122,16 +126,12 @@ class PorEntregarController extends Controller
             'total' => $dtes->count(),
             'enCamino' => $enCamino,
             'trabados' => $trabados,
-            // Su automática de hoy ya cobró: el efectivo se rinde cuando la oficina la termina.
-            'cobroHoy' => $puedeMarcar && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->automaticas()
-                ->whereDate('fecha_inicio', HoraNegocio::fechaHoy())
-                ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id))
-                ->whereHas('entregas', fn ($q) => $q->entregadas()->where('forma_cobro', FormaCobroEntrega::Efectivo->value))->exists(),
+            // Ya cobró efectivo hoy: se entrega a la oficina con el PDF del día.
+            'cobroHoy' => $marcados->contains(fn (SalidaRutaEntrega $e) => $e->forma_cobro === FormaCobroEntrega::Efectivo),
             'marcados' => $marcados,
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,
             'motivos' => MotivoNoEntrega::opciones(),
-            'sinRuta' => self::SIN_RUTA,
         ]);
     }
 

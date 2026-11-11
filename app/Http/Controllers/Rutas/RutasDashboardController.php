@@ -23,7 +23,8 @@ use Illuminate\View\View;
 
 /**
  * El tablero del jefe de vendedores (docs/PLAN_TABLERO_RUTAS.md, sección 1): resumen, lo
- * que va en camino, cada ruta con su ritmo ({@see RitmoRutas}) y las salas que tocan.
+ * que va en camino, cada zona con su ritmo ({@see RitmoRutas}) y las salas que tocan. Solo
+ * lectura: nadie arma salidas, el viaje se abre solo con el primer pedido.
  *
  * Todo sale de unas pocas consultas para todas las rutas y salas juntas; la «última
  * entrega» se busca solo para las salas de la página que se muestra.
@@ -47,17 +48,14 @@ class RutasDashboardController extends Controller
     {
         $hoy = CarbonImmutable::today();
 
-        // El jefe de vendedores aterriza acá y no en «Mi salida»: si va en una salida en
-        // curso o en una planificada («Tu próxima salida»), se le ofrece el enlace.
         $usuario = $request->user();
-        $vaEnUnaSalida = $usuario->can('rutas.entregas.registrar')
-            && SalidaRuta::abiertas()
-                ->whereHas('personal', fn ($q) => $q->where('rutas_personal.user_id', $usuario->id)->where('rutas_personal.activo', true))
-                ->exists();
 
+        // Los viajes y las salidas de antes que sigan abiertas. Los pedidos con su zona, para
+        // nombrar cada viaje sin consultar uno por uno.
         $salidasAbiertas = SalidaRuta::query()
             ->whereIn('estado', [EstadoSalidaRuta::EnCurso->value, EstadoSalidaRuta::Planificada->value])
-            ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra'])
+            ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra',
+                'pedidos:id,salida_ruta_id,ruta_id,estado', 'pedidos.ruta:id,nombre'])
             ->orderByRaw('CASE WHEN estado = ? THEN 0 ELSE 1 END', [EstadoSalidaRuta::EnCurso->value])
             ->orderBy('fecha_inicio')
             ->get();
@@ -123,9 +121,6 @@ class RutasDashboardController extends Controller
             'vendedores' => $vendedores,
             'tarjetasVendedores' => $this->tarjetasVendedores($vendedores, $usuario, $hoy),
             'salasSinZona' => $salas->whereNull('ruta')->count(),
-            'vaEnUnaSalida' => $vaEnUnaSalida,
-            // Automáticas que se finalizaron solas y esperan «Terminar ruta»: una consulta.
-            'porLiquidar' => SalidaRuta::porLiquidar()->count(),
         ]);
     }
 
@@ -187,7 +182,7 @@ class RutasDashboardController extends Controller
             ->whereIn('rutas_personal_id', $personas->pluck('id'))
             ->whereHas('salida', fn ($q) => $q->where(fn ($q) => $q->where('estado', EstadoSalidaRuta::EnCurso->value)
                 ->orWhere(fn ($q) => $q->where('estado', EstadoSalidaRuta::Finalizada->value)->whereDate('fecha_inicio', '>=', $desde))))
-            ->with('salida.ruta:id,nombre')
+            ->with(['salida.ruta:id,nombre', 'salida.pedidos:id,salida_ruta_id,ruta_id,estado', 'salida.pedidos.ruta:id,nombre'])
             ->get()
             ->groupBy('rutas_personal_id');
 
@@ -214,7 +209,8 @@ class RutasDashboardController extends Controller
                 'ahora' => $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::EnCurso),
                 'ultima' => $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::Finalizada),
                 'ultimaEntrega' => isset($entregas[$persona->id]) ? CarbonImmutable::parse($entregas[$persona->id])->startOfDay() : null,
-                'rutas' => $salidas->groupBy('ruta_id')
+                // El viaje sin zona no suma a ninguna.
+                'rutas' => $salidas->whereNotNull('ruta_id')->groupBy('ruta_id')
                     ->sortBy([fn ($a, $b) => $b->count() <=> $a->count(), fn ($a, $b) => strcmp($a->first()->ruta->nombre, $b->first()->ruta->nombre)])
                     ->map(fn (Collection $deRuta) => $deRuta->first()->ruta->nombre)
                     ->values()

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('titulo', 'Mi salida') · {{ \App\Support\NombreEmpresa::actual() }}</title>
+    <title>@yield('titulo', 'Rutas') · {{ \App\Support\NombreEmpresa::actual() }}</title>
     <script>
         (function () {
             var t = localStorage.getItem('dlg-theme');
@@ -34,13 +34,21 @@
         </div>
     </header>
     <main class="mx-auto max-w-3xl px-4 pb-8">
-        {{-- Las dos pantallas del vendedor: lo que falta entregar y su salida. --}}
+        {{-- El menú del vendedor (flujo único, 10/11/2026): Inicio, Sacar pedido y Por entregar.
+             Cada título en una línea, también en el celular más angosto. --}}
         @can('rutas.entregas.registrar')
-            <nav aria-label="Pantallas del vendedor" class="mb-4 grid grid-cols-2 gap-2">
-                @foreach (['rutas.por-entregar.index' => 'Por entregar', 'rutas.mi-salida.index' => 'Mi salida'] as $destino => $texto)
+            @php
+                $pantallas = array_filter([
+                    'rutas.mi-salida.index' => 'Inicio',
+                    'rutas.sacar-pedido.index' => auth()->user()->can('rutas.pedidos.registrar') ? 'Sacar pedido' : null,
+                    'rutas.por-entregar.index' => 'Por entregar',
+                ]);
+            @endphp
+            <nav aria-label="Pantallas del vendedor" class="mb-4 grid gap-2 {{ count($pantallas) === 3 ? 'grid-cols-3' : 'grid-cols-2' }}">
+                @foreach ($pantallas as $destino => $texto)
                     @php($aqui = request()->routeIs(str_replace('.index', '.*', $destino)))
                     <a href="{{ route($destino) }}" @if ($aqui) aria-current="page" @endif
-                       class="inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-medium {{ $aqui ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">{{ $texto }}</a>
+                       class="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium {{ $aqui ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">{{ $texto }}</a>
                 @endforeach
             </nav>
         @endcan

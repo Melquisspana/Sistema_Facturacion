@@ -66,8 +66,8 @@ class SacarPedidoSinSalidaTest extends TestCase
     {
         $this->get('/dashboard')->assertRedirect(route('rutas.mi-salida.index'));
         $this->get(route('rutas.mi-salida.index'))->assertOk()
-            ->assertSee('No tenés salidas en camino')
-            ->assertSee('Tu viaje se abre solo con el primer pedido que saqués.')
+            ->assertSee('Todavía no tenés un viaje abierto')
+            ->assertSee('Se abre solo con el primer pedido que saqués.')
             ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false)
             ->assertSee('href="'.route('rutas.por-entregar.index').'"', false)
             ->assertDontSee('¿Mañana seguís en la misma zona?');
@@ -124,14 +124,17 @@ class SacarPedidoSinSalidaTest extends TestCase
 
         $this->get(route('rutas.mi-salida.index'))->assertOk()
             ->assertSee('Tu viaje')->assertSee('Lunes · San Miguel')->assertSee('Día 2 · 2 salas con pedido')
-            ->assertSee('href="'.route('rutas.mi-salida.show', $viaje).'"', false)
+            // El viaje no tiene hoja propia: lo suyo está en «Sacar pedido» y «Por entregar».
+            ->assertDontSee('href="'.route('rutas.mi-salida.show', $viaje).'"', false)
             ->assertSee('href="'.route('rutas.mi-salida.dia').'"', false);
+        $this->get(route('rutas.mi-salida.show', $viaje))->assertRedirect(route('rutas.mi-salida.index'));
         // La pregunta está en «Terminar el día», con el resumen y el PDF.
         $this->get(route('rutas.mi-salida.dia'))->assertOk()
             ->assertSee('¿Mañana seguís en la misma zona?')
             ->assertSee('action="'.route('rutas.mi-salida.terminar-dia', $viaje).'"', false);
-        $this->get(route('rutas.mi-salida.show', $viaje))->assertOk()->assertSee('Lunes · San Miguel')
-            ->assertSee('Sala de prueba Oriente')->assertSee('Pedido sacado');
+        // Lo sacado hoy está en «Sacar pedido».
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Lunes · San Miguel')
+            ->assertSee('Tus pedidos de hoy');
 
         $this->post(route('rutas.mi-salida.terminar-dia', $viaje), ['sigue' => '0'])
             ->assertRedirect(route('rutas.mi-salida.index'))

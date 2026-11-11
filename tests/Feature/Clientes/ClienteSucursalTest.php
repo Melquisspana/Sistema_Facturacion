@@ -294,16 +294,21 @@ class ClienteSucursalTest extends TestCase
         ]);
     }
 
-    public function test_facturacion_no_puede_crear_sucursal(): void
+    public function test_facturacion_crea_la_sala_y_jefatura_no(): void
     {
-        // Nueva política: facturación es SOLO lectura en clientes/salas.
+        // Desde el 10/11/2026 facturación da de alta clientes y salas: registra la tienda nueva
+        // al facturar (decisión de Melqui). Quien solo lee clientes sigue sin poder.
         $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('jefatura'))
+            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
+            ->assertForbidden();
+        $this->assertDatabaseCount('cliente_sucursales', 0);
 
         $this->actingAs($this->usuario('facturacion'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
-            ->assertForbidden();
-
-        $this->assertDatabaseCount('cliente_sucursales', 0);
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertDatabaseCount('cliente_sucursales', 1);
     }
 
     public function test_sucursal_puede_requerir_orden_compra_propia(): void

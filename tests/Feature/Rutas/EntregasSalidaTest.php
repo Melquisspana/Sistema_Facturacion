@@ -17,12 +17,12 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
-use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Support\CcfDeLaRuta;
 use Tests\TestCase;
 
 /**
@@ -30,6 +30,7 @@ use Tests\TestCase;
  */
 class EntregasSalidaTest extends TestCase
 {
+    use CcfDeLaRuta;
     use RefreshDatabase;
 
     private Ruta $ruta;
@@ -110,7 +111,7 @@ class EntregasSalidaTest extends TestCase
 
     private function pendientes(): array
     {
-        return $this->servicio()->pendientesDeRuta($this->ruta)->pluck('id')->all();
+        return $this->pendientesDeLaRuta($this->ruta)->pluck('id')->all();
     }
 
     private function entregar(SalidaRutaEntrega $entrega): void
@@ -173,7 +174,7 @@ class EntregasSalidaTest extends TestCase
     {
         $dte = $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
 
         $this->entregar($salida->entregas()->sole());
 
@@ -214,15 +215,15 @@ class EntregasSalidaTest extends TestCase
         $primera = $this->salida(EstadoSalidaRuta::Planificada);
         $segunda = $this->salida(EstadoSalidaRuta::Planificada);
 
-        $this->assertSame(1, $this->servicio()->cargarPendientes($primera));
-        $this->assertSame(0, $this->servicio()->cargarPendientes($segunda));
+        $this->assertSame(1, $this->cargarCcfDeLaRuta($primera));
+        $this->assertSame(0, $this->cargarCcfDeLaRuta($segunda));
     }
 
     public function test_lo_no_entregado_vuelve_en_la_siguiente_salida(): void
     {
         $dte = $this->ccf();
         $primera = $this->salida();
-        $this->servicio()->cargarPendientes($primera);
+        $this->cargarCcfDeLaRuta($primera);
 
         $this->servicio()->registrar($primera->entregas()->sole(), [
             'resultado' => 'no_entregado',
@@ -231,7 +232,7 @@ class EntregasSalidaTest extends TestCase
         $primera->finalizar();
 
         $segunda = $this->salida(EstadoSalidaRuta::Planificada);
-        $this->assertSame(1, $this->servicio()->cargarPendientes($segunda));
+        $this->assertSame(1, $this->cargarCcfDeLaRuta($segunda));
 
         // Quedan los dos intentos: la historia no se pisa.
         $this->assertSame(2, SalidaRutaEntrega::where('dte_id', $dte->id)->count());
@@ -241,10 +242,10 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $primera = $this->salida();
-        $this->servicio()->cargarPendientes($primera);
+        $this->cargarCcfDeLaRuta($primera);
         $primera->finalizar();
 
-        $this->assertSame(1, $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada)));
+        $this->assertSame(1, $this->cargarCcfDeLaRuta($this->salida(EstadoSalidaRuta::Planificada)));
     }
 
     // ══════════════════════════════ registrar
@@ -253,7 +254,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
         $salida->finalizar();
         $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$salida, $entrega]), [
@@ -266,7 +267,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
         $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
         $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
@@ -282,7 +283,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
         $this->entregar($entrega);
         $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$salida, $entrega]), [
@@ -294,11 +295,11 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $primera = $this->salida();
-        $this->servicio()->cargarPendientes($primera);
+        $this->cargarCcfDeLaRuta($primera);
         $entrega = $primera->entregas()->sole();
         $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
         $segunda = $this->salida(EstadoSalidaRuta::Planificada);
-        $this->servicio()->cargarPendientes($segunda);
+        $this->cargarCcfDeLaRuta($segunda);
         $segunda->iniciar();
         $this->entregar($segunda->entregas()->sole());
         $this->servicio()->deshacer($entrega);
@@ -312,31 +313,19 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $primera = $this->salida();
-        $this->servicio()->cargarPendientes($primera);
+        $this->cargarCcfDeLaRuta($primera);
         $entrega = $primera->entregas()->sole();
         $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
-        $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada));
+        $this->cargarCcfDeLaRuta($this->salida(EstadoSalidaRuta::Planificada));
         $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.deshacer', [$primera, $entrega]))
             ->assertSessionHasErrors(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
         $this->assertSame(ResultadoEntrega::NoEntregado, $entrega->refresh()->resultado);
     }
 
-    public function test_cargar_recomprueba_una_lista_vieja_de_pendientes(): void
-    {
-        $dte = $this->ccf();
-        $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada));
-        $doble = \Mockery::mock(EntregasCcf::class, [app(AlbaranLocalizador::class)])->makePartial();
-        $doble->shouldReceive('pendientesDeRuta')->once()->andReturn(collect([$dte]));
-        $this->instance(EntregasCcf::class, $doble);
-        $segunda = $this->salida();
-        $this->assertSame(0, $this->servicio()->cargarPendientes($segunda));
-        $this->assertSame(0, $segunda->entregas()->count());
-    }
-
     public function test_agregar_rechaza_un_ccf_en_otra_salida_abierta(): void
     {
         $dte = $this->ccf();
-        $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada));
+        $this->cargarCcfDeLaRuta($this->salida(EstadoSalidaRuta::Planificada));
         $segunda = $this->salida();
         $this->actingAs($this->admin())->post(route('rutas.salidas.entregas.store', $segunda), ['numero_control' => $dte->numero_control])
             ->assertSessionHasErrors(['numero_control' => 'Ese CCF ya va sin registrar en otra salida abierta.']);
@@ -349,7 +338,7 @@ class EntregasSalidaTest extends TestCase
         $this->ccf();
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->where('dte_id', $dte->id)->sole();
         $dte->update(['estado' => 'invalidado']);
         $respuesta = $this->actingAs($this->admin())->get(route('rutas.salidas.show', $salida))
@@ -367,7 +356,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
         $admin = $this->admin();
         $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
@@ -389,7 +378,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
         $ajeno = PersonalRuta::create(['nombre' => 'Ajeno']);
         $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
@@ -412,7 +401,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida(EstadoSalidaRuta::Planificada);
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
 
         $this->actingAs($this->admin())
             ->patch(route('rutas.salidas.entregas.update', [$salida, $salida->entregas()->sole()]), [
@@ -425,7 +414,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
         $admin = $this->admin();
         $this->entregar($entrega);
@@ -445,7 +434,7 @@ class EntregasSalidaTest extends TestCase
         $this->ccf();
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
 
         $this->actingAs($this->admin())
             ->post(route('rutas.salidas.entregas.sala', [$salida, $this->sala]), ['entregado_por_id' => $this->carlos->id])
@@ -474,10 +463,9 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $mirador = User::factory()->create()->givePermissionTo('rutas.ver');
 
-        $this->actingAs($mirador)->post(route('rutas.salidas.entregas.cargar', $salida))->assertForbidden();
         $this->actingAs($mirador)
             ->patch(route('rutas.salidas.entregas.update', [$salida, $salida->entregas()->sole()]), ['resultado' => 'entregado'])
             ->assertForbidden();
@@ -487,7 +475,7 @@ class EntregasSalidaTest extends TestCase
     {
         $this->ccf();
         $propia = $this->salida();
-        $this->servicio()->cargarPendientes($propia);
+        $this->cargarCcfDeLaRuta($propia);
         $otra = $this->salida();
 
         $this->actingAs($this->admin())
@@ -497,28 +485,13 @@ class EntregasSalidaTest extends TestCase
 
     // ══════════════════════════════ pantallas
 
-    public function test_crear_la_salida_carga_sus_pendientes(): void
-    {
-        $this->ccf();
-
-        $this->actingAs($this->admin())
-            ->post(route('rutas.salidas.store'), [
-                'ruta_id' => $this->ruta->id,
-                'fecha_inicio' => '2026-10-06',
-                'personal' => [$this->carlos->id],
-            ])
-            ->assertSessionHas('status', fn ($m) => str_contains($m, 'con 1 CCF por entregar'));
-
-        $this->assertSame(1, SalidaRuta::sole()->entregas()->count());
-    }
-
     public function test_el_detalle_muestra_los_ccf_por_sala_y_su_estado(): void
     {
         $entregado = $this->ccf();
         $conAlbaran = $this->ccf();
         $sinRegistrar = $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
         PpqAlbaran::create([
             'numero_albaran' => 'AC01/0232/00/6715', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
@@ -545,7 +518,7 @@ class EntregasSalidaTest extends TestCase
         $salida = $this->salida();
         $ana = PersonalRuta::create(['nombre' => 'Ana']);
         app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
         PpqAlbaran::create([
             'numero_albaran' => 'AC01/0232/00/6716', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
@@ -595,7 +568,7 @@ class EntregasSalidaTest extends TestCase
         $this->ccf();
         $conAlbaran = $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         // Llega el albarán y nadie marca nada en Rutas.
         PpqAlbaran::create([
             'numero_albaran' => 'AC01/0232/00/6717', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
@@ -618,21 +591,6 @@ class EntregasSalidaTest extends TestCase
             ->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSee('2 CCF por entregar · $200.00');
-    }
-
-    public function test_la_ficha_de_la_ruta_muestra_la_ultima_visita(): void
-    {
-        $this->ccf();
-        $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
-        $this->entregar($salida->entregas()->sole());
-
-        $this->actingAs($this->admin())
-            ->get(route('rutas.rutas.show', $this->ruta))
-            ->assertOk()
-            ->assertSee('Última visita')
-            ->assertSee('(hoy)')
-            ->assertDontSee('Sin visitas registradas');
     }
 
     /**
@@ -675,7 +633,7 @@ class EntregasSalidaTest extends TestCase
         $this->ccf();
         $this->ccf();
         $salida = $this->salida();
-        $this->servicio()->cargarPendientes($salida);
+        $this->cargarCcfDeLaRuta($salida);
         $this->entregar($salida->entregas()->first());
 
         $this->actingAs($this->admin())

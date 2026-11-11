@@ -65,8 +65,8 @@ class PersonalSoloAdministracionTest extends TestCase
         $respuesta = $this->actingAs($this->con($rol))->get(route('rutas.dashboard'))->assertOk();
 
         $respuesta->assertDontSee('href="'.route('rutas.personal.index').'"', false);
-        // Los tres arman salidas: siguen eligiendo a la persona que va.
-        $respuesta->assertSee('Salir a esta ruta')->assertSee('Rosa Ficticia');
+        // Ya no arman salidas, pero siguen viendo a los vendedores en el tablero.
+        $respuesta->assertDontSee('Salir a esta ruta')->assertSee('Rosa Ficticia');
     }
 
     public function test_la_administracion_sigue_entrando(): void
