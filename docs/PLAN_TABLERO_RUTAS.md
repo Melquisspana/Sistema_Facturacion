@@ -14,6 +14,20 @@ Cómo se trabaja hoy, y lo que el plan respeta:
 
 ---
 
+## El flujo único (10/11/2026): manda sobre lo que sigue
+
+Melqui aprobó el 10/11/2026 un solo flujo, de sacar pedido a entregar. La decisión y sus motivos están en [la decisión 0010](decisiones/0010-el-viaje-reemplaza-a-la-ruta-fija.md). Donde este plan diga otra cosa, vale esto:
+
+- **El viaje se arma solo** con el primer pedido del vendedor y suma los días seguidos en la misma zona o en una vecina. Se cierra solo cuando todo está facturado y entregado.
+- **Nadie arma salidas.** No hay «Armar salida», «Salir a esta ruta», «Tu próxima salida», propósito de la salida, carga de los pendientes de la ruta ni asignación de salas a una ruta. Las etapas 2 (PR 6 y 8) y 3 de abajo quedan sustituidas en eso.
+- **Las rutas son zonas:** nombre y cobertura. Los «días objetivo» de la sección 2 ya no se cargan ni se editan; el ritmo sale de los pedidos reales. Lo que una zona ya tuviera cargado queda de respaldo mientras no tenga ritmo.
+- **El celular del vendedor:** Inicio, Sacar pedido y Por entregar. «Terminar el día» da el PDF del día, con los gastos y «Entregó / Recibió» para firmar. Con ese PDF se entrega el dinero; en el sistema no se liquida nada nuevo.
+- **La oficina y el jefe:** Tablero (Resumen, Viajes, Mapa, Vendedores), Pedidos, Ventas, Viajes anteriores y Zonas. La pestaña Viajes dice en qué paso va cada pedido, lo trabado, las facturas que no se pudieron entregar dos veces y los quedan por cobrar.
+- **Permisos:** `rutas.salidas.armar` ya no se usa. `rutas.salidas.terminar` sigue solo para terminar las salidas viejas que quedaron abiertas. Facturación da de alta clientes y salas (`clientes.gestionar`) para registrar la tienda nueva al facturar.
+- **Lo viejo:** las salidas armadas a mano quedan en «Viajes anteriores» como historial. No se borró ninguna tabla ni dato.
+
+---
+
 ## 1. Qué ve el jefe de vendedores
 
 Una sola pantalla, de arriba hacia abajo, en este orden:

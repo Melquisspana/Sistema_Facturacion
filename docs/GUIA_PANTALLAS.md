@@ -153,6 +153,14 @@ Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el t
 - Cada pestaña: `inline-flex min-h-11 items-center rounded-t-md px-3 text-sm`. La elegida lleva `border-b-2 border-indigo-600 font-semibold text-indigo-700` y `aria-current="page"`; las otras, `text-gray-600 hover:text-gray-900`.
 - Si una pestaña pide un permiso, sin él no se dibuja. La ruta igual lleva su candado.
 
+### Menú del celular del vendedor
+
+Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan barra lateral: arriba va una fila de pastillas con sus tres pantallas, siempre en este orden: **Inicio**, **Sacar pedido** y **Por entregar**.
+
+- Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
+- Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
+- En la barra lateral de la oficina, los mismos títulos van primero y solo para quien tiene el permiso de vendedor. Después: Tablero, Pedidos, Ventas, Viajes anteriores y Zonas.
+
 ### Mapas y gráficos
 
 Tomado del mapa de ventas de Rutas (09/11/2026).

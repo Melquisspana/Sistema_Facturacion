@@ -49,3 +49,4 @@ Puede agregarse una sección de referencias relacionadas. Usá solo datos invent
 | [0007. Seguimiento de CCF es el recorrido principal de los quedan](0007-seguimiento-de-ccf-recorrido-principal-de-quedan.md) | Aceptada | 2026-11-10 |
 | [0008. Punto de venta propio y candados de emisión real](0008-punto-de-venta-propio-y-candados-de-emision-real.md) | Aceptada | 2026-11-10 |
 | [0009. Reglas de cálculo de CCF y nota de crédito](0009-reglas-de-calculo-de-ccf-y-nota-de-credito.md) | Aceptada | 2026-11-10 |
+| [0010. El viaje reemplaza a la ruta fija](0010-el-viaje-reemplaza-a-la-ruta-fija.md) | Aceptada | 2026-11-10 |
