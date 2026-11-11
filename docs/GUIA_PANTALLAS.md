@@ -64,6 +64,13 @@ Tomado de Gastos.
 - Un solo `h1` por pantalla, en el encabezado.
 - Las acciones de la pantalla («Nuevo insumo», «Volver a…») van a la derecha del título y bajan solas en el celular.
 
+### Barra lateral
+
+- Los grupos se arman con `x-sidebar-group` y sus opciones con `x-sidebar-link`.
+- **Los títulos de grupo de la barra van en una línea, cortos**: una o dos palabras («Seguimiento», «Contabilidad», «Ventas y facturación» es el máximo). Un título partido en dos se lee como dos grupos. *Pedido de Melqui, 10/11/2026.*
+- Si alguno no entra, el componente lo corta con «…» y el texto completo queda al pasar el mouse; eso es un aviso de que hay que acortarlo, no una forma de usarlo.
+- La opción de adentro no repite la palabra del grupo: grupo «Seguimiento», opción «Facturas por cobrar».
+
 ### Botones
 
 Tomado de Gastos y Planilla (botones de 44 px, que se tocan bien con el dedo). Las clases viven **solo** en los componentes `x-primary-button`, `x-secondary-button` y `x-danger-button`, que ya existen; se cambia cómo se ven, no se crean otros.

@@ -66,7 +66,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 /**
- * COBROS DE SUPERMERCADOS: la bandeja donde se ve cada factura desde que Hacienda la acepta hasta
+ * FACTURAS POR COBRAR (grupo «Seguimiento» de la barra de Facturación): la bandeja donde se ve cada factura desde que Hacienda la acepta hasta
  * que el cliente la paga, incluidas las que nunca se presentaron.
  *
  * Es la pantalla PRINCIPAL del cobro. Rutas sigue existiendo y sigue mostrando documentos,
@@ -967,7 +967,7 @@ class CobrosController extends Controller
         ]);
         $resultado = $servicio->reenviar($cliente, $datos['hash'], $datos['items'], $request->user());
 
-        return $this->volver($cliente)->with('status', "Quedaron listos para el próximo PPQ: {$resultado['ccf']} CCF y {$resultado['nc']} NC. Marcá los CCF en el Seguimiento y creá el PPQ.");
+        return $this->volver($cliente)->with('status', "Quedaron listos para el próximo PPQ: {$resultado['ccf']} CCF y {$resultado['nc']} NC. Marcá los CCF en Facturas por cobrar y creá el PPQ.");
     }
 
     /** Crea un PPQ con los CCF marcados (y sus NC) y abre su ficha. */

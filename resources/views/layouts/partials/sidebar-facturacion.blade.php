@@ -57,15 +57,17 @@
         </x-sidebar-group>
     @endif
 
-    {{-- Seguimiento de facturas. El grupo contiene el ciclo de cobro de Calleja: seguimiento
+    {{-- Seguimiento. El grupo contiene el ciclo de cobro de Calleja: seguimiento
          del CCF hasta el pago e historial de PPQ. /ppq y /cobros pertenecen
          técnicamente al área Facturación (el área se deriva de la URL, ver
          App\Enums\AreaSistema) y por eso se dibuja en este sidebar. No se movió
          ni un controlador ni un prefijo.
 
-         SE LLAMABA «Cobros», LUEGO «Pronto pago» y después «Cobros de supermercados».
-         El usuario pidió el 10/11/2026 que se llame «Seguimiento de facturas».
-         Seguimiento de CCF e Historial de PPQ cuelgan directamente de él, sin un
+         SE LLAMABA «Cobros», LUEGO «Pronto pago», «Cobros de supermercados» y
+         «Seguimiento de facturas». El usuario pidió el 10/11/2026 un título que entre
+         en una línea: el grupo se llama «Seguimiento» y su primera opción, que decía
+         «Seguimiento de CCF», pasó a «Facturas por cobrar» para no repetir la palabra.
+         Facturas por cobrar e Historial de PPQ cuelgan directamente de él, sin un
          subtítulo que repita la misma idea.
 
          La barra del área Rutas ya no lo ofrece (28/10/2026): el módulo vive solo acá,
@@ -76,9 +78,9 @@
          cerrado, y renombrarla les reiniciaría esa preferencia sin ningún motivo. Es
          un identificador técnico, no un rótulo. --}}
     @if ($vePpq)
-        <x-sidebar-group titulo="Seguimiento de facturas" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
-            {{-- «Buscar CCF / NC» ya no va en el menú: es un botón dentro del Seguimiento. --}}
-            <x-sidebar-link :href="route('cobros.index')" :active="request()->routeIs('cobros.*', 'ppq.index', 'ppq.albaranes_por_fecha')">Seguimiento de CCF</x-sidebar-link>
+        <x-sidebar-group titulo="Seguimiento" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
+            {{-- «Buscar CCF / NC» ya no va en el menú: es un botón dentro de Facturas por cobrar. --}}
+            <x-sidebar-link :href="route('cobros.index')" :active="request()->routeIs('cobros.*', 'ppq.index', 'ppq.albaranes_por_fecha')">Facturas por cobrar</x-sidebar-link>
             <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial de PPQ</x-sidebar-link>
         </x-sidebar-group>
     @endif
