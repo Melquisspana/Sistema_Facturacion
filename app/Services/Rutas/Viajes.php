@@ -2,7 +2,6 @@
 
 namespace App\Services\Rutas;
 
-use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\RolEnSalida;
@@ -12,7 +11,6 @@ use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
-use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Support\HoraNegocio;
 use Carbon\CarbonImmutable;
@@ -42,7 +40,8 @@ use Illuminate\Support\Facades\DB;
  *
  * Se cierra solo ({@see cerrarTerminados()}, cada mañana) cuando ya no suma y todos sus
  * pedidos están facturados y entregados (marcados por quien sea o confirmados por el albarán
- * del supermercado), o tras {@see self::DIAS_SIN_MOVIMIENTO} días sin
+ * del supermercado; la regla es la de {@see PasoPedido}, la misma de la pestaña «Viajes»),
+ * o tras {@see self::DIAS_SIN_MOVIMIENTO} días sin
  * movimiento (un pedido que nunca sale de la fábrica no lo deja abierto para siempre). No se
  * cierra por fecha.
  */
@@ -75,13 +74,22 @@ class Viajes
     public function __construct(
         private readonly PropuestaRutas $propuesta,
         private readonly EntregasCcf $entregas,
-        private readonly AlbaranLocalizador $albaranes,
+        private readonly PasoPedido $pasos,
     ) {}
 
     /** La zona de la sala: su ruta o, si no tiene, la que propone la cobertura. */
     public function zona(ClienteSucursal $sala): ?Ruta
     {
         return $sala->ruta_id !== null ? Ruta::find($sala->ruta_id) : $this->propuesta->para($sala);
+    }
+
+    /**
+     * Solo el id de la zona, sin consultar por sala: para listas. La sala tiene que traer
+     * `ruta_id`, `distrito_id` y `departamento_id`.
+     */
+    public function zonaId(ClienteSucursal $sala): ?int
+    {
+        return $sala->ruta_id !== null ? (int) $sala->ruta_id : $this->propuesta->para($sala)?->id;
     }
 
     /**
@@ -178,7 +186,7 @@ class Viajes
      * La tarea de cada mañana. Los viajes que pasaron un día sin pedidos dejan de sumar; los
      * que ya no suman se cierran si todo está entregado o si no se movieron en
      * {@see self::DIAS_SIN_MOVIMIENTO} días, y se cancelan si se quedaron sin nada. Cerrar es
-     * finalizar sin liquidar: lo liquida la oficina con «Terminar ruta».
+     * finalizar. El viaje no se liquida: el dinero se entrega con el PDF del día firmado.
      *
      * @return array{dejaronDeSumar: int, finalizados: int, cancelados: int}
      */
@@ -228,34 +236,21 @@ class Viajes
     }
 
     /**
-     * ¿Todo facturado y entregado? Cada pedido vigente que salió de la fábrica está en un CCF
-     * que cuenta, y cada CCF del viaje (los de sus pedidos y los que se anotaron en él) se
-     * entregó: marcado en esta salida o en otra, por quien sea, o confirmado por el albarán de
-     * entrega del supermercado ({@see AlbaranLocalizador}). Lo que no se trae no espera nada;
-     * lo que falta mandar, sí.
+     * ¿Todo facturado y entregado? Cada pedido vigente llegó al final ({@see PasoPedido}:
+     * entregado, o la fábrica no lo trae) y cada CCF que se anotó en el viaje sin salir de un
+     * pedido suyo también se entregó. Entregado es marcado en esta salida o en otra, por quien
+     * sea, o confirmado por el albarán de entrega del supermercado. Es la misma regla que
+     * muestra la pestaña «Viajes» ({@see TableroViajes}): no pueden discrepar.
      */
     public function todoEntregado(SalidaRuta $viaje): bool
     {
-        $pedidos = $viaje->pedidos()->vigentes()->with(['envios' => fn ($q) => $q->vigentes(), 'envios.dte'])->get();
-        if ($pedidos->contains(fn (PedidoSala $p) => $p->estaPorMandar())) {
-            return false;
-        }
-        $envios = $pedidos->where('estado', EstadoPedidoSala::Enviado)->flatMap->envios;
-        if ($envios->contains(fn ($e) => ! $e->estaFacturado())) {
-            return false;
-        }
-        $dtes = $envios->pluck('dte_id')->merge($viaje->entregas()->pluck('dte_id'))->map(fn ($id) => (int) $id)->unique()->values();
-        $faltan = $dtes->diff(SalidaRutaEntrega::whereIn('dte_id', $dtes)->entregadas()->pluck('dte_id')->map(fn ($id) => (int) $id));
-        if ($faltan->isEmpty()) {
-            return true;
-        }
+        $pedidos = $viaje->pedidos()->vigentes()
+            ->with(['envios' => fn ($q) => $q->vigentes(), 'envios.dte:id,estado,deleted_at,fecha_emision,numero_orden_compra'])->get();
+        $sueltos = Dte::withTrashed()->whereKey($viaje->entregas()->pluck('dte_id')->all())->get(['id', 'fecha_emision', 'numero_orden_compra']);
+        $entregados = $this->pasos->entregados($pedidos->flatMap->envios->pluck('dte')->filter()->concat($sueltos)->unique('id'));
 
-        // Lo que nadie marcó: el albarán de entrega lo confirma.
-        $sinMarcar = Dte::whereKey($faltan->all())->get(['id', 'numero_orden_compra']);
-        [$porDte, $porOrden] = $this->albaranes->indices($sinMarcar->modelKeys(), $sinMarcar->pluck('numero_orden_compra')->all());
-
-        return $sinMarcar->count() === $faltan->count()
-            && $sinMarcar->every(fn (Dte $d) => $this->albaranes->elegir($porDte, $porOrden, $d->id, $d->numero_orden_compra)->estaVinculado());
+        return $pedidos->every(fn (PedidoSala $p) => PasoPedido::terminado($this->pasos->de($p, $entregados)[0]))
+            && $sueltos->every(fn (Dte $d) => isset($entregados[$d->id]));
     }
 
     /** El último día con algo: la apertura, un pedido o un resultado de entrega. */

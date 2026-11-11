@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
@@ -119,11 +120,16 @@ class SalidaRutaEntrega extends Model
 
     /**
      * Entregadas con quedan y su fecha de pago: lo que queda por cobrar, el pago más próximo
-     * primero. Lo leerá «Facturas por cobrar».
+     * primero. Sale cuando «Facturas por cobrar» da la factura por pagada. Lo lee la pestaña
+     * «Viajes» del tablero.
      */
     public function scopeQuedanPorCobrar(Builder $q): Builder
     {
-        return $q->entregadas()->whereNull('forma_cobro')->whereNotNull('quedan_fecha_pago')->orderBy('quedan_fecha_pago');
+        return $q->entregadas()->whereNull('forma_cobro')->whereNotNull('quedan_fecha_pago')
+            ->whereNotExists(fn ($pagada) => $pagada->selectRaw('1')->from('cobro_documentos')
+                ->whereColumn('cobro_documentos.dte_id', 'salida_ruta_entregas.dte_id')
+                ->where('cobro_documentos.pago_estado', EstadoPagoCobro::Pagado->value))
+            ->orderBy('quedan_fecha_pago');
     }
 
     public function scopePendientes(Builder $q): Builder

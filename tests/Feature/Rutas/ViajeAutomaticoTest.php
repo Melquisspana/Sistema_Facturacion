@@ -17,6 +17,7 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
+use App\Services\Rutas\LiquidacionSalida;
 use App\Services\Rutas\Viajes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -304,8 +305,9 @@ class ViajeAutomaticoTest extends TestCase
         $viaje = $cerrar('2026-11-14');
         $this->assertSame(EstadoSalidaRuta::Finalizada, $viaje->estado);
         $this->assertSame('2026-11-12', $viaje->fecha_fin_real->toDateString(), 'Regresa el día del último movimiento.');
+        // El viaje no se liquida: su control es el PDF del día firmado.
         $this->assertFalse($viaje->estaLiquidada());
-        $this->assertTrue($viaje->esPorLiquidar());
+        $this->assertFalse(LiquidacionSalida::seLiquida($viaje));
         $this->assertTrue(Activity::where('subject_id', $viaje->id)->where('subject_type', SalidaRuta::class)
             ->where('description', 'se cerró solo el viaje: todo entregado')->exists());
     }

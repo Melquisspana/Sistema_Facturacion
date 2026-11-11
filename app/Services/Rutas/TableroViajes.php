@@ -2,12 +2,10 @@
 
 namespace App\Services\Rutas;
 
-use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Models\Dte;
 use App\Models\PedidoSala;
-use App\Models\PedidoSalaEnvio;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Support\HoraNegocio;
@@ -16,38 +14,38 @@ use Illuminate\Support\Collection;
 
 /**
  * La pestaña «Viajes» del tablero de Rutas (etapa 6, 10/11/2026): cada viaje abierto
- * ({@see Viajes}) y en qué paso va cada pedido, todo calculado, sin tablas nuevas:
+ * ({@see Viajes}) y en qué paso va cada pedido (sacado, en fábrica, facturado, entregado),
+ * todo calculado, sin tablas nuevas. El paso y qué cuenta como entregado los decide
+ * {@see PasoPedido}, la misma regla con la que el viaje se cierra solo
+ * ({@see Viajes::todoEntregado()}): `todoEntregado` de cada fila vale lo mismo.
  *
- *   1. Sacado: registrado y la fábrica todavía no lo tocó.
- *   2. En fábrica: en armado, mandado en parte, o mandado y todavía sin un CCF que cuente
- *      (nunca facturado, o su CCF se invalidó, rechazó o borró).
- *   3. Facturado: todo lo mandado está en CCF que cuentan (`pedido_sala_envios.dte_id`).
- *   4. Entregado: cada uno de esos CCF tiene su entrega registrada (en cualquier salida) o
- *      un albarán de entrega inequívoco ({@see AlbaranLocalizador}).
- *
- * Un pedido con partes en pasos distintos va en el de la parte más atrasada. Lo que la
- * fábrica cerró sin mandar («No se trae») va aparte; lo anulado no cuenta.
+ * Además de los pedidos, cada viaje dice los CCF que se anotaron en él sin salir de un pedido
+ * suyo y siguen sin entregar (`sueltos`): también lo dejan abierto.
  *
  * «Trabado» es lo que lleva días sin avanzar ({@see self::DIAS_TRABADO_FABRICA} y
  * {@see self::DIAS_TRABADO_ENTREGA}). Solo en los viajes abiertos.
+ *
+ * Abajo van dos avisos para la oficina: las facturas que no se pudieron entregar dos veces o
+ * más ({@see EntregasCcf::fallas()}) y los quedan de las tiendas que faltan cobrar
+ * ({@see SalidaRutaEntrega::scopeQuedanPorCobrar()}).
  *
  * Las mismas consultas con un viaje que con veinte: los viajes con todo cargado, una para
  * las entregas y una para los albaranes.
  */
 class TableroViajes
 {
-    public const SACADO = 'sacado';
+    public const SACADO = PasoPedido::SACADO;
 
-    public const EN_FABRICA = 'en_fabrica';
+    public const EN_FABRICA = PasoPedido::EN_FABRICA;
 
-    public const FACTURADO = 'facturado';
+    public const FACTURADO = PasoPedido::FACTURADO;
 
-    public const ENTREGADO = 'entregado';
+    public const ENTREGADO = PasoPedido::ENTREGADO;
 
-    public const NO_SE_TRAE = 'no_se_trae';
+    public const NO_SE_TRAE = PasoPedido::NO_SE_TRAE;
 
     /** Los cuatro pasos, en orden. */
-    public const PASOS = [self::SACADO, self::EN_FABRICA, self::FACTURADO, self::ENTREGADO];
+    public const PASOS = PasoPedido::PASOS;
 
     /** Sacado hace estos días o más y todavía sin facturar: trabado en la fábrica. */
     public const DIAS_TRABADO_FABRICA = 2;
@@ -58,10 +56,14 @@ class TableroViajes
     /** Los viajes cerrados que se muestran: los de estos últimos días. */
     public const DIAS_CERRADOS = 14;
 
-    public function __construct(private readonly Viajes $viajes, private readonly AlbaranLocalizador $albaranes) {}
+    public function __construct(
+        private readonly Viajes $viajes,
+        private readonly PasoPedido $pasos,
+        private readonly EntregasCcf $entregas,
+    ) {}
 
     /**
-     * @return array{abiertos: Collection<int, array>, cerrados: Collection<int, array>}
+     * @return array{abiertos: Collection<int, array>, cerrados: Collection<int, array>, fallas: Collection<int, array>, quedan: Collection<int, SalidaRutaEntrega>}
      */
     public function calcular(?string $hoy = null): array
     {
@@ -81,11 +83,15 @@ class TableroViajes
                 'pedidos.sacadoPor:id,nombre',
                 'pedidos.envios' => fn ($q) => $q->vigentes()->orderBy('numero'),
                 'pedidos.envios.dte:id,estado,deleted_at,fecha_emision,numero_orden_compra',
+                // Los CCF anotados en el viaje: los que no son de un pedido suyo también esperan.
+                'entregas:id,salida_ruta_id,dte_id',
+                'entregas.dte' => fn ($q) => $q->withTrashed()->select('id', 'fecha_emision', 'numero_orden_compra'),
             ])
             ->orderBy('fecha_inicio')->orderBy('id')
             ->get();
 
-        $entregados = $this->entregados($salidas->flatMap->pedidos->flatMap->envios->pluck('dte')->filter()->unique('id'));
+        $entregados = $this->pasos->entregados($salidas->flatMap->pedidos->flatMap->envios->pluck('dte')
+            ->concat($salidas->flatMap->entregas->pluck('dte'))->filter()->unique('id'));
 
         $filas = $salidas->map(fn (SalidaRuta $s) => $this->fila($s, $entregados, $hoy));
         [$abiertos, $cerrados] = $filas->partition(fn (array $f) => $f['salida']->estado === EstadoSalidaRuta::EnCurso);
@@ -93,7 +99,42 @@ class TableroViajes
         return [
             'abiertos' => $abiertos->values(),
             'cerrados' => $cerrados->sortByDesc(fn (array $f) => [$f['salida']->fecha_fin_real->toDateString(), $f['salida']->id])->values(),
+            'fallas' => $this->fallas(),
+            'quedan' => $this->quedan(),
         ];
+    }
+
+    /**
+     * Las facturas que siguen por entregar y ya no se pudieron entregar
+     * {@see EntregasCcf::FALLAS_AVISO} veces o más: el aviso para el jefe, las de más
+     * intentos primero. Las mismas cuentas de «Por entregar».
+     *
+     * @return Collection<int, array{dte: Dte, veces: int}>
+     */
+    private function fallas(): Collection
+    {
+        $pendientes = $this->entregas->porEntregar();
+        $fallas = array_filter($this->entregas->fallas($pendientes->modelKeys()), fn (int $n) => $n >= EntregasCcf::FALLAS_AVISO);
+        if ($fallas === []) {
+            return collect();
+        }
+
+        return $pendientes->whereIn('id', array_keys($fallas))->load('clienteSucursal:id,nombre')
+            ->map(fn (Dte $dte) => ['dte' => $dte, 'veces' => $fallas[$dte->id]])
+            ->sortByDesc('veces')->values();
+    }
+
+    /**
+     * Los quedan de las tiendas que faltan cobrar, el pago más próximo primero. Sale de la
+     * lista cuando «Facturas por cobrar» da la factura por pagada.
+     *
+     * @return Collection<int, SalidaRutaEntrega>
+     */
+    private function quedan(): Collection
+    {
+        return SalidaRutaEntrega::query()->quedanPorCobrar()
+            ->with(['dte:id,numero_control,total_pagar', 'sala:id,nombre'])
+            ->orderBy('id')->get();
     }
 
     /**
@@ -113,6 +154,10 @@ class TableroViajes
                 $conteo[$p['paso']]++;
             }
         }
+        // Los CCF anotados en el viaje que no salieron de un pedido suyo y siguen sin entregar.
+        $deSusPedidos = $viaje->pedidos->flatMap->envios->pluck('dte_id')->filter()->map(fn ($id) => (int) $id)->all();
+        $sueltos = $viaje->entregas->pluck('dte_id')->map(fn ($id) => (int) $id)->unique()
+            ->reject(fn (int $id) => in_array($id, $deSusPedidos, true) || isset($entregados[$id]))->count();
 
         return [
             'salida' => $viaje,
@@ -124,6 +169,10 @@ class TableroViajes
             'salas' => $viaje->pedidos->pluck('cliente_sucursal_id')->unique()->count(),
             'conteo' => $conteo,
             'noSeTrae' => $pedidos->where('paso', self::NO_SE_TRAE)->count(),
+            'sueltos' => $sueltos,
+            // La regla del cierre ({@see Viajes::todoEntregado()}), con lo ya calculado.
+            'todoEntregado' => $pedidos->every(fn (array $p) => PasoPedido::terminado($p['paso']))
+                && $viaje->entregas->pluck('dte_id')->every(fn ($id) => isset($entregados[(int) $id])),
             'trabados' => $pedidos->whereNotNull('trabado')->count(),
             'pedidos' => $pedidos,
         ];
@@ -137,13 +186,7 @@ class TableroViajes
      */
     private function paso(PedidoSala $pedido, array $entregados, string $hoy, bool $abierto): array
     {
-        $sacado = CarbonImmutable::parse($pedido->fecha->toDateString());
-        [$paso, $detalle, $desde] = match (true) {
-            $pedido->estado === EstadoPedidoSala::NoSeTrae => [self::NO_SE_TRAE, 'La fábrica no lo trae', $sacado],
-            $pedido->estaRegistrado() && $pedido->armando_desde === null => [self::SACADO, null, $sacado],
-            $pedido->estaPorMandar() => [self::EN_FABRICA, $pedido->estaRegistrado() ? 'En armado' : 'Mandado en parte', $sacado],
-            default => $this->despuesDeLaFabrica($pedido, $entregados, $sacado),
-        };
+        [$paso, $detalle, $desde] = $this->pasos->de($pedido, $entregados);
 
         $dias = (int) $desde->diffInDays(CarbonImmutable::parse($hoy));
         $trabado = match (true) {
@@ -155,58 +198,5 @@ class TableroViajes
         };
 
         return ['pedido' => $pedido, 'paso' => $paso, 'detalle' => $detalle, 'desde' => $desde, 'dias' => $dias, 'trabado' => $trabado];
-    }
-
-    /**
-     * Mandado: en fábrica mientras algo no esté en un CCF que cuente; si no, facturado
-     * desde el CCF sin entregar más viejo, o entregado desde la última entrega.
-     *
-     * @param  array<int, string>  $entregados
-     * @return array{0: string, 1: ?string, 2: CarbonImmutable}
-     */
-    private function despuesDeLaFabrica(PedidoSala $pedido, array $entregados, CarbonImmutable $sacado): array
-    {
-        $envios = $pedido->envios;
-        if ($envios->isEmpty() || $envios->contains(fn (PedidoSalaEnvio $e) => ! $e->estaFacturado())) {
-            return [self::EN_FABRICA, 'Llegó de la fábrica; falta facturar', $sacado];
-        }
-
-        $dtes = $envios->pluck('dte')->unique('id');
-        $sinEntregar = $dtes->reject(fn (Dte $d) => isset($entregados[$d->id]));
-        if ($sinEntregar->isNotEmpty()) {
-            return [self::FACTURADO, null, CarbonImmutable::parse($sinEntregar->min(fn (Dte $d) => $d->fecha_emision->toDateString()))];
-        }
-
-        return [self::ENTREGADO, null, CarbonImmutable::parse($dtes->max(fn (Dte $d) => $entregados[$d->id]))];
-    }
-
-    /**
-     * Los CCF entregados y desde cuándo: con la entrega registrada, en cualquier salida, o
-     * con su albarán de entrega. Una consulta para las entregas y una para los albaranes.
-     *
-     * @param  Collection<int, Dte>  $dtes
-     * @return array<int, string> dte_id => fecha
-     */
-    private function entregados(Collection $dtes): array
-    {
-        if ($dtes->isEmpty()) {
-            return [];
-        }
-
-        $fechas = SalidaRutaEntrega::query()->entregadas()->whereIn('dte_id', $dtes->pluck('id'))
-            ->groupBy('dte_id')->selectRaw('dte_id, MAX(fecha_resultado) as fecha')
-            ->pluck('fecha', 'dte_id')
-            ->map(fn ($f) => CarbonImmutable::parse($f)->toDateString())
-            ->all();
-
-        [$porDte, $porOrden] = $this->albaranes->indices($dtes->pluck('id')->all(), $dtes->pluck('numero_orden_compra')->all());
-        foreach ($dtes as $dte) {
-            $resolucion = $this->albaranes->elegir($porDte, $porOrden, $dte->id, $dte->numero_orden_compra);
-            if (! isset($fechas[$dte->id]) && $resolucion->estaVinculado()) {
-                $fechas[$dte->id] = ($resolucion->albaran->fecha_albaran ?? $dte->fecha_emision)->toDateString();
-            }
-        }
-
-        return $fechas;
     }
 }

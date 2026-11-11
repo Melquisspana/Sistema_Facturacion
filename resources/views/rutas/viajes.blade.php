@@ -71,6 +71,13 @@
                                         @if ($viaje['noSeTrae'] > 0)
                                             <p class="text-xs text-gray-500">Y {{ $plural($viaje['noSeTrae'], 'pedido que la fábrica no trae', 'pedidos que la fábrica no trae') }}.</p>
                                         @endif
+                                        {{-- Lo que también lo deja abierto: CCF marcados en el viaje que no son de sus pedidos. --}}
+                                        @if ($viaje['sueltos'] > 0)
+                                            <p class="text-xs text-gray-500">Y {{ $plural($viaje['sueltos'], 'factura de la zona anotada en el viaje y todavía sin entregar', 'facturas de la zona anotadas en el viaje y todavía sin entregar') }}.</p>
+                                        @endif
+                                        @if ($viaje['todoEntregado'] && ! $salida->suma_pedidos)
+                                            <p class="text-sm font-medium text-green-700">Todo entregado: se cierra solo mañana temprano.</p>
+                                        @endif
                                         @foreach ($viaje['pedidos']->whereNotNull('trabado') as $p)
                                             <p class="text-sm text-gray-700">
                                                 <span class="{{ $insignia }} bg-red-100 text-red-700">Trabado</span>
@@ -113,6 +120,55 @@
                                         @endforeach
                                     </ul>
                                 </details>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </section>
+
+            {{-- ===================== Lo que no se pudo entregar dos veces =====================
+                 El mismo aviso de «Por entregar», para el jefe: siguen por entregar. --}}
+            @if ($fallas->isNotEmpty())
+                <section aria-labelledby="fallas-titulo">
+                    <h2 id="fallas-titulo" class="{{ $titulo }}">No se pudieron entregar</h2>
+                    <p class="mt-1 text-sm text-gray-600">Facturas que ya fallaron {{ \App\Services\Rutas\EntregasCcf::FALLAS_AVISO }} veces o más y siguen por entregar.</p>
+                    <ul class="{{ $caja }} mt-3 divide-y divide-gray-100">
+                        @foreach ($fallas as $falla)
+                            <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                                <div class="min-w-0">
+                                    <p class="font-medium text-gray-800">{{ $falla['dte']->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</p>
+                                    <p class="text-xs text-gray-500"><span class="font-mono">{{ $falla['dte']->numero_control }}</span> · del {{ $falla['dte']->fecha_emision?->format('d/m/Y') }}</p>
+                                </div>
+                                <span class="{{ $insignia }} bg-red-100 text-red-700">No se pudo {{ $falla['veces'] }} veces</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
+
+            {{-- ===================== Quedan de las tiendas =====================
+                 Lo que el vendedor anotó al entregar: número de quedan y fecha de pago. --}}
+            <section aria-labelledby="quedan-titulo">
+                <h2 id="quedan-titulo" class="{{ $titulo }}">Quedan por cobrar</h2>
+                @if ($quedan->isEmpty())
+                    <p class="mt-1 text-sm text-gray-600">No hay quedan de tiendas por cobrar.</p>
+                @else
+                    <p class="mt-1 text-sm text-gray-600">Los quedan que dejaron las tiendas al entregar, el pago más próximo primero.</p>
+                    <ul class="{{ $caja }} mt-3 divide-y divide-gray-100">
+                        @foreach ($quedan as $entrega)
+                            @php $vencido = $entrega->quedan_fecha_pago->toDateString() < \App\Support\HoraNegocio::fechaHoy(); @endphp
+                            <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                                <div class="min-w-0">
+                                    <p class="font-medium text-gray-800">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</p>
+                                    <p class="text-xs text-gray-500">
+                                        <span class="font-mono">{{ $entrega->dte?->numero_control }}</span>
+                                        · {{ $entrega->quedan_numero ? 'Quedan n.º '.$entrega->quedan_numero : 'Quedan sin número' }}
+                                    </p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-semibold tabular-nums text-gray-800">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                                    <p class="text-xs {{ $vencido ? 'font-medium text-red-700' : 'text-gray-500' }}">{{ $vencido ? 'Venció el' : 'Paga el' }} {{ $entrega->quedan_fecha_pago->format('d/m/Y') }}</p>
+                                </div>
                             </li>
                         @endforeach
                     </ul>
