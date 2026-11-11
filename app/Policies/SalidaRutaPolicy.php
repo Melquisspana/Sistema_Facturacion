@@ -87,10 +87,16 @@ class SalidaRutaPolicy
                 ->where('user_id', $usuario->id)->where('activo', true)->select('id'))->exists();
     }
 
+    /**
+     * Deshacer lo que él mismo registró. En el viaje y en la automática (duran varios días y
+     * no cierran el día), solo lo de HOY: lo de días anteriores ya salió en el PDF del día que
+     * firmó al entregar el dinero, y lo deshace solo la oficina.
+     */
     public function deshacer(User $usuario, SalidaRuta $salida, SalidaRutaEntrega $entrega): bool
     {
         return $this->registrar($usuario, $salida)
             && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString()))
+            && (! $salida->esAutomatica() || $entrega->fecha_resultado?->toDateString() === HoraNegocio::fechaHoy())
             && (int) $entrega->salida_ruta_id === (int) $salida->id
             && (int) $entrega->registrado_por === (int) $usuario->id;
     }

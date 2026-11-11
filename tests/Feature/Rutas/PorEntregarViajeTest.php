@@ -354,6 +354,44 @@ class PorEntregarViajeTest extends TestCase
             ->assertSeeInOrder(['Por entregar', '2']);
     }
 
+    // ---------------------------------------------------------------- deshacer
+
+    public function test_en_el_viaje_el_vendedor_solo_deshace_lo_de_hoy(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        $dte = $this->ccf($this->salas['San Miguel'], '142.00');
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        $entrega = SalidaRutaEntrega::sole();
+        $this->assertSame($viaje->id, $entrega->salida_ruta_id);
+        $this->assertTrue($this->ana->can('deshacer', [$viaje, $entrega]), 'El mismo día sí lo deshace.');
+
+        // Al otro día el viaje sigue abierto, pero ese cobro ya salió en el PDF firmado de ayer.
+        $this->travelTo('2026-11-11 09:00:00');
+        $this->assertFalse($this->ana->can('deshacer', [$viaje, $entrega]));
+        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.deshacer', [$viaje, $entrega]))->assertForbidden();
+        $this->assertSame(ResultadoEntrega::Entregado, $entrega->refresh()->resultado);
+        $this->assertSame('142.00', $entrega->monto_cobrado);
+
+        // La oficina sí lo deshace.
+        $oficina = User::factory()->create(['activo' => true])->assignRole('facturacion');
+        $this->actingAs($oficina)->patch(route('rutas.salidas.entregas.deshacer', [$viaje, $entrega]))->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertSame(0, SalidaRutaEntrega::count());
+    }
+
+    public function test_lo_marcado_hoy_en_el_viaje_si_se_deshace(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        $this->travelTo('2026-11-11 09:00:00');
+        $dte = $this->ccf($this->salas['San Miguel']);
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'cheque'])
+            ->assertSessionHasNoErrors();
+        $entrega = SalidaRutaEntrega::sole();
+
+        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.deshacer', [$viaje, $entrega]))->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertSame(0, SalidaRutaEntrega::count());
+    }
+
     // ---------------------------------------------------------------- sacar pedido
 
     public function test_el_buscador_marca_la_sala_que_le_toca(): void
