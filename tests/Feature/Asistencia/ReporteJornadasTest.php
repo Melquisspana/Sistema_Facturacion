@@ -53,8 +53,8 @@ class ReporteJornadasTest extends TestCase
         config()->set('asistencia.enabled', true);
 
         $this->lector = AsistenciaDispositivo::factory()->create(['codigo' => 'entrada', 'nombre' => 'Entrada principal']);
-        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
-        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
+        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
     }
 
     private function admin(): User
@@ -94,7 +94,7 @@ class ReporteJornadasTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.jornadas.index', ['desde' => '2026-03-01', 'hasta' => '2026-03-31']))
             ->assertOk()
-            ->assertSee('Ana Pérez')
+            ->assertSee('Ana Prueba')
             ->assertSee('05/03/2026')
             ->assertSee('07:00')
             ->assertSee('16:00')
@@ -238,7 +238,7 @@ class ReporteJornadasTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.jornadas.index', ['desde' => '2026-03-01', 'hasta' => '2026-03-31']))
             ->assertOk()
-            ->assertSee('Ana Pérez')
+            ->assertSee('Ana Prueba')
             ->assertSee('(inactivo)');
     }
 
@@ -374,7 +374,7 @@ class ReporteJornadasTest extends TestCase
         $this->actingAs($this->soloVer())
             ->get(route('asistencia.jornadas.index', ['desde' => '2026-03-01', 'hasta' => '2026-03-31']))
             ->assertOk()
-            ->assertSee('Ana Pérez');
+            ->assertSee('Ana Prueba');
     }
 
     public function test_con_el_modulo_apagado_el_reporte_no_existe(): void

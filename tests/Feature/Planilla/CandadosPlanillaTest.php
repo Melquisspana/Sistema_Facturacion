@@ -116,8 +116,8 @@ class CandadosPlanillaTest extends TestCase
             'clase' => 'regular', 'moneda' => 'USD', 'fecha_pago' => '2026-09-16',
         ]);
 
-        $ana = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Ana Mendoza', 'cargo' => 'Ventas']);
-        $carlos = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Carlos Rivas', 'cargo' => 'Ventas']);
+        $ana = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Ana Muestra', 'cargo' => 'Ventas']);
+        $carlos = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Carlos Rótulo', 'cargo' => 'Ventas']);
 
         app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
             ['planilla_empleado_id' => $ana->id, 'salario' => '225.00', 'conceptos' => [
@@ -191,7 +191,7 @@ class CandadosPlanillaTest extends TestCase
     {
         $gestor = $this->gestor();
         $planilla = $this->confirmada($gestor);
-        $sueldo = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza')->gasto;
+        $sueldo = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra')->gasto;
 
         $this->actingAs($this->soloGastos())
             ->get(route('gastos.show', $sueldo))
@@ -205,7 +205,7 @@ class CandadosPlanillaTest extends TestCase
     {
         $gestor = $this->gestor();
         $planilla = $this->confirmada($gestor);
-        $cuota = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza')->gasto->cuotas->first();
+        $cuota = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra')->gasto->cuotas->first();
 
         $this->expectException(HttpException::class);
 
@@ -219,7 +219,7 @@ class CandadosPlanillaTest extends TestCase
     {
         $gestor = $this->gestor();
         $planilla = $this->confirmada($gestor);
-        $detalle = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza');
+        $detalle = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra');
 
         $pago = app(PagarPlanilla::class)->pagarPersona($gestor, $detalle, [
             'importe' => '260.50', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
@@ -237,7 +237,7 @@ class CandadosPlanillaTest extends TestCase
     {
         $gestor = $this->gestor();
         $planilla = $this->confirmada($gestor);
-        $detalle = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza');
+        $detalle = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra');
 
         app(PagarPlanilla::class)->pagarPersona($gestor, $detalle, [
             'importe' => '260.50', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
@@ -277,7 +277,7 @@ class CandadosPlanillaTest extends TestCase
     {
         $gestor = $this->gestor();
         $planilla = $this->confirmada($gestor);
-        $detalle = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza');
+        $detalle = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra');
 
         // Puede pagar planillas pero no ve los importes. Para declarar que salió dinero
         // hay que saber cuánto era: la ruta pide los dos permisos.
@@ -333,7 +333,7 @@ class CandadosPlanillaTest extends TestCase
     {
         $gestor = $this->gestor();
         $planilla = $this->confirmada($gestor);
-        $cuota = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza')->gasto->cuotas->first();
+        $cuota = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra')->gasto->cuotas->first();
 
         // Esto es peor que leer un sueldo: un ajuste al crédito EXTINGUE la deuda sin
         // pagarla. La persona seguiría sin cobrar y el sistema diría que no se le debe.
@@ -382,7 +382,7 @@ class CandadosPlanillaTest extends TestCase
             'metodo' => 'transferencia', 'pagado_por' => $u->id, 'sin_comprobante' => 'Lote.'];
 
         // Ana ya había cobrado 100 por otra vía: el lote le paga los 160.50 que faltan.
-        $ana = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza');
+        $ana = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra');
         app(PagarPlanilla::class)->pagarPersona($u, $ana, [
             'importe' => '100.00', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
             'pagado_por' => $u->id, 'sin_comprobante' => 'Adelanto de la quincena.',
@@ -481,7 +481,7 @@ class CandadosPlanillaTest extends TestCase
         // El anticipo salió por Gastos: hay un pago real detrás.
         $gasto = Gasto::create([
             'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('b', 64),
-            'concepto' => 'Anticipo de quincena', 'beneficiario' => 'Ana Mendoza',
+            'concepto' => 'Anticipo de quincena', 'beneficiario' => 'Ana Muestra',
             'categoria' => 'Anticipos al personal', 'ambito' => 'empresarial',
             'naturaleza' => 'operativo', 'moneda' => 'USD', 'importe' => '50.00',
             'documentacion' => 'pendiente', 'responsable_id' => $u->id, 'registrado_por' => $u->id,
@@ -497,8 +497,8 @@ class CandadosPlanillaTest extends TestCase
             'tipo_periodo' => 'quincenal', 'fecha' => '2026-09-10',
             'clase' => 'regular', 'moneda' => 'USD', 'fecha_pago' => '2026-09-16',
         ]);
-        $ana = PlanillaEmpleado::where('nombre', 'Ana Mendoza')->first()
-            ?? app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Ana Mendoza', 'cargo' => 'Ventas']);
+        $ana = PlanillaEmpleado::where('nombre', 'Ana Muestra')->first()
+            ?? app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Ana Muestra', 'cargo' => 'Ventas']);
 
         $anticipo = app(RegistrarAnticipo::class)->registrar($u, $ana, [
             'fecha' => '2026-09-05', 'importe' => '50.00', 'moneda' => 'USD',

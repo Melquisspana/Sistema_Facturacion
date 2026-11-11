@@ -283,7 +283,7 @@ class AvisosTest extends TestCase
         $this->preferencias($soloEmpresa, ['ambitos' => ['empresarial', 'personal']]);
 
         $this->gasto($conAlcance, [
-            'ambito' => 'personal', 'persona' => 'Melqui', 'concepto' => 'Colegiatura',
+            'ambito' => 'personal', 'persona' => 'Persona de Prueba', 'concepto' => 'Colegiatura',
         ], [['100.00', '2026-03-01']]);
 
         $this->armar('2026-03-10');
@@ -551,7 +551,7 @@ class AvisosTest extends TestCase
         $soloEmpresa = $this->usuario([PermisoSistema::GastosVer->value]);
 
         $this->gasto($conAlcance, [
-            'ambito' => 'personal', 'persona' => 'Melqui', 'concepto' => 'Colegiatura',
+            'ambito' => 'personal', 'persona' => 'Persona de Prueba', 'concepto' => 'Colegiatura',
         ], [['500.00', '2026-03-01']]);
         $this->gasto($conAlcance, ['concepto' => 'Internet'], [['40.00', '2026-03-01']]);
 

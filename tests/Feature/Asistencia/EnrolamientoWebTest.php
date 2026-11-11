@@ -57,7 +57,7 @@ class EnrolamientoWebTest extends TestCase
         $this->lector->sincronizarIndice(162, []);
         $this->lector->refresh();
 
-        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
+        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
     }
 
     private function admin(): User
@@ -105,7 +105,7 @@ class EnrolamientoWebTest extends TestCase
     {
         $this->iniciar($this->admin());
 
-        $this->assertStringContainsString('Ana Pérez', session('status'));
+        $this->assertStringContainsString('Ana Prueba', session('status'));
         $this->assertStringContainsString('Entrada principal', session('status'));
     }
 
@@ -230,7 +230,7 @@ class EnrolamientoWebTest extends TestCase
     public function test_no_se_puede_cancelar_la_orden_de_otra_persona(): void
     {
         $orden = app(CrearOrdenEnrolamiento::class)($this->ana, $this->lector);
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
 
         $this->actingAs($this->admin())
             ->delete(route('asistencia.empleados.enrolamiento.destroy', [$beto, $orden]))
@@ -257,7 +257,7 @@ class EnrolamientoWebTest extends TestCase
         $this->iniciar($this->admin());
         $this->iniciar($this->admin())->assertSessionHas('error');
 
-        $this->assertStringContainsString('Ana Pérez', session('error'));
+        $this->assertStringContainsString('Ana Prueba', session('error'));
         $this->assertSame(1, AsistenciaOrdenEnrolamiento::count());
     }
 

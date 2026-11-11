@@ -398,7 +398,7 @@ class RepetirYHistorialTest extends TestCase
     {
         $empresa = $this->gasto($duena, ['concepto' => 'Internet'], [['40.00', '2026-09-01']]);
         $personal = $this->gasto($duena, [
-            'concepto' => 'Colegiatura', 'ambito' => 'personal', 'persona' => 'Melqui',
+            'concepto' => 'Colegiatura', 'ambito' => 'personal', 'persona' => 'Persona de Prueba',
             'importe' => '60.00',
         ], [['60.00', '2026-09-01']]);
 
@@ -450,7 +450,7 @@ class RepetirYHistorialTest extends TestCase
     {
         $duena = $this->operador();
         $personal = $this->gasto($duena, [
-            'concepto' => 'Colegiatura', 'ambito' => 'personal', 'persona' => 'Melqui', 'importe' => '60.00',
+            'concepto' => 'Colegiatura', 'ambito' => 'personal', 'persona' => 'Persona de Prueba', 'importe' => '60.00',
         ], [['60.00', '2026-09-01']]);
 
         app(RegistrarPago::class)->registrar($duena, [

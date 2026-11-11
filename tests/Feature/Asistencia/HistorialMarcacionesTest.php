@@ -56,8 +56,8 @@ class HistorialMarcacionesTest extends TestCase
 
         $this->entrada = AsistenciaDispositivo::factory()->create(['codigo' => 'entrada', 'nombre' => 'Entrada principal']);
         $this->bodega = AsistenciaDispositivo::factory()->create(['codigo' => 'bodega', 'nombre' => 'Bodega']);
-        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
-        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
+        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
     }
 
     private function admin(): User
@@ -99,7 +99,7 @@ class HistorialMarcacionesTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.marcaciones.index'))
             ->assertOk()
-            ->assertSee('Ana Pérez')
+            ->assertSee('Ana Prueba')
             ->assertSee('05/03/2026')
             ->assertSee('07:02:10')
             ->assertSee('Entrada principal');
@@ -173,7 +173,7 @@ class HistorialMarcacionesTest extends TestCase
             ]))
             ->assertOk()
             // Una sola fila: el resumen lo dice sin tener que contar filas de HTML.
-            ->assertSee('Empleado: Ana Pérez')
+            ->assertSee('Empleado: Ana Prueba')
             ->assertSee('Solo entradas');
 
         // Y el conteo cuadra.
@@ -213,7 +213,7 @@ class HistorialMarcacionesTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.marcaciones.index'))
             ->assertOk()
-            ->assertSee('Ana Pérez')
+            ->assertSee('Ana Prueba')
             ->assertSee('(inactivo)');
     }
 
@@ -225,7 +225,7 @@ class HistorialMarcacionesTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.marcaciones.index'))
             ->assertOk()
-            ->assertSee('Ana Pérez (inactivo)', escape: false);
+            ->assertSee('Ana Prueba (inactivo)', escape: false);
     }
 
     /**
@@ -244,7 +244,7 @@ class HistorialMarcacionesTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.marcaciones.index'))
             ->assertOk()
-            ->assertSee('Ana Pérez')
+            ->assertSee('Ana Prueba')
             ->assertSee('asignación liberada')
             // La marcación sigue colgando de la asignación de Ana, no de la de Beto,
             // aunque la ranura 7 sea de Beto hoy.
@@ -397,7 +397,7 @@ class HistorialMarcacionesTest extends TestCase
         $this->actingAs($this->soloVer())
             ->get(route('asistencia.marcaciones.index'))
             ->assertOk()
-            ->assertSee('Ana Pérez');
+            ->assertSee('Ana Prueba');
     }
 
     public function test_con_el_modulo_apagado_el_historial_no_existe(): void

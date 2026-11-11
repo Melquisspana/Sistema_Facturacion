@@ -106,7 +106,7 @@ class DteInvalidacionRealTest extends TestCase
     {
         return new EventoInvalidacionData(
             tipoAnulacion: TipoAnulacionMh::RescindirOperacion,
-            nombreResponsable: 'Melqui Administrador', tipoDocResponsable: '13', numDocResponsable: '040000000',
+            nombreResponsable: 'Responsable de Prueba', tipoDocResponsable: '13', numDocResponsable: '040000000',
             nombreSolicita: 'Calleja CxP', tipoDocSolicita: '36', numDocSolicita: '06145555551015',
         );
     }

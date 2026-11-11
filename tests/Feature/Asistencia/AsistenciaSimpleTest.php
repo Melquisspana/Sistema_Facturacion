@@ -53,7 +53,7 @@ class AsistenciaSimpleTest extends TestCase
     public function test_hoy_usa_el_dia_local_y_distingue_salida_y_personas_sin_marcar(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-10-29 05:30:00', 'UTC'));
-        $ana = AsistenciaEmpleado::factory()->create(['nombres' => 'María de los Ángeles', 'apellidos' => 'Hernández Villalobos']);
+        $ana = AsistenciaEmpleado::factory()->create(['nombres' => 'María de los Ángeles', 'apellidos' => 'Ficticia Inventada']);
         $adentro = AsistenciaEmpleado::factory()->create();
         $falta = AsistenciaEmpleado::factory()->create();
         AsistenciaEmpleado::factory()->inactivo()->create();
@@ -75,7 +75,7 @@ class AsistenciaSimpleTest extends TestCase
 
     public function test_reporte_cuenta_dias_suma_tramos_incluye_inactivos_y_advierte_minimo(): void
     {
-        $ana = AsistenciaEmpleado::factory()->inactivo()->create(['nombres' => 'María de los Ángeles', 'apellidos' => 'Hernández Villalobos']);
+        $ana = AsistenciaEmpleado::factory()->inactivo()->create(['nombres' => 'María de los Ángeles', 'apellidos' => 'Ficticia Inventada']);
         foreach ([['07:00:00', TipoMarcacion::Entrada], ['12:00:00', TipoMarcacion::Salida], ['13:00:00', TipoMarcacion::Entrada], ['16:00:00', TipoMarcacion::Salida]] as [$hora, $tipo]) {
             $this->marcar($ana, '2026-10-01 '.$hora, $tipo);
         }
@@ -93,7 +93,7 @@ class AsistenciaSimpleTest extends TestCase
 
     public function test_excel_descarga_el_mismo_reporte_con_texto_y_horas_numericas(): void
     {
-        $ana = AsistenciaEmpleado::factory()->create(['nombres' => 'María de los Ángeles', 'apellidos' => 'Hernández Villalobos']);
+        $ana = AsistenciaEmpleado::factory()->create(['nombres' => 'María de los Ángeles', 'apellidos' => 'Ficticia Inventada']);
         $this->marcar($ana, '2026-10-01 07:00:00', TipoMarcacion::Entrada);
         $this->marcar($ana, '2026-10-01 15:30:00', TipoMarcacion::Salida);
         $respuesta = $this->actingAs($this->usuario())->get(route('asistencia.reporte.excel', ['desde' => '2026-10-01', 'hasta' => '2026-10-31']))

@@ -43,10 +43,10 @@ class FichaVendedorTest extends TestCase
 
     public function test_crear_un_vendedor_le_arma_la_ficha_enlazada_con_funcion_vendedor(): void
     {
-        $usuario = $this->crear('Pedro Pérez');
+        $usuario = $this->crear('Pedro Prueba');
 
         $ficha = PersonalRuta::where('user_id', $usuario->id)->sole();
-        $this->assertSame('Pedro Pérez', $ficha->nombre);
+        $this->assertSame('Pedro Prueba', $ficha->nombre);
         $this->assertTrue($ficha->activo);
         $this->assertTrue($ficha->tieneFuncion(FuncionPersonalRuta::Vendedor));
     }
@@ -80,7 +80,7 @@ class FichaVendedorTest extends TestCase
         PersonalRuta::create(['nombre' => 'José']);
         PersonalRuta::create(['nombre' => 'jose']);
 
-        $usuario = $this->crear('José Ramírez');
+        $usuario = $this->crear('José Ficticio');
 
         $this->assertSame(1, PersonalRuta::where('user_id', $usuario->id)->count());
         $this->assertSame(2, PersonalRuta::whereNull('user_id')->count());
@@ -95,7 +95,7 @@ class FichaVendedorTest extends TestCase
 
     public function test_desactivar_o_cambiar_de_rol_desactiva_la_ficha_sin_borrarla(): void
     {
-        $usuario = $this->crear('Pedro Pérez');
+        $usuario = $this->crear('Pedro Prueba');
         $admin = $this->admin();
 
         $this->actingAs($admin)->patch(route('personal.accesos.toggle-activo', $usuario))->assertRedirect();
@@ -105,7 +105,7 @@ class FichaVendedorTest extends TestCase
         $this->assertTrue(PersonalRuta::where('user_id', $usuario->id)->sole()->activo);
 
         $this->actingAs($admin)->put(route('personal.accesos.update', $usuario), [
-            'name' => 'Pedro Pérez', 'email' => 'vendedor@ejemplo.test', 'rol' => 'facturacion', 'activo' => '1',
+            'name' => 'Pedro Prueba', 'email' => 'vendedor@ejemplo.test', 'rol' => 'facturacion', 'activo' => '1',
         ])->assertRedirect();
         $this->assertFalse(PersonalRuta::where('user_id', $usuario->id)->sole()->activo);
     }

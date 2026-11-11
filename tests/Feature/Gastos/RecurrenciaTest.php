@@ -737,7 +737,7 @@ class RecurrenciaTest extends TestCase
         $u = $this->usuario([PermisoSistema::GastosVer->value, PermisoSistema::GastosRecurrencias->value]);
 
         try {
-            app(AdministrarReglas::class)->crear($u, $this->datosRegla($u, ['ambito' => 'personal', 'persona' => 'Melqui']));
+            app(AdministrarReglas::class)->crear($u, $this->datosRegla($u, ['ambito' => 'personal', 'persona' => 'Persona de Prueba']));
             $this->fail('Una regla personal sin alcance tendría que rechazarse.');
         } catch (ValidationException $e) {
             $this->assertStringContainsString('alcance sobre gastos personales', $e->getMessage());
@@ -772,7 +772,7 @@ class RecurrenciaTest extends TestCase
     public function test_quien_solo_ve_empresa_no_recibe_reglas_personales(): void
     {
         $u = $this->operador();
-        $this->crearRegla($u, ['nombre' => 'Colegiatura', 'ambito' => 'personal', 'persona' => 'Melqui']);
+        $this->crearRegla($u, ['nombre' => 'Colegiatura', 'ambito' => 'personal', 'persona' => 'Persona de Prueba']);
 
         $soloEmpresa = $this->usuario([PermisoSistema::GastosVer->value]);
 
@@ -784,7 +784,7 @@ class RecurrenciaTest extends TestCase
     public function test_la_ficha_de_una_regla_personal_no_se_abre_sin_alcance(): void
     {
         $u = $this->operador();
-        $regla = $this->crearRegla($u, ['ambito' => 'personal', 'persona' => 'Melqui']);
+        $regla = $this->crearRegla($u, ['ambito' => 'personal', 'persona' => 'Persona de Prueba']);
 
         $soloEmpresa = $this->usuario([PermisoSistema::GastosVer->value]);
 

@@ -69,8 +69,8 @@ class ReutilizacionRanuraTest extends TestCase
 
     public function test_una_asignacion_vigente_bloquea_otra_en_la_misma_ranura(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
-        $beto = $this->empleado('Beto', 'Ramos');
+        $ana = $this->empleado('Ana', 'Prueba');
+        $beto = $this->empleado('Beto', 'Relleno');
 
         $this->asignar()($ana, $this->lector, self::RANURA);
 
@@ -82,14 +82,14 @@ class ReutilizacionRanuraTest extends TestCase
     /** El error dice de QUIÉN es la ranura: es la información que hace falta para resolverlo. */
     public function test_el_error_nombra_a_quien_ocupa_la_ranura(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
+        $ana = $this->empleado('Ana', 'Prueba');
         $this->asignar()($ana, $this->lector, self::RANURA);
 
         try {
-            $this->asignar()($this->empleado('Beto', 'Ramos'), $this->lector, self::RANURA);
+            $this->asignar()($this->empleado('Beto', 'Relleno'), $this->lector, self::RANURA);
             $this->fail('Debería haber rechazado la ranura ocupada.');
         } catch (RanuraOcupadaException $e) {
-            $this->assertStringContainsString('Ana Pérez', $e->getMessage());
+            $this->assertStringContainsString('Ana Prueba', $e->getMessage());
             $this->assertStringContainsString('lector-entrada', $e->getMessage());
             $this->assertTrue($e->ocupante->is(AsistenciaHuella::query()->activas()->sole()));
         }
@@ -107,8 +107,8 @@ class ReutilizacionRanuraTest extends TestCase
      */
     public function test_la_base_de_datos_rechaza_dos_activas_aunque_php_no_mire(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
-        $beto = $this->empleado('Beto', 'Ramos');
+        $ana = $this->empleado('Ana', 'Prueba');
+        $beto = $this->empleado('Beto', 'Relleno');
 
         $this->asignar()($ana, $this->lector, self::RANURA);
 
@@ -128,8 +128,8 @@ class ReutilizacionRanuraTest extends TestCase
     {
         $otro = AsistenciaDispositivo::factory()->create(['codigo' => 'lector-bodega']);
 
-        $this->asignar()($this->empleado('Ana', 'Pérez'), $this->lector, self::RANURA);
-        $this->asignar()($this->empleado('Beto', 'Ramos'), $otro, self::RANURA);
+        $this->asignar()($this->empleado('Ana', 'Prueba'), $this->lector, self::RANURA);
+        $this->asignar()($this->empleado('Beto', 'Relleno'), $otro, self::RANURA);
 
         // La ranura 1 de la entrada y la ranura 1 de la bodega son dos plantillas
         // distintas dentro de dos sensores distintos.
@@ -140,8 +140,8 @@ class ReutilizacionRanuraTest extends TestCase
 
     public function test_tras_liberarla_la_ranura_admite_una_asignacion_nueva(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
-        $beto = $this->empleado('Beto', 'Ramos');
+        $ana = $this->empleado('Ana', 'Prueba');
+        $beto = $this->empleado('Beto', 'Relleno');
 
         $deAna = $this->asignar()($ana, $this->lector, self::RANURA);
         $this->liberar()($deAna);
@@ -155,7 +155,7 @@ class ReutilizacionRanuraTest extends TestCase
 
     public function test_liberar_marca_cuando_se_libero_y_no_borra_la_fila(): void
     {
-        $huella = $this->asignar()($this->empleado('Ana', 'Pérez'), $this->lector, self::RANURA);
+        $huella = $this->asignar()($this->empleado('Ana', 'Prueba'), $this->lector, self::RANURA);
 
         $this->assertNull($huella->liberada_at);
         $this->assertTrue($this->liberar()($huella));
@@ -169,7 +169,7 @@ class ReutilizacionRanuraTest extends TestCase
     /** Liberar dos veces no mueve la fecha del cierre: el período lo cierra la primera. */
     public function test_liberar_es_idempotente_y_no_pisa_la_fecha_original(): void
     {
-        $huella = $this->asignar()($this->empleado('Ana', 'Pérez'), $this->lector, self::RANURA);
+        $huella = $this->asignar()($this->empleado('Ana', 'Prueba'), $this->lector, self::RANURA);
 
         $this->liberar()($huella, Carbon::parse('2026-03-05 10:00:00'));
         $primera = $huella->fresh()->liberada_at;
@@ -182,8 +182,8 @@ class ReutilizacionRanuraTest extends TestCase
 
     public function test_la_asignacion_historica_sigue_existiendo_con_su_empleado(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
-        $beto = $this->empleado('Beto', 'Ramos');
+        $ana = $this->empleado('Ana', 'Prueba');
+        $beto = $this->empleado('Beto', 'Relleno');
 
         $deAna = $this->asignar()($ana, $this->lector, self::RANURA);
         $this->liberar()($deAna);
@@ -202,8 +202,8 @@ class ReutilizacionRanuraTest extends TestCase
      */
     public function test_las_marcaciones_historicas_siguen_ligadas_a_su_asignacion_original(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
-        $beto = $this->empleado('Beto', 'Ramos');
+        $ana = $this->empleado('Ana', 'Prueba');
+        $beto = $this->empleado('Beto', 'Relleno');
 
         $deAna = $this->asignar()($ana, $this->lector, self::RANURA);
 
@@ -228,17 +228,17 @@ class ReutilizacionRanuraTest extends TestCase
 
         $this->assertSame($deAna->id, $marcacionDeAna->asistencia_huella_id);
         $this->assertSame($ana->id, $marcacionDeAna->asistencia_empleado_id);
-        $this->assertSame('Ana Pérez', $marcacionDeAna->huella->empleado->nombreCompleto());
+        $this->assertSame('Ana Prueba', $marcacionDeAna->huella->empleado->nombreCompleto());
 
         // Y la de Beto apunta a la suya, no a la de Ana.
         $this->assertSame($deBeto->id, $marcacionDeBeto->fresh()->asistencia_huella_id);
-        $this->assertSame('Beto Ramos', $marcacionDeBeto->huella->empleado->nombreCompleto());
+        $this->assertSame('Beto Relleno', $marcacionDeBeto->huella->empleado->nombreCompleto());
     }
 
     /** La ranura puede rotar tantas veces como haga falta a lo largo del tiempo. */
     public function test_la_ranura_se_puede_reutilizar_muchas_veces(): void
     {
-        $nombres = [['Ana', 'Pérez'], ['Beto', 'Ramos'], ['Carla', 'Solís'], ['Dani', 'Ortiz']];
+        $nombres = [['Ana', 'Prueba'], ['Beto', 'Relleno'], ['Carla', 'Supuesto'], ['Dani', 'Opcional']];
         $asignaciones = [];
 
         foreach ($nombres as $i => [$n, $a]) {
@@ -265,8 +265,8 @@ class ReutilizacionRanuraTest extends TestCase
     /** El lector solo resuelve la asignación VIGENTE: la histórica ya no reconoce a nadie. */
     public function test_al_marcar_la_ranura_resuelve_a_su_titular_actual(): void
     {
-        $ana = $this->empleado('Ana', 'Pérez');
-        $beto = $this->empleado('Beto', 'Ramos');
+        $ana = $this->empleado('Ana', 'Prueba');
+        $beto = $this->empleado('Beto', 'Relleno');
 
         $this->liberar()($this->asignar()($ana, $this->lector, self::RANURA));
         $this->asignar()($beto, $this->lector, self::RANURA);
@@ -278,7 +278,7 @@ class ReutilizacionRanuraTest extends TestCase
 
         $respuesta->assertOk()
             ->assertJsonPath('estado', 'registrada')
-            ->assertJsonPath('empleado.nombre', 'Beto Ramos');
+            ->assertJsonPath('empleado.nombre', 'Beto Relleno');
 
         // Y a Ana no le apareció ninguna marcación.
         $this->assertSame(0, AsistenciaMarcacion::query()->where('asistencia_empleado_id', $ana->id)->count());
@@ -289,7 +289,7 @@ class ReutilizacionRanuraTest extends TestCase
 
     public function test_asignar_y_liberar_quedan_auditados(): void
     {
-        $huella = $this->asignar()($this->empleado('Ana', 'Pérez'), $this->lector, self::RANURA);
+        $huella = $this->asignar()($this->empleado('Ana', 'Prueba'), $this->lector, self::RANURA);
         $this->liberar()($huella);
 
         $actividad = Activity::query()

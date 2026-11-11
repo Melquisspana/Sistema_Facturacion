@@ -53,7 +53,7 @@ class EnrolamientoContratoTest extends TestCase
         config()->set('asistencia.enabled', true);
 
         $this->lector = AsistenciaDispositivo::factory()->create(['codigo' => 'lector-entrada', 'nombre' => 'Entrada principal']);
-        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
+        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
 
         // Punto de partida realista: el lector ya reportó su sensor, vacío.
         $this->lector->sincronizarIndice(162, []);
@@ -98,7 +98,7 @@ class EnrolamientoContratoTest extends TestCase
         $this->assertTrue($sondeo['hay_orden']);
         $this->assertSame(0, $sondeo['orden']['ranura']);
         $this->assertSame(162, $sondeo['orden']['capacidad']);
-        $this->assertSame('Ana Pérez', $sondeo['orden']['empleado']['nombre_corto']);
+        $this->assertSame('Ana Prueba', $sondeo['orden']['empleado']['nombre_corto']);
         $token = $sondeo['orden']['token'];
         $this->assertSame(EstadoOrdenEnrolamiento::Tomada, $orden->refresh()->estado);
         $this->assertSame(0, AsistenciaHuella::count());
@@ -155,7 +155,7 @@ class EnrolamientoContratoTest extends TestCase
         $otroLector = AsistenciaDispositivo::factory()->create(['codigo' => 'bodega']);
         $otroLector->sincronizarIndice(162, []);
 
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
         $orden = app(CrearOrdenEnrolamiento::class)($beto, $this->lector->refresh());
 
         $this->assertSame(3, $orden->ranura_reservada, 'La 0 está asignada y la 1 y la 2 grabadas en el sensor.');
@@ -219,10 +219,10 @@ class EnrolamientoContratoTest extends TestCase
     public function test_un_lector_solo_admite_una_orden_viva(): void
     {
         $this->crearOrden();
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
 
         $this->expectException(EnrolamientoImposibleException::class);
-        $this->expectExceptionMessageMatches('/ya está registrando la huella de Ana Pérez/');
+        $this->expectExceptionMessageMatches('/ya está registrando la huella de Ana Prueba/');
 
         app(CrearOrdenEnrolamiento::class)($beto, $this->lector->refresh());
     }
@@ -250,7 +250,7 @@ class EnrolamientoContratoTest extends TestCase
     {
         $bodega = AsistenciaDispositivo::factory()->create(['codigo' => 'bodega', 'nombre' => 'Bodega']);
         $bodega->sincronizarIndice(162, []);
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
 
         $this->crearOrden();
         $enBodega = app(CrearOrdenEnrolamiento::class)($beto, $bodega->refresh());
@@ -312,7 +312,7 @@ class EnrolamientoContratoTest extends TestCase
         $orden = $this->crearOrden();
         $orden->forceFill(['expira_at' => Carbon::now()->subMinute()])->save();
 
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
         $nueva = app(CrearOrdenEnrolamiento::class)($beto, $this->lector->refresh());
 
         $this->assertSame(0, $nueva->ranura_reservada, 'La reserva vencida ya no estorba.');
@@ -553,7 +553,7 @@ class EnrolamientoContratoTest extends TestCase
         // El sensor también se limpió: la ranura vuelve a estar libre físicamente.
         $this->lector->sincronizarIndice(162, []);
 
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
         $orden = app(CrearOrdenEnrolamiento::class)($beto, $this->lector->refresh());
         $this->assertSame(0, $orden->ranura_reservada);
 
@@ -579,7 +579,7 @@ class EnrolamientoContratoTest extends TestCase
         $orden = $this->crearOrden();
         $token = $this->sondear()['orden']['token'];
 
-        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
         app(AsignarHuella::class)($beto, $this->lector, 0);
 
         $this->comoElLector()

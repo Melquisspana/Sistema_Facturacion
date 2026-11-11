@@ -40,16 +40,16 @@ class FlujoDiezPersonasTest extends TestCase
 
     /** @var array<int, array{0: string, 1: string, 2: string}> nombre, DUI, habitual */
     private const PERSONAL = [
-        ['Ana Mendoza Ramírez', '01234567-8', '225.00'],
-        ['Carlos Rivas Menjívar', '02345678-3', '200.00'],
-        ['Rosa Alvarenga Mejía', '05678901-8', '180.00'],
-        ['Luis Portillo Aguilar', '04567890-3', '180.00'],
-        ['Marta Interiano Cruz', '06789012-3', '195.00'],
-        ['José Ernesto Chicas', '07890123-8', '185.00'],
-        ['Blanca Estela Pineda', '08901234-3', '175.00'],
-        ['Óscar Amaya Rodríguez', '09012345-8', '190.00'],
-        ['Nubia Guadalupe Flores', '10123456-4', '165.00'],
-        ['Rafael Antonio Sosa', '11234567-9', '210.00'],
+        ['Ana Muestra Uno', '01234567-8', '225.00'],
+        ['Carlos Rótulo Dos', '02345678-3', '200.00'],
+        ['Rosa Alias Tres', '05678901-8', '180.00'],
+        ['Luis Postizo Cuatro', '04567890-3', '180.00'],
+        ['Marta Ficticia Cinco', '06789012-3', '195.00'],
+        ['José Ficticio Seis', '07890123-8', '185.00'],
+        ['Blanca Ficticia Siete', '08901234-3', '175.00'],
+        ['Óscar Ficticio Ocho', '09012345-8', '190.00'],
+        ['Nubia Ficticia Nueve', '10123456-4', '165.00'],
+        ['Rafael Ficticio Diez', '11234567-9', '210.00'],
     ];
 
     protected function setUp(): void
@@ -68,7 +68,7 @@ class FlujoDiezPersonasTest extends TestCase
 
     private function gestor(): User
     {
-        $u = User::factory()->create(['activo' => true, 'name' => 'Sandra Melgar Ayala']);
+        $u = User::factory()->create(['activo' => true, 'name' => 'Sandra Gestora Ficticia']);
         $u->syncPermissions(array_map(fn ($p) => $p->value, [
             PermisoSistema::PlanillaVer, PermisoSistema::PlanillaSalarios, PermisoSistema::PlanillaGestionar,
             PermisoSistema::PlanillaPagar, PermisoSistema::PlanillaDocumentos,
@@ -142,7 +142,7 @@ class FlujoDiezPersonasTest extends TestCase
         $porNombre = $planilla->detalles->keyBy('nombre_snapshot');
 
         // Un anticipo vivo para Nubia, entregado antes por Gastos.
-        $nubia = PlanillaEmpleado::where('nombre', 'Nubia Guadalupe Flores')->firstOrFail();
+        $nubia = PlanillaEmpleado::where('nombre', 'Nubia Ficticia Nueve')->firstOrFail();
         $anticipo = $this->adelanto($u, $nubia, '40.00', '2026-09-05');
 
         $lineas = [];
@@ -153,23 +153,23 @@ class FlujoDiezPersonasTest extends TestCase
                 'conceptos' => [],
             ];
 
-            if ($detalle->nombre_snapshot === 'Ana Mendoza Ramírez') {
+            if ($detalle->nombre_snapshot === 'Ana Muestra Uno') {
                 $linea['conceptos'][] = ['tipo' => 'ingreso', 'concepto' => 'Comisión de ventas', 'importe' => '35.50'];
             }
 
-            if ($detalle->nombre_snapshot === 'Carlos Rivas Menjívar') {
+            if ($detalle->nombre_snapshot === 'Carlos Rótulo Dos') {
                 $linea['conceptos'][] = ['tipo' => 'descuento', 'concepto' => 'Cuota de préstamo', 'importe' => '25.00',
                     'destino' => 'tercero', 'tercero' => 'Cooperativa La Esperanza'];
             }
 
             // Luis entró el 8: su período y su importe escrito a mano.
-            if ($detalle->nombre_snapshot === 'Luis Portillo Aguilar') {
+            if ($detalle->nombre_snapshot === 'Luis Postizo Cuatro') {
                 $linea['salario'] = '96.00';
                 $linea['periodo_desde'] = '2026-09-08';
                 $linea['periodo_hasta'] = '2026-09-15';
             }
 
-            if ($detalle->nombre_snapshot === 'Nubia Guadalupe Flores') {
+            if ($detalle->nombre_snapshot === 'Nubia Ficticia Nueve') {
                 $linea['conceptos'][] = ['tipo' => 'descuento', 'concepto' => 'Anticipo del 05', 'importe' => '40.00',
                     'destino' => 'anticipo', 'planilla_anticipo_id' => $anticipo->id];
             }
@@ -181,7 +181,7 @@ class FlujoDiezPersonasTest extends TestCase
         $planilla = $planilla->fresh()->load('detalles.conceptos');
 
         // El período particular quedó guardado; el importe es el escrito, no un reparto.
-        $luis = $planilla->detalles->firstWhere('nombre_snapshot', 'Luis Portillo Aguilar');
+        $luis = $planilla->detalles->firstWhere('nombre_snapshot', 'Luis Postizo Cuatro');
         $this->assertSame('2026-09-08', $luis->periodo_desde->toDateString());
         $this->assertSame('96.00', $luis->salario);
 
@@ -201,7 +201,7 @@ class FlujoDiezPersonasTest extends TestCase
                 continue;
             }
 
-            $esLuis = $detalle->nombre_snapshot === 'Luis Portillo Aguilar';
+            $esLuis = $detalle->nombre_snapshot === 'Luis Postizo Cuatro';
 
             app(PagarPlanilla::class)->pagarPersona($u, $detalle, [
                 'importe' => $esLuis ? '60.00' : Dinero::decimal($pendiente),
@@ -235,7 +235,7 @@ class FlujoDiezPersonasTest extends TestCase
         $hoja->assertSee('08–15 sep', false);
 
         // Y quien entregó sale del pago, no de la empleadora.
-        $hoja->assertSee('Sandra Melgar Ayala');
+        $hoja->assertSee('Sandra Gestora Ficticia');
 
         // ═══ 6. Los recibos individuales ═══
         $recibos = $this->actingAs($u)

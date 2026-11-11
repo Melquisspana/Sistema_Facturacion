@@ -52,7 +52,7 @@ class AutenticacionDispositivoTest extends TestCase
 
         $empleado = AsistenciaEmpleado::create([
             'nombres' => 'Ana',
-            'apellidos' => 'Pérez',
+            'apellidos' => 'Prueba',
             'activo' => true,
         ]);
 

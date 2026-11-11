@@ -83,13 +83,13 @@ class DesembolsoPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $empleado = app(RegistrarEmpleado::class)->registrar($u, [
-            'nombre' => 'Rosa Alvarenga', 'cargo' => 'Producción',
+            'nombre' => 'Rosa Alias', 'cargo' => 'Producción',
         ]);
 
         // ── 1. El anticipo: 40 que salieron ANTES, por Gastos, con su pago real ──
         $gastoAnticipo = Gasto::create([
             'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('c', 64),
-            'concepto' => 'Anticipo de quincena', 'beneficiario' => 'Rosa Alvarenga',
+            'concepto' => 'Anticipo de quincena', 'beneficiario' => 'Rosa Alias',
             'categoria' => $categoria, 'ambito' => 'empresarial', 'naturaleza' => 'operativo',
             'moneda' => 'USD', 'importe' => '40.00', 'documentacion' => 'pendiente',
             'responsable_id' => $u->id, 'registrado_por' => $u->id,

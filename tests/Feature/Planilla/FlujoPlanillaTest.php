@@ -109,8 +109,8 @@ class FlujoPlanillaTest extends TestCase
     private function planillaLista(User $u): array
     {
         $planilla = $this->planilla($u);
-        $ana = $this->empleado($u, 'Ana Mendoza');
-        $carlos = $this->empleado($u, 'Carlos Rivas');
+        $ana = $this->empleado($u, 'Ana Muestra');
+        $carlos = $this->empleado($u, 'Carlos Rótulo');
 
         app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
             ['planilla_empleado_id' => $ana->id, 'salario' => '225.00', 'conceptos' => [
@@ -154,8 +154,8 @@ class FlujoPlanillaTest extends TestCase
         $this->assertSame('25.00', $tercero->importe);
 
         // Y el dinero NO se cuenta dos veces: empleados + tercero = total de ingresos.
-        $ana = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza');
-        $carlos = $planilla->detalles->firstWhere('nombre_snapshot', 'Carlos Rivas');
+        $ana = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra');
+        $carlos = $planilla->detalles->firstWhere('nombre_snapshot', 'Carlos Rótulo');
         $this->assertSame('260.50', $ana->a_pagar);
         $this->assertSame('175.00', $carlos->a_pagar);
         $this->assertSame(46050, 26050 + 17500 + 2500); // 460.50 = total de ingresos
@@ -194,7 +194,7 @@ class FlujoPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $planilla = $this->planilla($u);
-        $ana = $this->empleado($u, 'Ana Mendoza');
+        $ana = $this->empleado($u, 'Ana Muestra');
 
         app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
             ['planilla_empleado_id' => $ana->id, 'salario' => '100.00', 'conceptos' => [
@@ -233,7 +233,7 @@ class FlujoPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $planilla = $this->planilla($u);
-        $ana = $this->empleado($u, 'Ana Mendoza');
+        $ana = $this->empleado($u, 'Ana Muestra');
         $anticipo = $this->anticipo($u, $ana, '60.00');
 
         $this->assertSame(6000, $anticipo->pendiente());
@@ -277,12 +277,12 @@ class FlujoPlanillaTest extends TestCase
     public function test_un_anticipo_se_vincula_al_pago_que_de_verdad_salio(): void
     {
         $u = $this->gestor();
-        $ana = $this->empleado($u, 'Ana Mendoza');
+        $ana = $this->empleado($u, 'Ana Muestra');
 
         // Un pago real de Gastos a esa persona.
         $gasto = Gasto::create([
             'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('0', 64),
-            'beneficiario' => 'Ana Mendoza', 'concepto' => 'Anticipo de quincena', 'categoria' => 'Planilla',
+            'beneficiario' => 'Ana Muestra', 'concepto' => 'Anticipo de quincena', 'categoria' => 'Planilla',
             'ambito' => 'empresarial', 'naturaleza' => 'operativo', 'moneda' => 'USD', 'importe' => '60.00',
             'documentacion' => 'pendiente', 'responsable_id' => $u->id, 'registrado_por' => $u->id,
         ]);
@@ -316,7 +316,7 @@ class FlujoPlanillaTest extends TestCase
     public function test_un_anticipo_en_cero_o_mal_escrito_avisa_con_un_mensaje_claro(): void
     {
         $u = $this->gestor();
-        $ana = $this->empleado($u, 'Ana Mendoza');
+        $ana = $this->empleado($u, 'Ana Muestra');
         $cero = 'El anticipo tiene que ser mayor que cero.';
         $formato = 'Escribí el anticipo con hasta dos decimales, sin comas.';
 
@@ -335,7 +335,7 @@ class FlujoPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $planilla = $this->planilla($u);
-        $ana = $this->empleado($u, 'Ana Mendoza');
+        $ana = $this->empleado($u, 'Ana Muestra');
         $anticipo = $this->anticipo($u, $ana, '40.00');
 
         $this->assertCount(1, app(RegistrarAnticipo::class)->disponibles($ana));
@@ -359,7 +359,7 @@ class FlujoPlanillaTest extends TestCase
         ['planilla' => $planilla] = $this->planillaLista($u);
         app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
 
-        $detalle = PlanillaDetalle::where('nombre_snapshot', 'Ana Mendoza')->firstOrFail();
+        $detalle = PlanillaDetalle::where('nombre_snapshot', 'Ana Muestra')->firstOrFail();
 
         app(PagarPlanilla::class)->pagarPersona($u, $detalle, [
             'importe' => '100.00', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
@@ -413,7 +413,7 @@ class FlujoPlanillaTest extends TestCase
         app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
         $planilla = $planilla->fresh()->load('detalles.gasto.cuotas');
 
-        $ana = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza');
+        $ana = $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra');
         app(PagarPlanilla::class)->pagarPersona($u, $ana, [
             'importe' => '260.50', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
             'pagado_por' => $u->id, 'sin_comprobante' => 'Pagada aparte.',
@@ -513,7 +513,7 @@ class FlujoPlanillaTest extends TestCase
         ['planilla' => $planilla] = $this->planillaLista($u);
         app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
 
-        $detalle = PlanillaDetalle::where('nombre_snapshot', 'Ana Mendoza')->firstOrFail();
+        $detalle = PlanillaDetalle::where('nombre_snapshot', 'Ana Muestra')->firstOrFail();
         $pago = app(PagarPlanilla::class)->pagarPersona($u, $detalle, [
             'importe' => '260.50', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
             'pagado_por' => $u->id, 'sin_comprobante' => 'Pago completo.',
@@ -538,7 +538,7 @@ class FlujoPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $planilla = $this->planilla($u);
-        $ana = $this->empleado($u, 'Ana Mendoza');
+        $ana = $this->empleado($u, 'Ana Muestra');
         $anticipo = $this->anticipo($u, $ana, '50.00');
 
         app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
@@ -571,7 +571,7 @@ class FlujoPlanillaTest extends TestCase
         ['planilla' => $planilla] = $this->planillaLista($u);
         app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
 
-        $detalle = PlanillaDetalle::where('nombre_snapshot', 'Ana Mendoza')->firstOrFail();
+        $detalle = PlanillaDetalle::where('nombre_snapshot', 'Ana Muestra')->firstOrFail();
         app(PagarPlanilla::class)->pagarPersona($u, $detalle, [
             'importe' => '50.00', 'fecha' => now()->toDateString(), 'metodo' => 'efectivo',
             'pagado_por' => $u->id, 'sin_comprobante' => 'Abono.',
