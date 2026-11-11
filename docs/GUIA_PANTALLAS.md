@@ -140,7 +140,7 @@ Tomado de Planta (tabla, filtros y «Limpiar») y de Gastos (lista en tarjetas e
 
 ### Pestañas
 
-Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Mapa y Vendedores).
+Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Viajes, Mapa y Vendedores).
 
 - Una fila de enlaces dentro de un `<nav>` con `aria-label`: `flex flex-wrap gap-1 border-b border-gray-200`.
 - Cada pestaña: `inline-flex min-h-11 items-center rounded-t-md px-3 text-sm`. La elegida lleva `border-b-2 border-indigo-600 font-semibold text-indigo-700` y `aria-current="page"`; las otras, `text-gray-600 hover:text-gray-900`.
