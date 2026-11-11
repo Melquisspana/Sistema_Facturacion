@@ -4,6 +4,7 @@ namespace Tests\Feature\Gastos;
 
 use App\Enums\PermisoSistema;
 use App\Models\Gastos\Gasto;
+use App\Models\Gastos\Pago;
 use App\Models\User;
 use App\Services\Gastos\ConsultaGastos;
 use App\Services\Gastos\RegistrarPago;
@@ -173,6 +174,42 @@ class HistorialPagosTest extends TestCase
         $respuesta->assertSee('Pepitoria de agosto');
         $respuesta->assertSee('Pepitoria de septiembre');
         $respuesta->assertSee('<details', false);
+    }
+
+    /** El reparto muestra lo aplicado a cada obligación tal cual: 40.00 no es 0.40. */
+    public function test_el_reparto_de_varias_obligaciones_muestra_el_monto_aplicado_entero(): void
+    {
+        $u = $this->operador();
+        $a = $this->gasto($u, 'Proveedor A', 'Pepitoria de agosto', '300.00');
+        $b = $this->gasto($u, 'Proveedor A', 'Pepitoria de septiembre', '200.00');
+        $this->pagar($u, [[$a, '40.00'], [$b, '125.50']], '165.50');
+
+        $this->actingAs($u)->get(route('gastos.pagos.index'))->assertOk()
+            ->assertSee('· USD 40.00', false)
+            ->assertSee('· USD 125.50', false)
+            ->assertDontSee('USD 0.40', false)
+            ->assertDontSee('USD 1.25', false);
+    }
+
+    /**
+     * La caja de «Revertir este pago» se lee en modo oscuro: text-red-800 no tiene regla
+     * oscura en el CSS de producción y text-red-700 sí (como «Anular gasto»).
+     */
+    public function test_la_caja_de_revertir_el_pago_usa_un_rojo_que_se_lee_en_modo_oscuro(): void
+    {
+        $u = $this->usuario([
+            PermisoSistema::GastosVer, PermisoSistema::GastosRegistrar, PermisoSistema::GastosPersonales,
+            PermisoSistema::GastosPagosRegistrar, PermisoSistema::GastosPagosCorregir, PermisoSistema::GastosAdministrar,
+        ]);
+        $luz = $this->gasto($u, 'DELSUR', 'Luz de la fábrica', '115.27');
+        $this->pagar($u, [[$luz, '115.27']], '115.27');
+        $pago = Pago::query()->latest('id')->firstOrFail();
+
+        foreach ([route('gastos.show', $luz), route('gastos.pagos.show', $pago)] as $url) {
+            $html = $this->actingAs($u)->get($url)->assertOk()->getContent();
+            $this->assertMatchesRegularExpression('/Revertir/', $html, $url);
+            $this->assertStringNotContainsString('text-red-800', $html, $url);
+        }
     }
 
     // ═══════════ 2. Búsqueda por concepto ═══════════
