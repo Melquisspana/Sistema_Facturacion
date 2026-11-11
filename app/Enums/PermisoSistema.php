@@ -155,7 +155,8 @@ enum PermisoSistema: string
     // depende del módulo Producción (que en el servidor está apagado) ni muestra insumos.
     // Lo tienen el rol Fábrica, Producción y el administrador.
     case FabricaPedidosMandar = 'fabrica.pedidos.mandar';
-    // Ventas netas y su Excel: consulta comercial de solo lectura.
+    // Ventas netas (nacional y exportación) y su Excel: consulta comercial de solo lectura.
+    // Solo Administrador y Jefatura (Melqui, 11/11/2026).
     case RutasVentasVer = 'rutas.ventas.ver';
     // El mapa de ventas por zona del tablero (09/11/2026): lo vendido en el mes por
     // departamento y distrito, dónde falta y por dónde pasan las rutas. Lleva montos y el
@@ -324,8 +325,8 @@ enum PermisoSistema: string
                 // entregas. Las fichas de los empleados son solo de la administración (04/11/2026).
                 self::RutasVer,
                 self::RutasGestionar,
-                // Y consulta las ventas por producto y sala (decisión del usuario, 28/10/2026).
-                self::RutasVentasVer,
+                // Ventas ya no: es solo de Administrador y Jefatura (Melqui, 11/11/2026). Lo suyo
+                // sale en el Resumen y el Mapa del tablero, que son solo nacionales.
                 // Los pedidos de sala que va a facturar.
                 self::RutasPedidosVer,
                 // El mapa de ventas por zona del tablero (09/11/2026).

@@ -483,6 +483,27 @@ class MapaVentasTest extends TestCase
         $this->actingAs($jefe)->get(route('rutas.mapa'))->assertOk()->assertSee('"ventas":90', false);
     }
 
+    /**
+     * Quien no ve Ventas (el jefe de vendedores, Facturación) mira lo suyo en Resumen y Mapa,
+     * y ahí la exportación no entra ni sumada (Melqui, 11/11/2026).
+     */
+    public function test_el_resumen_y_el_mapa_del_tablero_no_muestran_cifras_de_exportacion(): void
+    {
+        $this->documento($this->norte, '2026-11-03', 100);
+        $this->documento($this->norte, '2026-11-04', 7654.32, ['tipo_dte' => '11'], ['venta_gravada' => 0, 'venta_exportacion' => 7654.32]);
+
+        foreach (['jefe_vendedores', 'facturacion'] as $rol) {
+            $usuario = $this->usuario($rol);
+            $resumen = $this->actingAs($usuario)->get(route('rutas.dashboard'))->assertOk()->assertSee('$100.00')->getContent();
+            $mapa = $this->actingAs($usuario)->get(route('rutas.mapa'))->assertOk()->assertSee('"ventas":100', false)->getContent();
+            // Ni el monto de la exportación ni la suma con lo nacional (7,754.32).
+            foreach (['7654', '7,654', '7754', '7,754'] as $cifra) {
+                $this->assertStringNotContainsString($cifra, $resumen);
+                $this->assertStringNotContainsString($cifra, $mapa);
+            }
+        }
+    }
+
     public function test_el_tablero_ofrece_la_pestana_del_mapa_solo_a_quien_puede_verlo(): void
     {
         $this->actingAs($this->usuario('jefe_vendedores'))->get(route('rutas.dashboard'))

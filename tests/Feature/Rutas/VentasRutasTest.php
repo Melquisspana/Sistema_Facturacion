@@ -119,7 +119,7 @@ class VentasRutasTest extends TestCase
             foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', 'vendedor'] as $rol) {
                 $this->actingAs(User::factory()->create()->assignRole($rol));
                 foreach (['index', 'excel', 'pdf'] as $accion) {
-                    $this->get(route('rutas.ventas.'.$accion, ['canal' => $canal]))->assertStatus(in_array($rol, ['administrador', 'jefatura', 'facturacion']) ? 200 : 403);
+                    $this->get(route('rutas.ventas.'.$accion, ['canal' => $canal]))->assertStatus(in_array($rol, ['administrador', 'jefatura']) ? 200 : 403);
                 }
             }
         }
@@ -286,7 +286,7 @@ class VentasRutasTest extends TestCase
         $this->get(route('rutas.ventas.pdf'))->assertRedirect(route('login'));
         foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', 'vendedor'] as $rol) {
             $respuesta = $this->actingAs(User::factory()->create()->assignRole($rol))->get(route('rutas.ventas.pdf'));
-            if (in_array($rol, ['administrador', 'jefatura', 'facturacion'])) {
+            if (in_array($rol, ['administrador', 'jefatura'])) {
                 $respuesta->assertOk()->assertHeader('content-type', 'application/pdf');
                 $this->assertStringStartsWith('%PDF', $respuesta->getContent());
             } else {
@@ -357,13 +357,14 @@ class VentasRutasTest extends TestCase
 
     public function test_permisos_en_ambos_endpoints(): void
     {
-        foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', null] as $rol) {
+        // Ventas es solo de Administrador y Jefatura (Melqui, 11/11/2026): ni Facturación ni el jefe de vendedores.
+        foreach (['administrador', 'jefatura', 'facturacion', 'jefe_vendedores', 'contabilidad', 'produccion', null] as $rol) {
             $user = User::factory()->create();
             if ($rol) {
                 $user->assignRole($rol);
             }
             foreach (['index', 'excel'] as $accion) {
-                $this->actingAs($user)->get(route('rutas.ventas.'.$accion))->assertStatus(in_array($rol, ['administrador', 'jefatura', 'facturacion']) ? 200 : 403);
+                $this->actingAs($user)->get(route('rutas.ventas.'.$accion))->assertStatus(in_array($rol, ['administrador', 'jefatura']) ? 200 : 403);
             }
         }
     }

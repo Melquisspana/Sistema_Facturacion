@@ -220,7 +220,7 @@ class PalabrasRutasTest extends TestCase
         }
         $this->assertStringContainsString("'<br>Zona: '", $js);
 
-        $this->actingAs($this->oficina)->get(route('rutas.ventas.index'))->assertOk()
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('jefatura'))->get(route('rutas.ventas.index'))->assertOk()
             ->assertSeeInOrder(['Productos', 'Salas', 'Zonas', 'Devoluciones']);
     }
 
