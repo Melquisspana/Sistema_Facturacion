@@ -214,9 +214,12 @@ class PorEntregar
             ->filter(fn (SalidaRuta $s) => $s->proposito->entrega() && ! $s->diaCerrado($hoy)
                 // Sin ir en ella, solo la automática de hoy de su propia ruta: a una ajena (otra
                 // ruta, con su cobro y su vista) no se lo mete por un reintento.
-                // La automática sin zona no es de nadie más: solo la del que entrega.
-                && ($rutaId !== null && $s->esAutomatica() && $s->fecha_inicio->toDateString() === $hoy && (int) $s->ruta_id === $rutaId
-                    || (! $s->esAutomatica() || $s->fecha_inicio->toDateString() === $hoy) && self::participa($s, $persona)))
+                // La automática sin zona no es de nadie más: solo la del que entrega. El viaje
+                // es de quien lo abrió: un CCF que no salió de sus pedidos no cae en él.
+                && ($rutaId !== null && $s->esAutomatica() && ! $s->esViaje() && $s->fecha_inicio->toDateString() === $hoy && (int) $s->ruta_id === $rutaId
+                    || (! $s->esAutomatica() || $s->fecha_inicio->toDateString() === $hoy) && self::participa($s, $persona)
+                        // En el viaje de otro (va de acompañante), solo el reintento de lo ya anotado ahí.
+                        && (! $s->esViaje() || in_array($s->id, $conIntento, true))))
             ->sortBy(fn (SalidaRuta $s) => [in_array($s->id, $conIntento, true) ? 0 : 1, $s->esAutomatica() ? 1 : 0]);
         // La automática, solo si no hay formal posible.
         $salida = $candidatas->first() ?? $this->armar($rutaId, $hoy, $usuario, $dte);

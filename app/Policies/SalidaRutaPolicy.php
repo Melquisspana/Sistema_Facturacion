@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PermisoSistema;
+use App\Enums\RolEnSalida;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
@@ -30,12 +31,15 @@ class SalidaRutaPolicy
     }
 
     /**
-     * «Terminar el día» del viaje: quien va en él, con el viaje en curso. Lo que contesta (si
-     * mañana sigue en la zona) lo guarda {@see Viajes::terminarDia()}.
+     * «Terminar el día» del viaje: solo quien lo abrió (va como responsable), con el viaje en
+     * curso. Quien entregó un CCF de ese viaje va de acompañante y no lo corta. Lo que contesta
+     * (si mañana sigue en la zona) lo guarda {@see Viajes::terminarDia()}.
      */
     public function terminarDia(User $usuario, SalidaRuta $salida): bool
     {
-        return $salida->esViaje() && $this->view($usuario, $salida);
+        return $salida->esViaje() && $this->view($usuario, $salida)
+            && $salida->participantes()->where('rol', RolEnSalida::Responsable->value)
+                ->whereIn('rutas_personal_id', PersonalRuta::query()->where('user_id', $usuario->id)->where('activo', true)->select('id'))->exists();
     }
 
     public function liquidacion(User $usuario, SalidaRuta $salida): bool

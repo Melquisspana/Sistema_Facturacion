@@ -145,6 +145,82 @@ class PorEntregarViajeTest extends TestCase
         $this->assertSame(RolEnSalida::Acompanante, $viaje->participantes()->where('rutas_personal_id', $this->personaBeto->id)->sole()->rol);
     }
 
+    // ---------------------------------------------------------------- el viaje es de quien lo abrió
+
+    /** Beto entrega un CCF del pedido de Ana: queda como acompañante en el viaje de Ana. */
+    private function betoEntregaUnCcfDeAna(): SalidaRuta
+    {
+        $pedido = $this->sacar('San Miguel', $this->personaAna, $this->ana);
+        $this->actingAs($this->beto)->post(route('rutas.por-entregar.marcar', $this->facturado($pedido)), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(RolEnSalida::Acompanante, $pedido->salida->participantes()->where('rutas_personal_id', $this->personaBeto->id)->sole()->rol);
+
+        return $pedido->salida;
+    }
+
+    public function test_entregar_el_ccf_de_otro_no_le_da_su_viaje_en_el_inicio(): void
+    {
+        $viaje = $this->betoEntregaUnCcfDeAna();
+
+        $this->assertNull(app(Viajes::class)->abierto($this->personaBeto), 'El viaje es de quien lo abrió.');
+        $this->assertTrue(app(Viajes::class)->abierto($this->personaAna)->is($viaje));
+        $this->actingAs($this->beto)->get(route('rutas.mi-salida.index'))->assertOk()
+            ->assertSee('Todavía no tenés un viaje abierto')->assertDontSee('Tu viaje');
+        $this->actingAs($this->beto)->get(route('rutas.mi-salida.dia'))->assertOk()
+            ->assertDontSee('¿Mañana seguís en la misma zona?');
+    }
+
+    public function test_el_no_vuelvo_del_que_solo_entrego_no_corta_el_viaje_de_otro(): void
+    {
+        $viaje = $this->betoEntregaUnCcfDeAna();
+
+        $this->actingAs($this->beto)->post(route('rutas.mi-salida.terminar-dia', $viaje), ['sigue' => 0])->assertForbidden();
+        $this->assertTrue($viaje->refresh()->suma_pedidos);
+        // Quien lo abrió sí lo corta.
+        $this->actingAs($this->ana)->post(route('rutas.mi-salida.terminar-dia', $viaje), ['sigue' => 0])->assertRedirect();
+        $this->assertFalse($viaje->refresh()->suma_pedidos);
+    }
+
+    public function test_el_pedido_en_otra_zona_del_que_solo_entrego_no_corta_el_viaje_de_otro(): void
+    {
+        $viaje = $this->betoEntregaUnCcfDeAna();
+
+        $deBeto = $this->sacar('Santa Ana', $this->personaBeto, $this->beto);
+
+        $this->assertNotSame($viaje->id, $deBeto->salida_ruta_id, 'Beto abre su propio viaje.');
+        $this->assertTrue($viaje->refresh()->suma_pedidos, 'El viaje de Ana sigue sumando.');
+        $this->assertSame(0, Activity::where('log_name', 'salida_ruta')->where('subject_id', $viaje->id)->where('description', 'el viaje dejó de sumar pedidos')->count());
+        // Y Ana sigue sacando pedidos en el suyo.
+        $this->assertSame($viaje->id, $this->sacar('otra San Miguel', $this->personaAna, $this->ana)->salida_ruta_id);
+    }
+
+    public function test_el_ccf_sin_pedido_no_cae_en_el_viaje_de_otro_vendedor(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        $suelto = $this->ccf($this->salas['otra San Miguel']);
+
+        $this->actingAs($this->beto)->post(route('rutas.por-entregar.marcar', $suelto), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+
+        $entrega = SalidaRutaEntrega::sole();
+        $this->assertNotSame($viaje->id, $entrega->salida_ruta_id, 'No sale de un pedido de Ana: no va a su viaje.');
+        $this->assertFalse($entrega->salida->esViaje());
+        $this->assertSame(0, $viaje->participantes()->where('rutas_personal_id', $this->personaBeto->id)->count());
+    }
+
+    public function test_el_ccf_sin_pedido_tampoco_cae_en_el_viaje_donde_solo_acompana(): void
+    {
+        $viaje = $this->betoEntregaUnCcfDeAna();
+        $suelto = $this->ccf($this->salas['otra San Miguel']);
+
+        $this->actingAs($this->beto)->post(route('rutas.por-entregar.marcar', $suelto), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+
+        $entrega = SalidaRutaEntrega::where('dte_id', $suelto->id)->sole();
+        $this->assertNotSame($viaje->id, $entrega->salida_ruta_id);
+        $this->assertFalse($entrega->salida->esViaje());
+    }
+
     public function test_el_ccf_sin_pedido_y_sin_ruta_va_al_viaje_del_que_entrega(): void
     {
         $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;

@@ -132,12 +132,16 @@ class Viajes
         });
     }
 
-    /** El viaje en curso más nuevo de la persona, sume pedidos o ya no. */
+    /**
+     * El viaje en curso más nuevo de la persona, sume pedidos o ya no. Solo el que ella abrió
+     * (va como responsable): quien entregó un CCF del viaje de otro queda de acompañante y ese
+     * viaje no es suyo, ni para sumarle pedidos ni para cortarlo.
+     */
     public function abierto(PersonalRuta $persona, bool $lock = false): ?SalidaRuta
     {
         return SalidaRuta::automaticas()->enEstado(EstadoSalidaRuta::EnCurso)
             ->where('proposito', '!=', PropositoSalida::Entregar->value)
-            ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id))
+            ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id)->where('rol', RolEnSalida::Responsable->value))
             ->orderByDesc('fecha_inicio')->orderByDesc('id')
             ->when($lock, fn ($q) => $q->lockForUpdate())
             ->first();
