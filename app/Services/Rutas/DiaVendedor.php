@@ -120,10 +120,10 @@ class DiaVendedor
     {
         $entregas = $this->suyas($persona, $usuario)
             ->whereDate('fecha_resultado', '>=', $desde)->whereDate('fecha_resultado', '<=', $hasta)
-            ->get(['id', 'fecha_resultado'])->map(fn (SalidaRutaEntrega $e) => $e->fecha_resultado->toDateString());
+            ->get(['id', 'fecha_resultado'])->toBase()->map(fn (SalidaRutaEntrega $e) => $e->fecha_resultado->toDateString());
         $gastos = SalidaRutaGasto::query()->where('personal_id', $persona->id)
             ->whereDate('fecha', '>=', $desde)->whereDate('fecha', '<=', $hasta)
-            ->get(['id', 'fecha'])->map(fn (SalidaRutaGasto $g) => $g->fecha->toDateString());
+            ->get(['id', 'fecha'])->toBase()->map(fn (SalidaRutaGasto $g) => $g->fecha->toDateString());
 
         return $entregas->concat($gastos)->unique()->sort()->values()->all();
     }

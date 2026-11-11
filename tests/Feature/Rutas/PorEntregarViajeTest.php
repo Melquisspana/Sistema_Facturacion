@@ -489,6 +489,19 @@ class PorEntregarViajeTest extends TestCase
         $this->assertSame(14200, app(DiaVendedor::class)->resumen($this->personaAna, $this->ana, '2026-11-10')['efectivo']);
     }
 
+    public function test_un_dia_solo_con_gastos_tambien_cuenta_como_dia_con_movimiento(): void
+    {
+        $viaje = $this->sacar('San Miguel', $this->personaAna, $this->ana)->salida;
+        $viaje->gastos()->create(['fecha' => '2026-11-10', 'personal_id' => $this->personaAna->id, 'concepto' => 'gasolina', 'monto' => '20.00', 'registrado_por' => $this->ana->id]);
+
+        // Sin ninguna entrega: no falla y el día sale en la lista.
+        $this->assertSame(['2026-11-10'], app(DiaVendedor::class)->diasConMovimiento($this->personaAna, $this->ana, '2026-11-09', '2026-11-12'));
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia'))->assertOk()->assertSee('Gasolina');
+        $this->travelTo('2026-11-11 09:00:00');
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia'))->assertOk()
+            ->assertSeeInOrder(['Días anteriores de este viaje', 'Martes 10/11/2026']);
+    }
+
     public function test_el_pdf_del_dia_no_se_abre_para_un_dia_futuro_ni_viejo(): void
     {
         // Sin viaje: hasta 15 días atrás.
