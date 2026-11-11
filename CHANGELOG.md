@@ -8,6 +8,26 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.11.2] - 2026-11-11
+
+Rutas pasa a ser un solo flujo, del pedido a la entrega (#331): el viaje se arma solo al sacar el primer pedido, cualquier vendedor entrega cualquier CCF y marca cómo le pagaron, y el día se cierra con un PDF para entregar el dinero a la oficina. Trae 3 migraciones (`2026_11_10_200000`, `2026_11_10_210000` y `2026_11_10_220000`) y el permiso `clientes.alta` para Facturación.
+
+### Agregado
+
+- Rutas: el viaje reemplaza a la ruta fija. Se abre solo con el primer pedido del vendedor, dura los días que haga falta y se cierra cuando todo está entregado. Las rutas quedan como catálogo de zonas. La decisión está en `docs/decisiones/0010-el-viaje-reemplaza-a-la-ruta-fija.md`.
+- Rutas › Sacar pedido: el vendedor busca la sala o escribe el nombre de una tienda nueva, y ve cantidades, no precios. Puede corregir el pedido hasta que saca el de la sala siguiente o la fábrica lo marca. Ve la historia de la sala: lo último que pidió, cómo pagó la última entrega y cuántas facturas debe.
+- Facturación: la tienda nueva de un pedido se da de alta al facturar, con el permiso `clientes.alta`, que vale solo con un pedido de tienda nueva sin enlazar. No edita ni borra clientes, ni toca el perfil documental.
+- Rutas › Por entregar: los CCF facturados aparecen solos, por zona. Al entregar se marca cómo pagaron (efectivo, cheque, transferencia o quedan, con su número y fecha de pago) o por qué no se pudo. El supermercado que cobra por el portal no pide forma de pago. Si faltó producto, la tarjeta lo dice.
+- Rutas › Terminar el día: resumen de entregas, cobros y gastos, y el PDF del día con «Entregó / Recibió» para entregar a la oficina el efectivo, los cheques y los quedan. Hay PDF de cada día del viaje; el vendedor ve los suyos y la oficina los de cualquier viaje.
+- Rutas › Tablero › Viajes: los viajes abiertos con el paso de cada pedido (sacado, en fábrica, facturado, entregado), las facturas que no se pudieron entregar 2 veces o más y los quedan por cobrar, primero los que no tienen fecha de pago.
+
+### Cambiado
+
+- Rutas: las mismas palabras en todo el módulo: «zona» (antes ruta), «viaje» (antes salida) y viaje «abierto» o «cerrado». Las fechas van en dd/mm/aaaa. «Sugerido» queda solo para la hoja que firma el gerente.
+- Rutas: ya no se arman salidas a mano; el permiso `rutas.salidas.armar` dejó de usarse.
+- Rutas: el viaje es de quien lo abrió. Quien entrega un CCF de otro vendedor no pasa a ver ese viaje como suyo ni lo puede cortar.
+- Rutas: en un viaje, el vendedor solo deshace lo que marcó hoy; lo de días anteriores lo deshace la oficina.
+
 ## [2026.11.11] - 2026-11-11
 
 Primer despliegue con el servidor ya en Linux. Los CCF y las NC entran al seguimiento de cobros en el momento en que Hacienda los acepta (#330), se puede anular un gasto sin borrarlo (#316), Asistencia imprime la hoja diaria de Producción (#321) y el tablero de Rutas muestra el ritmo de visita real de cada sala (#323). Trae 1 migración (`2026_11_10_120000`) y ningún permiso nuevo.
