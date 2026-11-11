@@ -1,5 +1,6 @@
-{{-- PDF del día del vendedor (maqueta del 10/11/2026): lo entregado, lo que no se pudo y lo
-     cobrado. Documento aparte para DomPDF, con la forma de «Páginas para imprimir»
+{{-- PDF del día del vendedor (maqueta del 10/11/2026): lo entregado, lo que no se pudo, lo
+     cobrado y sus gastos, con el efectivo que entrega. Es el control del viaje: lo firman
+     quien entrega y quien recibe. Documento aparte para DomPDF, con la forma de «Páginas para imprimir»
      (docs/GUIA_PANTALLAS.md): franja índigo con el nombre de la empresa, cajitas con los
      totales y tablas con encabezado índigo. Se lee igual en blanco y negro: nada se dice
      solo con color. Hoja carta vertical. Sin flexbox: DomPDF arma con tablas.
@@ -131,6 +132,31 @@
             @endif
         </tbody>
     </table>
+
+    <h2>Gastos del día</h2>
+    <table class="lista">
+        <thead><tr><th>Concepto</th><th>Detalle</th><th>Comprobante</th><th class="num">Monto</th></tr></thead>
+        <tbody>
+            @forelse ($resumen['gastos'] as $i => $gasto)
+                <tr class="{{ $i % 2 ? 'par' : '' }}">
+                    <td>{{ $gasto->concepto->label() }}</td>
+                    <td>{{ $gasto->detalle }}</td>
+                    <td>{{ $gasto->archivo_ruta ? 'Con foto' : 'Sin foto' }}</td>
+                    <td class="num">${{ number_format((float) $gasto->monto, 2) }}</td>
+                </tr>
+            @empty
+                <tr><td colspan="4" class="vacio">No anotaste gastos este día.</td></tr>
+            @endforelse
+            <tr class="total"><td colspan="3">Total de gastos</td><td class="num">{{ $dinero($resumen['gastos_total']) }}</td></tr>
+        </tbody>
+    </table>
+
+    <table class="datos"><tr>
+        <td><span class="etiqueta">Efectivo cobrado</span><span class="valor">{{ $dinero($resumen['efectivo']) }}</span></td>
+        <td><span class="etiqueta">Menos gastos</span><span class="valor">{{ $dinero($resumen['gastos_total']) }}</span></td>
+        <td><span class="etiqueta">Efectivo a entregar</span><span class="valor">{{ $dinero($resumen['a_entregar']) }}</span></td>
+        <td><span class="etiqueta">Cheques y transferencias</span><span class="valor">{{ $dinero($resumen['cheque'] + $resumen['transferencia']) }}</span></td>
+    </tr></table>
     <p class="aviso">Con esta hoja, el vendedor entrega a la oficina el efectivo, los cheques y los quedan. En el sistema no se marca nada más.</p>
 
     <table class="firmas"><tr>

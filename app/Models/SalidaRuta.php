@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\RolEnSalida;
-use App\Services\Rutas\LiquidacionSalida;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,7 +18,9 @@ use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Salida de ruta: un recorrido concreto, con fechas, estado y participantes.
+ * Salida de ruta: un recorrido concreto, con fechas, estado y participantes. Desde el
+ * 10/11/2026 nadie las arma: son el viaje que se abre solo ({@see Viajes}) y la automática de
+ * «Por entregar»; las armadas a mano de antes quedan como historial.
  *
  * Las transiciones de estado NO se hacen escribiendo `estado` a mano desde el
  * controlador: se piden por {@see iniciar()}, {@see finalizar()} y
@@ -213,7 +214,11 @@ class SalidaRuta extends Model
         return ucfirst($this->fecha_inicio->copy()->locale('es')->dayName).' · '.$nombres->join(', ', ' y ');
     }
 
-    /** Cómo se nombra la salida en las pantallas del vendedor: el viaje por su nombre. */
+    /**
+     * Cómo se nombra la salida en todas las pantallas: el viaje por su nombre («Lunes · San
+     * Miguel»), nunca por la ruta de la salida, que en el viaje puede estar vacía. En listas,
+     * cargar antes `pedidos` y `pedidos.ruta` ({@see nombreViaje()}).
+     */
     public function titulo(): string
     {
         return $this->esViaje() ? $this->nombreViaje() : $this->ruta->nombre;
@@ -226,10 +231,10 @@ class SalidaRuta extends Model
     }
 
     /**
-     * La automática que se finalizó sola y espera que la oficina haga «Terminar ruta». Misma
-     * condición que {@see scopePorLiquidar()} y que {@see LiquidacionSalida::seLiquida()}.
+     * La automática que se finalizó sola. No espera liquidación (el dinero se entrega con el
+     * PDF del día firmado): solo cuenta para anularla si después queda vacía.
      */
-    public function esPorLiquidar(): bool
+    public function seCerroSola(): bool
     {
         return $this->estado === EstadoSalidaRuta::Finalizada && $this->esAutomatica() && ! $this->estaLiquidada();
     }
@@ -242,7 +247,7 @@ class SalidaRuta extends Model
      */
     public function anularAutomaticaFinalizada(): bool
     {
-        if (! $this->esPorLiquidar()) {
+        if (! $this->seCerroSola()) {
             return false;
         }
 
@@ -336,12 +341,6 @@ class SalidaRuta extends Model
     {
         return $query->where(fn (Builder $q) => $q->where('automatica', true)
             ->orWhere('observaciones', self::OBSERVACION_AUTOMATICA));
-    }
-
-    /** Automáticas finalizadas sin liquidar: la oficina tiene que hacer «Terminar ruta». */
-    public function scopePorLiquidar(Builder $query): Builder
-    {
-        return $query->where('estado', EstadoSalidaRuta::Finalizada->value)->automaticas()->whereNull('liquidada_en');
     }
 
     /** Salidas todavía abiertas: planificadas o en curso. */

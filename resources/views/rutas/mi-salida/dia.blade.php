@@ -1,10 +1,11 @@
 {{-- «Terminar el día» del vendedor (maqueta del 10/11/2026): el resumen de lo que entregó,
      lo que no se pudo, lo cobrado y los quedan recibidos, el PDF del día y, si su viaje
-     todavía suma pedidos, la pregunta «¿Mañana seguís en la misma zona?». Solo lectura: el
-     dinero se rinde con la liquidación de la oficina.
+     todavía suma pedidos, la pregunta «¿Mañana seguís en la misma zona?». Los gastos del día
+     (gasolina, parqueo, con foto) se anotan acá, en el viaje, y salen en el PDF. El dinero se
+     entrega con ese PDF firmado: en el sistema no se liquida nada.
 
-     Variables: $persona, $resumen (DiaVendedor::resumen), $viaje (el suyo en curso o null) y
-     $sumando (si todavía suma pedidos). --}}
+     Variables: $persona, $resumen (DiaVendedor::resumen), $viaje (el suyo en curso o null),
+     $sumando (si todavía suma pedidos) y $puedeAnotarGastos. --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Terminar el día')
@@ -51,6 +52,24 @@
         </div>
     @endif
 
+    {{-- Gastos del día: se anotan en el viaje (hace falta uno en curso) y salen en el PDF. --}}
+    @if ($puedeAnotarGastos)
+        @include('rutas.salidas._gastos', ['salida' => $viaje, 'modoVendedor' => true])
+    @elseif ($resumen['gastos']->isNotEmpty())
+        <div class="mt-3 {{ $caja }}">
+            <h2 class="font-semibold">Gastos de hoy · {{ $dinero($resumen['gastos_total']) }}</h2>
+            <ul class="mt-1 space-y-1 text-sm">
+                @foreach ($resumen['gastos'] as $gasto)
+                    <li>{{ $gasto->concepto->label() }} · ${{ number_format((float) $gasto->monto, 2) }}{{ $gasto->detalle ? ' · '.$gasto->detalle : '' }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+    <p class="mt-3 rounded-xl bg-gray-50 p-3 text-sm ring-1 ring-gray-200 dark:bg-ink-700 dark:ring-ink-600">
+        Efectivo a entregar: <span class="font-bold tabular-nums">{{ $dinero($resumen['a_entregar']) }}</span>
+        <span class="{{ $gris }}">({{ $dinero($resumen['efectivo']) }} cobrado menos {{ $dinero($resumen['gastos_total']) }} de gastos)</span>
+    </p>
+
     {{-- Si mañana no sigue en la zona, el viaje deja de sumar pedidos. --}}
     @if ($viaje && $sumando)
         <form method="POST" action="{{ route('rutas.mi-salida.terminar-dia', $viaje) }}" class="mt-4 {{ $caja }}">
@@ -68,5 +87,5 @@
         <a href="{{ route('rutas.mi-salida.dia.pdf') }}" class="inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-gray-300 bg-white px-4 py-3 text-lg font-semibold text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Ver PDF del día</a>
         <a href="{{ route('rutas.mi-salida.index') }}" class="inline-flex min-h-11 items-center justify-center text-sm text-indigo-600 underline dark:text-indigo-300">Volver al inicio</a>
     </div>
-    <p class="mt-3 {{ $gris }}">El PDF lleva lo entregado, lo que no se pudo y lo cobrado. Con él entregás a la oficina el efectivo, los cheques y los quedan, y lo firman los dos.</p>
+    <p class="mt-3 {{ $gris }}">El PDF lleva lo entregado, lo que no se pudo, lo cobrado y tus gastos. Con él entregás a la oficina el efectivo, los cheques y los quedan, y lo firman los dos.</p>
 @endsection

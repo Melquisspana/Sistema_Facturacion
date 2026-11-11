@@ -9,6 +9,7 @@ use App\Models\Dte;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRutaEntrega;
+use App\Models\SalidaRutaGasto;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -16,8 +17,9 @@ use Illuminate\Support\Collection;
 /**
  * El día del vendedor (maqueta del 10/11/2026): lo que entregó, lo que no se pudo y lo que
  * cobró, en cualquier viaje o salida (cualquier vendedor entrega cualquier CCF). Lo usan el
- * inicio, «Terminar el día» y su PDF. Solo lectura: no cierra nada ni mueve dinero; el
- * dinero se rinde con la liquidación de la oficina ({@see LiquidacionSalida}).
+ * inicio, «Terminar el día» y su PDF. Solo lectura: no cierra nada ni mueve dinero. El PDF
+ * es el control: con él el vendedor entrega el efectivo (menos sus gastos del día), los
+ * cheques y los quedan, y lo firman quien entrega y quien recibe.
  *
  * Las sumas van en centavos ({@see CierreDia::centavos()}): ninguna depende de flotantes.
  */
@@ -34,6 +36,9 @@ class DiaVendedor
      *     portal: array{cantidad: int, monto: int},
      *     portal_id: ?int,
      *     pedidos: int,
+     *     gastos: Collection<int, SalidaRutaGasto>,
+     *     gastos_total: int,
+     *     a_entregar: int,
      * }
      */
     public function resumen(PersonalRuta $persona, User $usuario, string $fecha): array
@@ -75,6 +80,12 @@ class DiaVendedor
         }
         $resumen['cobrado'] = $resumen['efectivo'] + $resumen['cheque'] + $resumen['transferencia'];
         $resumen['pedidos'] = PedidoSala::vigentes()->where('sacado_por_id', $persona->id)->whereDate('fecha', $fecha)->count();
+        // Sus gastos del día (gasolina, parqueo…), del viaje o de la salida donde los anotó.
+        $resumen['gastos'] = SalidaRutaGasto::query()->where('personal_id', $persona->id)->whereDate('fecha', $fecha)->orderBy('id')->get();
+        $resumen['gastos_total'] = $resumen['gastos']->sum(fn (SalidaRutaGasto $g) => CierreDia::centavos($g->monto));
+        // Lo que entrega en efectivo: lo cobrado en efectivo menos lo que gastó. Puede dar
+        // negativo si gastó más de lo que cobró: la hoja lo dice tal cual.
+        $resumen['a_entregar'] = $resumen['efectivo'] - $resumen['gastos_total'];
 
         return $resumen;
     }
