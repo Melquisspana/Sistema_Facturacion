@@ -102,8 +102,7 @@ class RitmoRutas
     {
         $hoy ??= CarbonImmutable::today();
 
-        $rutas = Ruta::activas()->orderBy('nombre')->get();
-        $activas = $rutas->keyBy('id');
+        $rutas = $this->propuesta->activas();
 
         // Todas las salidas que cuentan, en una consulta; se reparten en PHP.
         $salidas = SalidaRuta::query()
@@ -122,9 +121,7 @@ class RitmoRutas
             ->get(['id', 'ruta_id', 'nombre', 'codigo', 'departamento_id', 'distrito_id']);
         $zonaDe = [];
         foreach ($todas as $sala) {
-            $cubre = $this->propuesta->para($sala);
-            $zonaDe[$sala->id] = ($sala->ruta_id !== null ? $activas->get($sala->ruta_id) : null)
-                ?? ($cubre !== null ? $activas->get($cubre->id) : null);
+            $zonaDe[$sala->id] = $this->propuesta->zonaDe($sala->ruta_id, $sala->distrito_id, $sala->departamento_id);
         }
         $salas = $todas->groupBy(fn (ClienteSucursal $s) => $zonaDe[$s->id]?->id ?? 0);
         $salaIds = $todas->pluck('id')->all();

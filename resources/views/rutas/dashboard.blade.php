@@ -366,7 +366,13 @@
             @if ($salasSinZona > 0)
                 <a href="{{ route('rutas.rutas.index') }}"
                    class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
-                    <span><strong>{{ $salasSinZona }} {{ $salasSinZona === 1 ? 'sala activa' : 'salas activas' }} sin zona.</strong> Ninguna zona cubre su distrito ni su departamento.</span>
+                    <span>
+                        <strong>{{ $salasSinZona }} {{ $salasSinZona === 1 ? 'sala activa' : 'salas activas' }} sin zona.</strong> Ninguna zona cubre su distrito ni su departamento.
+                        {{-- Sus CCF no son de ninguna tarjeta de zona: se cuentan acá (clave 0). --}}
+                        @if (($pendientes[0]['cantidad'] ?? 0) > 0)
+                            {{ $pendientes[0]['cantidad'] }} CCF por entregar · ${{ number_format($pendientes[0]['monto'], 2) }}.
+                        @endif
+                    </span>
                     <span class="shrink-0 font-medium">Ver zonas</span>
                 </a>
             @endif

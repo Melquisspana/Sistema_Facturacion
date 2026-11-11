@@ -22,6 +22,7 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Services\Rutas\DiaVendedor;
+use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\LiquidacionSalida;
 use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\TableroViajes;
@@ -255,6 +256,29 @@ class FlujoUnicoRutasTest extends TestCase
 
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index', ['ver' => 'zona']))->assertOk()
             ->assertSee($cubierta->numero_control)->assertSee('San Miguel')->assertDontSee('Sin zona');
+    }
+
+    /**
+     * «CCF por entregar» de cada zona (tablero y aviso del Panel) cuenta todas las salas, con
+     * el criterio del tablero: su ruta, la zona que cubre su lugar o «Sin zona» (clave 0).
+     */
+    public function test_los_ccf_por_entregar_de_cada_zona_cuentan_las_salas_sin_ruta_fija(): void
+    {
+        $dep = Departamento::create(['codigo' => '12', 'nombre' => 'San Miguel', 'activo' => true]);
+        $this->zona->coberturas()->create(['departamento_id' => $dep->id]);
+        $this->ccf($this->sala('Sala de prueba Oriente'), total: '100.00');
+        $this->ccf($this->sala('Tienda de prueba cubierta', false, ['departamento_id' => $dep->id]), total: '40.00');
+        $this->ccf($this->sala('Tienda de prueba lejana', false), total: '7.00');
+        // La sala inactiva no cuenta, como antes.
+        $this->ccf($this->sala('Sala de prueba cerrada', true, ['activo' => false]), total: '900.00');
+
+        $pendientes = app(EntregasCcf::class)->pendientesPorRuta();
+        $this->assertSame(['cantidad' => 2, 'monto' => 140.0], $pendientes[$this->zona->id]);
+        $this->assertSame(['cantidad' => 1, 'monto' => 7.0], $pendientes[0]);
+
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertOk()
+            ->assertSee('2 CCF por entregar · $140.00')
+            ->assertSeeInOrder(['1 sala activa sin zona.', '1 CCF por entregar · $7.00']);
     }
 
     // ══════════════════════════════ la pestaña Viajes

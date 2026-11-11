@@ -65,7 +65,7 @@ class EntregasCcf
     /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
     public const DIAS_POR_ENTREGAR = 45;
 
-    public function __construct(private readonly AlbaranLocalizador $albaranes) {}
+    public function __construct(private readonly AlbaranLocalizador $albaranes, private readonly PropuestaRutas $propuesta) {}
 
     // ================================================================ pendientes
 
@@ -120,22 +120,27 @@ class EntregasCcf
     }
 
     /**
-     * Cuántos CCF pendientes y por cuánto, por ruta activa. Para el tablero. Las mismas
-     * consultas con 2 rutas que con 20: se buscan todos juntos y se reparten por ruta.
+     * Cuántos CCF pendientes y por cuánto, por zona. Para el tablero y el aviso del Panel.
+     * Cuentan TODAS las salas activas, cada una en su zona con el criterio del tablero
+     * ({@see PropuestaRutas::zonaDe()}): su ruta, la que cubre su lugar o, en la clave 0, «Sin
+     * zona». Las mismas consultas con 2 zonas que con 20: se buscan todos juntos y se reparten.
      *
-     * @return array<int, array{cantidad: int, monto: float}>
+     * @return array<int, array{cantidad: int, monto: float}> ruta_id (0: sin zona) => pendientes
      */
     public function pendientesPorRuta(): array
     {
-        $rutas = Ruta::activas()->pluck('id');
-        $rutaDeSala = ClienteSucursal::where('activo', true)->whereIn('ruta_id', $rutas)->pluck('ruta_id', 'id');
-        $porRuta = $this->pendientesDeSalas($rutaDeSala->keys()->all())
-            ->groupBy(fn (Dte $dte) => $rutaDeSala[$dte->cliente_sucursal_id]);
+        $zonaDeSala = [];
+        foreach (ClienteSucursal::where('activo', true)->get(['id', 'ruta_id', 'distrito_id', 'departamento_id']) as $sala) {
+            $zonaDeSala[$sala->id] = $this->propuesta->zonaDe($sala->ruta_id, $sala->distrito_id, $sala->departamento_id)?->id ?? 0;
+        }
+        $porZona = $this->pendientesDeSalas(null)
+            ->filter(fn (Dte $dte) => isset($zonaDeSala[$dte->cliente_sucursal_id]))
+            ->groupBy(fn (Dte $dte) => $zonaDeSala[$dte->cliente_sucursal_id]);
 
         $resumen = [];
 
-        foreach ($rutas as $id) {
-            $pendientes = $porRuta->get($id, collect());
+        foreach ([...$this->propuesta->activas()->modelKeys(), 0] as $id) {
+            $pendientes = $porZona->get($id, collect());
             $resumen[$id] = [
                 'cantidad' => $pendientes->count(),
                 'monto' => round((float) $pendientes->sum('total_pagar'), 2),
