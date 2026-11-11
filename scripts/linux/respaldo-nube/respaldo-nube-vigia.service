@@ -1,0 +1,6 @@
+[Unit]
+Description=Vigía del respaldo a Google Drive
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/respaldo-nube/respaldo-nube-vigia.sh

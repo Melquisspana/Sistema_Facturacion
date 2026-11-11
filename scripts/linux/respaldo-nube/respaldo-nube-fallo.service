@@ -1,0 +1,6 @@
+[Unit]
+Description=Aviso por correo: falló el respaldo a Google Drive
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/respaldo-nube/respaldo-nube-fallo.sh
