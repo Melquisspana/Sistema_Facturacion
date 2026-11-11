@@ -1,7 +1,8 @@
 {{-- «Por entregar» (06/11/2026): todos los CCF que faltan entregar, por la zona de su sala,
      para el celular del vendedor. Desde el 10/11/2026, con su viaje en curso, arriba elige
      «Este viaje», «Toda la zona» o «Todas»; al entregar dice cómo le pagaron. Arriba,
-     pastillas para mirar una zona (?ruta=, no guarda nada). Cada tarjeta descarga el PDF y
+     pastillas para mirar una zona (?ruta=, no guarda nada). Cada tarjeta lleva la sala de
+     título, la hoja para firmar (si salió de un pedido) y el PDF del CCF, y
      marca «Entregado» o «No se pudo entregar»: el sistema elige el viaje o arma la salida
      (App\Services\Rutas\PorEntregar). Una sala sin zona se entrega igual. Lo marcado hoy
      queda abajo, con «Deshacer». --}}
@@ -71,8 +72,9 @@
                     $planificada = $camino?->salida->estado === \App\Enums\EstadoSalidaRuta::Planificada;
                 @endphp
                 <div class="{{ $caja }} mt-3 px-4 py-3">
-                    <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</p>
-                    <p class="truncate text-sm text-gray-800 dark:text-paper-100">{{ $dte->cliente?->nombre_comercial ?: $dte->cliente?->nombre }}</p>
+                    {{-- Como en la maqueta: la sala es el título; el cliente, en letra chica. --}}
+                    <h3 class="text-lg font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</h3>
+                    <p class="truncate text-xs text-gray-500 dark:text-paper-300">{{ $dte->cliente?->nombre_comercial ?: $dte->cliente?->nombre }}</p>
                     @php
                         $pedidoDte = $pedidos->get($dte->id);
                         $quien = $pedidoDte?->sacadoPor;
@@ -89,26 +91,27 @@
                         <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">No vino: {{ $cajas }} {{ $cajas === '1' ? 'caja' : 'cajas' }} de {{ $linea->producto?->nombre }}</p>
                     @endforeach
                     @if (($fallas[$dte->id] ?? 0) >= \App\Services\Rutas\EntregasCcf::FALLAS_AVISO)
-                        <p class="mt-1 text-sm font-medium text-red-700 dark:text-red-300">No se pudo entregar {{ $fallas[$dte->id] }} veces: avisale al jefe.</p>
+                        <p class="mt-1 text-sm font-medium text-red-700 dark:text-red-300">No se pudo entregar {{ $fallas[$dte->id] }} veces. El jefe ya lo ve en su tablero.</p>
                     @endif
-                    <div class="mt-1 flex flex-wrap items-center justify-between gap-3">
-                        <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                            <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $dte->numero_control }}">
-                                <span aria-hidden="true">{{ $corto($dte) }}</span>
-                                <span class="sr-only">{{ $dte->numero_control }}</span>
-                            </p>
-                            <p class="text-sm text-gray-600 dark:text-paper-300">{{ $dte->fecha_emision?->format('d/m') }}</p>
-                            <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</p>
-                        </div>
+                    <div class="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $dte->numero_control }}">
+                            <span aria-hidden="true">CCF {{ $corto($dte) }}</span>
+                            <span class="sr-only">CCF {{ $dte->numero_control }}</span>
+                        </p>
+                        <p class="text-sm text-gray-600 dark:text-paper-300">{{ $dte->fecha_emision?->format('d/m/Y') }}</p>
+                        <p class="text-sm font-semibold text-gray-800 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</p>
+                    </div>
+                    {{-- Los dos botones, del mismo ancho y a la misma altura; el del PDF solo, a todo el ancho. --}}
+                    <div class="mt-2 grid {{ $pedidoDte ? 'grid-cols-2' : 'grid-cols-1' }} gap-2">
                         @if ($pedidoDte)
                             <a href="{{ route('rutas.por-entregar.hoja', $dte) }}" target="_blank" rel="noopener"
-                               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
+                               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
                                 Hoja para firmar<span class="sr-only"> del CCF {{ $dte->numero_control }}</span>
                             </a>
                         @endif
                         <a href="{{ route('rutas.por-entregar.pdf', $dte) }}" download
-                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
-                            Descargar PDF<span class="sr-only"> del CCF {{ $dte->numero_control }}</span>
+                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
+                            PDF del CCF<span class="sr-only"> {{ $dte->numero_control }}</span>
                         </a>
                     </div>
 
@@ -141,7 +144,10 @@
             <h2 id="marcados-hoy" class="mt-8 text-xl font-semibold">Marcados hoy</h2>
             @foreach ($marcados as $entrega)
                 <div class="{{ $caja }} mt-3 px-4 py-3">
-                    <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }} · {{ $entrega->salida->descripcionCorta() }}</p>
+                    <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</h3>
+                    @if ($entrega->salida->esViaje())
+                        <p class="truncate text-xs text-gray-500 dark:text-paper-300">Viaje {{ $entrega->salida->nombreViaje() }}</p>
+                    @endif
                     <div class="mt-1 flex flex-wrap items-center justify-between gap-3">
                         <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                             <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $entrega->dte?->numero_control }}">
@@ -161,7 +167,7 @@
                             @can('deshacer', [$entrega->salida, $entrega])
                                 <form method="POST" action="{{ route('rutas.mi-salida.deshacer', [$entrega->salida, $entrega]) }}" class="mt-1">
                                     @csrf @method('PATCH')
-                                    <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>
+                                    <button class="min-h-11 px-1 text-sm font-medium text-indigo-600 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:text-indigo-300">Deshacer</button>
                                 </form>
                             @endcan
                         </div>

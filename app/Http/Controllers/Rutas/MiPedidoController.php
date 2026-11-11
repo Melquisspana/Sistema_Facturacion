@@ -8,6 +8,7 @@ use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
+use App\Services\Rutas\HistoriaSala;
 use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\Viajes;
@@ -169,8 +170,8 @@ class MiPedidoController extends Controller
             'pedido' => $pedido,
             'productos' => $this->pedidos->productos(),
             'cantidades' => $pedido ? $pedido->lineas->mapWithKeys(fn ($l) => [$l->producto_id => $l->cantidadLegible()])->all() : [],
-            // La historia de la sala: su última visita, cada cuánto compra y si le toca.
-            'historia' => $sala ? $this->ritmo->deSalas($sala->newCollection([$sala]), CarbonImmutable::parse(HoraNegocio::fechaHoy()))[$sala->id] : null,
+            // La historia de la sala: su último pedido y entrega, cada cuánto compra, si le toca y lo que debe.
+            'historia' => $sala ? app(HistoriaSala::class)->de($sala) : null,
             // La OC solo si la sala la usa (la misma regla de facturación) o si ya se anotó una.
             'conOc' => ReglaOrdenCompra::requerida($sala?->cliente, $sala) || filled($pedido?->numero_orden_compra),
         ]);

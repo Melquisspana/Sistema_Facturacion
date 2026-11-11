@@ -9,8 +9,9 @@
 
      Sin $sala es una tienda nueva: arriba va su nombre ($nombreNueva) y se guarda solo eso.
 
-     Con $sala, arriba va su historia ($historia, de RitmoRutas::deSalas, la misma fuente del
-     tablero): último pedido, última entrega, cada cuánto compra y cuándo toca volver. --}}
+     Con $sala, arriba va su historia ($historia, de HistoriaSala, sobre la misma fuente del
+     tablero): último pedido y sus cajas, última entrega y cómo pagó, cada cuánto compra,
+     cuándo toca volver y cuántas facturas tiene por cobrar. Sin precios. --}}
 @extends('layouts.vendedor')
 
 @section('content')
@@ -33,9 +34,9 @@
     @if ($historia ?? null)
         <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 rounded-2xl bg-white p-4 text-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600" aria-label="Historia de la sala">
             <dt class="{{ $gris }}">Último pedido</dt>
-            <dd class="text-right font-medium">{{ $historia['ultimoPedido']?->format('d/m/Y') ?? 'Ninguno todavía' }}</dd>
+            <dd class="text-right font-medium">{{ $historia['ultimoPedido']?->format('d/m/Y') ?? 'Ninguno todavía' }}{{ $historia['cajas'] !== null ? ' · '.$historia['cajas'].' '.($historia['cajas'] === '1' ? 'caja' : 'cajas') : '' }}</dd>
             <dt class="{{ $gris }}">Última entrega</dt>
-            <dd class="text-right font-medium">{{ $historia['ultimaEntrega']?->format('d/m/Y') ?? 'Sin entregas' }}</dd>
+            <dd class="text-right font-medium">{{ $historia['ultimaEntrega']?->format('d/m/Y') ?? 'Sin entregas' }}{{ $historia['pago'] !== null ? ' · '.$historia['pago'] : '' }}</dd>
             <dt class="{{ $gris }}">Compra cada</dt>
             <dd class="text-right font-medium">{{ $historia['ritmo']->dias !== null ? 'unos '.$historia['ritmo']->dias.' días' : 'Todavía sin ritmo' }}</dd>
             @if ($historia['proxima'])
@@ -47,6 +48,9 @@
                     @endif
                 </dd>
             @endif
+            {{-- Cuántas, no cuánto: al sacar pedido no se ven precios ni montos. --}}
+            <dt class="{{ $gris }}">Facturas por cobrar</dt>
+            <dd class="text-right font-medium">{{ $historia['porCobrar'] === 0 ? 'Ninguna' : ($historia['porCobrar'] === 1 ? '1 factura' : $historia['porCobrar'].' facturas') }}</dd>
         </dl>
     @endif
 

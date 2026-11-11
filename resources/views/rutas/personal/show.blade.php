@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between gap-4">
             <div class="min-w-0">
-                <h2 class="truncate font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $personal->nombre }}</h2>
+                <h1 class="truncate font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $personal->nombre }}</h1>
                 <p class="text-sm text-gray-500 dark:text-paper-300">
                     {{ $personal->activo ? 'Disponible para viajes' : 'Inactivo: no sale en viajes' }}
                 </p>
@@ -109,7 +109,7 @@
                                         </a>
                                     </td>
                                     <td class="py-2 px-4">
-                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $participacion->rol->clase() }}">{{ $participacion->rol->label() }}</span>
+                                        <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $participacion->rol->clase() }}">{{ $participacion->rol->label() }}</span>
                                     </td>
                                     <td class="py-2 px-4 text-center">
                                         @if ($participacion->salida)

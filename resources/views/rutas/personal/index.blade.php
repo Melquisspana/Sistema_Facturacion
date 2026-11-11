@@ -1,7 +1,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Personal operativo</h2>
+            <h1 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Personal operativo</h1>
             {{-- Con Personal en uso, el alta se hace allá: este botón solo mandaba a otro lado. --}}
             @if (auth()->user()->can('rutas.personal.gestionar') && ! \App\Models\Planilla\PlanillaEmpleado::enUso())
                 <a href="{{ route('rutas.personal.create') }}"

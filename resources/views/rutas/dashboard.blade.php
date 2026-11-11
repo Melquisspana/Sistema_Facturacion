@@ -65,6 +65,13 @@
                         </a>
                     @endforeach
                 </div>
+                {{-- El aviso de «Por entregar» a la segunda vez: el jefe lo ve acá y las mira en Viajes. --}}
+                @if ($fallas > 0)
+                    <p class="mt-3 text-sm">
+                        <a href="{{ route('rutas.viajes') }}#fallas-titulo" class="inline-flex min-h-11 items-center font-medium text-red-700 underline">{{ $fallas === 1 ? '1 factura no se pudo entregar '.\App\Services\Rutas\EntregasCcf::FALLAS_AVISO.' veces o más' : $fallas.' facturas no se pudieron entregar '.\App\Services\Rutas\EntregasCcf::FALLAS_AVISO.' veces o más' }}</a>
+                        <span class="text-gray-600">· Siguen por entregar: mirá cuáles en Viajes.</span>
+                    </p>
+                @endif
                 @if ($facturado !== [])
                     <p class="mt-3 text-sm text-gray-600">
                         Facturado en los últimos 30 días: <span class="font-semibold tabular-nums text-gray-800">{{ $plata(array_sum($facturado)) }}</span>

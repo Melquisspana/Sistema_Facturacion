@@ -107,11 +107,12 @@ class TableroViajes
     /**
      * Las facturas que siguen por entregar y ya no se pudieron entregar
      * {@see EntregasCcf::FALLAS_AVISO} veces o más: el aviso para el jefe, las de más
-     * intentos primero. Las mismas cuentas de «Por entregar».
+     * intentos primero. Las mismas cuentas de «Por entregar». El resumen del tablero dice
+     * cuántas son.
      *
      * @return Collection<int, array{dte: Dte, veces: int}>
      */
-    private function fallas(): Collection
+    public function fallas(): Collection
     {
         $pendientes = $this->entregas->porEntregar();
         $fallas = array_filter($this->entregas->fallas($pendientes->modelKeys()), fn (int $n) => $n >= EntregasCcf::FALLAS_AVISO);

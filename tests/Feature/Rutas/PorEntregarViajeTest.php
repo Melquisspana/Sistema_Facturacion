@@ -661,7 +661,7 @@ class PorEntregarViajeTest extends TestCase
         // Al otro día sigue en la lista, con el aviso.
         $this->travelTo('2026-11-12 08:00:00');
         $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($dte->numero_control)
-            ->assertSee('No se pudo entregar 2 veces: avisale al jefe.');
+            ->assertSee('No se pudo entregar 2 veces. El jefe ya lo ve en su tablero.');
     }
 
     public function test_quedan_con_numero_y_fecha_de_pago_queda_por_cobrar(): void

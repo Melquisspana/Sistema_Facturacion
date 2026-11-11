@@ -24,7 +24,7 @@
             <input type="hidden" name="entregado_por_id" value="{{ $entregadoPorId }}">
         @endif
         <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700">Entregado</button>
-        <label class="mt-1.5 flex items-center gap-2 text-xs text-gray-600 dark:text-paper-300">
+        <label class="mt-1.5 flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-paper-300">
             <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
             Trae nota de avería
         </label>
@@ -96,7 +96,7 @@
             @endforeach
             <div class="flex gap-1.5">
                 <input name="nota" maxlength="300" placeholder="Otro motivo…" aria-label="Otro motivo de no entrega"
-                       class="min-w-0 flex-1 rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                       class="min-h-11 min-w-0 flex-1 rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 <button name="motivo_no_entrega" value="otro" class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-600 rounded-lg bg-gray-800 px-3 text-sm text-white dark:bg-paper-100 dark:text-ink-900">OK</button>
             </div>
         </form>

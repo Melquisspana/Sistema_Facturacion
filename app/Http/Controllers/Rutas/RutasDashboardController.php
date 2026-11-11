@@ -14,6 +14,7 @@ use App\Services\Planilla\NombreUnico;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
+use App\Services\Rutas\TableroViajes;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -44,7 +45,7 @@ class RutasDashboardController extends Controller
     /** El resumen muestra lo facturado a cada ruta en estos días, hoy incluido. */
     private const DIAS_FACTURADO = 30;
 
-    public function index(Request $request, RitmoRutas $ritmo, EntregasCcf $entregas): View
+    public function index(Request $request, RitmoRutas $ritmo, EntregasCcf $entregas, TableroViajes $viajes): View
     {
         $hoy = CarbonImmutable::today();
 
@@ -88,6 +89,8 @@ class RutasDashboardController extends Controller
         $facturado = $this->facturadoPorZona($entregas, $hoy, $salas);
 
         return view('rutas.dashboard', [
+            // Las facturas que ya no se pudieron entregar dos veces: el mismo aviso de «Por entregar».
+            'fallas' => $viajes->fallas()->count(),
             'resumen' => [
                 'rutasAtrasadas' => $rutas->where('estado', RitmoRutas::ATRASADA)->count(),
                 // Con la salida en camino o ya armada, la ruta está resuelta: cuenta como al día.

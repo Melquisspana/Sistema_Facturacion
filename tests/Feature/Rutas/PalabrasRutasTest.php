@@ -278,4 +278,90 @@ class PalabrasRutasTest extends TestCase
         $this->actingAs($this->oficina)->get(route('rutas.rutas.index'))->assertOk()
             ->assertSee('placeholder="Ej.: Oriente"', false)->assertDontSee('placeholder="Puerto"', false);
     }
+
+    // ---------------------------------------------------------------- B6: la tarjeta de «Por entregar»
+
+    public function test_la_tarjeta_de_por_entregar_lleva_la_sala_de_titulo_y_el_pdf_del_ccf(): void
+    {
+        $dte = $this->facturado($this->sacar($this->sala));
+        $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSeeInOrder(['<h3', 'Sala de prueba Oriente', '</h3>', 'Cliente de prueba', 'Hoja para firmar', 'PDF del CCF'], false)
+            ->assertSee(now()->format('d/m/Y'))
+            ->assertDontSee('Descargar PDF');
+
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        // «Deshacer» con color de enlace, también en modo oscuro (antes era gris claro sobre oscuro).
+        $html = $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/<button class="[^"]*min-h-11[^"]*text-indigo-600[^"]*underline[^"]*dark:text-indigo-300[^"]*">Deshacer<\/button>/', $html);
+    }
+
+    public function test_a_la_segunda_vez_que_no_se_pudo_el_jefe_lo_ve_en_su_tablero(): void
+    {
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertOk()->assertDontSee('no se pudo entregar');
+        $dte = $this->ccf($this->sala);
+        foreach (['2026-11-10 10:00:00', '2026-11-11 10:00:00'] as $momento) {
+            $this->travelTo($momento);
+            $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])
+                ->assertSessionHasNoErrors();
+        }
+        $this->travelTo('2026-11-12 08:00:00');
+
+        $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('No se pudo entregar 2 veces. El jefe ya lo ve en su tablero.')->assertDontSee('avisale al jefe');
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertOk()
+            ->assertSee('1 factura no se pudo entregar 2 veces o más')
+            ->assertSee('href="'.route('rutas.viajes').'#fallas-titulo"', false);
+        $this->actingAs($this->jefe)->get(route('rutas.viajes'))->assertOk()->assertSee('id="fallas-titulo"', false);
+    }
+
+    // ---------------------------------------------------------------- B9: la historia de la sala
+
+    public function test_la_historia_de_la_sala_dice_cuanto_pidio_como_pago_y_cuantas_debe(): void
+    {
+        $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.create', $this->otraSala))->assertOk()
+            ->assertSeeInOrder(['Último pedido', 'Ninguno todavía', 'Última entrega', 'Sin entregas', 'Facturas por cobrar', 'Ninguna']);
+
+        $dte = $this->facturado($this->sacar($this->sala));
+        $conQuedan = $this->ccf($this->sala, '75.00');
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $conQuedan), ['resultado' => 'entregado', 'forma_cobro' => 'sin_cobro'])
+            ->assertSessionHasNoErrors();
+        $this->travelTo('2026-11-10 11:00:00');
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+
+        // Diez días después (el viaje ya no suma): la historia, sin precios.
+        $this->travelTo('2026-11-20 09:00:00');
+        $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()
+            ->assertSeeInOrder(['Último pedido', '10/11/2026 · 12 cajas', 'Última entrega', '10/11/2026 · efectivo', 'Compra cada', 'Facturas por cobrar', '1 factura'])
+            ->assertDontSee('100.25')->assertDontSee('75.00')->assertDontSee('Precio');
+    }
+
+    // ---------------------------------------------------------------- B10: guía de pantallas
+
+    public function test_blancos_de_toque_de_44_y_textos_que_no_se_parten(): void
+    {
+        $viaje = $this->sacar($this->sala)->salida;
+        $this->ccf($this->sala);
+        $html = $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/<label class="[^"]*min-h-11[^"]*">\s*<input type="checkbox" name="trae_nota_averia"/', $html);
+        $this->assertMatchesRegularExpression('/placeholder="Otro motivo…"[^>]*class="[^"]*min-h-11/', $html);
+
+        $viaje->gastos()->create(['fecha' => '2026-11-10', 'personal_id' => $this->personaAna->id, 'concepto' => 'gasolina', 'monto' => '20.00', 'registrado_por' => $this->ana->id]);
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia'))->assertOk()
+            ->assertSee('<p class="whitespace-nowrap font-semibold">Gasolina · $20.00</p>', false);
+
+        $lista = $this->actingAs($this->oficina)->get(route('rutas.salidas.index'))->assertOk()
+            ->assertSee('<th class="whitespace-nowrap py-3 px-4 text-center">CCF entregados</th>', false)->getContent();
+        $this->assertSame(2, preg_match_all('/<select id="f-(zona|estado)"[^>]*class="[^"]*min-h-11/', $lista));
+        $this->assertMatchesRegularExpression('/<button class="[^"]*min-h-11[^"]*border-gray-300[^"]*bg-white[^"]*">Filtrar<\/button>/', $lista);
+    }
+
+    public function test_los_titulos_de_rutas_van_en_h1(): void
+    {
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $this->actingAs($admin)->get(route('rutas.personal.show', $this->personaAna))->assertOk()->assertSee('Ana Ficticia</h1>', false);
+        $this->actingAs($admin)->get(route('rutas.personal.edit', $this->personaAna))->assertOk()->assertSee('Ana Ficticia</h1>', false);
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.index'))->assertOk()->assertSee('Todos los viajes</h1>', false);
+    }
 }
