@@ -9,8 +9,6 @@ use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Services\Rutas\PedidosSala;
-use App\Services\Rutas\Ritmo;
-use App\Services\Rutas\RitmoPedidos;
 use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\Viajes;
 use App\Support\Dte\ReglaOrdenCompra;
@@ -29,7 +27,7 @@ use Illuminate\View\View;
  */
 class MiPedidoController extends Controller
 {
-    public function __construct(private readonly PedidosSala $pedidos, private readonly Viajes $viajes, private readonly RitmoPedidos $ritmo) {}
+    public function __construct(private readonly PedidosSala $pedidos, private readonly Viajes $viajes, private readonly RitmoRutas $ritmo) {}
 
     /** El buscador de salas y los pedidos que sacó hoy. */
     public function index(Request $request): View
@@ -171,28 +169,27 @@ class MiPedidoController extends Controller
             'pedido' => $pedido,
             'productos' => $this->pedidos->productos(),
             'cantidades' => $pedido ? $pedido->lineas->mapWithKeys(fn ($l) => [$l->producto_id => $l->cantidadLegible()])->all() : [],
+            // La historia de la sala: su última visita, cada cuánto compra y si le toca.
+            'historia' => $sala ? $this->ritmo->deSalas($sala->newCollection([$sala]), CarbonImmutable::parse(HoraNegocio::fechaHoy()))[$sala->id] : null,
             // La OC solo si la sala la usa (la misma regla de facturación) o si ya se anotó una.
             'conOc' => ReglaOrdenCompra::requerida($sala?->cliente, $sala) || filled($pedido?->numero_orden_compra),
         ]);
     }
 
     /**
-     * «Le toca» en el buscador: el ritmo de compra de cada sala encontrada, con los CCF (el
-     * mismo de «Tu próxima salida» y el tablero). Pronto o atrasada: le toca visita.
+     * «Le toca» en el buscador: el ritmo real de cada sala encontrada, el mismo del tablero
+     * ({@see RitmoRutas::deSalas()}): los días desde su última visita (la entrega o el pedido
+     * más nuevo) contra cada cuánto compra.
      *
      * @param  Collection<int, ClienteSucursal>  $salas
      * @return array<int, array{leToca: bool, dias: ?int}>
      */
     private function ritmos(Collection $salas): array
     {
-        $hoy = CarbonImmutable::parse(HoraNegocio::fechaHoy());
-        $ritmos = $this->ritmo->porSala($salas->modelKeys(), $hoy);
-
-        return $salas->mapWithKeys(function (ClienteSucursal $sala) use ($ritmos, $hoy) {
-            $fila = RitmoRutas::filaSala($sala, $ritmos[$sala->id], $hoy);
-
-            return [$sala->id => ['leToca' => in_array($fila['estado'], [Ritmo::PRONTO, Ritmo::ATRASADA], true), 'dias' => $fila['dias']]];
-        })->all();
+        return array_map(
+            fn (array $fila) => ['leToca' => RitmoRutas::leToca($fila), 'dias' => $fila['dias']],
+            $this->ritmo->deSalas($salas, CarbonImmutable::parse(HoraNegocio::fechaHoy())),
+        );
     }
 
     /** El viaje del vendedor si todavía suma pedidos: adonde iría el próximo. */

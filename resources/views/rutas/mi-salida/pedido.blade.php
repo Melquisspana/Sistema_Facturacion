@@ -6,7 +6,10 @@
      solo si la sala la usa (casi siempre llega después por EDI: se agrega desde la oficina) y
      notas. El sugerido de papel no se sube al sistema (decisión de Melqui, 05/11/2026).
 
-     Sin $sala es una tienda nueva: arriba va su nombre ($nombreNueva) y se guarda solo eso. --}}
+     Sin $sala es una tienda nueva: arriba va su nombre ($nombreNueva) y se guarda solo eso.
+
+     Con $sala, arriba va su historia ($historia, de RitmoRutas::deSalas, la misma fuente del
+     tablero): último pedido, última entrega, cada cuánto compra y cuándo toca volver. --}}
 @extends('layouts.vendedor')
 
 @section('content')
@@ -24,6 +27,26 @@
     <p class="text-sm font-medium text-gray-600 dark:text-paper-300">{{ $viaje ? 'Tu viaje: '.$viaje->nombreViaje() : 'Tu primer pedido abre tu viaje.' }}</p>
     <h1 class="text-3xl font-bold">Sugerido</h1>
     <p class="mt-1 text-base">{{ $sala?->nombre ?? 'Tienda nueva' }}</p>
+
+    @if ($historia ?? null)
+        <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 rounded-2xl bg-white p-4 text-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600" aria-label="Historia de la sala">
+            <dt class="{{ $gris }}">Último pedido</dt>
+            <dd class="text-right font-medium">{{ $historia['ultimoPedido']?->format('d/m/Y') ?? 'Ninguno todavía' }}</dd>
+            <dt class="{{ $gris }}">Última entrega</dt>
+            <dd class="text-right font-medium">{{ $historia['ultimaEntrega']?->format('d/m/Y') ?? 'Sin entregas' }}</dd>
+            <dt class="{{ $gris }}">Compra cada</dt>
+            <dd class="text-right font-medium">{{ $historia['ritmo']->dias !== null ? 'unos '.$historia['ritmo']->dias.' días' : 'Todavía sin ritmo' }}</dd>
+            @if ($historia['proxima'])
+                <dt class="{{ $gris }}">Próxima visita</dt>
+                <dd class="text-right font-medium">
+                    {{ $historia['proxima']->format('d/m/Y') }}
+                    @if (\App\Services\Rutas\RitmoRutas::leToca($historia))
+                        <span class="ml-1 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Le toca</span>
+                    @endif
+                </dd>
+            @endif
+        </dl>
+    @endif
 
     <form method="POST" action="{{ $accion }}" class="mt-5 space-y-5">
         @csrf

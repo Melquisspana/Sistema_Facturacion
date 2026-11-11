@@ -1,8 +1,8 @@
 {{-- «Sacar pedido» (maqueta aprobada por Melqui el 10/11/2026): el vendedor busca cualquier
      sala, sin salida armada y sin que sea de una ruta, y saca el pedido. El pedido se suma solo
      a su viaje. La búsqueda es un formulario común (anda sin JavaScript) con la misma consulta
-     que el buscador de salas de la oficina; cada sala dice hace cuánto compró y si «le toca»
-     según su ritmo de compra (los CCF). Abajo, sus pedidos de hoy para corregir o anular. --}}
+     que el buscador de salas de la oficina; cada sala dice hace cuánto fue su última visita y si
+     «le toca» según su ritmo real (RitmoRutas::deSalas, el mismo del tablero). Abajo, sus pedidos de hoy para corregir o anular. --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Sacar pedido')
@@ -49,7 +49,7 @@
                                         <span class="block font-semibold">{{ $sala->nombre }}</span>
                                         <span class="block {{ $gris }}">{{ collect([$sala->codigo, $sala->distrito?->nombre, $sala->cliente?->nombre])->filter()->implode(' · ') }}</span>
                                         @if (($ritmos[$sala->id]['dias'] ?? null) !== null)
-                                            <span class="block {{ $gris }}">{{ match ($ritmos[$sala->id]['dias']) { 0 => 'Última compra hoy', 1 => 'Última compra ayer', default => 'Última compra hace '.$ritmos[$sala->id]['dias'].' días' } }}</span>
+                                            <span class="block {{ $gris }}">{{ match ($ritmos[$sala->id]['dias']) { 0 => 'Última visita hoy', 1 => 'Última visita ayer', default => 'Última visita hace '.$ritmos[$sala->id]['dias'].' días' } }}</span>
                                         @endif
                                     </span>
                                     @if ($ritmos[$sala->id]['leToca'] ?? false)
@@ -92,6 +92,10 @@
                                     <li><span class="font-semibold tabular-nums">{{ $linea->cantidadLegible() }}</span> × {{ $linea->producto?->nombre }}</li>
                                 @endforeach
                             </ul>
+                            {{-- La forma de la orden de compra solo avisa; se guarda igual. --}}
+                            @foreach ($pedido->avisosOrdenCompra() as $aviso)
+                                <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">{{ $aviso }}</p>
+                            @endforeach
                             @can('corregir', $pedido)
                                 <div class="mt-3 grid grid-cols-2 gap-2">
                                     <a href="{{ route('rutas.sacar-pedido.edit', $pedido) }}" class="{{ $secundario }}">Corregir</a>

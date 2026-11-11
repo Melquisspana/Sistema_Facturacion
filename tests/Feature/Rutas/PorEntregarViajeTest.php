@@ -292,7 +292,7 @@ class PorEntregarViajeTest extends TestCase
 
         $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.index', ['q' => 'prueba Oriente']))->assertOk()
             ->assertSeeInOrder(['Sala de prueba Oriente', 'Le toca'])
-            ->assertSee('Última compra hace 9 días');
+            ->assertSee('Última visita hace 9 días');
     }
 
     // ---------------------------------------------------------------- el viaje
