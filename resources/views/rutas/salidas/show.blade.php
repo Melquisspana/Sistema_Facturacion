@@ -115,8 +115,6 @@
 
             @include('rutas.salidas._entregas')
 
-            @include('rutas.salidas._facturados_despues')
-
         </div>
     </div>
 </x-app-layout>

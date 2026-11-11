@@ -229,7 +229,6 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
                 Route::patch('{entrega}', [SalidaEntregaController::class, 'update'])->name('update');
                 Route::patch('{entrega}/deshacer', [SalidaEntregaController::class, 'deshacer'])->name('deshacer');
                 Route::delete('{entrega}', [SalidaEntregaController::class, 'destroy'])->name('destroy');
-                Route::delete('{entrega}/facturado-despues', [SalidaEntregaController::class, 'deshacerFacturadoDespues'])->name('facturado-despues.destroy');
             });
 
         /*

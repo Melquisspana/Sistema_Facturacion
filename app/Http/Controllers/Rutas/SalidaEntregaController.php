@@ -66,13 +66,6 @@ class SalidaEntregaController extends Controller
         return back()->with('status', 'CCF quitado de la salida. Vuelve a quedar pendiente.');
     }
 
-    public function deshacerFacturadoDespues(SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
-    {
-        $this->entregas->deshacerFacturadoDespues($entrega);
-
-        return back()->with('status', 'Registro deshecho: el CCF vuelve a quedar sin entregar.');
-    }
-
     public function sala(Request $request, SalidaRuta $salida, ClienteSucursal $sucursal): RedirectResponse
     {
         $datos = $request->validate(['entregado_por_id' => ['required', 'integer']], [

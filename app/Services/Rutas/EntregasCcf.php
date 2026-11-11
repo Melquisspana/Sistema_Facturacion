@@ -189,27 +189,6 @@ class EntregasCcf
         });
     }
 
-    // ================================================================ facturado después
-
-    /*
-     * Desde el 04/11/2026 ya no se anotan: el producto nunca se entrega sin CCF (Melqui). Los
-     * registros que quedaron siguen fuera del dinero ({@see SalidaRutaEntrega::scopeSinFacturadosDespues()})
-     * y la oficina los puede deshacer.
-     */
-
-    /** Quita el registro: el CCF vuelve a quedar sin entregar. Como no movió dinero, no lo mueve. */
-    public function deshacerFacturadoDespues(SalidaRutaEntrega $entrega): void
-    {
-        DB::transaction(function () use ($entrega) {
-            SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
-            $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
-            if (! $entrega->esFacturadoDespues()) {
-                throw ValidationException::withMessages(['entrega' => 'Ese CCF no se anotó como facturado después de entregar.']);
-            }
-            $entrega->delete();
-        });
-    }
-
     /** Quita un CCF de la salida. Solo si nadie registró nada y la salida sigue abierta. */
     public function quitar(SalidaRutaEntrega $entrega): void
     {
@@ -406,7 +385,7 @@ class EntregasCcf
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
             $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
             if ($entrega->esFacturadoDespues()) {
-                throw ValidationException::withMessages(['entrega' => 'Ese CCF se anotó como facturado después de entregar: deshacelo desde su bloque, en la hoja de la salida.']);
+                throw ValidationException::withMessages(['entrega' => 'Ese CCF se anotó como facturado después de entregar (un registro de antes): no se deshace.']);
             }
             Dte::whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
             CierreDia::exigirSinLiquidar($salida);

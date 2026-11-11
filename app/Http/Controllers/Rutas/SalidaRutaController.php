@@ -58,11 +58,11 @@ class SalidaRutaController extends Controller
     {
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
-        // Los facturados después de entregar (registros viejos) van en su bloque aparte.
-        [$facturadosDespues, $entregas] = $salida->entregas()
+        // Sin los facturados después de entregar (registros de antes del 04/11/2026, sin dinero):
+        // no cuentan en ninguna pantalla, como en la lista y en «Por entregar».
+        $entregas = $salida->entregas()->sinFacturadosDespues()
             ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre', 'registradoPor:id,name'])
-            ->get()
-            ->partition(fn ($e) => $e->esFacturadoDespues());
+            ->get();
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
 
@@ -88,7 +88,6 @@ class SalidaRutaController extends Controller
             'motivos' => MotivoNoEntrega::opciones(),
             'abierta' => ! $salida->estado->esTerminal(),
             'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,
-            'facturadosDespues' => $facturadosDespues->sortBy(fn ($e) => [$e->fecha_resultado, $e->sala?->nombre ?? ''])->values(),
             // El viaje no se liquida: su control es el PDF de cada día de cada vendedor.
             'diasPdf' => $salida->esViaje() ? $dia->diasDelViaje($salida) : [],
         ]);
