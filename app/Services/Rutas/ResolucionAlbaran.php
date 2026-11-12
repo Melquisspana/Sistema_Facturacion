@@ -46,10 +46,13 @@ use Illuminate\Support\Collection;
  * exactamente el mismo criterio de tipo y unicidad.
  *
  * Y cuando el vínculo explícito existe pero no resuelve, NO se cae a la orden de compra.
- * Hacerlo dejaría que un AC01 hallado por OC tape el hecho de que alguien vinculó un
- * albarán de crédito a este documento: el «entregado» aparecería igual y el dato mal
- * puesto no se vería nunca. Se prefiere la excepción, que es lo que manda a alguien a
- * mirarlo.
+ * Hacerlo dejaría que un AC01 hallado por OC tape el hecho de que alguien vinculó a este
+ * documento un albarán de tipo desconocido: el «entregado» aparecería igual y la duda no
+ * se vería nunca. Se prefiere la excepción, que es lo que manda a alguien a mirarlo.
+ *
+ * Los albaranes de CRÉDITO (AC02, AC04) quedan fuera del vínculo explícito
+ * ({@see AlbaranLocalizador::indices()}): que una devolución esté vinculada a su CCF es
+ * lo correcto —Cobros lo hace a propósito— y no puede tapar al AC01 de la entrega.
  */
 final class ResolucionAlbaran
 {

@@ -3,6 +3,7 @@
 namespace App\Services\Rutas;
 
 use App\Models\PpqAlbaran;
+use App\Support\Albaran;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -15,11 +16,12 @@ use Illuminate\Support\Collection;
  * esta clase):
  *
  *   1. `ppq_albaranes.dte_id`             — vínculo explícito, el más fuerte. Decide QUÉ
- *      albaranes compiten; NO exime del tipo (ver {@see ResolucionAlbaran}).
- *   2. `ppq_albaranes.numero_orden_compra` — la llave real del día a día: hoy
- *      NINGÚN albarán tiene `dte_id` puesto, y la OC es la que el cliente imprime
- *      tanto en el albarán como en el CCF. Sirve además para los documentos P001
- *      históricos, que no tienen `dte_id` que ofrecer.
+ *      albaranes compiten; NO exime del tipo (ver {@see ResolucionAlbaran}). Los de
+ *      crédito ({@see Albaran::TIPOS_DE_CREDITO}) no compiten por esta vía: su `dte_id`
+ *      dice qué CCF acreditan, no que se haya entregado.
+ *   2. `ppq_albaranes.numero_orden_compra` — la llave real del día a día: la OC es la
+ *      que el cliente imprime tanto en el albarán como en el CCF. Sirve además para los
+ *      documentos P001 históricos, que no tienen `dte_id` que ofrecer.
  *
  * ═══════════════ El tipo de albarán: lo que faltaba para que la OC sirviera ═══════════════
  *
@@ -95,7 +97,14 @@ class AlbaranLocalizador
             // documento puede tener más de un albarán vinculado por `dte_id`, igual que
             // una orden de compra puede tener varios: en los dos casos la decisión la toma
             // la misma regla, que exige un candidato de entrega único.
-            if ($albaran->dte_id) {
+            //
+            // Un albarán de CRÉDITO no entra al índice por `dte_id`: su vínculo con el CCF es
+            // legítimo (la devolución se vincula a propósito al CCF que acredita, ver
+            // {@see \App\Services\Cobros\DevolucionesAlbaran}) pero no dice nada de la
+            // entrega. Si entrara, taparía al AC01 de la orden de compra y el CCF quedaría
+            // «por entregar» para siempre. Por la orden de compra sí se agrupa: ahí no tapa a
+            // nadie, porque {@see ResolucionAlbaran::decidir()} solo elige albaranes de entrega.
+            if ($albaran->dte_id && ! Albaran::esDeCredito($albaran->tipo_codigo)) {
                 $agrupadosPorDte[$albaran->dte_id] ??= collect();
                 $agrupadosPorDte[$albaran->dte_id]->push($albaran);
             }
@@ -131,9 +140,10 @@ class AlbaranLocalizador
      * Aplica la prioridad: vínculo explícito primero, orden de compra después.
      *
      * Cuando hay vínculo explícito se devuelve SU resolución, resuelva o no. No se cae a
-     * la orden de compra: si alguien vinculó a este documento un albarán que no es de
-     * entrega, un AC01 hallado por OC taparía el error y el «entregado» aparecería igual.
-     * La excepción es lo que hace que alguien vaya a corregir el vínculo.
+     * la orden de compra: si alguien vinculó a este documento un albarán de tipo
+     * desconocido, un AC01 hallado por OC taparía la duda y el «entregado» aparecería
+     * igual. La excepción es lo que hace que alguien vaya a corregir el vínculo. Los de
+     * crédito no llegan a este índice ({@see indices()}): vincularlos al CCF es correcto.
      *
      * @param  array<int, ResolucionAlbaran>  $porDte
      * @param  array<string, ResolucionAlbaran>  $porOrden

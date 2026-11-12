@@ -146,6 +146,27 @@ class PorEntregarTest extends TestCase
             ->assertDontSee($sinSala->numero_control);
     }
 
+    public function test_un_albaran_de_credito_vinculado_al_ccf_no_tapa_su_albaran_de_entrega(): void
+    {
+        // La devolución (AC04) queda vinculada al CCF por `dte_id`; la entrega (AC01) llega
+        // por la orden de compra. El AC01 prueba la entrega: el CCF ya no está por entregar.
+        $conDevolucion = $this->ccf('Antiguo');
+        PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6715', 'numero_orden_compra' => $conDevolucion->numero_orden_compra,
+            'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0232/00/3209', 'numero_orden_compra' => $conDevolucion->numero_orden_compra,
+            'dte_id' => $conDevolucion->id, 'monto_albaran' => 6.24, 'fecha_albaran' => '2026-11-05', 'origen' => 'gmail']);
+        // Solo la devolución, sin AC01: un albarán de crédito no prueba ninguna entrega.
+        $soloDevolucion = $this->ccf('Antiguo');
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0232/00/3210', 'numero_orden_compra' => $soloDevolucion->numero_orden_compra,
+            'dte_id' => $soloDevolucion->id, 'monto_albaran' => 6.24, 'fecha_albaran' => '2026-11-05', 'origen' => 'gmail']);
+        $sinAlbaran = $this->ccf('Antiguo');
+
+        $this->assertSame([$soloDevolucion->id, $sinAlbaran->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertDontSee($conDevolucion->numero_control)
+            ->assertSee($soloDevolucion->numero_control)->assertSee($sinAlbaran->numero_control);
+    }
+
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void
     {
         $primero = $this->ccf('Antiguo', '2026-11-04');
