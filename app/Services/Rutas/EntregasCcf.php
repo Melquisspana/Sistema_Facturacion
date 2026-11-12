@@ -212,7 +212,8 @@ class EntregasCcf
      * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente, salvo
      * cuando registra el vendedor en su viaje o en la automática: ahí es obligatoria (y en el
      * supermercado del portal siempre es sin cobro). No toca la ficha del cliente. En «Entregado», `nota` es la observación (una devolución); en
-     * «No entregado», el detalle del motivo.
+     * «No entregado», el detalle del motivo. `entregado_por_id` es quién lo entregó (o quién
+     * fue, en «No entregado», donde es opcional): alguien que va en la salida.
      *
      * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
      *
@@ -301,11 +302,16 @@ class EntregasCcf
             if ($motivo->exigeNota() && $nota === null) {
                 throw ValidationException::withMessages(['nota' => 'Con «Otro», escribí qué pasó.']);
             }
+            // Quién fue (12/11/2026), si se dice: va en su PDF del día. Alguien de la salida.
+            $fue = filled($datos['entregado_por_id'] ?? null) ? (int) $datos['entregado_por_id'] : null;
+            if ($fue !== null && ! $salida->participantes()->where('rutas_personal_id', $fue)->exists()) {
+                throw ValidationException::withMessages(['entregado_por_id' => 'Elegí quién fue entre las personas que van en la salida.']);
+            }
 
             $entrega->update($comun + [
                 'motivo_no_entrega' => $motivo,
                 'nota' => $nota,
-                'entregado_por_id' => null,
+                'entregado_por_id' => $fue,
                 'trae_nota_averia' => false,
             ]);
 
@@ -464,6 +470,70 @@ class EntregasCcf
             });
 
         return $fallas;
+    }
+
+    /**
+     * Salas con albarán (el supermercado que cobra por el portal, {@see DiaVendedor::esPortal()})
+     * que alguien anotó como entregadas y cuyo albarán de entrega todavía no cayó. No hay un
+     * estado aparte: «esperando albarán» es «Entregado» con quién lo entregó y sin albarán
+     * ({@see AlbaranLocalizador}). Con `$antesDe`, solo lo anotado antes de ese día: el
+     * tablero avisa desde el día siguiente. De los últimos {@see self::DIAS_POR_ENTREGAR} días.
+     *
+     * @return Collection<int, SalidaRutaEntrega> con `dte`, `sala` y `entregadoPor`
+     */
+    public function esperandoAlbaran(?string $antesDe = null): Collection
+    {
+        $portal = DiaVendedor::clientePortal();
+        if ($portal === null) {
+            return collect();
+        }
+        $entregas = SalidaRutaEntrega::query()->entregadas()->sinFacturadosDespues()->whereNotNull('entregado_por_id')
+            ->whereDate('fecha_resultado', '>=', Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR)->toDateString())
+            ->when($antesDe !== null, fn ($q) => $q->whereDate('fecha_resultado', '<', $antesDe))
+            ->whereHas('dte', fn ($q) => $q->where('cliente_id', $portal))
+            ->with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', 'sala:id,nombre', 'entregadoPor:id,nombre'])
+            ->orderBy('fecha_resultado')->orderBy('id')
+            ->get();
+        $resoluciones = $this->resolucionesAlbaran($entregas);
+
+        return $entregas->reject(fn (SalidaRutaEntrega $e) => ($resoluciones[$e->dte_id] ?? null)?->estaVinculado())->values();
+    }
+
+    /**
+     * Salas con albarán cuyo albarán de entrega cayó hoy o ayer sin que nadie anotara quién las
+     * entregó: ya constan entregadas y salieron de «Por entregar»; solo falta el nombre, que se
+     * anota desde «Marcados hoy». Con `$dteId`, solo ese CCF (vacío si no está en la lista).
+     *
+     * @return Collection<int, Dte>
+     */
+    public function conAlbaranSinQuien(?int $dteId = null): Collection
+    {
+        $portal = DiaVendedor::clientePortal();
+        if ($portal === null) {
+            return collect();
+        }
+        $hoy = Carbon::parse(HoraNegocio::fechaHoy());
+        $candidatos = $this->baseCcf()->where('cliente_id', $portal)->whereNotNull('cliente_sucursal_id')
+            ->when($dteId !== null, fn ($q) => $q->whereKey($dteId))
+            ->whereDate('fecha_emision', '>=', max($this->desde(), $hoy->copy()->subDays(self::DIAS_POR_ENTREGAR))->toDateString())
+            ->whereNotExists(function ($q) {
+                $q->selectRaw('1')->from('salida_ruta_entregas')
+                    ->whereColumn('salida_ruta_entregas.dte_id', 'dtes.id')->where('salida_ruta_entregas.resultado', ResultadoEntrega::Entregado->value);
+            })
+            ->orderBy('fecha_emision')->orderBy('id')
+            ->get();
+        if ($candidatos->isEmpty()) {
+            return $candidatos;
+        }
+        [$porDte, $porOrden] = $this->albaranes->indices($candidatos->pluck('id')->all(), $candidatos->pluck('numero_orden_compra')->all());
+        $ayer = $hoy->subDay()->toDateString();
+
+        return $candidatos->filter(function (Dte $d) use ($porDte, $porOrden, $ayer) {
+            $resolucion = $this->albaranes->elegir($porDte, $porOrden, $d->id, $d->numero_orden_compra);
+
+            return $resolucion->estaVinculado() && $resolucion->albaran->created_at !== null
+                && HoraNegocio::aLocal($resolucion->albaran->created_at)->toDateString() >= $ayer;
+        })->values();
     }
 
     /**

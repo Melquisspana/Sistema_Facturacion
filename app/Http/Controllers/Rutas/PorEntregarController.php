@@ -26,6 +26,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -63,7 +65,7 @@ class PorEntregarController extends Controller
         $puedeMarcar = $persona !== null && $request->user()->can(PermisoSistema::RutasEntregasRegistrar->value);
 
         // Lo que el vendedor marcó hoy queda abajo, con «Deshacer», y sale de la lista.
-        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,total_pagar', 'sala:id,nombre', 'salida'])
+        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre'])
             ->where('registrado_por', $request->user()->id)->whereNotNull('resultado')->sinFacturadosDespues()
             ->whereDate('fecha_resultado', HoraNegocio::fechaHoy())
             ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))
@@ -129,6 +131,12 @@ class PorEntregarController extends Controller
             // Ya cobró efectivo hoy: se entrega a la oficina con el PDF del día.
             'cobroHoy' => $marcados->contains(fn (SalidaRutaEntrega $e) => $e->forma_cobro === FormaCobroEntrega::Efectivo),
             'marcados' => $marcados,
+            // La sala con albarán anotada: si su albarán ya cayó o se está esperando.
+            'albaranMarcados' => $this->entregas->resolucionesAlbaran($marcados->filter(fn (SalidaRutaEntrega $e) => $e->dte !== null && DiaVendedor::esPortal($e->dte))),
+            // Su albarán cayó sin que nadie anotara quién la entregó: se anota acá.
+            'sinQuien' => $puedeMarcar ? $this->entregas->conAlbaranSinQuien()->load(['clienteSucursal:id,nombre', 'cliente:id,nombre,nombre_comercial']) : collect(),
+            // «¿Quién lo entregó?»: los vendedores activos; viene elegido el que tiene el celular.
+            'quienes' => $puedeMarcar ? $this->porEntregar->quienesEntregan($persona) : collect(),
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,
             'motivos' => MotivoNoEntrega::opciones(),
@@ -142,6 +150,13 @@ class PorEntregarController extends Controller
      * «Entregado» pide cómo pagaron (efectivo, cheque, transferencia o quedan), salvo en el
      * supermercado que cobra por el portal: ahí no se cobra al entregar y la forma que llegue
      * se ignora. Esa regla es de {@see EntregasCcf::registrar()}: vale por cualquier pantalla.
+     *
+     * «¿Quién lo entregó?» (12/11/2026) va en toda entrega, también en «No se pudo»: cualquier
+     * vendedor anota a otro, y la entrega (y su dinero) va en el PDF del día del que la entregó.
+     * La entrega queda en la salida del que anota (así la puede deshacer), con el que entregó
+     * sumado. La sala con albarán solo anota quién: queda «Entregado» sin cobro esperando el
+     * albarán, como la ve Cobros. La que ya tiene albarán sin quién ({@see EntregasCcf::conAlbaranSinQuien()})
+     * solo anota quién. El doble toque no anota otra: avisa que ya estaba.
      */
     public function marcar(Request $request, Dte $dte): RedirectResponse
     {
@@ -149,15 +164,31 @@ class PorEntregarController extends Controller
         if ($persona === null) {
             return back()->with('error', 'Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.');
         }
-        abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);
+        // La sala con albarán cuyo albarán ya cayó sin que nadie anotara quién: solo falta eso.
+        $soloQuien = $this->entregas->porEntregar($dte->id)->isEmpty();
+        if ($soloQuien && $this->entregas->conAlbaranSinQuien($dte->id)->isEmpty()) {
+            // El doble toque: la entrega ya quedó anotada y no se anota otra.
+            abort_unless(SalidaRutaEntrega::where('dte_id', $dte->id)->entregadas()->exists(), 404);
 
-        $datos = $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
+            return back()->with('status', 'Esa entrega ya estaba anotada.');
+        }
+        $quien = $this->quienEntrego($request, $persona);
 
-        $registrada = DB::transaction(function () use ($request, $dte, $persona, $datos) {
+        $datos = $soloQuien ? ['resultado' => 'entregado']
+            : $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
+        // La sala con albarán no cobra al entregar: solo se anota quién la entregó.
+        if (DiaVendedor::esPortal($dte)) {
+            $datos['forma_cobro'] = EntregasCcf::SIN_COBRO;
+        }
+
+        $registrada = DB::transaction(function () use ($request, $dte, $persona, $quien, $datos) {
             $entrega = $this->porEntregar->entregaPara($dte, $persona, $request->user());
             Gate::authorize('registrar', $entrega->salida);
+            if ($quien->id !== $persona->id) {
+                $this->porEntregar->sumarQuienEntrego($entrega->salida, $quien, $request->user());
+            }
 
-            return $this->entregas->registrar($entrega, $datos + ['entregado_por_id' => $persona->id], $request->user(), OrigenRegistroEntrega::Vendedor);
+            return $this->entregas->registrar($entrega, $datos + ['entregado_por_id' => $quien->id], $request->user(), OrigenRegistroEntrega::Vendedor);
         });
 
         // Solo el viaje se nombra: la salida que se arma sola para entregar no le dice nada al vendedor.
@@ -165,6 +196,25 @@ class PorEntregarController extends Controller
 
         return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().($salida->esViaje() ? ' (viaje '.$salida->nombreViaje().')' : '').'.');
     }
+
+    /**
+     * «¿Quién lo entregó?»: uno de la lista de la tarjeta ({@see PorEntregar::quienesEntregan()}),
+     * validado acá y no en el formulario. Sin elegir, el que tiene el celular.
+     *
+     * @throws ValidationException
+     */
+    private function quienEntrego(Request $request, PersonalRuta $persona): PersonalRuta
+    {
+        $quienes = $this->porEntregar->quienesEntregan($persona);
+        $id = $request->validate(
+            ['entregado_por_id' => ['nullable', 'integer', Rule::in($quienes->modelKeys())]],
+            ['entregado_por_id.integer' => self::QUIEN_INVALIDO, 'entregado_por_id.in' => self::QUIEN_INVALIDO],
+        )['entregado_por_id'] ?? $persona->id;
+
+        return $quienes->firstWhere('id', (int) $id);
+    }
+
+    private const QUIEN_INVALIDO = 'Elegí quién lo entregó entre los vendedores activos.';
 
     /**
      * La hoja del pedido de un CCF de la lista (el sugerido en limpio, con la F en lo que

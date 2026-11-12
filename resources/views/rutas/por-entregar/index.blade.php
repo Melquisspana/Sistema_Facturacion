@@ -5,7 +5,9 @@
      título, la hoja para firmar (si salió de un pedido) y el PDF del CCF, y
      marca «Entregado» o «No se pudo entregar»: el sistema elige el viaje o arma la salida
      (App\Services\Rutas\PorEntregar). Una sala sin zona se entrega igual. Lo marcado hoy
-     queda abajo, con «Deshacer». --}}
+     queda abajo, con «Deshacer». Desde el 12/11/2026 toda tarjeta pregunta «¿Quién lo
+     entregó?» (viene el que tiene el celular); la sala con albarán solo anota quién y espera
+     el albarán, y la que ya tiene albarán sin quién se anota abajo. --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Por entregar')
@@ -133,12 +135,43 @@
                             'textoNo' => 'No se pudo entregar',
                             'pidePago' => true,
                             'portal' => $portal !== null && (int) $dte->cliente_id === $portal,
+                            'quienes' => $quienes,
+                            'quienElegido' => $persona->id,
                         ])
                     @endif
                 </div>
             @endforeach
         </section>
     @endforeach
+
+    {{-- Salas con albarán cuyo albarán cayó (hoy o ayer) sin que nadie anotara quién las
+         entregó: ya están entregadas; solo falta el nombre (12/11/2026). --}}
+    @if ($sinQuien->isNotEmpty())
+        <section aria-labelledby="sin-quien">
+            <h2 id="sin-quien" class="mt-8 text-xl font-semibold">Llegó el albarán: falta quién lo entregó</h2>
+            @foreach ($sinQuien as $dte)
+                <div class="{{ $caja }} mt-3 px-4 py-3" x-data="{ quien: @js((string) $persona->id), nombres: @js($quienes->pluck('nombre', 'id')) }">
+                    <h3 class="text-lg font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</h3>
+                    <div class="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $dte->numero_control }}">
+                            <span aria-hidden="true">CCF {{ $corto($dte) }}</span>
+                            <span class="sr-only">CCF {{ $dte->numero_control }}</span>
+                        </p>
+                        <p class="text-sm text-gray-600 dark:text-paper-300">{{ $dte->fecha_emision?->format('d/m/Y') }}</p>
+                        <p class="text-sm font-semibold text-gray-800 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</p>
+                    </div>
+                    <p class="mt-1 text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado: llegó el albarán</p>
+                    @include('rutas.por-entregar._quien', ['clave' => 'albaran-'.$dte->id, 'quienElegido' => $persona->id])
+                    <form method="POST" action="{{ route('rutas.por-entregar.marcar', $dte) }}" class="mt-2">
+                        @csrf
+                        <input type="hidden" name="resultado" value="entregado">
+                        <input type="hidden" name="entregado_por_id" value="{{ $persona->id }}" x-bind:value="quien">
+                        <button class="min-h-11 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Anotar quién lo entregó</button>
+                    </form>
+                </div>
+            @endforeach
+        </section>
+    @endif
 
     @if ($marcados->isNotEmpty())
         <section aria-labelledby="marcados-hoy">
@@ -161,9 +194,19 @@
                             @if ($entrega->resultado === \App\Enums\ResultadoEntrega::Entregado)
                                 <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                                 <p class="text-xs text-gray-500 dark:text-paper-300">{{ $entrega->fecha_resultado?->format('H:i') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}</p>
+                                {{-- La sala con albarán: anotada, espera que caiga su albarán. --}}
+                                @if ($entrega->entregadoPor)
+                                    @php
+                                        $albaranDe = $albaranMarcados[$entrega->dte_id] ?? null;
+                                    @endphp
+                                    <p class="text-xs text-gray-700 dark:text-paper-100">Entregó: {{ $entrega->entregadoPor->nombre }}{{ $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
+                                @endif
                             @else
                                 <p class="text-sm font-medium text-red-700 dark:text-red-400">✗ No se pudo entregar</p>
                                 <p class="text-xs text-gray-500 dark:text-paper-300">{{ $entrega->motivo_no_entrega?->label() }}{{ $entrega->nota ? ' · '.$entrega->nota : '' }}</p>
+                                @if ($entrega->entregadoPor)
+                                    <p class="text-xs text-gray-700 dark:text-paper-100">Fue: {{ $entrega->entregadoPor->nombre }}</p>
+                                @endif
                             @endif
                             @can('deshacer', [$entrega->salida, $entrega])
                                 <form method="POST" action="{{ route('rutas.mi-salida.deshacer', [$entrega->salida, $entrega]) }}" class="mt-1">

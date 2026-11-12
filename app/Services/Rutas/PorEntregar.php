@@ -3,6 +3,7 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\FuncionPersonalRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
@@ -320,6 +321,35 @@ class PorEntregar
         ];
 
         return $vistas['viaje']->isEmpty() ? ['zona' => $vistas['zona']] : $vistas;
+    }
+
+    /**
+     * «¿Quién lo entregó?» (12/11/2026): los vendedores activos (fichas de Rutas activas con
+     * la función de vendedor) y quien tiene el celular, por nombre. Es la lista de la tarjeta y
+     * la que vale en el servidor: nadie fuera de ella queda como el que entregó.
+     *
+     * @return Collection<int, PersonalRuta>
+     */
+    public function quienesEntregan(PersonalRuta $yo): Collection
+    {
+        return PersonalRuta::query()->activos()
+            ->where(fn ($q) => $q->conFuncion(FuncionPersonalRuta::Vendedor)->orWhere('id', $yo->id))
+            ->orderBy('nombre')->orderBy('id')->get(['id', 'nombre']);
+    }
+
+    /**
+     * Quien entregó, si no es el que anota, va en la salida donde quedó la entrega: a la
+     * automática (y al viaje) se lo suma como acompañante; en una formal tiene que ir ya. Dentro
+     * de la transacción de {@see entregaPara()}, con la salida bloqueada.
+     *
+     * @throws ValidationException
+     */
+    public function sumarQuienEntrego(SalidaRuta $salida, PersonalRuta $quien, User $usuario): void
+    {
+        if (! $salida->esAutomatica() && ! self::participa($salida, $quien)) {
+            throw ValidationException::withMessages(['entregado_por_id' => $quien->nombre.' no va en '.$salida->conArticulo().': elegí a quien va en ella.']);
+        }
+        $this->sumar($salida, $quien, $usuario);
     }
 
     public static function participa(SalidaRuta $salida, PersonalRuta $persona): bool

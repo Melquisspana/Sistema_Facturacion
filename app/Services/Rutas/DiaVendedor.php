@@ -55,7 +55,7 @@ class DiaVendedor
     public function resumen(PersonalRuta $persona, ?User $usuario, string $fecha): array
     {
         $filas = $this->suyas($persona, $usuario)
-            ->with(['dte:id,numero_control,total_pagar,cliente_id', 'sala:id,nombre'])
+            ->with(['dte:id,numero_control,total_pagar,cliente_id', 'sala:id,nombre', 'registradoPor:id,name'])
             ->whereDate('fecha_resultado', $fecha)
             ->orderBy('fecha_resultado')->orderBy('id')
             ->get();
@@ -98,8 +98,10 @@ class DiaVendedor
     }
 
     /**
-     * Lo que cuenta como suyo: lo que entregó (aunque lo haya anotado otro) y los «No se pudo»
-     * que anotó él. `$usuario` es el login de la persona; sin login no anotó nada.
+     * Lo que cuenta como suyo: lo que entregó y los «No se pudo» donde fue él, aunque los haya
+     * anotado otro (12/11/2026: el dinero lo rinde el que entregó). Un «No se pudo» de antes,
+     * sin quién fue, es de quien lo anotó. `$usuario` es el login de la persona; sin login no
+     * anotó nada.
      *
      * @return Builder<SalidaRutaEntrega>
      */
@@ -107,8 +109,8 @@ class DiaVendedor
     {
         return SalidaRutaEntrega::query()->sinFacturadosDespues()
             ->where(fn (Builder $q) => $q
-                ->where(fn (Builder $q) => $q->where('resultado', ResultadoEntrega::Entregado->value)->where('entregado_por_id', $persona->id))
-                ->orWhere(fn (Builder $q) => $q->where('resultado', ResultadoEntrega::NoEntregado->value)->where('registrado_por', $usuario?->id ?? 0)));
+                ->where(fn (Builder $q) => $q->whereIn('resultado', [ResultadoEntrega::Entregado->value, ResultadoEntrega::NoEntregado->value])->where('entregado_por_id', $persona->id))
+                ->orWhere(fn (Builder $q) => $q->where('resultado', ResultadoEntrega::NoEntregado->value)->whereNull('entregado_por_id')->where('registrado_por', $usuario?->id ?? 0)));
     }
 
     /**
@@ -176,11 +178,12 @@ class DiaVendedor
         $entregas = SalidaRutaEntrega::query()->sinFacturadosDespues()->whereDate('fecha_resultado', $fecha)
             ->whereIn('resultado', [ResultadoEntrega::Entregado->value, ResultadoEntrega::NoEntregado->value])
             ->select('resultado', 'entregado_por_id', 'registrado_por')->distinct()->toBase()->get();
-        // Quien entregó o tiene un gasto, por su ficha; quien anotó un «No se pudo», por su login.
-        $fichas = $entregas->where('resultado', ResultadoEntrega::Entregado->value)->pluck('entregado_por_id')
+        // Quien entregó o fue, o tiene un gasto, por su ficha; quien anotó un «No se pudo» de
+        // antes, sin quién fue, por su login.
+        $fichas = $entregas->pluck('entregado_por_id')
             ->concat(SalidaRutaGasto::query()->whereDate('fecha', $fecha)->distinct()->pluck('personal_id'))
             ->filter()->unique()->values();
-        $usuarios = $entregas->where('resultado', ResultadoEntrega::NoEntregado->value)->pluck('registrado_por')
+        $usuarios = $entregas->where('resultado', ResultadoEntrega::NoEntregado->value)->whereNull('entregado_por_id')->pluck('registrado_por')
             ->filter()->unique()->values();
 
         return PersonalRuta::query()->with('user')
