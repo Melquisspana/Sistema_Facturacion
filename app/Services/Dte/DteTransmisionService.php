@@ -337,10 +337,13 @@ class DteTransmisionService
      * en Seguimiento de cobros, lo de las notas de crédito y el correo automático salen
      * del cambio de estado ({@see DteObserver}).
      *
-     * El rechazo no se borra: sus datos quedan dentro de la respuesta guardada, su archivo
-     * se aparta antes de escribir el de la aceptación, y todo va a la bitácora. Si estaba
-     * ARCHIVADO, vuelve a la operación diaria: un aceptado escondido no se vería ni se
-     * cobraría.
+     * El rechazo no se borra: sus datos quedan dentro de la respuesta guardada y todo va
+     * a la bitácora. Su ARCHIVO no se toca nunca: la respuesta de la aceptación se escribe
+     * en uno propio, con otro nombre. Los archivos no vuelven atrás cuando la base revierte
+     * una transacción; escribiendo en un lugar nuevo, como ya hace la conversión a
+     * contingencia con la firma, una falla a mitad y su reintento dejan el rechazo como
+     * estaba, byte por byte. Si estaba ARCHIVADO, vuelve a la operación diaria: un aceptado
+     * escondido no se vería ni se cobraría.
      *
      * Lo que NO hace: buscar ni tocar un documento que haya salido de «corregir y
      * duplicar» mientras este figuraba rechazado. Eso lo revisa una persona; la ficha lo
@@ -355,15 +358,13 @@ class DteTransmisionService
         $rechazo = is_array($dte->respuesta_mh) ? $dte->respuesta_mh : [];
         $estabaArchivado = $dte->estaArchivado();
 
-        // La respuesta de la aceptación se guarda con el mismo nombre que la del rechazo.
-        $archivoDelRechazo = null;
-        if (filled($dte->respuesta_mh_path) && $disco->exists($dte->respuesta_mh_path)) {
-            $archivoDelRechazo = preg_replace('/\.json$/', '', (string) $dte->respuesta_mh_path).'-rechazo-anterior.json';
-            $disco->put($archivoDelRechazo, (string) $disco->get($dte->respuesta_mh_path));
-        }
+        // El archivo del rechazo queda donde está; solo se anota si sigue ahí.
+        $archivoDelRechazo = filled($dte->respuesta_mh_path) && $disco->exists($dte->respuesta_mh_path)
+            ? (string) $dte->respuesta_mh_path
+            : null;
 
         $dte->sello_recepcion = (string) $resultado['sello'];
-        $this->persistirRespuesta($dte, $resultado);
+        $this->persistirRespuesta($dte, $resultado, '-aceptacion-tardia');
 
         $rechazoAnterior = [
             'codigoMsg' => $rechazo['codigoMsg'] ?? null,
@@ -455,7 +456,7 @@ class DteTransmisionService
      *
      * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>, cuerpo?: array<string, mixed>|null}  $resultado
      */
-    private function persistirRespuesta(Dte $dte, array $resultado): void
+    private function persistirRespuesta(Dte $dte, array $resultado, string $sufijo = ''): void
     {
         $cuerpo = $resultado['cuerpo'] ?? null;
         $get = fn (string $k) => is_array($cuerpo) ? ($cuerpo[$k] ?? null) : null;
@@ -463,7 +464,8 @@ class DteTransmisionService
         // JSON crudo de la respuesta (lo que devolvió recepción tal cual).
         $disco = (string) config('dte.storage.disk', 'local');
         $carpeta = trim((string) config('dte.storage.respuestas', 'dte/respuestas'), '/');
-        $ruta = $carpeta.'/dte-'.$dte->tipo_dte->value.'-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
+        // `$sufijo` da un archivo aparte a una respuesta que NO debe pisar la anterior.
+        $ruta = $carpeta.'/dte-'.$dte->tipo_dte->value.'-'.$dte->id.'-'.$dte->codigo_generacion.$sufijo.'.json';
         $crudo = is_array($cuerpo) ? $cuerpo : ['_sin_json' => true, 'mensaje' => $resultado['mensaje'] ?? null];
         Storage::disk($disco)->put($ruta, (string) json_encode($crudo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 

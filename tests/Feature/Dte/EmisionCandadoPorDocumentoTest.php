@@ -18,6 +18,7 @@ use App\Services\Cobros\AltaCobrosService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteStateMachine;
+use App\Services\Dte\DteTransmisionAuthService;
 use App\Services\Dte\DteTransmisionService;
 use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -290,9 +291,10 @@ class EmisionCandadoPorDocumentoTest extends TestCase
         $dte = $this->firmado();
         $copiaVieja = Dte::findOrFail($dte->id);
 
+        // Después del rechazo, Hacienda contesta siempre lo mismo: sirve para reintentar.
         Http::fakeSequence('*')
             ->push(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Código de generación ya existe', 'observaciones' => []], 400)
-            ->push($respuestaTardia, $status);
+            ->whenEmpty(Http::response($respuestaTardia, $status));
 
         $this->assertSame('rechazado', app(DteTransmisionService::class)->transmitir($dte)['resultado']);
         $this->assertSame(EstadoDte::Rechazado, $dte->fresh()->estado);
@@ -404,6 +406,50 @@ class EmisionCandadoPorDocumentoTest extends TestCase
             ->assertOk()
             ->assertSee('Hacienda aceptó este documento después de que acá figuró como rechazado')
             ->assertSee('facturada dos veces');
+    }
+
+    public function test_si_guardar_la_aceptacion_tardia_falla_y_se_reintenta_el_archivo_del_rechazo_sigue_intacto(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO']);
+        $archivoDelRechazo = Dte::findOrFail($copiaVieja->id)->respuesta_mh_path;
+        $rechazoOriginal = Storage::disk('local')->get($archivoDelRechazo);
+        $this->assertStringContainsString('Código de generación ya existe', $rechazoOriginal);
+
+        // La base falla DESPUÉS de haber guardado la respuesta: los archivos no se deshacen solos.
+        $maquinaQueFalla = new class extends DteStateMachine
+        {
+            public function aceptarTrasRechazo(Dte $dte, ?User $usuario = null, ?string $comentario = null): Dte
+            {
+                throw new \RuntimeException('Falla simulada al cambiar el estado.');
+            }
+        };
+        try {
+            (new DteTransmisionService(app(DteTransmisionAuthService::class), $maquinaQueFalla))->transmitir($copiaVieja);
+            $this->fail('La falla simulada tenía que cortar la aceptación.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Falla simulada al cambiar el estado.', $e->getMessage());
+        }
+
+        // La base volvió atrás, y el archivo del rechazo no se tocó.
+        $trasLaFalla = Dte::findOrFail($copiaVieja->id);
+        $this->assertSame(EstadoDte::Rechazado, $trasLaFalla->estado);
+        $this->assertNull($trasLaFalla->sello_recepcion);
+        $this->assertSame($archivoDelRechazo, $trasLaFalla->respuesta_mh_path);
+        $this->assertSame($rechazoOriginal, Storage::disk('local')->get($archivoDelRechazo));
+
+        // El reintento sí entra, y el rechazo sigue ahí, byte por byte.
+        app(DteTransmisionService::class)->aplicarResultadoDeConsulta(Dte::findOrFail($copiaVieja->id), [
+            'resultado' => 'aceptado', 'http_status' => 200, 'mensaje' => 'RECIBIDO', 'sello' => 'SELLO-DE-PRUEBA-0002',
+            'cuerpo' => ['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO'],
+        ]);
+
+        $guardado = Dte::findOrFail($copiaVieja->id);
+        $this->assertSame(EstadoDte::Aceptado, $guardado->estado);
+        $this->assertSame($archivoDelRechazo, $guardado->respuesta_mh['rechazo_anterior']['archivo']);
+        $this->assertSame($rechazoOriginal, Storage::disk('local')->get($archivoDelRechazo));
+        // La aceptación va en su propio archivo: nunca encima del rechazo.
+        $this->assertNotSame($archivoDelRechazo, $guardado->respuesta_mh_path);
+        $this->assertStringContainsString('SELLO-DE-PRUEBA-0002', Storage::disk('local')->get($guardado->respuesta_mh_path));
     }
 
     public function test_la_maquina_de_estados_solo_deja_salir_de_rechazado_con_un_sello(): void
