@@ -491,7 +491,9 @@ documento queda como estaba y la bitácora `dte_transmision` dice qué faltó
 
 **Sin sello de recepción no hay aceptación**, ni por consulta ni en la respuesta a un envío:
 un «procesado» sin sello deja el documento firmado, y el reintento de siempre —que consulta
-antes de reenviar— lo acepta cuando Hacienda contesta con el sello. A un documento que ya
+antes de reenviar— lo acepta cuando Hacienda contesta con el sello. Si nadie lo vuelve a tocar,
+`alertas:revisar` avisa de los firmados de producción sin cambios hace más de 30 minutos
+(`App\Services\Alertas\Detectores\FirmadoSinTransmitir`). A un documento que ya
 figuraba aceptado sin sello, `dte:consultar <id> --consultar --aplicar` se lo completa si la
 consulta se puede comprobar; no repite el paso a aceptado, y el alta en Seguimiento ocurre ahí.
 

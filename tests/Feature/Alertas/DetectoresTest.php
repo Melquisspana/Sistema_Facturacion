@@ -15,8 +15,10 @@ use App\Models\GmailCuenta;
 use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
 use App\Models\User;
+use App\Services\Alertas\Avisador;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
+use App\Services\Alertas\Detectores\FirmadoSinTransmitir;
 use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
 use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
@@ -26,6 +28,7 @@ use App\Services\Contabilidad\AuditoriaPaquete;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 /** Qué cuenta como falla para cada aviso, y que el texto no lleve datos sensibles. */
@@ -86,6 +89,62 @@ class DetectoresTest extends TestCase
 
         config(['dte.contingencia.enabled' => false]);
         $this->assertFalse(app(ContingenciaVencida::class)->aplica());
+    }
+
+    public function test_firmado_sin_transmitir_avisa_solo_los_de_produccion_viejos_fuera_de_contingencia(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-10 09:00', 'America/El_Salvador'));
+        $firmadoReal = ['estado' => EstadoDte::Firmado->value, 'ambiente' => '01', 'json_firmado_path' => 'dte/firmados/dte-03.jws'];
+        $contingencia = Contingencia::create([
+            'tipo' => 1, 'origen' => 'manual', 'estado' => 'activa', 'inicio' => now()->subHour(),
+        ]);
+
+        $viejo = $this->dte($firmadoReal);
+        $this->dte(array_merge($firmadoReal, ['ambiente' => '00']));
+        $this->dte(array_merge($firmadoReal, ['json_firmado_path' => 'dte/firmados/dte-03.mock.jws']));
+        $this->dte(array_merge($firmadoReal, ['contingencia_id' => $contingencia->id]));
+        $this->dte(array_merge($firmadoReal, ['estado' => EstadoDte::Aceptado->value, 'sello_recepcion' => '2026SELLOREAL0001']));
+        $this->dte(array_merge($firmadoReal, ['estado' => EstadoDte::Rechazado->value]));
+
+        $detector = app(FirmadoSinTransmitir::class);
+        $this->assertTrue($detector->aplica());
+
+        $this->travel(29)->minutes();
+        $this->assertNull($detector->revisar(), 'Antes del plazo no avisa: puede estar transmitiéndose.');
+
+        $this->travel(2)->minutes();
+        $this->dte($firmadoReal); // recién firmado: todavía no cuenta
+
+        $h = $detector->revisar();
+
+        $this->assertSame(1, $h->conteo);
+        $this->assertSame('1 documento firmado sigue sin transmitir', $h->titulo);
+        $this->assertStringContainsString($viejo->numero_control.' del 10/11/2026', $h->detalle);
+        $this->assertSame('Abrí cada documento y probá transmitir de nuevo; si Hacienda no contesta, revisá la contingencia.', $h->queHacer);
+        $this->assertSame('facturacion.index', $h->enlace);
+        $this->assertStringNotContainsString('SECRETO', $h->titulo.$h->detalle.$h->queHacer);
+        $this->assertStringNotContainsString('$', $h->titulo.$h->detalle.$h->queHacer, 'Sin montos.');
+    }
+
+    public function test_firmado_sin_transmitir_nombra_los_primeros_y_no_repite_el_aviso(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-10 09:00', 'America/El_Salvador'));
+        foreach (range(1, 4) as $i) {
+            $this->dte(['estado' => EstadoDte::Firmado->value, 'ambiente' => '01', 'json_firmado_path' => 'dte/firmados/dte-'.$i.'.jws']);
+        }
+        $this->travel(1)->hour();
+
+        $detector = collect(app(Avisador::class)->detectores())->first(fn ($d) => $d instanceof FirmadoSinTransmitir);
+        $this->assertNotNull($detector, 'Está entre los detectores que corre alertas:revisar.');
+
+        $h = $detector->revisar();
+        $this->assertSame('4 documentos firmados siguen sin transmitir', $h->titulo);
+        $this->assertStringEndsWith('y 1 más.', $h->detalle);
+
+        Mail::fake();
+        $this->assertSame('falla', app(Avisador::class)->procesar($detector));
+        $this->travel(10)->minutes();
+        $this->assertNull(app(Avisador::class)->procesar($detector), 'La misma situación no vuelve a avisar.');
     }
 
     public function test_respaldo_avisa_si_el_ultimo_fallo_o_si_no_hay_de_hoy_a_la_hora_limite(): void
