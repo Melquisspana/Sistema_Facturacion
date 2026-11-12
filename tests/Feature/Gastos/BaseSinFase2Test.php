@@ -7,8 +7,11 @@ use App\Models\Gastos\Gasto;
 use App\Models\User;
 use App\Services\Gastos\InstalacionGastos;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -253,6 +256,46 @@ class BaseSinFase2Test extends TestCase
     }
 
     // ─────────────────────── Y el caso normal, para que no se rompa al revés ───────────────────────
+
+    public function test_el_perfil_abre_y_reporta_si_falla_la_consulta_del_esquema_de_gastos(): void
+    {
+        $u = $this->usuario();
+        Exceptions::fake();
+        $error = new RuntimeException('Falla simulada al consultar el esquema de Gastos.');
+        DB::connection()->beforeExecuting(function (string $consulta, array $parametros) use ($error): void {
+            if (str_contains($consulta, 'gastos_avisos') || in_array('gastos_avisos', $parametros, true)) {
+                throw $error;
+            }
+        });
+
+        $this->actingAs($u)->get(route('profile.edit'))->assertOk();
+
+        $this->assertFalse(app(InstalacionGastos::class)->fase2Instalada());
+        $this->assertSame(0, app(InstalacionGastos::class)->avisosSinLeer($u));
+        Exceptions::assertReported(fn (RuntimeException $e) => $e === $error);
+    }
+
+    public function test_el_perfil_abre_sin_contador_y_reporta_si_falla_la_consulta_de_avisos(): void
+    {
+        $u = $this->usuario();
+        Exceptions::fake();
+        $error = new RuntimeException('Falla simulada al contar avisos de Gastos.');
+        DB::connection()->beforeExecuting(function (string $consulta) use ($error): void {
+            if (str_contains($consulta, 'count(*)') && str_contains($consulta, 'gastos_avisos')) {
+                throw $error;
+            }
+        });
+
+        $this->actingAs($u)->get(route('profile.edit'))->assertOk();
+
+        $this->assertTrue(app(InstalacionGastos::class)->fase2Instalada());
+        $this->assertSame(0, app(InstalacionGastos::class)->avisosSinLeer($u));
+        $this->view('layouts.partials.sidebar-gastos', [
+            'gastosFase2' => true,
+            'gastosAvisosSinLeer' => app(InstalacionGastos::class)->avisosSinLeer($u),
+        ])->assertSee('Por pagar')->assertDontSee('text-[0.65rem]', false);
+        Exceptions::assertReported(fn (RuntimeException $e) => $e === $error);
+    }
 
     public function test_con_el_esquema_completo_el_menu_ofrece_los_que_se_repiten(): void
     {

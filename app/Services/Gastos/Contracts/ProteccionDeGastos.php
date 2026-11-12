@@ -4,7 +4,6 @@ namespace App\Services\Gastos\Contracts;
 
 use App\Models\Gastos\Pago;
 use App\Models\User;
-use App\Services\Gastos\SinProteccion;
 use Illuminate\Database\Query\Builder;
 
 /**
@@ -34,8 +33,8 @@ use Illuminate\Database\Query\Builder;
  * momento, siempre ve lo último y no viaja por PHP. `null` significa «no hay nada que
  * esconder», y entonces a la consulta no se le agrega ni una cláusula.
  *
- * La implementación por defecto ({@see SinProteccion}) no protege
- * nada, que es lo correcto cuando el otro módulo no está instalado.
+ * El contenedor usa ProteccionPlanilla, que deja de proteger cuando sus tablas
+ * no están instaladas.
  */
 interface ProteccionDeGastos
 {

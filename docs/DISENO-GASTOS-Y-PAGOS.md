@@ -642,7 +642,7 @@ leía cuánto cobra cada quien; con `gastos.pagos.registrar` podía además paga
 **La solución no fue tapar pantallas.** Se introdujo `ProteccionDeGastos`, una interfaz
 que **define Gastos** y que responde quien tenga el contexto —hoy,
 `ProteccionPlanilla`—. Gastos pregunta «¿este usuario alcanza este gasto?» sin aprender
-jamás qué es un sueldo. Si Planilla no está instalada, `SinProteccion` responde que no
+jamás qué es un sueldo. Si Planilla no está instalada, `ProteccionPlanilla` responde que no
 hay nada que esconder y Gastos funciona exactamente igual que antes.
 
 El candado vive en **`AccesoGastos::ver()`**, que es el embudo por el que pasan abrir la

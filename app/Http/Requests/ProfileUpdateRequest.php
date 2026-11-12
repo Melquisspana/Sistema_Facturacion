@@ -31,12 +31,20 @@ class ProfileUpdateRequest extends FormRequest
                 'max:255',
                 Rule::unique(User::class)->ignore($this->user()->id),
             ],
+            'current_password' => $this->input('email') !== $this->user()->email
+                ? ['required', 'string', 'current_password']
+                : ['exclude'],
         ];
     }
 
     /** @return array<string, string> */
     public function messages(): array
     {
-        return ['name.in' => 'Tu nombre se cambia en tu ficha de Personal.'];
+        return [
+            'name.in' => 'Tu nombre se cambia en tu ficha de Personal.',
+            'current_password.required' => 'Para cambiar tu correo, escribí tu contraseña actual.',
+            'current_password.string' => 'Escribí tu contraseña actual.',
+            'current_password.current_password' => 'La contraseña actual no es correcta. El correo no se cambió.',
+        ];
     }
 }

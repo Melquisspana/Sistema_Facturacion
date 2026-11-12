@@ -75,8 +75,7 @@ class AppServiceProvider extends ServiceProvider
         // consultas de la pantalla de Gastos dentro de la misma petición.
         //
         // ProteccionPlanilla ya se desactiva sola si sus tablas no están migradas, así
-        // que se puede atar siempre. SinProteccion queda como la respuesta neutra para
-        // las pruebas que no quieren saber nada de planilla.
+        // que se puede atar siempre, también cuando Planilla no está instalada.
         $this->app->singleton(ProteccionDeGastos::class, ProteccionPlanilla::class);
 
         // De dónde salen las fechas de pedido para el ritmo de Rutas: los pedidos de sala,

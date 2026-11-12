@@ -83,12 +83,11 @@ Route::post('/logout-completo', function (Request $request) {
     return redirect('/cdn-cgi/access/logout');
 })->middleware('auth')->name('logout.completo');
 
-Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified', 'area.principal'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'area.principal'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // Clientes. La autorización fina (gestión vs lectura) la decide ClientePolicy.
     Route::patch('clientes/{cliente}/toggle-activo', [ClienteController::class, 'toggleActivo'])->name('clientes.toggle-activo');
@@ -675,9 +674,8 @@ Route::middleware('auth')->group(function () {
     | nuevo. Se conservan —no se borran— hasta comprobar en producción que nadie las
     | llama; lo que se retiró es su capacidad de mutar datos, no su existencia.
     |
-    | `ExportacionController` y `ExportacionClienteController` quedan sin ninguna
-    | ruta que los alcance. Siguen en el árbol a propósito: eliminarlos es el paso
-    | siguiente, y exige la misma comprobación en producción.
+    | Los controladores y las vistas del flujo anterior se retiraron. Estas rutas
+    | de compatibilidad conservan sus redirecciones y respuestas 409.
     */
     Route::prefix('exportaciones')->name('exportaciones.')->middleware('permission:exportaciones.ver')->group(function () {
         $gestionar = 'permission:exportaciones.gestionar';
