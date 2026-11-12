@@ -4,6 +4,7 @@ namespace Tests\Feature\Dte;
 
 use App\Enums\TipoDte;
 use App\Models\Cliente;
+use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -17,8 +18,8 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Los productos reales de Calleja aparecen en el catálogo "Productos disponibles"
- * al editar un CCF de Calleja, con el precio especial Calleja como precio aplicado.
+ * Los productos con precio especial para Calleja (los de ejemplo del seeder) aparecen en
+ * el catálogo "Productos disponibles" al editar un CCF de Calleja, con ese precio aplicado.
  */
 class ProductosCallejaCatalogoTest extends TestCase
 {
@@ -34,7 +35,7 @@ class ProductosCallejaCatalogoTest extends TestCase
         $this->seed(DatosInicialesNegritaSeeder::class);
     }
 
-    private function ccfDeCalleja(): \App\Models\Dte
+    private function ccfDeCalleja(): Dte
     {
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
         $estab = Establecimiento::where('codigo', 'M001')->firstOrFail();
@@ -57,12 +58,12 @@ class ProductosCallejaCatalogoTest extends TestCase
             ->get(route('facturacion.edit', $dte))
             ->assertOk()
             ->assertSee('Productos disponibles')
-            ->assertSee('CANILLITAS')
-            ->assertSee('7412201700031')   // código de barra
-            ->assertSee('1.0500')          // precio especial Calleja (4 decimales)
+            ->assertSee('Producto de ejemplo 1')
+            ->assertSee('2000000001001')   // código de barra
+            ->assertSee('1.1000')          // precio especial Calleja (4 decimales)
             ->assertSee('especial')        // marcado como precio especial
-            ->assertSee('LECHE DE BURRA')
-            ->assertSee('MIX');
+            ->assertSee('Producto de ejemplo 14')
+            ->assertSee('Producto de ejemplo 15');
     }
 
     public function test_precio_aplicado_para_calleja_es_el_especial(): void
@@ -70,10 +71,10 @@ class ProductosCallejaCatalogoTest extends TestCase
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
         $resolver = app(PrecioProductoResolver::class);
 
-        $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
-        $this->assertSame('1.0500', $resolver->resolver($canillitas, $calleja->id, null));
+        $primero = Producto::where('codigo_barra', '2000000001001')->firstOrFail();
+        $this->assertSame('1.1000', $resolver->resolver($primero, $calleja->id, null));
 
-        $leche = Producto::where('codigo_barra', '7412201700024')->firstOrFail();
-        $this->assertSame('1.0900', $resolver->resolver($leche, $calleja->id, null));
+        $otro = Producto::where('codigo_barra', '2000000001014')->firstOrFail();
+        $this->assertSame('2.4000', $resolver->resolver($otro, $calleja->id, null));
     }
 }

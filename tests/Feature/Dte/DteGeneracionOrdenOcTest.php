@@ -15,6 +15,7 @@ use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\RepresentacionPdfDte;
 use Tests\TestCase;
 
 /**
@@ -26,8 +27,8 @@ use Tests\TestCase;
  */
 class DteGeneracionOrdenOcTest extends TestCase
 {
-    use \Tests\Concerns\RepresentacionPdfDte;
     use RefreshDatabase;
+    use RepresentacionPdfDte;
 
     protected function setUp(): void
     {
@@ -37,7 +38,23 @@ class DteGeneracionOrdenOcTest extends TestCase
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->seed(DatosInicialesNegritaSeeder::class);
+
+        // El seeder ya no trae estos productos (su catálogo es de ejemplo). El orden de
+        // la OC se decide por código de barra en OrdenProductosOc, así que la prueba
+        // crea los que necesita con los códigos que esa lista conoce.
+        foreach (self::PRODUCTOS as $barra => [$nombre]) {
+            Producto::factory()->create(['nombre' => $nombre, 'codigo_barra' => (string) $barra, 'precio_unitario' => '1.00']);
+        }
     }
+
+    /** código de barra => [nombre, cantidad], en el orden REVUELTO en que se agregan (no el de la OC). */
+    private const PRODUCTOS = [
+        '7412201700115' => ['MAZAPÁN', 5],                      // rank 16
+        '7412201700031' => ['CANILLITAS', 10],                  // rank 8
+        '7412201700178' => ['SEMILLA DE MARAÑON HORNEADA', 3],  // rank 0
+        '7412201700135' => ['MIX', 2],                          // fuera
+        '7412201700024' => ['LECHE DE BURRA', 4],               // rank 1
+    ];
 
     private const ORDEN_ESPERADO = [
         'SEMILLA DE MARAÑON HORNEADA', // rank 0
@@ -72,11 +89,9 @@ class DteGeneracionOrdenOcTest extends TestCase
     private function ccfRevuelto(TipoDte $tipo = TipoDte::CreditoFiscal): Dte
     {
         $dte = $this->borrador($tipo);
-        $this->add($dte, '7412201700115', 5);  // MAZAPÁN          rank 16
-        $this->add($dte, '7412201700031', 10); // CANILLITAS       rank 8
-        $this->add($dte, '7412201700178', 3);  // SEMILLA HORNEADA rank 0
-        $this->add($dte, '7412201700135', 2);  // MIX              fuera
-        $this->add($dte, '7412201700024', 4);  // LECHE DE BURRA   rank 1
+        foreach (self::PRODUCTOS as $barra => [, $cantidad]) {
+            $this->add($dte, (string) $barra, $cantidad);
+        }
 
         return $dte->refresh();
     }
