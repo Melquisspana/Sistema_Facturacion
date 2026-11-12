@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * El flujo de la planilla después de prepararla: confirmar, ver su estado, imprimir,
@@ -351,31 +352,56 @@ class PlanillaFlujoController extends Controller
 
         // Disco PRIVADO y nombre generado por el servidor: un recibo de sueldo no puede
         // quedar detrás de una URL adivinable.
-        $ruta = $archivo->storeAs(
-            'planilla/firmados',
-            Str::uuid().'.'.$archivo->extension(),
-            'local',
-        );
+        $nombreDisco = Str::uuid().'.'.$archivo->extension();
+        $ruta = 'planilla/firmados/'.$nombreDisco;
 
-        PlanillaDocumento::create([
-            'planilla_id' => $planilla->id,
-            'planilla_detalle_id' => $datos['planilla_detalle_id'] ?? null,
-            'tipo' => $datos['tipo'],
-            'ruta' => $ruta,
-            'nombre' => mb_substr(basename($archivo->getClientOriginalName()), 0, 240),
-            'mime' => $archivo->getMimeType(),
-            'bytes' => $archivo->getSize(),
-            'sha256' => hash_file('sha256', $archivo->getRealPath()),
-            'registrado_por' => $request->user()->id,
-            'created_at' => now(),
-        ]);
+        // Mismo criterio que los adjuntos de Gastos (AlmacenAdjuntos): se comprueba que
+        // el archivo se guardó, el registro y el evento van juntos, y si algo falla
+        // después de escribir se retira el archivo. O queda todo, o no queda nada.
+        try {
+            // El disco local no lanza excepción si no puede escribir: devuelve false.
+            if (! Storage::disk('local')->putFileAs('planilla/firmados', $archivo, $nombreDisco)) {
+                throw ValidationException::withMessages([
+                    'documento' => 'No se pudo guardar el archivo. No se registró nada.',
+                ]);
+            }
 
-        DB::table('gastos_eventos')->insert([
-            'usuario_id' => $request->user()->id,
-            'accion' => 'planilla_documento_adjuntado',
-            'datos' => json_encode(['planilla_id' => $planilla->id, 'tipo' => $datos['tipo']], JSON_THROW_ON_ERROR),
-            'created_at' => now(),
-        ]);
+            DB::transaction(function () use ($request, $planilla, $datos, $archivo, $ruta) {
+                PlanillaDocumento::create([
+                    'planilla_id' => $planilla->id,
+                    'planilla_detalle_id' => $datos['planilla_detalle_id'] ?? null,
+                    'tipo' => $datos['tipo'],
+                    'ruta' => $ruta,
+                    'nombre' => mb_substr(basename($archivo->getClientOriginalName()), 0, 240),
+                    'mime' => $archivo->getMimeType(),
+                    'bytes' => $archivo->getSize(),
+                    'sha256' => hash_file('sha256', $archivo->getRealPath()),
+                    'registrado_por' => $request->user()->id,
+                    'created_at' => now(),
+                ]);
+
+                DB::table('gastos_eventos')->insert([
+                    'usuario_id' => $request->user()->id,
+                    'accion' => 'planilla_documento_adjuntado',
+                    'datos' => json_encode(['planilla_id' => $planilla->id, 'tipo' => $datos['tipo']], JSON_THROW_ON_ERROR),
+                    'created_at' => now(),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Storage::disk('local')->delete($ruta);
+
+            if ($e instanceof ValidationException) {
+                throw $e;
+            }
+
+            // El detalle técnico va al registro de errores; a la persona se le dice qué
+            // pasó con su archivo y qué puede hacer.
+            report($e);
+
+            throw ValidationException::withMessages([
+                'documento' => 'No se pudo registrar el documento. No se guardó nada: probá adjuntarlo otra vez.',
+            ]);
+        }
 
         return back()->with('planilla.aviso', 'Documento firmado adjuntado.');
     }
