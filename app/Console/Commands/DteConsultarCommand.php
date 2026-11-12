@@ -63,8 +63,25 @@ class DteConsultarCommand extends Command
         }
 
         $this->newLine();
+        $aplicar = (bool) $this->option('aplicar');
+        $guardado = null;
         try {
-            $r = $consulta->consultar($dte);
+            if ($aplicar) {
+                // Consulta y guardado bajo el MISMO candado del documento: lo que se
+                // guarda es la respuesta a la pregunta por el documento tal como está
+                // ahora, no por el que este proceso cargó antes de que otro lo cambiara.
+                [$r, $guardado] = CandadoEmisionDte::ejecutar($dte, function () use ($consulta, $dte) {
+                    $r = $consulta->consultar($dte);
+
+                    return [$r, $r['recibido'] ? app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $r) : null];
+                });
+            } else {
+                $r = $consulta->consultar($dte);
+            }
+        } catch (DteEmisionEnCursoException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         } catch (DteTransmisionDeshabilitadaException $e) {
             $this->warn('Consulta bloqueada: '.$e->getMessage());
 
@@ -84,8 +101,8 @@ class DteConsultarCommand extends Command
             $this->line('Sello       : '.$r['sello']);
         }
 
-        if ($this->option('aplicar')) {
-            return $this->aplicar($dte, $r);
+        if ($aplicar) {
+            return $this->informarLoGuardado($dte, $guardado);
         }
 
         $this->newLine();
@@ -95,27 +112,26 @@ class DteConsultarCommand extends Command
     }
 
     /**
-     * Guarda lo que Hacienda contestó, por el MISMO camino que la emisión: el candado por
-     * documento y {@see DteTransmisionService::aplicarResultadoDeConsulta()}, con su regla
-     * del sello. Es la forma de corregir a mano un documento que acá figura rechazado y
-     * Hacienda tiene aceptado. Solo con una respuesta que confirma que lo tiene.
+     * Qué pasó con `--aplicar`. Lo que Hacienda contestó se guardó por el MISMO camino que
+     * la emisión ({@see DteTransmisionService::aplicarResultadoDeConsulta()}), con su regla:
+     * una aceptación solo se guarda con sello, mismo código de generación y mismo ambiente.
+     * Es la forma de corregir a mano un documento que acá figura rechazado y Hacienda
+     * tiene aceptado.
      *
-     * @param  array<string, mixed>  $r
+     * @param  array<string, mixed>|null  $guardado  null si Hacienda no confirmó tenerlo
      */
-    private function aplicar(Dte $dte, array $r): int
+    private function informarLoGuardado(Dte $dte, ?array $guardado): int
     {
         $this->newLine();
 
-        if (! $r['recibido']) {
+        if ($guardado === null) {
             $this->warn('Hacienda no confirmó tener el documento: no se guardó nada.');
 
             return self::FAILURE;
         }
 
-        try {
-            CandadoEmisionDte::ejecutar($dte, fn () => app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $r));
-        } catch (DteEmisionEnCursoException $e) {
-            $this->error($e->getMessage());
+        if (! in_array($guardado['resultado'], ['aceptado', 'rechazado'], true)) {
+            $this->warn((string) $guardado['mensaje']);
 
             return self::FAILURE;
         }

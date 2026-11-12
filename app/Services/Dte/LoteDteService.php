@@ -254,7 +254,7 @@ class LoteDteService
                 $item['estado'] = $estado === 'aceptado' ? 'PROCESADO' : 'RECHAZADO';
                 $item['fhProcesamiento'] ??= $cuerpo['fhProcesamiento'] ?? $cuerpo['fechaHora'] ?? null;
                 $this->transmision->aplicarResultadoDeConsulta($dte, ['resultado' => $estado, 'http_status' => $respuesta->status(),
-                    'sello' => $item['selloRecibido'] ?? null, 'mensaje' => $item['descripcionMsg'] ?? $item['mensaje'] ?? '', 'cuerpo' => $item]);
+                    'ambiente' => $ambiente->value, 'sello' => $item['selloRecibido'] ?? null, 'mensaje' => $item['descripcionMsg'] ?? $item['mensaje'] ?? '', 'cuerpo' => $item]);
             }
             $aceptados = $lote->dtes()->where('estado', 'aceptado')->count();
             $rechazados = $lote->dtes()->where('estado', 'rechazado')->count();

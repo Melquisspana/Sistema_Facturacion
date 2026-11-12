@@ -88,6 +88,8 @@ class ConsultarYAplicarTest extends TestCase
             ->expectsOutputToContain(CandadoEmisionDte::OCUPADO)
             ->assertExitCode(1);
 
+        // Ni siquiera se le pregunta a Hacienda: la consulta también va bajo el candado.
+        Http::assertNothingSent();
         $this->assertSame(EstadoDte::Rechazado, $dte->fresh()->estado);
     }
 

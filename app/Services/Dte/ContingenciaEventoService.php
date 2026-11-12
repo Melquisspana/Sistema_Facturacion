@@ -127,6 +127,11 @@ class ContingenciaEventoService
             $resultado = $this->consulta->consultar($dte);
             if ($resultado['resultado'] === 'aceptado' && filled($resultado['sello'])) {
                 $this->transmision->aplicarResultadoDeConsulta($dte, $resultado);
+                // La aceptación de una consulta solo se guarda si se pudo comprobar (sello,
+                // mismo código, mismo ambiente). Si no quedó aceptado, no se da por recibido.
+                if ($dte->estado !== EstadoDte::Aceptado) {
+                    $this->error('No se pudo confirmar que el MH no tiene el documento '.$dte->codigo_generacion.'.');
+                }
                 // Solo este servicio modifica los vinculos de regularizacion bajo el
                 // bloqueo de la contingencia. El observer sigue impidiendo editarlos.
                 Dte::whereKey($dte->id)->update(['contingencia_id' => null, 'contingencia_evento_id' => null]);
