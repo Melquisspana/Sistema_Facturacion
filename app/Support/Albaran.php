@@ -24,6 +24,23 @@ class Albaran
     }
 
     /**
+     * Qué le falta a ese tipo para valer como albarán de crédito, o null si vale. El texto
+     * completa la frase «falta …» y dice cuál es el tipo registrado, para que el aviso sea
+     * el mismo en Cobros y en el archivo de notas de crédito.
+     */
+    public static function faltaTipoDeCredito(?string $tipo): ?string
+    {
+        if (self::esDeCredito($tipo)) {
+            return null;
+        }
+
+        $registrado = strtoupper(trim((string) $tipo));
+
+        return 'un tipo de albarán de crédito '.implode(' o ', self::TIPOS_DE_CREDITO)
+            .($registrado === '' ? '' : " (el registrado es {$registrado})");
+    }
+
+    /**
      * Normaliza una fecha de albarán a "Y-m-d" interpretándola como salvadoreña
      * (día/mes/año). `Carbon::parse("09/06/2026")` asume formato americano (m/d) y
      * devolvería septiembre; aquí forzamos d/m/Y|d/m/y y solo caemos a parse libre

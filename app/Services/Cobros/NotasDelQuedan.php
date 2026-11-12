@@ -240,8 +240,8 @@ class NotasDelQuedan
         }
         if ($nc->albaran === null) {
             $faltan[] = 'su albarán propio de crédito (AC02/AC04)';
-        } elseif (! Albaran::esDeCredito($nc->albaran->tipo_codigo)) {
-            $faltan[] = 'un tipo de albarán de crédito AC02 o AC04';
+        } elseif (($tipoInvalido = Albaran::faltaTipoDeCredito($nc->albaran->tipo_codigo)) !== null) {
+            $faltan[] = $tipoInvalido;
         }
         if ($exportador === null || $perfil === null) {
             $faltan[] = 'un formato de NC configurado para el cliente';
@@ -249,7 +249,9 @@ class NotasDelQuedan
             array_push($faltan, ...$exportador->faltantes($nc, $perfil));
         }
 
-        return $faltan;
+        // El formato del archivo puede revisar lo mismo que ya se revisó acá (el tipo de
+        // albarán): el aviso se muestra una sola vez.
+        return array_values(array_unique($faltan));
     }
 
     private function estadoFiscal(Dte $nc): string

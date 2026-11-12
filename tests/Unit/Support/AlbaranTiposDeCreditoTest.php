@@ -29,4 +29,15 @@ class AlbaranTiposDeCreditoTest extends TestCase
         $this->assertFalse(Albaran::esDeCredito(''));
         $this->assertFalse(Albaran::esDeCredito(null));
     }
+
+    public function test_el_aviso_de_tipo_invalido_nombra_los_validos_y_el_registrado(): void
+    {
+        $this->assertNull(Albaran::faltaTipoDeCredito('AC02'));
+        $this->assertNull(Albaran::faltaTipoDeCredito(' ac04 '));
+        $this->assertSame(
+            'un tipo de albarán de crédito AC02 o AC04 (el registrado es AC06)',
+            Albaran::faltaTipoDeCredito('ac06'),
+        );
+        $this->assertSame('un tipo de albarán de crédito AC02 o AC04', Albaran::faltaTipoDeCredito(null));
+    }
 }
