@@ -11,6 +11,7 @@ use App\Enums\ResultadoEntrega;
 use App\Facades\Ajustes;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
+use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
@@ -250,23 +251,17 @@ class EntregasCcf
                     throw ValidationException::withMessages(['entrega' => 'Ese CCF ya consta como entregado en otra salida.']);
                 }
                 $personaId = (int) ($datos['entregado_por_id'] ?? 0);
+                $this->exigirQuienEntrega($salida, $personaId, $usuario, 'Elegí quién lo entregó entre las personas que van en la salida.');
 
-                if (! $salida->participantes()->where('rutas_personal_id', $personaId)->exists()) {
-                    throw ValidationException::withMessages([
-                        'entregado_por_id' => 'Elegí quién lo entregó entre las personas que van en la salida.',
-                    ]);
-                }
-
-                // El vendedor, en su viaje o en la automática, dice cómo le pagaron: ahí no hay
-                // «la habitual del cliente» (el PDF del día es el control del dinero). Salvo en
-                // el supermercado que cobra por el portal: no se cobra al entregar y la forma que
-                // llegue se ignora. La regla va acá para que valga por cualquier pantalla.
-                if ($origen === OrigenRegistroEntrega::Vendedor && $salida->esAutomatica()) {
-                    if (DiaVendedor::esPortal($dte)) {
-                        $datos['forma_cobro'] = self::SIN_COBRO;
-                    } elseif (! filled($datos['forma_cobro'] ?? null)) {
-                        throw ValidationException::withMessages(['forma_cobro' => self::FALTA_FORMA_COBRO]);
-                    }
+                // El supermercado que cobra por el portal (la sala con albarán) no se cobra al
+                // entregar, por ninguna pantalla ni origen: la forma que llegue se ignora, y con
+                // ella el quedan. El vendedor, en su viaje o en la automática, dice cómo le
+                // pagaron: ahí no hay «la habitual del cliente» (el PDF del día es el control del
+                // dinero). La regla va acá para que valga por cualquier pantalla.
+                if (DiaVendedor::esPortal($dte)) {
+                    $datos = ['forma_cobro' => self::SIN_COBRO, 'quedan_numero' => null, 'quedan_fecha_pago' => null] + $datos;
+                } elseif ($origen === OrigenRegistroEntrega::Vendedor && $salida->esAutomatica() && ! filled($datos['forma_cobro'] ?? null)) {
+                    throw ValidationException::withMessages(['forma_cobro' => self::FALTA_FORMA_COBRO]);
                 }
                 $forma = $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
                 $quedan = $forma === null ? $this->quedan($datos) : ['quedan_numero' => null, 'quedan_fecha_pago' => null];
@@ -305,8 +300,8 @@ class EntregasCcf
             }
             // Quién fue (12/11/2026), si se dice: va en su PDF del día. Alguien de la salida.
             $fue = filled($datos['entregado_por_id'] ?? null) ? (int) $datos['entregado_por_id'] : null;
-            if ($fue !== null && ! $salida->participantes()->where('rutas_personal_id', $fue)->exists()) {
-                throw ValidationException::withMessages(['entregado_por_id' => 'Elegí quién fue entre las personas que van en la salida.']);
+            if ($fue !== null) {
+                $this->exigirQuienEntrega($salida, $fue, $usuario, 'Elegí quién fue entre las personas que van en la salida.');
             }
 
             $entrega->update($comun + [
@@ -320,6 +315,24 @@ class EntregasCcf
 
             return $entrega;
         });
+    }
+
+    /**
+     * Quien entregó (o fue) va en la salida y puede figurar como el que entregó: un vendedor
+     * activo o la ficha activa del que anota ({@see PersonalRuta::scopePuedenEntregar()}, la misma
+     * regla de la tarjeta de «Por entregar»). Vale para el vendedor y para la oficina: una ficha
+     * que se desactivó, o que no es de vendedor, no recibe la entrega aunque siga en la salida.
+     *
+     * @throws ValidationException
+     */
+    private function exigirQuienEntrega(SalidaRuta $salida, int $personaId, ?User $usuario, string $noVa): void
+    {
+        if (! $salida->participantes()->where('rutas_personal_id', $personaId)->exists()) {
+            throw ValidationException::withMessages(['entregado_por_id' => $noVa]);
+        }
+        if (! PersonalRuta::query()->puedenEntregar($usuario)->whereKey($personaId)->exists()) {
+            throw ValidationException::withMessages(['entregado_por_id' => 'Elegí a un vendedor activo: esa persona está inactiva o no es vendedor.']);
+        }
     }
 
     /** @throws ValidationException */

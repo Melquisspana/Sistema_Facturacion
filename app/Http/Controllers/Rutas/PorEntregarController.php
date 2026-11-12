@@ -136,7 +136,7 @@ class PorEntregarController extends Controller
             // Su albarán cayó sin que nadie anotara quién la entregó: se anota acá.
             'sinQuien' => $puedeMarcar ? $this->entregas->conAlbaranSinQuien()->load(['clienteSucursal:id,nombre', 'cliente:id,nombre,nombre_comercial']) : collect(),
             // «¿Quién lo entregó?»: los vendedores activos; viene elegido el que tiene el celular.
-            'quienes' => $puedeMarcar ? $this->porEntregar->quienesEntregan($persona) : collect(),
+            'quienes' => $puedeMarcar ? $this->porEntregar->quienesEntregan($request->user()) : collect(),
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,
             'motivos' => MotivoNoEntrega::opciones(),
@@ -174,12 +174,9 @@ class PorEntregarController extends Controller
         }
         $quien = $this->quienEntrego($request, $persona);
 
+        // La sala con albarán no cobra al entregar: lo impone EntregasCcf::registrar().
         $datos = $soloQuien ? ['resultado' => 'entregado']
             : $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
-        // La sala con albarán no cobra al entregar: solo se anota quién la entregó.
-        if (DiaVendedor::esPortal($dte)) {
-            $datos['forma_cobro'] = EntregasCcf::SIN_COBRO;
-        }
 
         $registrada = DB::transaction(function () use ($request, $dte, $persona, $quien, $datos) {
             $entrega = $this->porEntregar->entregaPara($dte, $persona, $request->user());
@@ -205,7 +202,7 @@ class PorEntregarController extends Controller
      */
     private function quienEntrego(Request $request, PersonalRuta $persona): PersonalRuta
     {
-        $quienes = $this->porEntregar->quienesEntregan($persona);
+        $quienes = $this->porEntregar->quienesEntregan($request->user());
         $id = $request->validate(
             ['entregado_por_id' => ['nullable', 'integer', Rule::in($quienes->modelKeys())]],
             ['entregado_por_id.integer' => self::QUIEN_INVALIDO, 'entregado_por_id.in' => self::QUIEN_INVALIDO],

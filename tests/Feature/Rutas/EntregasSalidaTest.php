@@ -52,7 +52,16 @@ class EntregasSalidaTest extends TestCase
         $this->ruta = Ruta::create(['nombre' => 'San Miguel']);
         $this->sala = Cliente::factory()->create(['nombre' => 'Calleja'])
             ->sucursales()->create(['nombre' => 'Selectos San Miguel', 'codigo' => '0232', 'ruta_id' => $this->ruta->id]);
-        $this->carlos = PersonalRuta::create(['nombre' => 'Carlos']);
+        $this->carlos = $this->vendedor('Carlos');
+    }
+
+    /** Una ficha de vendedor (12/11/2026: solo un vendedor activo figura como quien entregó). */
+    private function vendedor(string $nombre): PersonalRuta
+    {
+        $persona = PersonalRuta::create(['nombre' => $nombre]);
+        $persona->funciones()->create(['funcion' => 'vendedor']);
+
+        return $persona;
     }
 
     private function admin(): User
@@ -503,7 +512,7 @@ class EntregasSalidaTest extends TestCase
         $conAlbaran = $this->ccf();
         $sinRegistrar = $this->ccf();
         $salida = $this->salida();
-        $ana = PersonalRuta::create(['nombre' => 'Ana']);
+        $ana = $this->vendedor('Ana');
         SalidaDePrueba::participantes($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
         $this->cargarCcfDeLaRuta($salida);
         $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
@@ -535,7 +544,7 @@ class EntregasSalidaTest extends TestCase
         $this->assertSame($ana->id, $albaranFila->entregado_por_id);
 
         // Quien no va en la salida no figura como «entregó».
-        $otro = PersonalRuta::create(['nombre' => 'Beto']);
+        $otro = $this->vendedor('Beto');
         $this->patch(route('rutas.salidas.entregas.update', [$salida, $fila]), ['resultado' => 'entregado', 'entregado_por_id' => $otro->id])
             ->assertSessionHasErrors('entregado_por_id');
         $this->assertTrue($fila->refresh()->estaPendiente());

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Rutas;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\MotivoNoEntrega;
 use App\Http\Controllers\Controller;
+use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Services\Rutas\DiaVendedor;
@@ -62,13 +63,16 @@ class SalidaRutaController extends Controller
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
 
-        // Quién puede figurar como «entregó»: los que van, activos. Se preselecciona al
+        // Quién puede figurar como «entregó»: los que van y pueden entregar (vendedores activos o
+        // la ficha de quien anota: la regla de EntregasCcf::registrar()). Se preselecciona al
         // responsable o, si va una sola persona, a ella.
+        $elegibles = PersonalRuta::query()->puedenEntregar(auth()->user())
+            ->whereIn('id', $salida->participantes->pluck('rutas_personal_id'))->pluck('id')->all();
         $participantes = $salida->participantes
-            ->filter(fn ($p) => $p->personal?->activo)
+            ->filter(fn ($p) => $p->personal && in_array($p->rutas_personal_id, $elegibles))
             ->sortBy(fn ($p) => $p->personal->nombre)
             ->values();
-        $preseleccion = $salida->participantes->first(fn ($p) => $p->esResponsable())?->rutas_personal_id
+        $preseleccion = $participantes->first(fn ($p) => $p->esResponsable())?->rutas_personal_id
             ?? ($participantes->count() === 1 ? $participantes->first()->rutas_personal_id : null);
 
         return view('rutas.salidas.show', [

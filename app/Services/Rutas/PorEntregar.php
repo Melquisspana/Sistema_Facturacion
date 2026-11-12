@@ -3,7 +3,6 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
-use App\Enums\FuncionPersonalRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
@@ -324,16 +323,14 @@ class PorEntregar
     }
 
     /**
-     * «¿Quién lo entregó?» (12/11/2026): los vendedores activos (fichas de Rutas activas con
-     * la función de vendedor) y quien tiene el celular, por nombre. Es la lista de la tarjeta y
-     * la que vale en el servidor: nadie fuera de ella queda como el que entregó.
+     * «¿Quién lo entregó?» (12/11/2026): la lista de la tarjeta, por nombre. La regla es
+     * {@see PersonalRuta::scopePuedenEntregar()}: los vendedores activos y quien tiene el celular.
      *
      * @return Collection<int, PersonalRuta>
      */
-    public function quienesEntregan(PersonalRuta $yo): Collection
+    public function quienesEntregan(User $usuario): Collection
     {
-        return PersonalRuta::query()->activos()
-            ->where(fn ($q) => $q->conFuncion(FuncionPersonalRuta::Vendedor)->orWhere('id', $yo->id))
+        return PersonalRuta::query()->puedenEntregar($usuario)
             ->orderBy('nombre')->orderBy('id')->get(['id', 'nombre']);
     }
 

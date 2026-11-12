@@ -70,6 +70,9 @@ class PorEntregarViajeTest extends TestCase
         $this->personaAna = PersonalRuta::create(['nombre' => 'Ana Ficticia', 'user_id' => $this->ana->id]);
         $this->beto = User::factory()->create(['activo' => true])->assignRole('vendedor');
         $this->personaBeto = PersonalRuta::create(['nombre' => 'Beto Ficticio', 'user_id' => $this->beto->id]);
+        // Fichas de vendedor: solo un vendedor activo figura como quien entregó (12/11/2026).
+        $this->personaAna->funciones()->create(['funcion' => 'vendedor']);
+        $this->personaBeto->funciones()->create(['funcion' => 'vendedor']);
 
         $this->cliente = Cliente::factory()->create(['nombre' => 'Cliente de prueba']);
         foreach (['San Miguel' => ['12', 'Sala de prueba Oriente'], 'Santa Ana' => ['02', 'Sala de prueba Occidente']] as $zona => [$codigo, $sala]) {

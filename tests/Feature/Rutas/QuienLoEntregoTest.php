@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Rutas;
 
+use App\Enums\EstadoSalidaRuta;
 use App\Enums\FormaCobroEntrega;
 use App\Enums\FuncionPersonalRuta;
 use App\Enums\ResultadoEntrega;
@@ -17,9 +18,11 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\DiaVendedor;
+use App\Services\Rutas\EntregasCcf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -273,6 +276,58 @@ class QuienLoEntregoTest extends TestCase
         }
         $this->assertSame(0, SalidaRutaEntrega::count());
         $this->assertSame(0, SalidaRuta::count());
+    }
+
+    // ---------------------------------------------------------------- la oficina, en la hoja de la salida
+
+    /** Una salida de antes (armada a mano) en curso, con esta gente, y el CCF cargado. */
+    private function salidaDeLaOficina(Dte $dte, array $personas): SalidaRutaEntrega
+    {
+        $salida = SalidaRuta::create(['ruta_id' => $this->salaTienda->ruta_id, 'fecha_inicio' => now()->toDateString(), 'estado' => EstadoSalidaRuta::EnCurso]);
+        SalidaDePrueba::participantes($salida, array_map(fn (PersonalRuta $p) => $p->id, $personas), $personas[0]->id);
+
+        return app(EntregasCcf::class)->meterCcf($salida, $dte->id);
+    }
+
+    public function test_la_sala_con_albaran_no_queda_cobrada_ni_desde_la_oficina(): void
+    {
+        $entrega = $this->salidaDeLaOficina($this->ccf($this->salaSuper, '310.80'), [$this->personaBeto]);
+        $oficina = User::factory()->create(['activo' => true])->assignRole('administrador');
+
+        $this->actingAs($oficina)->patch(route('rutas.salidas.entregas.update', [$entrega->salida_ruta_id, $entrega]), [
+            'resultado' => 'entregado', 'entregado_por_id' => $this->personaBeto->id, 'forma_cobro' => 'efectivo',
+        ])->assertSessionHasNoErrors();
+
+        $entrega->refresh();
+        $this->assertSame(ResultadoEntrega::Entregado, $entrega->resultado);
+        $this->assertNull($entrega->forma_cobro);
+        $this->assertNull($entrega->monto_cobrado);
+        $dia = app(DiaVendedor::class)->resumen($this->personaBeto, $this->beto, '2026-11-10');
+        $this->assertSame(0, $dia['efectivo']);
+        $this->assertSame(1, $dia['portal']['cantidad']);
+    }
+
+    public function test_la_oficina_tampoco_anota_a_una_ficha_inactiva_o_que_no_es_vendedor(): void
+    {
+        [, $inactivo] = $this->vendedor('Carla Inactiva');
+        [, $repartidor] = $this->vendedor('Dario Repartidor', funcion: FuncionPersonalRuta::Repartidor);
+        $entrega = $this->salidaDeLaOficina($this->ccf($this->salaTienda, '80.00'), [$this->personaBeto, $inactivo, $repartidor]);
+        // Se desactiva después de salir: sigue en la salida.
+        $inactivo->update(['activo' => false]);
+        $oficina = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $url = route('rutas.salidas.entregas.update', [$entrega->salida_ruta_id, $entrega]);
+
+        foreach ([$inactivo->id, $repartidor->id] as $id) {
+            $this->actingAs($oficina)->patch($url, ['resultado' => 'entregado', 'entregado_por_id' => $id, 'forma_cobro' => 'efectivo'])
+                ->assertSessionHasErrors('entregado_por_id');
+            $this->actingAs($oficina)->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada', 'entregado_por_id' => $id])
+                ->assertSessionHasErrors('entregado_por_id');
+        }
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+
+        $this->actingAs($oficina)->patch($url, ['resultado' => 'entregado', 'entregado_por_id' => $this->personaBeto->id, 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame($this->personaBeto->id, $entrega->refresh()->entregado_por_id);
     }
 
     // ---------------------------------------------------------------- tablero
