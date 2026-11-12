@@ -1292,6 +1292,20 @@ final class PrepararPlanilla
                 }
             }
 
+            // Quien entró o se fue dentro del período después de guardar la línea: el importe
+            // guardado puede ser el de la quincena entera. Se revisa; no se pisa en silencio.
+            $dias = $detalle->empleado === null ? null : $this->diasTrabajados($detalle->empleado, $planilla);
+
+            if ($dias !== null && ($detalle->periodo_desde?->toDateString() !== $dias['desde'] || $detalle->periodo_hasta?->toDateString() !== $dias['hasta'])) {
+                $corresponde = $this->salariosPropuestos(collect([$detalle->empleado]), $planilla)[$detalle->planilla_empleado_id]['centavos'];
+
+                $reparos[] = $detalle->nombre_snapshot.': '.implode(' y ', array_filter([
+                    $dias['entro'] === null ? null : 'entró el '.$dias['entro']->format('d/m/Y'),
+                    $dias['se_fue'] === null ? null : 'tiene baja el '.$dias['se_fue']->format('d/m/Y'),
+                ])).' y su línea no lo tiene en cuenta: le corresponden '.$dias['dias'].($dias['dias'] === 1 ? ' día' : ' días')
+                    .($corresponde === null ? '' : ' ('.Dinero::decimal($corresponde).')').'. Revisá su importe y sus fechas.';
+            }
+
             if ($linea['a_pagar'] < 0) {
                 $reparos[] = $detalle->nombre_snapshot.': los descuentos superan al total de ingresos.';
             }

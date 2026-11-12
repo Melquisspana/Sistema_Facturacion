@@ -10,8 +10,10 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
+use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -171,6 +173,37 @@ class UltimaQuincenaDeLaBajaTest extends TestCase
         // El 27 y el 28: 2 días = 30.00. La quincena entera sigue siendo 225.00.
         $this->assertSame('30.00', (string) $this->lineaDe($planilla, $cata)->a_pagar);
         $this->assertSame('225.00', (string) $this->lineaDe($planilla, $this->ana)->a_pagar);
+    }
+
+    public function test_una_baja_registrada_despues_de_preparar_frena_hasta_revisar_la_linea(): void
+    {
+        $planilla = $this->abrir('2026-10-01');
+        $this->assertSame('225.00', (string) $this->lineaDe($planilla, $this->beto)->a_pagar);
+
+        $this->baja($this->beto, '2026-10-05');
+
+        $reparo = 'Beto Ficticio: tiene baja el 05/10/2026 y su línea no lo tiene en cuenta: le corresponden 5 días (75.00). Revisá su importe y sus fechas.';
+        $this->assertContains($reparo, app(PrepararPlanilla::class)->reparosParaConfirmar($planilla->fresh()->load('detalles.conceptos', 'detalles.empleado')));
+
+        try {
+            app(ConfirmarPlanilla::class)->confirmar($this->actor, $planilla->fresh());
+            $this->fail('Tenía que frenar.');
+        } catch (ValidationException $e) {
+            $this->assertContains($reparo, $e->errors()['reparos']);
+        }
+
+        $this->assertSame('borrador', $planilla->fresh()->estado);
+        $this->assertSame('225.00', (string) $this->lineaDe($planilla, $this->beto)->a_pagar);
+
+        // Revisada: sus 5 días con sus fechas. Se genera.
+        app(PrepararPlanilla::class)->guardarLineas($this->actor, $planilla, [
+            ['planilla_empleado_id' => $this->ana->id, 'salario' => '225.00'],
+            ['planilla_empleado_id' => $this->beto->id, 'salario' => '75.00', 'periodo_desde' => '2026-10-01', 'periodo_hasta' => '2026-10-05'],
+        ]);
+        app(ConfirmarPlanilla::class)->confirmar($this->actor, $planilla->fresh());
+
+        $this->assertSame('confirmada', $planilla->fresh()->estado);
+        $this->assertSame('75.00', (string) $this->lineaDe($planilla, $this->beto)->a_pagar);
     }
 
     public function test_quien_va_con_descuentos_los_paga_sobre_sus_dias(): void
