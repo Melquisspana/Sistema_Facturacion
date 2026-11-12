@@ -473,6 +473,21 @@ todos los demás candados están OK**. Con `DTE_SISTEMA_ACTUAL_ACTIVO=true` y mo
 - ⚠️ Firmar/transmitir local **no** equivale a emitir: el DTE solo queda emitido con el
   **sello de recepción** del MH.
 
+## 8.b Aceptación tardía y la copia de un rechazado
+
+Si Hacienda acepta un documento que acá figuraba **rechazado** (mismo código de generación,
+con sello), el sello manda: el documento pasa a aceptado y su ficha lo avisa. Si mientras
+tanto ese rechazado se «corrigió» duplicándolo, la copia queda **frenada** —no se genera, no
+se firma, no se transmite ni se duplica— hasta que alguien con permiso de emitir diga, con
+un motivo, que es otra venta (`App\Services\Dte\CopiaDeAceptadoTardio`).
+
+**La bitácora `dte_copia` es estado operativo y no se depura.** De qué documento es copia
+cada copia, y quién resolvió cada conflicto, se guarda en `activity_log` con
+`log_name = 'dte_copia'`; no hay columna para eso. Borrar esas filas quita el freno o vuelve
+a frenar lo ya resuelto. Hoy no existe ninguna depuración de `activity_log`; si se agrega
+una (por ejemplo `activitylog:clean`), tiene que excluir ese nombre. Las copias hechas antes
+de este cambio no tienen esa anotación y no quedan protegidas.
+
 ## 9. Estado del código vs manual
 
 `DteTransmisionService` ya está alineado con el manual en estructura (sin transmitir):

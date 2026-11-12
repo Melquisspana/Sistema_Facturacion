@@ -22,6 +22,15 @@ use Spatie\Activitylog\Models\Activity;
  * que es otra venta. Acá no se invalida nada ni se mueve ningún pedido: eso lo decide
  * una persona.
  *
+ * ╔══════════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA BITÁCORA `dte_copia` ES ESTADO OPERATIVO: NO SE DEPURA.                       ║
+ * ║ Si se borra «se creó como copia…», el freno desaparece y la copia se puede       ║
+ * ║ emitir. Si se borra «Es otra venta…», vuelve a frenarse una que ya se resolvió.  ║
+ * ║ Hoy nada depura `activity_log` (ni tarea programada ni `activitylog:clean`).     ║
+ * ║ Quien agregue una limpieza tiene que excluir `log_name = 'dte_copia'`.           ║
+ * ║ Ver docs/TRANSMISION_DTE.md, «Aceptación tardía».                                ║
+ * ╚══════════════════════════════════════════════════════════════════════════════════╝
+ *
  * DÓNDE SE GUARDA, sin columna nueva: en la bitácora (`activity_log`), con nombre propio.
  *   · al duplicar: «se creó como copia de…», con el original y el estado que tenía;
  *   · al resolver: «Es otra venta: se emite igual.», con quién y por qué.
