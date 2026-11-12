@@ -477,7 +477,7 @@ final class PrepararPlanilla
         foreach ($empleados as $empleado) {
             $dias = $this->diasTrabajados($empleado, $planilla);
 
-            if ($dias === null || $dias['completo']) {
+            if ($dias === null) {
                 $propuestos[$empleado->id] = ['centavos' => $habituales[$empleado->id] ?? null, 'desde' => null, 'hasta' => null];
 
                 continue;
@@ -515,14 +515,14 @@ final class PrepararPlanilla
      * ni se fue dentro de él. El día de ingreso y el de la baja cuentan como trabajados
      * (Melqui, 12/11/2026).
      *
-     * El mes cuenta como de 30 días, como el sueldo ÷ 30: el 31 no suma y el último día de
-     * febrero cuenta como el 30. Así la segunda quincena vale 15 días, igual que la primera,
-     * y nadie cobra más por irse el 31 que el 30. `completo`: trabajó todos los días del
-     * período (por ejemplo, se fue el 30 de un mes de 31), y entonces cobra el habitual.
+     * Son los días reales del calendario: el 31 cuenta como un día más y febrero cuenta los
+     * suyos, sin pasar el 28 a 30. «Se les pagan los días que trabajan, independientemente
+     * de cuántos días tenga el mes» (Melqui, 12/11/2026). Quien trabajó el período entero
+     * no pasa por acá: cobra el habitual de siempre, sin contar días.
      *
      * Solo en una planilla normal quincenal o mensual: las demás no pagan días.
      *
-     * @return array{desde: string, hasta: string, dias: int, completo: bool, entro: ?CarbonImmutable, se_fue: ?CarbonImmutable}|null
+     * @return array{desde: string, hasta: string, dias: int, entro: ?CarbonImmutable, se_fue: ?CarbonImmutable}|null
      */
     public function diasTrabajados(PlanillaEmpleado $empleado, Planilla $planilla): ?array
     {
@@ -544,15 +544,11 @@ final class PrepararPlanilla
 
         $inicio = $entro ?? $desde;
         $fin = $seFue ?? $hasta;
-        $dia = fn (CarbonImmutable $f) => $f->isLastOfMonth() ? 30 : min($f->day, 30);
-        $delPeriodo = $dia($hasta) - $dia($desde) + 1;
-        $dias = max(0, $dia($fin) - $dia($inicio) + 1);
 
         return [
             'desde' => $inicio->toDateString(),
             'hasta' => $fin->toDateString(),
-            'dias' => min($dias, $delPeriodo),
-            'completo' => $dias >= $delPeriodo,
+            'dias' => (int) $inicio->diffInDays($fin) + 1,
             'entro' => $entro,
             'se_fue' => $seFue,
         ];

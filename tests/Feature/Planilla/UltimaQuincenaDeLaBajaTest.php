@@ -144,16 +144,32 @@ class UltimaQuincenaDeLaBajaTest extends TestCase
         $this->assertSame([$this->ana->id, $this->beto->id], $this->quienes($this->abrir('2026-10-01')));
     }
 
-    public function test_en_la_segunda_quincena_el_mes_cuenta_como_de_30_dias(): void
+    public function test_en_un_mes_de_31_se_pagan_los_dias_reales_trabajados(): void
     {
         $this->baja($this->beto, '2026-10-20');
         $cata = $this->persona('Cata', 'FICTICIO-3', '2026-10-20');
+        $dani = $this->persona('Dani', 'FICTICIO-4', '2026-10-20');
+        $this->baja($dani, '2026-10-31');
 
         $planilla = $this->abrir('2026-10-16');
 
-        // Del 16 al 20: 5 días. Del 20 al 31, que cuenta como 30: 11 días.
+        // El 31 cuenta como un día más (Melqui, 12/11/2026). Del 16 al 20: 5 días = 75.00.
         $this->assertSame('75.00', (string) $this->lineaDe($planilla, $this->beto)->a_pagar);
-        $this->assertSame('165.00', (string) $this->lineaDe($planilla, $cata)->a_pagar);
+        // Del 20 al 31: 12 días = 180.00, se vaya o no el 31.
+        $this->assertSame('180.00', (string) $this->lineaDe($planilla, $cata)->a_pagar);
+        $this->assertSame('180.00', (string) $this->lineaDe($planilla, $dani)->a_pagar);
+        // Quien trabajó la quincena entera cobra la mitad del sueldo, sin contar días.
+        $this->assertSame('225.00', (string) $this->lineaDe($planilla, $this->ana)->a_pagar);
+    }
+
+    public function test_en_febrero_se_pagan_sus_dias_reales(): void
+    {
+        $cata = $this->persona('Cata', 'FICTICIO-3', '2026-02-27');
+
+        $planilla = $this->abrir('2026-02-16');
+
+        // El 27 y el 28: 2 días = 30.00. La quincena entera sigue siendo 225.00.
+        $this->assertSame('30.00', (string) $this->lineaDe($planilla, $cata)->a_pagar);
         $this->assertSame('225.00', (string) $this->lineaDe($planilla, $this->ana)->a_pagar);
     }
 
