@@ -18,11 +18,22 @@ concurrency:
 
 jobs:
   pruebas:
-    name: PHPUnit
+    # El total sale de la matriz: los checks se llaman «PHPUnit (1/4)» hasta «(4/4)».
+    name: PHPUnit (${{ matrix.parte }}/${{ strategy.job-total }})
     # Los PR internos ya se verifican por push; los de forks necesitan esta ejecución.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # En un solo proceso la suite tardaba unos 50 minutos. Se reparte en partes que corren
+    # a la vez con el mismo script que usa el job de MySQL. La cuenta: unos 45 minutos de
+    # pruebas entre 4 son unos 11, más unos 5 de preparación y un 10 % de margen para la
+    # parte más cargada: cerca de 18 minutos. 30 de tope deja holgura sin esconder cuelgues.
+    # Para cambiar la cantidad de partes basta la lista de la matriz.
+    strategy:
+      # Una parte en rojo no cancela las otras: se quiere el resultado de todas.
+      fail-fast: false
+      matrix:
+        parte: [1, 2, 3, 4]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -65,9 +76,17 @@ jobs:
           cp .env.example .env
           php artisan key:generate
 
-      # Un solo proceso; tests/bootstrap.php ya fija memory_limit=1G.
+      # Antes de gastar los minutos: que ningún archivo de prueba se pierda ni se repita
+      # entre las partes, y que la lista repartida sea la misma que corre PHPUnit con
+      # phpunit.xml. Son segundos y no corre ninguna prueba.
+      - name: Comprobar el reparto de pruebas
+        run: |
+          bash scripts/ci/reparto-pruebas.sh comprobar "${{ strategy.job-total }}"
+          bash scripts/ci/reparto-pruebas.sh contra-phpunit
+
+      # Un solo proceso por parte; tests/bootstrap.php ya fija memory_limit=1G.
       - name: Ejecutar PHPUnit
-        run: vendor/bin/phpunit
+        run: bash scripts/ci/reparto-pruebas.sh correr "${{ matrix.parte }}" "${{ strategy.job-total }}"
 
   estilo:
     name: Pint (archivos cambiados)
