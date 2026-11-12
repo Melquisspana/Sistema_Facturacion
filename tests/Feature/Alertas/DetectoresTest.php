@@ -275,8 +275,10 @@ class DetectoresTest extends TestCase
         static $n = 0;
         $n++;
         $empresa = Empresa::create(['razon_social' => 'Empresa '.$n, 'ambiente' => '00', 'activo' => true]);
-        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M00'.$n, 'nombre' => 'Casa', 'activo' => true]);
-        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P00'.$n, 'nombre' => 'Caja', 'activo' => true]);
+        // Los códigos son de 4 caracteres en la base: «M00» + $n se pasaba desde el décimo
+        // documento, y MySQL estricto lo rechaza (SQLite no mira el largo).
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M'.str_pad((string) $n, 3, '0', STR_PAD_LEFT), 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P'.str_pad((string) $n, 3, '0', STR_PAD_LEFT), 'nombre' => 'Caja', 'activo' => true]);
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'CLIENTE SECRETO SA']);
 
         $dte = (new Dte)->forceFill(array_merge([
