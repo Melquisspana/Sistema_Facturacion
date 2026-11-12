@@ -275,6 +275,11 @@ class DteGeneracionService
             throw new GeneracionException('Solo se puede generar un documento en borrador (estado actual: '.$dte->estado->label().').');
         }
 
+        // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
+        if ($motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($dte)) {
+            throw new GeneracionException($motivo);
+        }
+
         if ($dte->lineas()->count() === 0) {
             throw new GeneracionException('No se puede generar un documento sin líneas.');
         }

@@ -58,6 +58,7 @@ use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\ContingenciaAutomaticaService;
+use App\Services\Dte\CopiaDeAceptadoTardio;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
@@ -948,7 +949,13 @@ class DteController extends Controller
         // Orden de compra recibida por correo con el número de este CCF: habilita «PDF + orden».
         $ordenRecibida = OrdenCompraRecibida::deCcf($dte);
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
+        // La copia de un rechazado que Hacienda después aceptó: el aviso va en la ficha de
+        // la copia (con el original) y en la del original (con sus copias).
+        $copias = app(CopiaDeAceptadoTardio::class);
+        $originalAceptado = $copias->originalEnConflicto($dte);
+        $copiasDelAceptado = $copias->copiasDe($dte);
+
+        return view('facturacion.show', compact('originalAceptado', 'copiasDelAceptado', 'dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
     }
 
     /**
@@ -1408,6 +1415,33 @@ class DteController extends Controller
     }
 
     /**
+     * «Es otra venta: se emite igual». La copia de un CCF rechazado que Hacienda después
+     * aceptó queda frenada ({@see CopiaDeAceptadoTardio}); esto la libera, a pedido de
+     * quien puede emitir y con un motivo que queda en la bitácora. No invalida nada ni
+     * mueve pedidos.
+     */
+    public function resolverCopiaDeAceptado(Request $request, Dte $dte, CopiaDeAceptadoTardio $copias): RedirectResponse
+    {
+        $this->authorize('resolverCopiaDeAceptado', $dte);
+
+        $datos = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:300'],
+        ], [
+            'motivo.required' => 'Contá por qué es otra venta.',
+            'motivo.min' => 'El motivo tiene que decir algo: después nadie sabrá por qué se emitió.',
+        ]);
+
+        $original = $copias->originalEnConflicto($dte);
+        if ($original === null) {
+            return back()->withErrors(['motivo' => 'Este documento no tiene nada pendiente de revisar.']);
+        }
+
+        $copias->resolver($dte, $original, $request->user(), trim($datos['motivo']));
+
+        return back()->with('status', 'Quedó anotado que es otra venta. Ya se puede emitir.');
+    }
+
+    /**
      * Resuelve el preflight de producción específico según el tipo del DTE. CCF usa
      * el suyo (histórico, con reconciliación de correlativo externo/Conta); Factura y
      * FEX usan los suyos propios (mismos checks de infraestructura vía
@@ -1851,7 +1885,10 @@ class DteController extends Controller
         $dte->load(['enviosPedido' => fn ($q) => $q->vigentes()->orderBy('numero'), 'enviosPedido.pedido']);
         $avisosPedido = app(FacturarPedido::class)->avisosDelCcf($dte);
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
+        // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
+        $originalAceptado = app(CopiaDeAceptadoTardio::class)->originalEnConflicto($dte);
+
+        return view('facturacion.edit', compact('originalAceptado', 'dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
     }
 
     /**

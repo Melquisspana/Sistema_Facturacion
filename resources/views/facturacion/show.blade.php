@@ -31,8 +31,17 @@
                     <strong>Hacienda aceptó este documento después de que acá figuró como rechazado.</strong>
                     Vale el sello de Hacienda: el documento está aceptado.
                     Si mientras tanto se corrigió o se duplicó, revisá esa copia: si también se emite, la misma venta queda facturada dos veces.
+                    @foreach ($copiasDelAceptado as $copia)
+                        <span class="block mt-1">
+                            Copia hecha mientras figuraba rechazado:
+                            <a href="{{ $copia->esEditable() ? route('facturacion.edit', $copia) : route('facturacion.show', $copia) }}" class="underline font-semibold">{{ $copia->tituloDocumento() }}</a>
+                            ({{ $copia->estado->label() }}).
+                        </span>
+                    @endforeach
                 </div>
             @endif
+
+            <x-dte.aviso-copia-de-aceptado :dte="$dte" :original="$originalAceptado" />
 
             {{-- El aviso GRANDE de modo DTE ya no va en la ficha. El mismo dato —modo activo y
                  si una emisión real a producción es posible— lo da el indicador COMPACTO del

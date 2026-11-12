@@ -26,6 +26,7 @@ class LoteDteService
         private readonly ContingenciaEventoService $eventos,
         private readonly DteTransmisionAuthService $auth,
         private readonly DteTransmisionService $transmision,
+        private readonly CopiaDeAceptadoTardio $copias,
     ) {}
 
     public function plazo(ContingenciaEvento $evento): ?Carbon
@@ -81,6 +82,9 @@ class LoteDteService
             $documentos = $evento->dtes()->whereNull('lote_dte_id')->where('estado', EstadoDte::Firmado->value)
                 ->where(fn ($q) => $q->whereNull('sello_recepcion')->orWhere('sello_recepcion', ''))
                 ->orderBy('id')->lockForUpdate()->get();
+            // La copia de un rechazado que Hacienda después aceptó espera a que alguien la
+            // revise: queda firmada y sin lote, y entra en el siguiente cuando se resuelva.
+            $documentos = $documentos->reject(fn (Dte $dte) => $this->copias->motivoParaNoEmitir($dte) !== null)->values();
             foreach ($documentos->chunk(max(1, min(100, (int) config('dte.contingencia.lote_max', 100)))) as $chunk) {
                 $lote = LoteDte::create(['contingencia_evento_id' => $evento->id, 'id_envio' => CodigoGeneracion::generar(),
                     'estado' => 'pendiente', 'cantidad' => $chunk->count()]);
@@ -118,6 +122,12 @@ class LoteDteService
             }
             $this->verificarEvento($lote->contingenciaEvento);
             $documentos = $lote->dtes()->with('establecimiento.empresa')->orderBy('id')->get();
+            // El conflicto pudo aparecer con el lote ya armado: entonces el lote no sale.
+            foreach ($documentos as $dte) {
+                if ($motivo = $this->copias->motivoParaNoEmitir($dte)) {
+                    throw ValidationException::withMessages(['contingencia' => 'El lote no se envió. '.$motivo]);
+                }
+            }
             $ambiente = $documentos->first()?->ambiente;
             if (! $ambiente || $documentos->contains(fn ($dte) => $dte->estado !== EstadoDte::Firmado || filled($dte->sello_recepcion)
                 || $dte->ambiente !== $ambiente || $dte->contingencia_evento_id !== $lote->contingencia_evento_id)) {

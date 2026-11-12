@@ -235,6 +235,10 @@ class DteBorradorService
 
             $this->recalcular($nuevo);
 
+            // De qué documento es copia y cómo estaba ese documento: si era un rechazado
+            // y Hacienda después lo acepta, esta copia no se emite sin que alguien lo mire.
+            app(CopiaDeAceptadoTardio::class)->anotarCopia($nuevo, $original, $usuario);
+
             // Duplicar un CCF que ya no cuenta (rechazado o invalidado) es corregirlo: la
             // copia se queda con lo que llegó de la fábrica para él. Si el original sigue
             // valiendo, sus envíos no se mueven (lo hará la invalidación con su reemplazo).

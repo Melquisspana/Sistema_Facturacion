@@ -337,6 +337,9 @@ Route::middleware('auth')->group(function () {
         // Acción MANUAL única: firma local + transmisión (DtePolicy::firmarTransmitir). Idempotente.
         // En modo MOCK (DTE_FIRMADOR_MOCK / MH_MOCK) simula firma y aceptación sin firmador ni red.
         Route::post('{dte}/firmar-transmitir', [DteController::class, 'firmarTransmitir'])->name('firmar-transmitir');
+        // La copia de un rechazado que Hacienda después aceptó no se emite sin revisarla.
+        // «Es otra venta: se emite igual» (DtePolicy::resolverCopiaDeAceptado), con motivo.
+        Route::post('{dte}/copia-de-aceptado/resolver', [DteController::class, 'resolverCopiaDeAceptado'])->name('copia-aceptado.resolver');
         // Acción REAL de producción, explícita y separada: preflight + generar (si borrador)
         // + firmar + transmitir. Exige barrera anti-Conta + frase EMITIR PRODUCCION. No envía correo.
         Route::post('{dte}/generar-transmitir-produccion', [DteController::class, 'generarTransmitirProduccion'])->name('generar-transmitir-produccion');

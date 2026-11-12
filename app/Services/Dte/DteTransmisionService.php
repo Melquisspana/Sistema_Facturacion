@@ -881,6 +881,10 @@ class DteTransmisionService
         if ($dte->estado !== EstadoDte::Firmado) {
             throw new DteTransmisionException('Solo se transmite un documento firmado (actual: '.$dte->estado->label().'). Firme primero.');
         }
+        // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
+        if ($motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($dte)) {
+            throw new DteTransmisionException($motivo);
+        }
         if (blank($dte->numero_control) || blank($dte->codigo_generacion)) {
             throw new DteTransmisionException('Falta numeración oficial (numero_control / codigo_generacion).');
         }
