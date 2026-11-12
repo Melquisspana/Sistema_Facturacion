@@ -905,6 +905,11 @@ final class PrepararPlanilla
                     $reparos[] = $detalle->nombre_snapshot.': falta '.$calculo['falta'].' para calcularlo.';
                 }
 
+                // Agregado a mano a un segundo aguinaldo del mismo año: sería pagarlo dos veces.
+                if ($planilla->clase === 'aguinaldo' && ($calculo['repetido'] ?? false)) {
+                    $reparos[] = $detalle->nombre_snapshot.': '.$calculo['fuera'].'.';
+                }
+
                 // Vacaciones de alguien agregado a mano que no las tiene por cobrar: es el
                 // mismo año de servicio pagado dos veces, o uno que todavía no se cumplió.
                 if ($planilla->clase === VacacionesAnuales::CLASE && $calculo['fuera'] !== null) {

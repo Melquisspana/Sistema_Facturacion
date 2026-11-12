@@ -6,6 +6,7 @@ use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -74,8 +75,9 @@ final class PrestacionAnual
     }
 
     /**
-     * @return array{centavos: int, falta: ?string, fuera: ?string, avisar?: bool, concepto?: ?string, nota?: ?string}
-     *                                                                                                                 `falta` = no se puede calcular todavía; `fuera` = no le corresponde
+     * @return array{centavos: int, falta: ?string, fuera: ?string, avisar?: bool, concepto?: ?string, nota?: ?string, repetido?: bool}
+     *                                                                                                                                  `falta` = no se puede calcular todavía; `fuera` = no le corresponde;
+     *                                                                                                                                  `repetido` = ya está en otro aguinaldo de ese año
      */
     public function calcular(string $clase, PlanillaEmpleado $empleado, ?int $mensual, CarbonImmutable $pago, ?int $salvoPlanilla = null): array
     {
@@ -86,6 +88,11 @@ final class PrestacionAnual
         // Con el sueldo a la fecha de baja, no a la de pago: lo busca ella.
         if (IndemnizacionBaja::es($clase)) {
             return $this->indemnizacion->calcularPago($clase, $empleado, $salvoPlanilla);
+        }
+
+        // Antes que nada: a quien ya está en otro aguinaldo del año no le falta ningún dato.
+        if ($clase === 'aguinaldo' && ($yaPagado = $this->aguinaldoYaPagado($empleado, $pago, $salvoPlanilla)) !== null) {
+            return ['centavos' => 0, 'falta' => null, 'fuera' => $yaPagado, 'repetido' => true];
         }
 
         $parametros = $this->parametros($clase, $pago);
@@ -117,6 +124,41 @@ final class PrestacionAnual
             : $this->quincena25($mensual, $anios, $dias, $parametros);
 
         return ['centavos' => $centavos, 'falta' => null, 'fuera' => null];
+    }
+
+    /**
+     * Por qué no le toca otro aguinaldo este año: ya está en uno que no se anuló.
+     *
+     * El período de un aguinaldo es el MES de su fecha de pago, y se paga de octubre a
+     * diciembre: el índice único de la planilla no frena un segundo aguinaldo en otro mes.
+     * Es el mismo criterio que las vacaciones ({@see VacacionesAnuales}): cuenta la planilla
+     * de esa clase que no esté anulada, borrador incluido, salvo la que se está armando.
+     *
+     * @param  ?int  $salvoPlanilla  el aguinaldo que se está armando, que no cuenta como pagado
+     */
+    private function aguinaldoYaPagado(PlanillaEmpleado $empleado, CarbonImmutable $pago, ?int $salvoPlanilla): ?string
+    {
+        if (! $empleado->exists) {
+            return null;
+        }
+
+        $pagado = DB::table('planilla_detalles as d')
+            ->join('planillas as p', 'p.id', '=', 'd.planilla_id')
+            ->where('d.planilla_empleado_id', $empleado->id)
+            ->where('p.clase', 'aguinaldo')
+            ->where('p.estado', '!=', 'anulada')
+            ->when($salvoPlanilla !== null, fn ($q) => $q->where('p.id', '!=', $salvoPlanilla))
+            ->whereDate('p.desde', '>=', $pago->startOfYear()->toDateString())
+            ->whereDate('p.desde', '<=', $pago->endOfYear()->toDateString())
+            ->orderBy('p.id')
+            ->first(['p.fecha_pago', 'p.desde']);
+
+        if ($pagado === null) {
+            return null;
+        }
+
+        return 'ya cobró el aguinaldo de '.$pago->year.', en el pago del '
+            .CarbonImmutable::parse($pagado->fecha_pago ?? $pagado->desde)->format('d/m/Y');
     }
 
     /** Nombre con el que sale en el recibo: «Aguinaldo 2026». */
