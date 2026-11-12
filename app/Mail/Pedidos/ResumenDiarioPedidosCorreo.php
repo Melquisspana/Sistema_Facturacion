@@ -10,7 +10,7 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * El resumen de las 17:00 de lo que hizo la fábrica con los pedidos de sala. Es un aviso
+ * El resumen de las 18:00 de lo que hizo la fábrica con los pedidos de sala. Es un aviso
  * interno: sin adjuntos, sin precios y sin nada fiscal. El contenido lo arma
  * {@see ResumenDiarioPedidos}.
  *

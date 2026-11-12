@@ -1,5 +1,5 @@
 {{--
-    Resumen diario de los pedidos de sala (17:00), desde el correo anterior. Por sala: lo
+    Resumen diario de los pedidos de sala (18:00), desde el correo anterior. Por sala: lo
     que salió, lo que se deshizo, lo que faltó, lo que no se trae y lo que sigue por mandar. Listas y no tablas: el nombre de un
     producto con «|» rompería una tabla de markdown. Todo lo que escribió alguien pasa por
     $literal: sin eso, un motivo con `[texto](url)` sería un enlace en el correo.
@@ -66,7 +66,7 @@ No queda nada por mandar.
 Ver en el sistema
 </x-mail::button>
 
-Este resumen llega cada día a las 5 de la tarde. Los correos que lo reciben se cambian
+Este resumen llega cada día a las 6 de la tarde. Los correos que lo reciben se cambian
 en **Configuración › Rutas**.
 
 {{ \App\Support\NombreEmpresa::actual() }}

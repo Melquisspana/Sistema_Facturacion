@@ -19,7 +19,7 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | A quién va el resumen diario de las 17:00
+    | A quién va el resumen diario de las 18:00
     |--------------------------------------------------------------------------
     |
     | Uno o varios correos separados por coma. Lo carga el administrador en

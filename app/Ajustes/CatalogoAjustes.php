@@ -1329,8 +1329,8 @@ class CatalogoAjustes
                 nivel: NivelConfirmacion::N2,
                 editabilidad: Editabilidad::Editable,
                 persistencia: Persistencia::Nueva,
-                etiqueta: 'A quién va el resumen de las 5 de la tarde',
-                descripcion: 'Uno o varios correos separados por coma. Cada día a las 5 de la tarde reciben qué salió de la fábrica, qué faltó y qué sigue por mandar. Vacío, no se manda.',
+                etiqueta: 'A quién va el resumen de las 6 de la tarde',
+                descripcion: 'Uno o varios correos separados por coma. Cada día a las 6 de la tarde reciben qué salió de la fábrica, qué faltó y qué sigue por mandar, y también las ventas y los cobros del día: lo vendido y el PDF del día de cada vendedor. Agregá solo a quien pueda ver ese dinero. Vacío, no se manda.',
                 claveConfig: 'pedidos.correo_resumen_diario',
                 reglas: ['correos', 'maxlen:500'],
                 // Son correos de personas: la auditoría guarda solo que cambió.

@@ -19,28 +19,28 @@ use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
- * El correo de las 17:00 con lo que hizo la fábrica, por sala: lo que salió en cada envío,
+ * El correo de las 18:00 con lo que hizo la fábrica, por sala: lo que salió en cada envío,
  * lo que se deshizo de un envío que ya había salido en un correo anterior, lo que faltó
  * (con su motivo), lo que se marcó «No se trae» y lo que sigue por mandar con sus días de
  * atraso. Si no salió nada, sale igual con «Hoy no salió ningún pedido» y los pendientes.
  *
  * DESDE EL CORREO ANTERIOR. Cubre desde el instante hasta el que llegó el último resumen
  * (`hasta` en su auditoría) hasta ahora, no solo el día: lo que la fábrica hace después
- * de las 17:00 sale en el correo siguiente. Sin un resumen anterior, desde el inicio del
+ * de las 18:00 sale en el correo siguiente. Sin un resumen anterior, desde el inicio del
  * día. Los dos extremos entran: algo del mismo segundo del corte puede salir en los dos
  * correos, pero nunca en ninguno.
  *
  * A QUIÉN. El ajuste `pedidos.correo_resumen_diario` (Configuración › Rutas, dato
  * personal). Vacío: no se manda y queda en el log.
  *
- * UNA VEZ POR DÍA, DESDE LAS 17:00. Antes de esa hora no sale: una corrida a mano de la
- * mañana no le quita el día al de las 17:00. La auditoría («mandó el resumen diario de
+ * UNA VEZ POR DÍA, DESDE LAS 18:00. Antes de esa hora no sale: una corrida a mano de la
+ * mañana no le quita el día al de las 18:00. La auditoría («mandó el resumen diario de
  * pedidos», con la fecha) es la marca que dura: sobrevive a un `cache:clear` del despliegue.
  * `Cache::add` con la fecha en la clave cubre dos corridas a la vez. Si el envío falla, la
  * marca de la caché se suelta y no se audita, así que se puede volver a correr a mano.
  *
  * A MANO (`--forzar`). Sale ya, a cualquier hora y aunque el del día ya haya salido, con lo
- * mismo que traería el siguiente. Queda auditado aparte y no cuenta como el de las 17:00:
+ * mismo que traería el siguiente. Queda auditado aparte y no cuenta como el de las 18:00:
  * ni lo frena ni corre el período del siguiente.
  *
  * FUERA DE PRODUCCIÓN NO SALE: pasa por {@see CandadoCorreoReal}, como los demás correos,
@@ -55,7 +55,7 @@ class ResumenDiarioPedidos
     public const AUDITORIA_A_MANO = 'mandó a mano el resumen de pedidos';
 
     /** La hora del día (de El Salvador) a la que sale; la usa también el planificador. */
-    public const HORA = '17:00';
+    public const HORA = '18:00';
 
     public function __construct(
         private PedidosFabrica $fabrica,
@@ -147,7 +147,7 @@ class ResumenDiarioPedidos
             return $nombre;
         };
         $hoy = Carbon::parse($hasta->toDateString());
-        // La hora sola si es del día del correo; si no (después de las 17:00 de ayer), con la fecha.
+        // La hora sola si es del día del correo; si no (después de las 18:00 de ayer), con la fecha.
         $envio = function (PedidoSalaEnvio $envio) use ($hoy): array {
             $local = HoraNegocio::aLocal($envio->created_at);
 
