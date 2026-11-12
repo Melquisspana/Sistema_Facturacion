@@ -194,19 +194,9 @@
                             @if ($entrega->resultado === \App\Enums\ResultadoEntrega::Entregado)
                                 <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                                 <p class="text-xs text-gray-500 dark:text-paper-300">{{ $entrega->fecha_resultado?->format('H:i') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}</p>
-                                {{-- La sala con albarán: anotada, espera que caiga su albarán. --}}
-                                @if ($entrega->entregadoPor)
-                                    @php
-                                        $albaranDe = $albaranMarcados[$entrega->dte_id] ?? null;
-                                    @endphp
-                                    <p class="text-xs text-gray-700 dark:text-paper-100">Entregó: {{ $entrega->entregadoPor->nombre }}{{ $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
-                                @endif
                             @else
                                 <p class="text-sm font-medium text-red-700 dark:text-red-400">✗ No se pudo entregar</p>
                                 <p class="text-xs text-gray-500 dark:text-paper-300">{{ $entrega->motivo_no_entrega?->label() }}{{ $entrega->nota ? ' · '.$entrega->nota : '' }}</p>
-                                @if ($entrega->entregadoPor)
-                                    <p class="text-xs text-gray-700 dark:text-paper-100">Fue: {{ $entrega->entregadoPor->nombre }}</p>
-                                @endif
                             @endif
                             @can('deshacer', [$entrega->salida, $entrega])
                                 <form method="POST" action="{{ route('rutas.mi-salida.deshacer', [$entrega->salida, $entrega]) }}" class="mt-1">
@@ -216,6 +206,13 @@
                             @endcan
                         </div>
                     </div>
+                    {{-- Quién lo entregó (o quién fue); la sala con albarán dice si su albarán ya cayó. --}}
+                    @if ($entrega->entregadoPor)
+                        @php
+                            $albaranDe = $albaranMarcados[$entrega->dte_id] ?? null;
+                        @endphp
+                        <p class="mt-1 text-sm text-gray-700 dark:text-paper-100">{{ $entrega->resultado === \App\Enums\ResultadoEntrega::Entregado ? 'Entregó' : 'Fue' }}: {{ $entrega->entregadoPor->nombre }}{{ $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
+                    @endif
                 </div>
             @endforeach
         </section>
