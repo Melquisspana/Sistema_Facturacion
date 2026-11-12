@@ -1978,18 +1978,26 @@ class DteController extends Controller
             'observacion_anulacion' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        try {
-            $anulacion->anular(
-                $dte,
-                MotivoAnulacion::from($datos['motivo_anulacion']),
-                $datos['observacion_anulacion'] ?? null,
-                $request->user(),
-            );
-        } catch (AnulacionException $e) {
-            return back()->withErrors(['anular' => $e->getMessage()]);
-        }
+        // El mismo candado que emitir: no se anula por dentro un documento que otro pedido
+        // está firmando o transmitiendo en este momento.
+        return $this->conCandadoDeEmision(
+            $dte,
+            function () use ($request, $dte, $anulacion, $datos) {
+                try {
+                    $anulacion->anular(
+                        $dte,
+                        MotivoAnulacion::from($datos['motivo_anulacion']),
+                        $datos['observacion_anulacion'] ?? null,
+                        $request->user(),
+                    );
+                } catch (AnulacionException $e) {
+                    return back()->withErrors(['anular' => $e->getMessage()]);
+                }
 
-        return redirect()->route('facturacion.show', $dte)->with('status', 'Documento anulado internamente.');
+                return redirect()->route('facturacion.show', $dte)->with('status', 'Documento anulado internamente.');
+            },
+            fn (string $aviso) => back()->withErrors(['anular' => $aviso]),
+        );
     }
 
     /**
