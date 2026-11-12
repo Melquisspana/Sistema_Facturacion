@@ -669,4 +669,99 @@ class DteInvalidacionRealTest extends TestCase
         $this->assertSame('error_conexion', $r['resultado']);
         $this->assertNull(Activity::where('log_name', 'dte_invalidacion')->latest('id')->first());
     }
+
+    // ---------- Identidad de la respuesta (mismo criterio que la emisión) ----------
+
+    /**
+     * Firmador, auth y anulardte simulados; la respuesta de anulardte se arma con el código
+     * del evento que se firmó (el firmador lo recibe en `dteJson`), para poder probar una
+     * respuesta que trae el código de ESTE evento.
+     *
+     * @param  callable(string $codigoEvento): array<string, mixed>  $respuesta
+     */
+    private function fakeHttpConEvento(callable $respuesta): void
+    {
+        $codigoEvento = '';
+        Http::fake([
+            '*firmardocumento*' => function ($req) use (&$codigoEvento) {
+                $codigoEvento = (string) ($req->data()['dteJson']['identificacion']['codigoGeneracion'] ?? '');
+
+                return Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200);
+            },
+            '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
+            '*anulardte*' => function () use (&$codigoEvento, $respuesta) {
+                $cuerpo = $respuesta($codigoEvento);
+
+                return Http::response($cuerpo, $cuerpo['_http'] ?? 200);
+            },
+        ]);
+    }
+
+    public static function respuestasDeEsteEventoYDocumento(): array
+    {
+        return [
+            'con el código del evento' => ['evento'],
+            'con el código del documento' => ['documento'],
+            'sin código ni ambiente' => [null],
+        ];
+    }
+
+    #[DataProvider('respuestasDeEsteEventoYDocumento')]
+    public function test_invalidacion_con_sello_de_este_evento_y_ambiente_se_guarda(?string $codigo): void
+    {
+        $this->fakeHttpConEvento(fn (string $evento) => array_filter([
+            'estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-INVAL-REAL-XYZ',
+            'descripcionMsg' => 'RECIBIDO', 'fhProcesamiento' => '01/07/2026 10:00:00',
+            'ambiente' => $codigo === null ? null : '00',
+            'codigoGeneracion' => match ($codigo) {
+                'evento' => $evento,
+                'documento' => strtolower(self::NC_CODIGO_GENERACION),
+                default => null,
+            },
+        ]));
+        $dte = $this->ncAceptada();
+
+        $r = $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $this->assertSame('aceptado', $r['resultado']);
+        $this->assertTrue($r['invalidado']);
+        $dte->refresh();
+        $this->assertSame(EstadoDte::Invalidado, $dte->estado);
+        $this->assertSame('SELLO-INVAL-REAL-XYZ', $dte->sello_invalidacion);
+    }
+
+    public static function respuestasQueNoSeComprueban(): array
+    {
+        $otro = '00000000-0000-4000-8000-0000000000AA';
+
+        return [
+            'aceptada sin sello' => [['estado' => 'PROCESADO', 'descripcionMsg' => 'RECIBIDO', 'ambiente' => '00'], 'sello'],
+            'aceptada con sello vacío' => [['estado' => 'PROCESADO', 'selloRecibido' => '', 'ambiente' => '00'], 'sello'],
+            'aceptada de otro código' => [['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-OTRO', 'ambiente' => '00', 'codigoGeneracion' => $otro], 'otro código'],
+            'aceptada de otro ambiente' => [['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-OTRO', 'ambiente' => '01'], 'ambiente'],
+            'rechazo de otro código' => [['_http' => 400, 'estado' => 'RECHAZADO', 'descripcionMsg' => 'No es de este', 'codigoGeneracion' => $otro], 'otro código'],
+        ];
+    }
+
+    /** @param  array<string, mixed>  $respuesta */
+    #[DataProvider('respuestasQueNoSeComprueban')]
+    public function test_respuesta_que_no_se_comprueba_deja_el_documento_como_estaba(array $respuesta, string $falta): void
+    {
+        $this->fakeHttp($respuesta);
+        $dte = $this->ncAceptada();
+        $antes = $dte->refresh()->getAttributes();
+
+        $r = $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $this->assertFalse($r['invalidado']);
+        $this->assertStringEndsWith('_sin_comprobar', $r['resultado']);
+        $this->assertStringContainsString('no se guardó', $r['mensaje']);
+        $this->assertSame('aceptado', $r['estado_dte']);
+        $this->assertSame($antes, $dte->refresh()->getAttributes(), 'El documento queda exactamente como estaba.');
+
+        $log = Activity::where('log_name', 'dte_invalidacion')->latest('id')->first();
+        $this->assertNotNull($log, 'Lo que faltó queda en la bitácora.');
+        $this->assertStringContainsString($falta, (string) $log->properties->get('falta'));
+        $this->assertSame($dte->id, $log->subject_id);
+    }
 }

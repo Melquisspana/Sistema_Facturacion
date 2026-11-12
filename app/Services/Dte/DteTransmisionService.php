@@ -10,6 +10,7 @@ use App\Models\Dte;
 use App\Observers\DteObserver;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use App\Support\Dte\IdentidadRespuestaHacienda;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -357,23 +358,9 @@ class DteTransmisionService
      */
     private function faltaDeIdentidad(Dte $dte, string $codigoDeEstePedido, array $respuesta, ?string $ambienteConsultado): ?string
     {
-        $deLaFila = strtoupper(trim((string) $dte->codigo_generacion));
-
-        if ($deLaFila === '' || strtoupper(trim($codigoDeEstePedido)) !== $deLaFila) {
-            return 'el código de generación por el que se preguntó no es el del documento';
-        }
-
-        $deLaRespuesta = $respuesta['cuerpo']['codigoGeneracion'] ?? null;
-
-        if (filled($deLaRespuesta) && strtoupper(trim((string) $deLaRespuesta)) !== $deLaFila) {
-            return 'la respuesta es de otro código de generación';
-        }
-
-        if ($ambienteConsultado !== null && $ambienteConsultado !== $dte->ambiente?->value) {
-            return 'se consultó en el ambiente '.$ambienteConsultado.' y el documento es del ambiente '.($dte->ambiente?->value ?? '(sin ambiente)');
-        }
-
-        return null;
+        // La regla es la misma de la invalidación: vive en un solo lugar.
+        return IdentidadRespuestaHacienda::falta($dte, $codigoDeEstePedido,
+            $respuesta['cuerpo']['codigoGeneracion'] ?? null, $ambienteConsultado);
     }
 
     /**
