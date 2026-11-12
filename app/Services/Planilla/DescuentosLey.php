@@ -25,8 +25,9 @@ use Illuminate\Support\Str;
  * EL RECÁLCULO DE JUNIO Y DICIEMBRE lo calcula {@see recalcularRenta()} con lo
  * acumulado del año, que junta {@see AcumuladoRenta}.
  *
- * Solo calcula planillas regulares quincenales: la tabla es la quincenal y los topes
- * son por mes, repartidos entre `pagos_por_mes` ({@see cotizacion()}). Y las vacaciones, si
+ * Calcula las planillas normales quincenales, con la tabla quincenal, y las mensuales,
+ * con la tabla mensual y el sueldo del mes entero (Melqui, 12/11/2026). Los topes son por
+ * mes, repartidos entre los pagos del mes ({@see cotizacion()}). Y las vacaciones, si
  * `planilla_prestaciones.vacaciones.con_descuentos_ley` lo dice: se calculan igual que
  * una quincena, sobre el monto de las vacaciones solo. Lo mismo la indemnización y la
  * prestación por renuncia, con `planilla_prestaciones.indemnizacion.con_descuentos_ley`, que
@@ -45,7 +46,7 @@ final class DescuentosLey
             return (bool) config('planilla_prestaciones.indemnizacion.con_descuentos_ley');
         }
 
-        return $planilla->tipo_periodo === 'quincenal' && $planilla->clase === 'regular';
+        return in_array($planilla->tipo_periodo, ['quincenal', 'mensual'], true) && $planilla->clase === 'regular';
     }
 
     /** ¿Hay parámetros vigentes para esa fecha? */
@@ -109,7 +110,9 @@ final class DescuentosLey
         $isss = $this->cotizacion($base, $version['isss'], 'isss', $mes);
         $afp = $this->cotizacion($base, $version['afp'], 'afp', $mes);
 
-        [$renta, $aviso] = $this->renta($base - $isss - $afp, $version['renta']['tramos']);
+        // Un solo pago en el mes (la planilla mensual): la tabla mensual.
+        $tramos = ($mes['pagos'] ?? null) === 1 ? $version['renta']['tramos_mensuales'] : $version['renta']['tramos'];
+        [$renta, $aviso] = $this->renta($base - $isss - $afp, $tramos);
 
         $avisos = $aviso !== null ? [$aviso] : [];
 
@@ -124,8 +127,8 @@ final class DescuentosLey
     }
 
     /**
-     * ¿Esta planilla lleva recálculo de renta? El último pago de junio o de diciembre,
-     * que en la quincenal es la segunda quincena.
+     * ¿Esta planilla lleva recálculo de renta? El último pago de junio o de diciembre:
+     * en la quincenal, la segunda quincena; en la mensual, la del mes.
      */
     public function esRecalculo(Planilla $planilla): bool
     {
@@ -205,10 +208,15 @@ final class DescuentosLey
         ];
     }
 
-    /** Cuántos pagos de esta clase hay en un mes: entre ellos se reparte el tope mensual. */
+    /**
+     * Cuántos pagos de esta clase hay en un mes: entre ellos se reparte el tope mensual. La
+     * planilla mensual normal es uno solo y lleva el tope entero.
+     */
     public function pagosDelMes(Planilla $planilla): int
     {
-        return (int) config('planilla.pagos_por_mes');
+        return $planilla->tipo_periodo === 'mensual' && $planilla->clase === 'regular'
+            ? 1
+            : (int) config('planilla.pagos_por_mes');
     }
 
     /**

@@ -189,7 +189,9 @@ class RecalculoRentaTest extends TestCase
             'segunda quincena de noviembre' => ['quincenal', 'regular', '2026-11-16', '2026-11-30', false],
             'segunda quincena de enero' => ['quincenal', 'regular', '2027-01-16', '2027-01-31', false],
             'extraordinaria de fin de junio' => ['quincenal', 'extraordinaria', '2026-06-16', '2026-06-30', false],
-            'mensual de diciembre' => ['mensual', 'regular', '2026-12-01', '2026-12-31', false],
+            // La mensual es el único pago del mes: también recalcula (Melqui, 12/11/2026).
+            'mensual de diciembre' => ['mensual', 'regular', '2026-12-01', '2026-12-31', true],
+            'mensual de noviembre' => ['mensual', 'regular', '2026-11-01', '2026-11-30', false],
         ];
     }
 

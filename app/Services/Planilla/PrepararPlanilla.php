@@ -32,7 +32,7 @@ use Illuminate\Validation\ValidationException;
  * confirma no puede haber deuda con nadie. La confirmación es un acto aparte.
  *
  * ISSS, AFP Y RENTA SE PROPONEN SOLOS para quien va con descuentos de ley, en la
- * quincena regular: {@see DescuentosLey} los calcula y una persona los revisa o los
+ * quincena y la mensual normales: {@see DescuentosLey} los calcula y una persona los revisa o los
  * corrige. Aguinaldo, Quincena 25 y vacaciones tienen su propia planilla
  * ({@see PrestacionAnual}), y la indemnización la suya, desde la baja
  * ({@see IndemnizacionBaja}); las horas extra no se calculan. En la
@@ -471,7 +471,7 @@ final class PrepararPlanilla
      */
     public function salariosPropuestos(Collection $empleados, Planilla $planilla): array
     {
-        $habituales = $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
+        $habituales = $this->habitualesDelPeriodo($empleados, $planilla);
         $propuestos = [];
 
         foreach ($empleados as $empleado) {
@@ -494,6 +494,20 @@ final class PrepararPlanilla
         }
 
         return $propuestos;
+    }
+
+    /**
+     * El sueldo de siempre para este período, por persona: el importe por pago vigente al
+     * empezar, y en la planilla mensual normal el sueldo del mes entero (Melqui, 12/11/2026).
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, int> empleado_id => centavos
+     */
+    public function habitualesDelPeriodo(Collection $empleados, Planilla $planilla): array
+    {
+        return $this->descuentos->pagosDelMes($planilla) === 1
+            ? $this->sueldos->mensualesEn($empleados, $planilla->desde->toDateString())
+            : $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
     }
 
     /**
@@ -982,11 +996,11 @@ final class PrepararPlanilla
             if ($this->descuentos->esRecalculo($planilla)) {
                 $recalculo = $this->rentaRecalculada($planilla, $detalle->empleado, $this->gravadoDe($detalle, $base['base']));
                 $deRenta = $recalculo === null ? [] : array_merge(
-                    ['La renta de esta quincena sale del recálculo de '.($planilla->hasta->month === 6 ? 'junio' : 'diciembre').' (Decreto 10).'],
+                    ['La renta de '.($planilla->tipo_periodo === 'mensual' ? 'este mes' : 'esta quincena').' sale del recálculo de '.($planilla->hasta->month === 6 ? 'junio' : 'diciembre').' (Decreto 10).'],
                     $recalculo['avisos'],
                 );
             } else {
-                $deRenta = $this->descuentos->calcular($base['base'], $planilla->desde->toDateString())['avisos'] ?? [];
+                $deRenta = $this->descuentos->calcular($base['base'], $planilla->desde->toDateString(), $this->pagadoEnElMes($planilla, $detalle->empleado))['avisos'] ?? [];
             }
 
             foreach (array_merge($base['avisos'], $deRenta) as $aviso) {

@@ -31,8 +31,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Es CONTROL DE REMUNERACIONES CON IMPORTES REVISADOS. Para quien va con descuentos
-    | de ley, propone ISSS, AFP y renta en la quincena regular, con los parámetros de
-    | `config/planilla_descuentos.php`, y una persona los revisa o los corrige.
+    | de ley, propone ISSS, AFP y renta en la quincena y la mensual normales, con los
+    | parámetros de `config/planilla_descuentos.php`, y una persona los revisa o los corrige.
     |
     | NO calcula aporte patronal, indemnización ni horas extra, y
     | no infiere nada a partir de las marcaciones de Asistencia.
@@ -40,7 +40,8 @@ return [
     */
 
     // Cuántos pagos hay en un mes. Melqui confirmó la quincena: el importe por pago es el
-    // sueldo mensual ÷ 2, y los topes mensuales de ley se reparten igual.
+    // sueldo mensual ÷ 2, y los topes mensuales de ley se reparten igual, sin que lo del
+    // mes pase del tope (Melqui, 12/11/2026). La planilla mensual es un solo pago.
     'pagos_por_mes' => 2,
 
     // Sector de la empresa en la tabla de salarios mínimos de

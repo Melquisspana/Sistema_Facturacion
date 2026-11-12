@@ -10,6 +10,7 @@ use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\ConfirmarPlanilla;
+use App\Services\Planilla\GenerarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -214,6 +215,45 @@ class DescuentosLeyPlanillaTest extends TestCase
 
         $this->assertSame([], $this->importes($this->detalleDe($this->abrir('semanal'), $con)));
         $this->assertSame([], $this->importes($this->detalleDe($this->abrir('quincenal', 'extraordinaria'), $con)));
+    }
+
+    public function test_la_planilla_mensual_paga_el_sueldo_completo_con_sus_descuentos(): void
+    {
+        $con = $this->persona('Ana', true, 'FICTICIO-1', '1200.00');
+        $sin = $this->persona('Bea', false, 'FICTICIO-2', '450.00');
+
+        $mes = $this->abrir('mensual');
+
+        // El sueldo del mes entero, no la mitad.
+        $this->assertSame('1200.00', (string) $this->detalleDe($mes, $con)->salario);
+        // ISSS: 3 % del tope mensual entero, 1,000.00 = 30.00. AFP: 7.25 % de 1,200.00 = 87.00.
+        // Renta, tabla mensual: 1,200 − 30 − 87 = 1,083.00 en el tramo III:
+        // 60.00 + 20 % × (1,083.00 − 895.24) = 60.00 + 37.552 = 97.55.
+        $this->assertSame(['isss' => '30.00', 'afp' => '87.00', 'renta' => '97.55'], $this->importes($this->detalleDe($mes, $con)));
+        $this->assertSame('985.45', (string) $this->detalleDe($mes, $con)->a_pagar);
+        // Sin descuentos: el mes entero en bruto.
+        $this->assertSame([], $this->importes($this->detalleDe($mes, $sin)));
+        $this->assertSame('450.00', (string) $this->detalleDe($mes, $sin)->a_pagar);
+    }
+
+    public function test_la_mensual_de_junio_recalcula_la_renta_con_las_mensuales_del_ano(): void
+    {
+        $con = app(AltaEmpleado::class)->registrar($this->actor, [
+            'nombres' => 'Ana', 'apellidos' => 'Ficticia', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-1',
+            'con_descuentos_ley' => true, 'alta_el' => '2026-01-01', 'sueldo_mensual' => '1200.00', 'sueldo_desde' => '2026-01-01',
+        ]);
+
+        foreach (['01', '02', '03', '04', '05'] as $mes) {
+            app(GenerarPlanilla::class)->generar($this->actor, ['tipo_periodo' => 'mensual', 'fecha' => '2026-'.$mes.'-01', 'clase' => 'regular', 'moneda' => 'USD']);
+        }
+
+        $junio = app(GenerarPlanilla::class)->generar($this->actor, ['tipo_periodo' => 'mensual', 'fecha' => '2026-06-01', 'clase' => 'regular', 'moneda' => 'USD']);
+
+        // Gravado de cada mes 1,083.00; en seis meses 6,498.00. Tabla semestral, tramo III:
+        // 360.00 + 20 % × (6,498.00 − 5,371.44) = 585.31. Ya retenido: 5 × 97.55 = 487.75.
+        // En junio: 585.31 − 487.75 = 97.56.
+        $this->assertSame('confirmada', $junio->fresh()->estado);
+        $this->assertSame('97.56', $this->importes($this->detalleDe($junio, $con))['renta']);
     }
 
     public function test_la_misma_persona_no_cobra_dos_veces_en_planillas_regulares(): void
