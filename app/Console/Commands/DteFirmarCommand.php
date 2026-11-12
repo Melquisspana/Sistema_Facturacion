@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
 use App\Exceptions\Dte\DteFirmaException;
 use App\Models\Dte;
 use App\Services\Dte\DteFirmaService;
+use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Console\Command;
 
 /**
@@ -31,8 +33,8 @@ class DteFirmarCommand extends Command
         }
 
         try {
-            $r = $firma->firmar($dte, (bool) $this->option('force'));
-        } catch (DteFirmaDeshabilitadaException $e) {
+            $r = CandadoEmisionDte::ejecutar($dte, fn () => $firma->firmar($dte, (bool) $this->option('force')));
+        } catch (DteEmisionEnCursoException|DteFirmaDeshabilitadaException $e) {
             $this->error($e->getMessage());
 
             return self::FAILURE;

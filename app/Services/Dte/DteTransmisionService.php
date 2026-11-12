@@ -263,7 +263,17 @@ class DteTransmisionService
             return $resultado; // transitorio: el documento sigue Firmado
         }
 
-        DB::transaction(function () use ($dte, $tipo, $resultado) {
+        return DB::transaction(function () use ($dte, $tipo, $resultado) {
+            // Relectura bajo candado, igual que al guardar una invalidación: lo que este
+            // pedido tiene en memoria puede ser de antes de que otro guardara su respuesta.
+            // Un documento que ya dejó de estar firmado no se toca: un «Aceptado» no se
+            // convierte en «Rechazado» por una respuesta que llegó tarde.
+            $actual = Dte::withTrashed()->whereKey($dte->id)->lockForUpdate()->firstOrFail();
+            $dte->setRawAttributes($actual->getAttributes(), true);
+            if ($dte->estado !== EstadoDte::Firmado) {
+                return $this->conservarEstado($dte, $resultado);
+            }
+
             // Envío efectivo a recepción.
             $this->maquina->transicionar($dte, EstadoDte::Enviado, null, 'Transmisión a Hacienda (recepción)');
 
@@ -281,9 +291,55 @@ class DteTransmisionService
                 $this->persistirRespuesta($dte, $resultado);
                 $this->maquina->transicionar($dte, EstadoDte::Rechazado, null, 'Rechazado por Hacienda');
             }
-        });
 
-        return $resultado;
+            return $resultado;
+        });
+    }
+
+    /**
+     * Una respuesta definitiva que llega cuando el documento ya no está firmado: otro
+     * pedido guardó la suya antes. No se cambia nada del documento; la respuesta tardía
+     * queda en la bitácora (con su sello, si lo trae, para que no se pierda) y quien hizo
+     * este pedido recibe lo que de verdad quedó guardado.
+     *
+     * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>}  $tardio
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
+     */
+    private function conservarEstado(Dte $dte, array $tardio): array
+    {
+        $selloTardio = filled($tardio['sello'] ?? null) ? (string) $tardio['sello'] : null;
+
+        activity('dte_transmision')
+            ->performedOn($dte)
+            ->withProperties([
+                'estado_conservado' => $dte->estado->value,
+                'resultado_tardio' => $tardio['resultado'],
+                'http_status' => $tardio['http_status'] ?? null,
+                'mensaje_tardio' => $tardio['mensaje'] ?? null,
+                'sello_tardio' => $selloTardio,
+                'observaciones' => $tardio['observaciones'] ?? [],
+            ])
+            ->log('Llegó una respuesta tardía de Hacienda y se conservó el estado que ya tenía el documento.');
+
+        if ($dte->estado === EstadoDte::Aceptado) {
+            return $this->resultado('aceptado', $tardio['http_status'] ?? null,
+                'El documento ya había sido aceptado por Hacienda en otro pedido. Se conservó ese resultado.',
+                $dte->sello_recepcion);
+        }
+
+        if ($dte->estado === EstadoDte::Rechazado) {
+            // No se inventa una transición Rechazado → Aceptado. Si la respuesta tardía
+            // trae sello, se dice bien claro: hay que revisarlo antes de corregir o duplicar.
+            $mensaje = $tardio['resultado'] === 'aceptado' && $selloTardio !== null
+                ? 'El documento ya figuraba como rechazado, pero Hacienda respondió ACEPTADO con el sello '.$selloTardio
+                    .' a otro pedido de este mismo documento. No se cambió nada: avisá a soporte antes de corregirlo o duplicarlo.'
+                : 'El documento ya había sido rechazado por Hacienda en otro pedido. Se conservó ese resultado.';
+
+            return $this->resultado('rechazado', $tardio['http_status'] ?? null, $mensaje);
+        }
+
+        return $this->resultado('estado_ya_cambiado', $tardio['http_status'] ?? null,
+            'El documento ya no está firmado (estado actual: '.$dte->estado->label().'): otro pedido lo procesó antes. No se cambió nada.');
     }
 
     /**

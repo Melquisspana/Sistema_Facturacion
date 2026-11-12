@@ -51,6 +51,15 @@ class DteGeneracionService
         $this->validar($dte);
 
         return DB::transaction(function () use ($dte, $usuario, $motivoExcepcionPlazo, $avisosOcConfirmados) {
+            // Lo primero, con la fila bloqueada: otro pedido pudo generar este mismo
+            // documento después de que este lo cargó. Sin esto, el segundo tomaba otro
+            // número de control y pisaba el código de generación del primero.
+            $actual = Dte::whereKey($dte->id)->lockForUpdate()->first();
+            if ($actual === null || ! $actual->esEditable()) {
+                throw new GeneracionException('Solo se puede generar un documento en borrador (estado actual: '
+                    .($actual?->estado->label() ?? 'eliminado').').');
+            }
+
             if ($avisosOcConfirmados !== []) {
                 activity()->performedOn($dte)->causedBy($usuario)
                     ->withProperties(['orden_compra' => $dte->numero_orden_compra, 'avisos' => array_values($avisosOcConfirmados)])

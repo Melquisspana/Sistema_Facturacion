@@ -16,6 +16,7 @@ use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
 use App\Exceptions\Dte\AnulacionException;
 use App\Exceptions\Dte\DocumentoInmutableException;
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
 use App\Exceptions\Dte\DteFirmaException;
@@ -79,6 +80,7 @@ use App\Services\Rutas\FacturarPedido;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dinero;
 use App\Support\Dte\ArchivoEntregaDte;
+use App\Support\Dte\CandadoEmisionDte;
 use App\Support\Dte\CondicionOperacion;
 use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
@@ -91,6 +93,7 @@ use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
 use App\Support\NumeroAlbaran;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -1096,6 +1099,15 @@ class DteController extends Controller
         // gestor + estado generado + sin JSON previo (no se regenera desde la UI).
         $this->authorize('generarJson', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->generarJsonConCandado($dte, $jsonService),
+            fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
+        );
+    }
+
+    private function generarJsonConCandado(Dte $dte, DteJsonService $jsonService): RedirectResponse
+    {
         try {
             $jsonService->generar($dte); // force=false: nunca regenera desde la UI
         } catch (DteJsonInvalidoException $e) {
@@ -1134,6 +1146,40 @@ class DteController extends Controller
     ): RedirectResponse {
         $this->authorize('firmarTransmitir', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->firmarTransmitirConCandado($request, $dte, $jsonService, $firma, $transmision),
+            fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
+        );
+    }
+
+    /**
+     * Un solo pedido a la vez por documento: generar, firmar y transmitir van juntos bajo
+     * {@see CandadoEmisionDte}. Quien llega segundo (otra pestaña, otro usuario, un
+     * reenvío con Hacienda lenta) no hace nada y recibe el aviso de `$ocupado`.
+     *
+     * @param  Closure(): RedirectResponse  $accion
+     * @param  Closure(string): RedirectResponse  $ocupado
+     */
+    private function conCandadoDeEmision(Dte $dte, Closure $accion, Closure $ocupado): RedirectResponse
+    {
+        try {
+            return CandadoEmisionDte::ejecutar($dte, $accion);
+        } catch (DteEmisionEnCursoException $e) {
+            Log::info('DTE: emisión ya en curso, el segundo pedido no hizo nada', ['dte_id' => $dte->id]);
+
+            return $ocupado($e->getMessage());
+        }
+    }
+
+    /** Lo de {@see firmarTransmitir()}, ya con el candado del documento y releído. */
+    private function firmarTransmitirConCandado(
+        Request $request,
+        Dte $dte,
+        DteJsonService $jsonService,
+        DteFirmaService $firma,
+        DteTransmisionService $transmision,
+    ): RedirectResponse {
         $volver = redirect()->route('facturacion.show', $dte);
 
         // 0. Idempotencia dura: si ya está aceptado o ya tiene sello, no se hace nada.
@@ -1266,6 +1312,25 @@ class DteController extends Controller
     ): RedirectResponse {
         $this->authorize('generarTransmitirProduccion', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->generarTransmitirProduccionConCandado($request, $dte, $jsonService, $firma, $transmision, $generacion, $preflightCcf, $preflightFactura, $preflightExportacion),
+            fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
+        );
+    }
+
+    /** Lo de {@see generarTransmitirProduccion()}, ya con el candado del documento y releído. */
+    private function generarTransmitirProduccionConCandado(
+        Request $request,
+        Dte $dte,
+        DteJsonService $jsonService,
+        DteFirmaService $firma,
+        DteTransmisionService $transmision,
+        DteGeneracionService $generacion,
+        PreflightEmisionProduccion $preflightCcf,
+        PreflightEmisionProduccionFactura $preflightFactura,
+        PreflightEmisionProduccionExportacion $preflightExportacion,
+    ): RedirectResponse {
         $volver = redirect()->route('facturacion.show', $dte);
 
         // 0. Idempotencia dura: si ya está aceptado o ya tiene sello, no se repite nada.
@@ -2097,6 +2162,20 @@ class DteController extends Controller
         // 'update' exige borrador + gestor (administrador/facturación).
         $this->authorize('update', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->generarConCandado($request, $dte, $generacion, $albaranes),
+            fn (string $aviso) => back()->withErrors(['generar' => $aviso]),
+        );
+    }
+
+    /** Lo de {@see generar()}, ya con el candado del documento y releído. */
+    private function generarConCandado(
+        Request $request,
+        Dte $dte,
+        DteGeneracionService $generacion,
+        AlbaranNotaCreditoService $albaranes,
+    ): RedirectResponse {
         // Los datos del albarán que el cliente declaró obligatorios SÍ frenan: no son
         // diferencias a valorar sino datos imprescindibles. Se dice QUÉ falta, porque el
         // albarán puede estar guardado a medias y «registre el albarán» mandaría a llenar

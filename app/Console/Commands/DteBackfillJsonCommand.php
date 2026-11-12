@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\EstadoDte;
 use App\Models\Dte;
 use App\Services\Dte\DteJsonService;
+use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Console\Command;
 
 /**
@@ -71,7 +72,7 @@ class DteBackfillJsonCommand extends Command
 
         foreach ($pendientes as $dte) {
             try {
-                $r = $servicio->generar($dte);
+                $r = CandadoEmisionDte::ejecutar($dte, fn () => $servicio->generar($dte));
                 $ok++;
                 $this->line('  ✓ #'.$dte->id.'  '.$r['numeroControl']);
             } catch (\Throwable $e) {
