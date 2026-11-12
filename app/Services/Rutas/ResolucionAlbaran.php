@@ -72,6 +72,13 @@ final class ResolucionAlbaran
      */
     public const TIPO_INDETERMINADO = 'tipo_indeterminado';
 
+    /**
+     * Un albarán vinculado a este documento también está vinculado a OTRO (por `dte_id`,
+     * Seguimiento o un renglón PPQ). Un mismo albarán no prueba dos entregas: no se elige
+     * ninguno hasta que alguien corrija el vínculo.
+     */
+    public const VINCULO_CONTRADICTORIO = 'vinculo_contradictorio';
+
     private function __construct(
         public readonly ?PpqAlbaran $albaran,
         public readonly string $estado,
@@ -86,13 +93,18 @@ final class ResolucionAlbaran
      *
      * @param  Collection<int, PpqAlbaran>|array<int, PpqAlbaran>  $albaranes
      * @param  bool  $porVinculoExplicito  si la llave fue `dte_id` en vez de la orden de compra
+     * @param  bool  $contradictorio  si alguno de esos albaranes está vinculado también a otro documento
      */
-    public static function decidir(Collection|array $albaranes, bool $porVinculoExplicito = false): self
+    public static function decidir(Collection|array $albaranes, bool $porVinculoExplicito = false, bool $contradictorio = false): self
     {
         $todos = $albaranes instanceof Collection ? $albaranes->values() : collect($albaranes)->values();
 
         if ($todos->isEmpty()) {
             return new self(null, self::SIN_CANDIDATOS, $todos, $porVinculoExplicito);
+        }
+
+        if ($contradictorio) {
+            return new self(null, self::VINCULO_CONTRADICTORIO, $todos, $porVinculoExplicito);
         }
 
         $entrega = $todos->filter(fn (PpqAlbaran $a) => $a->esDeEntrega())->values();
@@ -117,7 +129,7 @@ final class ResolucionAlbaran
     /** ¿Hay algo que una persona tenga que mirar? Faltar un albarán todavía no lo es. */
     public function esExcepcion(): bool
     {
-        return in_array($this->estado, [self::VARIOS_CANDIDATOS, self::TIPO_INDETERMINADO], true);
+        return in_array($this->estado, [self::VARIOS_CANDIDATOS, self::TIPO_INDETERMINADO, self::VINCULO_CONTRADICTORIO], true);
     }
 
     /**
@@ -131,6 +143,11 @@ final class ResolucionAlbaran
      */
     public function motivo(): ?string
     {
+        if ($this->estado === self::VINCULO_CONTRADICTORIO) {
+            return 'El albarán vinculado a este documento también está vinculado a otro, '
+                .'así que no prueba la entrega de ninguno. Revisá el vínculo.';
+        }
+
         if ($this->porVinculoExplicito) {
             return match ($this->estado) {
                 self::VARIOS_CANDIDATOS => 'Hay '.$this->candidatos->count().' albaranes de entrega vinculados a este documento: '

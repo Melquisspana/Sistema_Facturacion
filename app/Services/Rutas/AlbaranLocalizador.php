@@ -97,11 +97,31 @@ class AlbaranLocalizador
                 ->toBase()
                 ->select(['dte_id', 'ppq_albaran_id']));
 
+        // El join de arriba solo trae los vínculos con ESTOS documentos. Para saber si el
+        // albarán está vinculado también a otro —esté o no en esta carga— se miran todos sus
+        // vínculos: el menor y el mayor documento de cada camino. Si no coinciden, son dos.
+        $vinculosDelAlbaran = [
+            'seguimiento' => CobroDocumento::query()->toBase()
+                ->whereColumn('cobro_documentos.ppq_albaran_id', 'ppq_albaranes.id'),
+            'ppq' => PpqItem::query()
+                ->whereHas('lote')
+                ->where('ppq_items.tipo_dte', '03')
+                ->where('ppq_items.sin_albaran', false)
+                ->whereColumn('ppq_items.ppq_albaran_id', 'ppq_albaranes.id')
+                ->toBase(),
+        ];
+
         $filas = PpqAlbaran::query()
             ->select('ppq_albaranes.*')
-            ->when($otrosVinculos !== null, fn (Builder $q) => $q
-                ->leftJoinSub($otrosVinculos, 'otros_vinculos', 'otros_vinculos.ppq_albaran_id', '=', 'ppq_albaranes.id')
-                ->addSelect('otros_vinculos.dte_id as otro_vinculo_dte_id'))
+            ->when($otrosVinculos !== null, function (Builder $q) use ($otrosVinculos, $vinculosDelAlbaran) {
+                $q->leftJoinSub($otrosVinculos, 'otros_vinculos', 'otros_vinculos.ppq_albaran_id', '=', 'ppq_albaranes.id')
+                    ->addSelect('otros_vinculos.dte_id as otro_vinculo_dte_id');
+                foreach ($vinculosDelAlbaran as $camino => $vinculos) {
+                    $tabla = $vinculos->from;
+                    $q->selectSub((clone $vinculos)->selectRaw("MIN({$tabla}.dte_id)"), "vinculo_{$camino}_min")
+                        ->selectSub((clone $vinculos)->selectRaw("MAX({$tabla}.dte_id)"), "vinculo_{$camino}_max");
+                }
+            })
             ->where(function (Builder $q) use ($dteIds, $ordenes, $otrosVinculos) {
                 if ($dteIds !== []) {
                     $q->whereIn('ppq_albaranes.dte_id', $dteIds);
@@ -119,16 +139,25 @@ class AlbaranLocalizador
             ->get();
 
         // Un albarán con varios vínculos viene en varias filas: se queda una sola vez, con
-        // la lista de documentos a los que lo unen. La columna del join no queda en el modelo.
+        // la lista de documentos a los que lo unen. Las columnas extra no quedan en el modelo.
         /** @var array<int, PpqAlbaran> $albaranes */
         $albaranes = [];
         /** @var array<int, array<int, int>> $deOtrosVinculos ppq_albaran_id => [dte_id, …] */
         $deOtrosVinculos = [];
+        /** @var array<int, true> $contradictorios albaranes vinculados a más de un documento */
+        $contradictorios = [];
+        $extra = ['otro_vinculo_dte_id', 'vinculo_seguimiento_min', 'vinculo_seguimiento_max', 'vinculo_ppq_min', 'vinculo_ppq_max'];
         foreach ($filas as $fila) {
             if ($fila->otro_vinculo_dte_id !== null) {
                 $deOtrosVinculos[$fila->id][] = (int) $fila->otro_vinculo_dte_id;
             }
-            unset($fila->otro_vinculo_dte_id);
+            $documentos = array_filter([$fila->dte_id, ...array_map(fn ($c) => $fila->getAttribute($c), array_slice($extra, 1))]);
+            if (count(array_unique(array_map('intval', $documentos))) > 1) {
+                $contradictorios[$fila->id] = true;
+            }
+            foreach ($extra as $columna) {
+                unset($fila->{$columna});
+            }
             $albaranes[$fila->id] ??= $fila->syncOriginal();
         }
 
@@ -151,7 +180,8 @@ class AlbaranLocalizador
             // nadie, porque {@see ResolucionAlbaran::decidir()} solo elige albaranes de entrega.
             //
             // Los vínculos de Seguimiento y del PPQ entran al mismo grupo y pasan por la
-            // misma regla; si varios señalan el mismo albarán, cuenta una sola vez.
+            // misma regla; si varios señalan el mismo albarán y el mismo documento, cuenta una
+            // sola vez. Si señalan documentos DISTINTOS, el albarán no prueba ninguna entrega.
             $vinculados = array_unique(array_filter([$albaran->dte_id, ...($deOtrosVinculos[$albaran->id] ?? [])]));
             if (! Albaran::esDeCredito($albaran->tipo_codigo)) {
                 foreach ($vinculados as $dteId) {
@@ -168,7 +198,10 @@ class AlbaranLocalizador
 
         $porDte = [];
         foreach ($agrupadosPorDte as $dteId => $delDte) {
-            $porDte[$dteId] = ResolucionAlbaran::decidir($delDte, porVinculoExplicito: true);
+            // Un mismo albarán no prueba dos entregas: si alguno del grupo está vinculado
+            // también a otro documento, no se elige ninguno y se pide revisar el vínculo.
+            $porDte[$dteId] = ResolucionAlbaran::decidir($delDte, porVinculoExplicito: true,
+                contradictorio: $delDte->contains(fn (PpqAlbaran $a) => isset($contradictorios[$a->id])));
         }
 
         $porOrden = [];

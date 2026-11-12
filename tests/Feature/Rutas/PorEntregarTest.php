@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PorEntregar;
+use App\Services\Rutas\ResolucionAlbaran;
 use App\Services\Rutas\RitmoRutas;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
@@ -229,6 +230,28 @@ class PorEntregarTest extends TestCase
         $this->assertFalse($resolucion->albaran->isDirty());
         $this->assertArrayNotHasKey('otro_vinculo_dte_id', $resolucion->albaran->getAttributes());
         $this->assertSame([], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+    }
+
+    public function test_un_albaran_vinculado_a_dos_ccf_distintos_no_prueba_la_entrega_de_ninguno(): void
+    {
+        // El AC01 está vinculado al CCF A y, por error, alguien lo eligió en el renglón PPQ del B.
+        $a = $this->ccf('Antiguo');
+        $b = $this->ccf('Antiguo');
+        $entrega = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6720', 'numero_orden_compra' => $a->numero_orden_compra,
+            'dte_id' => $a->id, 'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        PpqLote::create(['referencia' => 'PPQ-PRUEBA', 'fecha' => '2026-11-06', 'estado' => 'listo'])->items()->create([
+            'dte_id' => $b->id, 'origen' => 'local', 'numero_control' => $b->numero_control, 'tipo_dte' => '03',
+            'ppq_albaran_id' => $entrega->id, 'sin_albaran' => false, 'numero_orden_compra' => $b->numero_orden_compra,
+            'monto_dte' => 100.25, 'monto_albaran' => 100.25]);
+
+        $this->assertSame([$a->id, $b->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+        foreach ([$a, $b] as $ccf) {
+            $resolucion = app(AlbaranLocalizador::class)->paraUno($ccf->id, $ccf->numero_orden_compra);
+            $this->assertSame(ResolucionAlbaran::VINCULO_CONTRADICTORIO, $resolucion->estado);
+            $this->assertNull($resolucion->albaran);
+            $this->assertTrue($resolucion->esExcepcion());
+            $this->assertStringContainsString('Revisá el vínculo', (string) $resolucion->motivo());
+        }
     }
 
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void
