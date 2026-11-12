@@ -54,6 +54,7 @@ final class AnularPlanilla
     public function __construct(
         private SaldosGastos $saldos,
         private EstadoPlanilla $estado,
+        private PrepararPlanilla $preparar,
     ) {}
 
     public function anular(User $usuario, Planilla $planilla, string $motivo): Planilla
@@ -69,14 +70,23 @@ final class AnularPlanilla
             ]);
         }
 
+        // Quiénes están en la planilla, leído antes de la transacción. Una confirmada ya no
+        // cambia de personas.
+        $personas = DB::table('planilla_detalles')->where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->all();
+
         // Tres intentos, como al registrar un pago: si MySQL corta esta transacción por un
         // interbloqueo, se vuelve a entrar. Es seguro porque de ese intento no quedó nada.
-        return DB::transaction(function () use ($usuario, $planilla, $motivo) {
+        return DB::transaction(function () use ($usuario, $planilla, $motivo, $personas) {
             // Primero quien anula, como en los pagos y los ajustes de Gastos (usuario, gasto,
             // cuota). Los ajustes de más abajo apuntan a este usuario, y escribirlos espera
             // su candado: sin tomarlo acá, la misma persona pagando y anulando a la vez podía
             // quedar con cada pedido esperando al otro.
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
+
+            // Después, las fichas de sus personas y recién ahí la planilla: el orden de
+            // {@see PrepararPlanilla::bloquearFichas()}. Anularla cambia lo cotizado en el mes,
+            // que es lo que confirmar lee con esas fichas tomadas.
+            $this->preparar->bloquearFichas($personas);
 
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
 

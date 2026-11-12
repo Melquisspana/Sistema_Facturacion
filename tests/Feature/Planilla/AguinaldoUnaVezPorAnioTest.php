@@ -281,9 +281,15 @@ class AguinaldoUnaVezPorAnioTest extends TestCase
 
         app(PrepararPlanilla::class)->guardarLineas($this->actor, $quincena, [['planilla_empleado_id' => $ana->id, 'salario' => '200.00']]);
 
+        // Las fichas de SUS personas, por id y antes que la planilla (el orden de
+        // PrepararPlanilla::bloquearFichas()). Nunca la tabla entera, como el aguinaldo.
         $conCandado = array_filter($consultas->getArrayCopy(),
             fn (array $c) => str_starts_with($c['sql'], 'select') && preg_match('/from [`"]planilla_empleados[`"]/', $c['sql']) === 1 && str_contains($c['sql'], 'for update'));
-        $this->assertSame([], $conCandado);
+        $this->assertNotSame([], $conCandado);
+
+        foreach ($conCandado as $consulta) {
+            $this->assertMatchesRegularExpression('/where [`"]planilla_empleados[`"]\.[`"]id[`"] in \(/', $consulta['sql']);
+        }
     }
 
     public function test_una_quincena_no_toma_el_candado_de_todas_las_personas(): void

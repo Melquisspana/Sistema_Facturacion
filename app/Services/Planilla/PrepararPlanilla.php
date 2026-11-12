@@ -45,6 +45,13 @@ use Illuminate\Validation\ValidationException;
  */
 final class PrepararPlanilla
 {
+    /**
+     * Las fichas que tomó {@see bloquearPersona()} al abrir: null si fueron todas.
+     *
+     * @var array<int, int>|null
+     */
+    private ?array $fichasBloqueadas = null;
+
     public function __construct(
         private PeriodoPlanilla $periodos,
         private TotalesPlanilla $totales,
@@ -121,10 +128,9 @@ final class PrepararPlanilla
             $periodo['periodo'] = $periodo['desde'] = $periodo['hasta'] = $datos['fecha'];
         }
 
-        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual, $alta) {
+        return $this->conCandados(function () use ($usuario, $datos, $periodo, $individual, $alta) {
             // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
-            // Sin costo para una quincena: solo bloquea en un pago individual o un aguinaldo.
             $persona = $this->bloquearPersona($datos);
 
             // Un pago individual sin su persona bloqueada no pasaría por sus comprobaciones.
@@ -200,14 +206,72 @@ final class PrepararPlanilla
     }
 
     /**
-     * Bloquea la ficha de la persona de un pago individual (vacaciones, indemnización), y
-     * nada si no lo es.
+     * EL ORDEN DE LOS CANDADOS DE PLANILLA. Uno solo, en todos los caminos que escriben una
+     * planilla (generar, abrir, guardar líneas, confirmar y anular):
+     *
+     *   1. quien anula, en anular (como en los pagos de Gastos);
+     *   2. las fichas de TODAS las personas de la planilla, en una sola sentencia y por
+     *      id ascendente ({@see bloquearFichas()}; el aguinaldo, todas las fichas);
+     *   3. la planilla;
+     *   4. lo demás: anticipos, pagos, gastos y cuotas.
+     *
+     * Nunca una ficha después de la planilla: guardar una línea escribe un detalle que
+     * apunta a la ficha, y confirmar las bloquea antes; en distinto orden, dos pedidos
+     * podían quedar esperándose. Si con la planilla ya tomada aparece una persona que no
+     * estaba en el conjunto, se suelta todo y se empieza de nuevo ({@see conCandados()}).
+     *
+     * @param  array<int, int|string>  $ids
+     */
+    public function bloquearFichas(array $ids): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+
+        if ($ids !== []) {
+            PlanillaEmpleado::whereKey($ids)->orderBy('id')->lockForUpdate()->get(['id']);
+        }
+    }
+
+    /**
+     * Corre `$trabajo` en una transacción con tres intentos ante un interbloqueo, como los
+     * pagos, y vuelve a empezar (hasta tres veces) si cambiaron las personas de la planilla
+     * mientras se tomaban los candados ({@see PersonasCambiaron}). Dentro de otra
+     * transacción no reintenta: soltar candados solo lo puede hacer la de afuera.
+     *
+     * @template T
+     *
+     * @param  \Closure(): T  $trabajo
+     * @return T
+     */
+    public function conCandados(\Closure $trabajo): mixed
+    {
+        if (DB::transactionLevel() > 0) {
+            return DB::transaction($trabajo);
+        }
+
+        for ($intento = 1; ; $intento++) {
+            try {
+                return DB::transaction($trabajo, 3);
+            } catch (PersonasCambiaron $e) {
+                if ($intento >= 3) {
+                    throw ValidationException::withMessages(['planilla' => 'Cambiaron las personas de la planilla mientras se guardaba. Intentá de nuevo.']);
+                }
+            }
+        }
+    }
+
+    /**
+     * Bloquea las fichas de quienes van a estar en la planilla que se abre, antes que la
+     * planilla ({@see bloquearFichas()}): la persona de un pago individual (vacaciones,
+     * indemnización), todas en el aguinaldo, y en las demás quienes se le van a proponer.
+     * Devuelve la persona del pago individual.
      *
      * Dos pagos de la misma persona a la vez (dos pestañas, dos meses) se esperan: el
      * segundo ve el primero y no paga dos veces el mismo año. En MySQL (REPEATABLE READ)
      * la foto de lo que lee la transacción se toma en su primera lectura común, así que
      * este bloqueo tiene que ser LO PRIMERO de la transacción de afuera: por eso
-     * {@see GenerarPlanilla} lo llama antes de abrir.
+     * {@see GenerarPlanilla} lo llama antes de abrir. En una planilla de varios, saber a
+     * quiénes bloquear exige leerlos antes; lo que decide dinero al confirmar se lee con
+     * candado ({@see pagadoEnElMes()}).
      *
      * @param  array<string, mixed>  $datos
      */
@@ -217,6 +281,7 @@ final class PrepararPlanilla
 
         if ($clase === 'aguinaldo') {
             $this->bloquearPersonasDelAguinaldo();
+            $this->fichasBloqueadas = null;
 
             return null;
         }
@@ -226,11 +291,40 @@ final class PrepararPlanilla
             ? filter_var($datos['empleado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
             : false;
 
-        if (($clase !== VacacionesAnuales::CLASE && ! IndemnizacionBaja::es($clase)) || $id === false) {
-            return null;
+        if ($clase === VacacionesAnuales::CLASE || IndemnizacionBaja::es($clase)) {
+            $this->fichasBloqueadas = $id === false ? [] : [$id];
+
+            return $id === false ? null : PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
         }
 
-        return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
+        $this->fichasBloqueadas = $this->candidatos($datos);
+        $this->bloquearFichas($this->fichasBloqueadas);
+
+        return null;
+    }
+
+    /**
+     * Quiénes se le van a proponer a una planilla de varios, con los datos sin validar
+     * todavía: si no forman un período, nadie (lo frena la validación de {@see abrir()}).
+     *
+     * @param  array<string, mixed>  $datos
+     * @return array<int, int>
+     */
+    private function candidatos(array $datos): array
+    {
+        $clase = (string) ($datos['clase'] ?? '');
+        $tipo = (string) ($datos['tipo_periodo'] ?? '');
+        $fecha = (string) ($this->prestaciones->es($clase) ? ($datos['fecha_pago'] ?? '') : ($datos['fecha'] ?? ''));
+
+        if (! array_key_exists($clase, Planilla::CLASES) || ! array_key_exists($tipo, Planilla::TIPOS_PERIODO)
+            || preg_match('/^\d{4}-\d{2}-\d{2}$/D', $fecha) !== 1 || ! checkdate((int) substr($fecha, 5, 2), (int) substr($fecha, 8, 2), (int) substr($fecha, 0, 4))) {
+            return [];
+        }
+
+        $periodo = $this->periodos->para($this->prestaciones->es($clase) ? 'mensual' : $tipo, CarbonImmutable::parse($fecha));
+        $planilla = (new Planilla)->forceFill(['clase' => $clase, 'tipo_periodo' => $tipo, 'desde' => $periodo['desde'], 'hasta' => $periodo['hasta']]);
+
+        return $this->entranEn(PlanillaEmpleado::query(), $planilla)->orderBy('id')->pluck('id')->map(fn ($id) => (int) $id)->all();
     }
 
     /**
@@ -435,6 +529,12 @@ final class PrepararPlanilla
 
         if ($empleados->isEmpty()) {
             return;
+        }
+
+        // Alguien que no estaba cuando se tomaron las fichas: su ficha quedaría después de la
+        // planilla. Se empieza de nuevo ({@see bloquearFichas()}).
+        if ($this->fichasBloqueadas !== null && array_diff($empleados->modelKeys(), $this->fichasBloqueadas) !== []) {
+            throw new PersonasCambiaron;
         }
 
         if ($this->prestaciones->es($planilla->clase)) {
@@ -656,19 +756,33 @@ final class PrepararPlanilla
             $lineas = array_map(fn (array $l) => array_merge($l, ['periodo_desde' => null, 'periodo_hasta' => null]), $lineas);
         }
 
-        return DB::transaction(function () use ($usuario, $planilla, $lineas) {
-            // En un aguinaldo, primero las fichas y después la planilla: el mismo orden
-            // que al generarlo y al confirmarlo. Escribir cada línea espera la ficha de su
+        // Las personas que quedan y las que se van, leídas antes de la transacción: adentro,
+        // lo primero tienen que ser sus candados.
+        $personas = array_merge(
+            array_map('intval', array_column($lineas, 'planilla_empleado_id')),
+            PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        return $this->conCandados(function () use ($usuario, $planilla, $lineas, $personas) {
+            // Primero las fichas y después la planilla, el mismo orden que al generarla y al
+            // confirmarla ({@see bloquearFichas()}). Escribir cada línea espera la ficha de su
             // persona; con la planilla tomada antes, guardar y confirmar a la vez podían
             // quedar esperándose entre sí. Todo lo que cambia líneas pasa por acá.
             if ($planilla->clase === 'aguinaldo') {
                 $this->bloquearPersonasDelAguinaldo();
+            } else {
+                $this->bloquearFichas($personas);
             }
 
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
             // Otra vez, ya bloqueada: si se confirmó entre la primera mirada y el bloqueo,
             // borrar sus líneas se llevaría las de una planilla con deuda y anticipos aplicados.
             $this->exigirBorrador($planilla);
+
+            if ($planilla->clase !== 'aguinaldo'
+                && array_diff(PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->all(), $personas) !== []) {
+                throw new PersonasCambiaron;
+            }
             $this->comprobarAnticipos($planilla, $lineas);
             $previos = $this->conceptosDeLeyGuardados($planilla);
 
