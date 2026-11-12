@@ -98,6 +98,22 @@ class VendedoresTableroTest extends TestCase
         $respuesta->assertSeeInOrder(['Rosa Ficticia', 'href="tel:70000001"', 'Última: Ruta Costa, 28/10/2026', 'Sus zonas: Ruta Costa'], false);
     }
 
+    /**
+     * La pestaña «Vendedores» solo saltaba a esta sección del Resumen y se quitó (12/11/2026):
+     * las pestañas quedan Resumen, Viajes y Mapa; la sección sigue en el Resumen.
+     */
+    public function test_vendedores_es_una_seccion_del_resumen_y_no_una_pestana(): void
+    {
+        $html = $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertOk()
+            ->assertSee('id="vendedores"', false)
+            ->assertSee('Luis Inventado')
+            ->getContent();
+
+        $this->assertSame(1, preg_match('/<nav aria-label="Tablero de Rutas".*?<\/nav>/s', $html, $pestanas));
+        $this->assertSame(['Resumen', 'Viajes', 'Mapa'], array_map('trim', preg_match_all('/<a [^>]*>([^<]+)<\/a>/', $pestanas[0], $m) ? $m[1] : []));
+        $this->assertStringNotContainsString('#vendedores', $pestanas[0]);
+    }
+
     public function test_vendedor_sin_telefono_ni_salidas(): void
     {
         $sinNada = PersonalRuta::create(['nombre' => 'Zoe Ejemplo']);
