@@ -14,6 +14,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
+use App\Models\PpqLote;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
@@ -184,6 +185,26 @@ class PorEntregarTest extends TestCase
         $this->assertSame([$sinAlbaran->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
             ->assertDontSee($vinculado->numero_control)->assertSee($sinAlbaran->numero_control);
+    }
+
+    public function test_el_albaran_de_entrega_del_ppq_lo_saca_de_por_entregar(): void
+    {
+        // El CCF va en un PPQ con su AC01, que llegó sin orden de compra.
+        $enPpq = $this->ccf('Antiguo');
+        $enLoteBorrado = $this->ccf('Antiguo');
+        $lote = PpqLote::create(['referencia' => 'PPQ-PRUEBA', 'fecha' => '2026-11-06', 'estado' => 'listo']);
+        $borrado = PpqLote::create(['referencia' => 'PPQ-BORRADO', 'fecha' => '2026-11-06', 'estado' => 'listo']);
+        foreach ([[$lote, $enPpq, '6717'], [$borrado, $enLoteBorrado, '6718']] as [$delLote, $ccf, $numero]) {
+            $albaran = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/'.$numero, 'monto_albaran' => 100.25,
+                'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+            $delLote->items()->create(['dte_id' => $ccf->id, 'origen' => 'local', 'numero_control' => $ccf->numero_control,
+                'tipo_dte' => '03', 'ppq_albaran_id' => $albaran->id, 'sin_albaran' => false,
+                'numero_orden_compra' => $ccf->numero_orden_compra, 'monto_dte' => 100.25, 'monto_albaran' => 100.25]);
+        }
+        // Un lote dado de baja no prueba nada.
+        $borrado->delete();
+
+        $this->assertSame([$enLoteBorrado->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
     }
 
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void
