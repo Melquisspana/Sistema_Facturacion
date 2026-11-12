@@ -410,9 +410,9 @@ final class PrepararPlanilla
      * ── Quién entra ──
      *
      * Quien estuvo activo algún día del período ({@see entranEn()}). Quien causó baja el
-     * 05 entra en la quincena del 1 al 15, que es la última que trabajó, y no aparece en
-     * la siguiente. Las líneas guardadas son una foto: esto solo decide qué se PROPONE
-     * al abrir.
+     * 05 entra en la quincena del 1 al 15, que es la última que trabajó, con esos 5 días, y
+     * no aparece en la siguiente. Las líneas guardadas son una foto: esto solo decide qué
+     * se PROPONE al abrir.
      *
      * ── Idempotencia ──
      *
@@ -443,18 +443,105 @@ final class PrepararPlanilla
             return;
         }
 
-        $habituales = $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
+        $propuestos = $this->salariosPropuestos($empleados, $planilla);
 
         $lineas = $empleados->map(fn (PlanillaEmpleado $e) => [
             'planilla_empleado_id' => $e->id,
             // Sin habitual registrado se propone 0.00 y la pantalla lo marca como algo
             // que falta. No se inventa un importe: que aparezca en blanco y cante es
             // mejor que un número que nadie escribió.
-            'salario' => Dinero::decimal($habituales[$e->id] ?? 0),
+            'salario' => Dinero::decimal($propuestos[$e->id]['centavos'] ?? 0),
+            // Quien entró o se fue a mitad: el recibo dice qué días se le pagan.
+            'periodo_desde' => $propuestos[$e->id]['desde'],
+            'periodo_hasta' => $propuestos[$e->id]['hasta'],
             'conceptos' => [],
         ])->all();
 
         $this->guardarLineas($usuario, $planilla, $lineas);
+    }
+
+    /**
+     * El salario que se propone a cada persona en esta planilla: al abrirla y al agregar a
+     * alguien a mano. El habitual del período, o solo los días trabajados de quien entró o
+     * se fue a mitad ({@see diasTrabajados()}): sueldo mensual ÷ 30 × días, al centavo, la
+     * mitad hacia arriba. `centavos` null: nadie dijo cuánto gana.
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, array{centavos: ?int, desde: ?string, hasta: ?string}>
+     */
+    public function salariosPropuestos(Collection $empleados, Planilla $planilla): array
+    {
+        $habituales = $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
+        $propuestos = [];
+
+        foreach ($empleados as $empleado) {
+            $dias = $this->diasTrabajados($empleado, $planilla);
+
+            if ($dias === null || $dias['completo']) {
+                $propuestos[$empleado->id] = ['centavos' => $habituales[$empleado->id] ?? null, 'desde' => null, 'hasta' => null];
+
+                continue;
+            }
+
+            // El sueldo del primer día que trabajó: quien entró a mitad lo tiene desde ese día.
+            $mensual = $this->sueldos->mensualesEn(collect([$empleado]), $dias['desde'])[$empleado->id] ?? null;
+
+            $propuestos[$empleado->id] = [
+                'centavos' => $mensual === null ? null : intdiv(2 * $mensual * $dias['dias'] + 30, 60),
+                'desde' => $dias['desde'],
+                'hasta' => $dias['hasta'],
+            ];
+        }
+
+        return $propuestos;
+    }
+
+    /**
+     * Los días que trabajó en el período quien entró o se fue a mitad, o null si no entró
+     * ni se fue dentro de él. El día de ingreso y el de la baja cuentan como trabajados
+     * (Melqui, 12/11/2026).
+     *
+     * El mes cuenta como de 30 días, como el sueldo ÷ 30: el 31 no suma y el último día de
+     * febrero cuenta como el 30. Así la segunda quincena vale 15 días, igual que la primera,
+     * y nadie cobra más por irse el 31 que el 30. `completo`: trabajó todos los días del
+     * período (por ejemplo, se fue el 30 de un mes de 31), y entonces cobra el habitual.
+     *
+     * Solo en una planilla normal quincenal o mensual: las demás no pagan días.
+     *
+     * @return array{desde: string, hasta: string, dias: int, completo: bool, entro: ?CarbonImmutable, se_fue: ?CarbonImmutable}|null
+     */
+    public function diasTrabajados(PlanillaEmpleado $empleado, Planilla $planilla): ?array
+    {
+        if ($planilla->clase !== 'regular' || ! in_array($planilla->tipo_periodo, ['quincenal', 'mensual'], true)) {
+            return null;
+        }
+
+        $desde = CarbonImmutable::parse($planilla->desde->toDateString());
+        $hasta = CarbonImmutable::parse($planilla->hasta->toDateString());
+        $alta = $empleado->alta_el === null ? null : CarbonImmutable::parse($empleado->alta_el->toDateString());
+        $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el)->startOfDay();
+
+        $entro = $alta !== null && $alta > $desde && $alta <= $hasta ? $alta : null;
+        $seFue = $baja !== null && $baja >= $desde && $baja < $hasta ? $baja : null;
+
+        if ($entro === null && $seFue === null) {
+            return null;
+        }
+
+        $inicio = $entro ?? $desde;
+        $fin = $seFue ?? $hasta;
+        $dia = fn (CarbonImmutable $f) => $f->isLastOfMonth() ? 30 : min($f->day, 30);
+        $delPeriodo = $dia($hasta) - $dia($desde) + 1;
+        $dias = max(0, $dia($fin) - $dia($inicio) + 1);
+
+        return [
+            'desde' => $inicio->toDateString(),
+            'hasta' => $fin->toDateString(),
+            'dias' => min($dias, $delPeriodo),
+            'completo' => $dias >= $delPeriodo,
+            'entro' => $entro,
+            'se_fue' => $seFue,
+        ];
     }
 
     /**
@@ -464,8 +551,8 @@ final class PrepararPlanilla
      * una planilla que paga TIEMPO (una quincena, una mensual), también quien fue dado de
      * baja con fecha dentro del período o después: la baja apaga a la persona en el acto,
      * pero esos días los trabajó, y sin esto su última quincena no quedaba en ninguna
-     * planilla. Cuánto se le paga por esos días lo decide una persona
-     * ({@see pendientesDeRevisar()}); acá solo se decide que aparezca.
+     * planilla. Se le proponen solo esos días ({@see salariosPropuestos()}). Quien entra
+     * después de que termine el período no está en él.
      *
      * Aguinaldo, Quincena 25 y vacaciones no pagan tiempo de un período: siguen siendo de
      * quien está activo. Lo de quien se fue va en su indemnización.
@@ -481,7 +568,9 @@ final class PrepararPlanilla
             ->where(fn ($q) => $q->where('activo', true)
                 ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
             ->when($pagaTiempo, fn ($q) => $q->orWhere(fn ($q) => $q->where('activo', false)
-                ->whereDate('baja_el', '>=', $planilla->desde))));
+                ->whereDate('baja_el', '>=', $planilla->desde))))
+            ->when($pagaTiempo, fn ($q) => $q->where(fn ($q) => $q->whereNull('alta_el')
+                ->orWhereDate('alta_el', '<=', $planilla->hasta)));
     }
 
     /**
@@ -799,6 +888,18 @@ final class PrepararPlanilla
         $avisos = $this->pendientesDeRevisar($planilla, $verImportes);
         $regular = $planilla->clase === 'regular';
 
+        // Informativo: los días ya están puestos en la línea, y no frena la planilla.
+        foreach ($planilla->detalles as $detalle) {
+            $dias = $detalle->empleado === null ? null : $this->diasTrabajados($detalle->empleado, $planilla);
+
+            if ($dias !== null) {
+                $avisos[] = $detalle->nombre_snapshot.': '.implode(' y ', array_filter([
+                    $dias['entro'] === null ? null : 'entró el '.$dias['entro']->format('d/m/Y'),
+                    $dias['se_fue'] === null ? null : 'tiene baja el '.$dias['se_fue']->format('d/m/Y'),
+                ])).': se pagan '.$dias['dias'].($dias['dias'] === 1 ? ' día.' : ' días.');
+            }
+        }
+
         foreach ($this->cruces($planilla) as $cruce) {
             if (! $regular || $cruce->clase !== 'regular') {
                 $avisos[] = $cruce->nombre_snapshot.' ya está en la planilla '.$cruce->periodo.' de esas mismas fechas.';
@@ -855,9 +956,8 @@ final class PrepararPlanilla
      * siempre. Cuenta solo lo que esta planilla puede descontar: de esa persona, en su
      * moneda y de un pago vigente ({@see motivoContraAnticipo()}).
      *
-     * UNA BAJA DENTRO DEL PERÍODO. Se propone la quincena de siempre, y cuánto se paga por
-     * los días que trabajó no lo decide el sistema: se revisa el importe antes de confirmar.
-     * Una baja con fecha posterior al período no avisa: esos días los trabajó todos.
+     * Una baja o un ingreso dentro del período ya no frenan: se proponen los días
+     * trabajados ({@see salariosPropuestos()}) y solo se avisa ({@see avisosParaConfirmar()}).
      *
      * @return array<int, string>
      */
@@ -869,7 +969,6 @@ final class PrepararPlanilla
         }
 
         $pendientes = [];
-        $pagaTiempo = ! $this->prestaciones->es($planilla->clase);
 
         foreach ($planilla->detalles as $detalle) {
             $empleado = $detalle->empleado;
@@ -888,12 +987,6 @@ final class PrepararPlanilla
                 // El importe solo lo ve quien ve importes.
                 $pendientes[] = $detalle->nombre_snapshot.': tiene un anticipo por descontar'
                     .($verImportes ? ' de '.$planilla->moneda.' '.Dinero::mostrar($saldo) : '').'.';
-            }
-
-            $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el);
-
-            if ($pagaTiempo && $baja !== null && $baja->toDateString() <= $planilla->hasta->toDateString()) {
-                $pendientes[] = $detalle->nombre_snapshot.': tiene baja el '.$baja->format('d/m/Y').': revisá el importe antes de confirmar.';
             }
         }
 

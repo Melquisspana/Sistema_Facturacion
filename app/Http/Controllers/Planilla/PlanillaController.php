@@ -176,6 +176,8 @@ class PlanillaController extends Controller
             // importe de la quincena NO lo toca.
             'habituales' => $this->habitualesDe($sueldos, $planilla->detalles->pluck('empleado')->filter(), $planilla),
             'habitualesDisponibles' => $this->habitualesDe($sueldos, $disponibles, $planilla),
+            // Lo que se propone al agregar a alguien a mano: sus días, si entró o se fue a mitad.
+            'propuestos' => $this->propuestosDe($preparar, $planilla->detalles->pluck('empleado')->filter()->merge($disponibles), $planilla),
             // Los anticipos con saldo de cada persona. Un descuento de anticipo tiene
             // que apuntar a UNO de estos: escribir la referencia no controla nada.
             'anticipos' => $this->anticiposDisponibles($anticipos, $preparar, $planilla, $disponibles),
@@ -201,6 +203,21 @@ class PlanillaController extends Controller
             fn (int $centavos) => Dinero::decimal($centavos),
             $sueldos->vigentesEn($empleados, $planilla->desde->toDateString())
         );
+    }
+
+    /**
+     * El salario y los días que se proponen a cada persona en esta planilla, ya formateados.
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, array{salario: string, periodo_desde: string, periodo_hasta: string}>
+     */
+    private function propuestosDe(PrepararPlanilla $preparar, Collection $empleados, Planilla $planilla): array
+    {
+        return array_map(fn (array $p) => [
+            'salario' => $p['centavos'] === null ? '' : Dinero::decimal($p['centavos']),
+            'periodo_desde' => $p['desde'] ?? '',
+            'periodo_hasta' => $p['hasta'] ?? '',
+        ], $preparar->salariosPropuestos($empleados->unique('id')->values(), $planilla));
     }
 
     /**
