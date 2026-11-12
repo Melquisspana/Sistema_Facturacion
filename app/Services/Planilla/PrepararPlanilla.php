@@ -558,6 +558,14 @@ final class PrepararPlanilla
         }
 
         return DB::transaction(function () use ($usuario, $planilla, $lineas) {
+            // En un aguinaldo, primero las fichas y después la planilla: el mismo orden
+            // que al generarlo y al confirmarlo. Escribir cada línea espera la ficha de su
+            // persona; con la planilla tomada antes, guardar y confirmar a la vez podían
+            // quedar esperándose entre sí. Todo lo que cambia líneas pasa por acá.
+            if ($planilla->clase === 'aguinaldo') {
+                $this->bloquearPersonasDelAguinaldo();
+            }
+
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
             // Otra vez, ya bloqueada: si se confirmó entre la primera mirada y el bloqueo,
             // borrar sus líneas se llevaría las de una planilla con deuda y anticipos aplicados.

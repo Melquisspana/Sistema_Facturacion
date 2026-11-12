@@ -250,6 +250,42 @@ class AguinaldoUnaVezPorAnioTest extends TestCase
         $this->assertSame('confirmada', $borrador->fresh()->estado);
     }
 
+    public function test_guardar_las_lineas_de_un_aguinaldo_toma_los_candados_en_el_mismo_orden_que_confirmarlo(): void
+    {
+        // Guardar bloqueaba la planilla y, al escribir cada línea, esperaba la ficha de la
+        // persona; confirmar bloquea las fichas y después la planilla. Cruzados sobre el
+        // mismo aguinaldo, cada uno podía quedar esperando al otro.
+        $ana = $this->persona('Ana', 'FICTICIO-1');
+        $borrador = $this->abrir('2026-12-15');
+        $consultas = $this->consultasEnTransaccion();
+
+        app(PrepararPlanilla::class)->guardarLineas($this->actor, $borrador, [[
+            'planilla_empleado_id' => $ana->id, 'salario' => '0.00', 'conceptos' => [
+                ['tipo' => 'ingreso', 'concepto' => 'Aguinaldo 2026', 'importe' => '300.00'],
+            ],
+        ]]);
+
+        $lecturas = array_values(array_filter($consultas->getArrayCopy(), fn (array $c) => str_starts_with($c['sql'], 'select')));
+        $this->assertTrue($this->nombra($lecturas[0]['sql'], 'planilla_empleados') && str_contains($lecturas[0]['sql'], 'for update'), $lecturas[0]['sql']);
+        $this->assertTrue($this->nombra($lecturas[1]['sql'], 'planillas') && str_contains($lecturas[1]['sql'], 'for update'), $lecturas[1]['sql']);
+        $this->assertSame('300.00', (string) PlanillaDetalle::where('planilla_id', $borrador->id)->sole()->a_pagar);
+    }
+
+    public function test_guardar_las_lineas_de_una_quincena_no_toma_el_candado_de_todas_las_personas(): void
+    {
+        $ana = $this->persona('Ana', 'FICTICIO-1');
+        $quincena = app(PrepararPlanilla::class)->abrir($this->actor, [
+            'tipo_periodo' => 'quincenal', 'fecha' => '2026-10-01', 'clase' => 'regular', 'moneda' => 'USD', 'fecha_pago' => '',
+        ]);
+        $consultas = $this->consultasEnTransaccion();
+
+        app(PrepararPlanilla::class)->guardarLineas($this->actor, $quincena, [['planilla_empleado_id' => $ana->id, 'salario' => '200.00']]);
+
+        $conCandado = array_filter($consultas->getArrayCopy(),
+            fn (array $c) => str_starts_with($c['sql'], 'select') && preg_match('/from [`"]planilla_empleados[`"]/', $c['sql']) === 1 && str_contains($c['sql'], 'for update'));
+        $this->assertSame([], $conCandado);
+    }
+
     public function test_una_quincena_no_toma_el_candado_de_todas_las_personas(): void
     {
         $this->persona('Ana', 'FICTICIO-1');
