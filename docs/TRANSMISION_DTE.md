@@ -487,6 +487,12 @@ respuesta lo informa, el suyo) y, cuando viene de una consulta, el mismo ambient
 documento queda como estaba y la bitácora `dte_transmision` dice qué faltó
 (`aceptacion_sin_comprobar` / `rechazo_sin_comprobar`).
 
+**Sin sello de recepción no hay aceptación**, ni por consulta ni en la respuesta a un envío:
+un «procesado» sin sello deja el documento firmado, y el reintento de siempre —que consulta
+antes de reenviar— lo acepta cuando Hacienda contesta con el sello. A un documento que ya
+figuraba aceptado sin sello, `dte:consultar <id> --consultar --aplicar` se lo completa si la
+consulta se puede comprobar; no repite el paso a aceptado, y el alta en Seguimiento ocurre ahí.
+
 **La bitácora `dte_copia` es estado operativo y no se depura.** De qué documento es copia
 cada copia, y quién resolvió cada conflicto, se guarda en `activity_log` con
 `log_name = 'dte_copia'`; no hay columna para eso. Borrar esas filas quita el freno o vuelve
