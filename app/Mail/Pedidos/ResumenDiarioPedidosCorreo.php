@@ -36,6 +36,7 @@ class ResumenDiarioPedidosCorreo extends Mailable
         return new Content(markdown: 'emails.pedidos-resumen-diario', with: [
             'contenido' => $this->contenido,
             'literal' => self::literal(...),
+            'hora' => ResumenDiarioPedidos::horaDicha(),
         ]);
     }
 

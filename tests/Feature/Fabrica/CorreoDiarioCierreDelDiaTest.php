@@ -19,8 +19,10 @@ use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Services\Rutas\VentasRutas;
 use App\Services\Rutas\Viajes;
 use App\Support\Correo\CandadoCorreoReal;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Attachment;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -129,7 +131,7 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
 
         $texto = $this->texto($this->enviado());
 
-        $this->assertStringContainsString('Vendido hoy: $1,240.50 en 3 facturas.', $texto);
+        $this->assertStringContainsString('Vendido hoy hasta las 6 de la tarde: $1,240.50 en 3 facturas.', $texto);
         // El mismo número que da la pantalla de Ventas para ese día.
         $pantalla = app(VentasRutas::class)->consultar(['periodo' => 'rango', 'desde' => '2026-11-09', 'hasta' => '2026-11-09']);
         $this->assertSame(1240.50, $pantalla['totales']['actual']);
@@ -150,7 +152,7 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
         $this->documento(40);
         $this->documento(25, ['tipo_dte' => '05'], ['dte_linea_original_id' => $ayer->id]);
 
-        $this->assertStringContainsString('Vendido hoy: $40.00 en 1 factura.', $this->texto($this->enviado()));
+        $this->assertStringContainsString('Vendido hoy hasta las 6 de la tarde: $40.00 en 1 factura.', $this->texto($this->enviado()));
     }
 
     public function test_si_hoy_no_se_vendio_nada_lo_dice(): void
@@ -173,7 +175,7 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
 
         $texto = $this->texto($this->enviado());
 
-        $this->assertStringContainsString('Vendido hoy: $40.00 en 1 factura.', $texto);
+        $this->assertStringContainsString('Vendido hoy hasta las 6 de la tarde: $40.00 en 1 factura.', $texto);
         $this->assertStringContainsString('Exportación: $850.25 en 2 facturas.', $texto);
     }
 
@@ -257,7 +259,7 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
             $this->assertStringStartsWith('%PDF', $pdf);
         }
         $texto = $this->texto($correo);
-        $this->assertStringContainsString('Van adjuntos los PDF del día de: Ana Ficticia, Beto Ficticio, Carla Ficticia.', $texto);
+        $this->assertStringContainsString('Van adjuntos los PDF del día, con lo marcado hasta las 6 de la tarde, de: Ana Ficticia, Beto Ficticio, Carla Ficticia.', $texto);
         $this->assertStringNotContainsString('Dora', $texto);
         $this->assertStringNotContainsString('Eva', $texto);
         $this->assertStringNotContainsString('ningún vendedor', $texto);
@@ -327,9 +329,100 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
 
         $this->assertSame(['dia-2026-11-09-ana-ficticia.pdf'], array_keys($this->adjuntos($correo)));
         $texto = $this->texto($correo);
-        $this->assertStringContainsString('Van adjuntos los PDF del día de: Ana Ficticia.', $texto);
+        $this->assertStringContainsString('Van adjuntos los PDF del día, con lo marcado hasta las 6 de la tarde, de: Ana Ficticia.', $texto);
         $this->assertStringContainsString('No se pudo adjuntar el PDF de: Beto Ficticio.', $texto);
         Exceptions::assertReported(fn (\RuntimeException $e) => $e->getMessage() === 'Falla simulada del PDF');
         $this->assertSame(1, $this->auditoria()['adjuntos']);
+    }
+
+    // ══════════════════════════════ es una foto de las 6
+
+    public function test_dice_hasta_que_hora_cuenta_y_a_mano_dice_la_hora_en_que_salio(): void
+    {
+        // La hora de todos los días sale de la constante, no está escrita a mano.
+        $this->assertSame('18:00', ResumenDiarioPedidos::HORA);
+        $this->assertSame('las 6 de la tarde', ResumenDiarioPedidos::horaDicha());
+        $this->assertSame('las 10:15 de la mañana', ResumenDiarioPedidos::horaDicha('10:15'));
+        $this->assertSame('la 1 de la tarde', ResumenDiarioPedidos::horaDicha('13:00'));
+        $this->assertSame('las 8:30 de la noche', ResumenDiarioPedidos::horaDicha('20:30'));
+
+        // A mano, a media mañana: la foto es de esa hora, no de las 6.
+        [$ana] = $this->vendedor('Ana Ficticia');
+        $this->travelTo('2026-11-09 10:00:00');
+        $this->marcar($ana);
+        $this->travelTo('2026-11-09 10:15:00');
+        $this->artisan('pedidos:correo-diario', ['--forzar' => true])->expectsOutput('Resumen enviado.')->assertSuccessful();
+
+        $texto = $this->texto(Mail::sent(ResumenDiarioPedidosCorreo::class)->sole());
+        $this->assertStringContainsString('Vendido hoy hasta las 10:15 de la mañana: $142.00 en 1 factura.', $texto);
+        $this->assertStringContainsString('Van adjuntos los PDF del día, con lo marcado hasta las 10:15 de la mañana, de: Ana Ficticia.', $texto);
+        $this->assertStringContainsString('Este resumen llega cada día a las 6 de la tarde.', $texto);
+    }
+
+    // ══════════════════════════════ quién tuvo movimiento, sin una consulta por ficha
+
+    public function test_quien_tuvo_movimiento_son_los_mismos_que_dice_el_dia_de_cada_persona(): void
+    {
+        [$ana, $personaAna] = $this->vendedor('Ana Ficticia');
+        [$beto, $personaBeto] = $this->vendedor('Beto Ficticio');
+        [$carla, $personaCarla] = $this->vendedor('Carla Ficticia');
+        [$dora] = $this->vendedor('Dora Ficticia');
+        $this->vendedor('Eva Ficticia');
+        // Sin login: no anota nada en el sistema, pero puede tener un gasto a su nombre.
+        $fabio = PersonalRuta::create(['nombre' => 'Fabio Ficticio']);
+        PersonalRuta::create(['nombre' => 'Gil Ficticio']);
+
+        $this->travelTo('2026-11-08 10:00:00');
+        $this->marcar($dora);
+        $this->travelTo('2026-11-09 10:00:00');
+        $this->marcar($ana);
+        $this->marcar($carla, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']);
+        $viaje = app(Viajes::class)->paraPedido($personaBeto, $this->sala, $beto);
+        foreach ([$personaBeto, $fabio] as $persona) {
+            $viaje->gastos()->create(['fecha' => '2026-11-09', 'personal_id' => $persona->id, 'concepto' => 'gasolina', 'monto' => '20.00', 'registrado_por' => $beto->id]);
+        }
+
+        $dia = app(DiaVendedor::class);
+        $conMovimiento = $dia->personasConMovimiento('2026-11-09');
+
+        $this->assertSame(['Ana Ficticia', 'Beto Ficticio', 'Carla Ficticia', 'Fabio Ficticio'], $conMovimiento->pluck('nombre')->all());
+        // Ficha por ficha, con la regla de «Terminar el día»: exactamente las mismas personas.
+        $unaPorUna = PersonalRuta::query()->with('user')->orderBy('nombre')->orderBy('id')->get()
+            ->filter(fn (PersonalRuta $p) => $dia->diasConMovimiento($p, $p->user, '2026-11-09', '2026-11-09') !== []);
+        $this->assertSame($unaPorUna->pluck('id')->all(), $conMovimiento->pluck('id')->all());
+        // Y cada una trae su usuario, que es con lo que se arma su PDF.
+        $this->assertTrue($conMovimiento->firstWhere('id', $personaCarla->id)->user->is($carla));
+        $this->assertNull($conMovimiento->firstWhere('id', $fabio->id)->user);
+        $this->assertSame([], $dia->personasConMovimiento('2026-11-10')->all());
+        $this->assertSame([$personaAna->id, $personaBeto->id, $personaCarla->id, $fabio->id], $conMovimiento->pluck('id')->all());
+    }
+
+    public function test_buscar_quien_tuvo_movimiento_no_hace_mas_consultas_con_mas_fichas(): void
+    {
+        [$ana] = $this->vendedor('Ana Ficticia');
+        $this->marcar($ana);
+
+        $contar = function (): array {
+            $consultas = [];
+            DB::listen(function ($consulta) use (&$consultas) {
+                $consultas[] = $consulta->sql;
+            });
+            $personas = app(DiaVendedor::class)->personasConMovimiento('2026-11-09');
+            DB::getEventDispatcher()->forget(QueryExecuted::class);
+            $this->assertSame(['Ana Ficticia'], $personas->pluck('nombre')->all());
+
+            return $consultas;
+        };
+
+        $pocas = $contar();
+        for ($i = 1; $i <= 25; $i++) {
+            $this->vendedor('Ficha de prueba '.$i);
+        }
+        $muchas = $contar();
+
+        $this->assertLessThanOrEqual(4, count($pocas));
+        $this->assertCount(count($pocas), $muchas);
+        // El Personal se lee una sola vez. MySQL cita con acentos graves; SQLite, con comillas dobles.
+        $this->assertCount(1, preg_grep('/from\s+["`]rutas_personal["`]/i', $muchas));
     }
 }

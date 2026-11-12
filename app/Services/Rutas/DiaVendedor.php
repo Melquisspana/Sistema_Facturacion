@@ -165,13 +165,27 @@ class DiaVendedor
      * Quienes tienen algo que va en el PDF de ese día (una entrega, un «No se pudo» o un
      * gasto), por nombre. Lo pide el correo diario ({@see ResumenDiarioPedidos}).
      *
+     * Las mismas personas que daría {@see diasConMovimiento()} ficha por ficha, con la regla
+     * de {@see suyas()}, pero partiendo de lo anotado ese día: las consultas no crecen con
+     * la cantidad de fichas del Personal.
+     *
      * @return Collection<int, PersonalRuta>
      */
     public function personasConMovimiento(string $fecha): Collection
     {
-        return PersonalRuta::query()->with('user')->orderBy('nombre')->orderBy('id')->get()
-            ->filter(fn (PersonalRuta $persona) => $this->diasConMovimiento($persona, $persona->user, $fecha, $fecha) !== [])
-            ->values();
+        $entregas = SalidaRutaEntrega::query()->sinFacturadosDespues()->whereDate('fecha_resultado', $fecha)
+            ->whereIn('resultado', [ResultadoEntrega::Entregado->value, ResultadoEntrega::NoEntregado->value])
+            ->select('resultado', 'entregado_por_id', 'registrado_por')->distinct()->toBase()->get();
+        // Quien entregó o tiene un gasto, por su ficha; quien anotó un «No se pudo», por su login.
+        $fichas = $entregas->where('resultado', ResultadoEntrega::Entregado->value)->pluck('entregado_por_id')
+            ->concat(SalidaRutaGasto::query()->whereDate('fecha', $fecha)->distinct()->pluck('personal_id'))
+            ->filter()->unique()->values();
+        $usuarios = $entregas->where('resultado', ResultadoEntrega::NoEntregado->value)->pluck('registrado_por')
+            ->filter()->unique()->values();
+
+        return PersonalRuta::query()->with('user')
+            ->where(fn (Builder $q) => $q->whereIn('id', $fichas)->orWhereIn('user_id', $usuarios))
+            ->orderBy('nombre')->orderBy('id')->get();
     }
 
     /** El PDF del día de una persona: el mismo para el vendedor, la oficina y el correo diario. */

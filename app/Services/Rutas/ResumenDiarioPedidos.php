@@ -28,7 +28,8 @@ use Throwable;
  * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
  * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,
  * adjunto, el PDF del día de cada vendedor con movimiento, el mismo de «Terminar el día»,
- * con lo que lleve marcado a esa hora. Si falla la cuenta de ventas o el PDF de alguien, se
+ * con lo que lleve marcado a esa hora. Es una foto de esa hora y el correo lo dice: lo
+ * facturado o marcado después no entra en ningún correo. Si falla la cuenta de ventas o el PDF de alguien, se
  * reporta y el correo sale igual diciendo qué faltó. Lleva dinero: va solo a la lista de
  * Configuración › Rutas.
  *
@@ -72,6 +73,19 @@ class ResumenDiarioPedidos
         private DiaVendedor $dia,
     ) {}
 
+    /**
+     * Una hora «HH:MM» como se dice: «las 6 de la tarde», «las 10:15 de la mañana». Sin
+     * argumento, la del envío de todos los días ({@see HORA}): los textos la toman de acá.
+     */
+    public static function horaDicha(string $hora = self::HORA): string
+    {
+        [$h, $m] = array_map('intval', explode(':', $hora));
+        $doce = $h % 12 ?: 12;
+
+        return ($doce === 1 ? 'la ' : 'las ').$doce.($m > 0 ? ':'.sprintf('%02d', $m) : '')
+            .' de la '.($h < 12 ? 'mañana' : ($h < 19 ? 'tarde' : 'noche'));
+    }
+
     /** @return list<string> */
     public function destinatarios(): array
     {
@@ -111,6 +125,9 @@ class ResumenDiarioPedidos
         $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta)
             + ['ventas' => $this->vendido($fecha)];
         [$contenido['vendedores'], $pdf] = $this->pdfDeVendedores($fecha);
+        // Es una foto: lo vendido y lo marcado después no entra. El de todos los días es de
+        // su hora; el que se manda a mano, de la hora en que sale.
+        $contenido['hasta_las'] = self::horaDicha($forzar ? HoraNegocio::ahora()->format('H:i') : self::HORA);
 
         $clave = 'pedidos.correo_resumen_diario.'.$fecha;
         if (! $forzar && ! Cache::add($clave, true, now()->addDays(2))) {
