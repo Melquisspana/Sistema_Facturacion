@@ -140,13 +140,27 @@ jobs:
           vendor/bin/pint --test "${files[@]}"
 
   pruebas-mysql:
-    name: PHPUnit (MySQL estricto)
+    # El total sale de la matriz: los checks se llaman «PHPUnit (MySQL estricto) (1/4)»
+    # hasta «(4/4)».
+    name: PHPUnit (MySQL estricto) (${{ matrix.parte }}/${{ strategy.job-total }})
     # SQLite no hace cumplir el largo de los VARCHAR ni los bloqueos: este job corre la
     # suite contra MySQL en modo estricto en cada push, con la misma condición que los
     # otros jobs. Se activó junto con el arreglo de los textos largos de Cobros.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # En un solo job la suite pasaba de las 2 horas y GitHub la cortaba cerca del 97 %:
+    # nunca daba un resultado. Se reparte en partes que corren a la vez, cada una con su
+    # propio MySQL. La cuenta: unas 8.000 pruebas en unos 125 minutos; entre 4 son unos
+    # 31 minutos de pruebas más unos 5 de preparación, y la parte más cargada lleva cerca
+    # de un 10 % más que el promedio. Queda lejos de los 60 minutos del tope. Para
+    # cambiar la cantidad de partes basta esta lista: el reparto y los nombres la siguen.
+    # scripts/ci/reparto-pruebas.sh explica cómo se reparten los archivos.
+    strategy:
+      # Una parte en rojo no cancela las otras: se quiere el resultado de todas.
+      fail-fast: false
+      matrix:
+        parte: [1, 2, 3, 4]
+    timeout-minutes: 60
     # NO BLOQUEANTE al principio: puede haber más deuda de MySQL que SQLite no muestra.
     # No se ignoran los fallos: cuando quede verde, quitar esta línea para que el job
     # pase a ser obligatorio.
@@ -208,10 +222,18 @@ jobs:
           cp .env.example .env
           php artisan key:generate
 
+      # Antes de gastar la media hora: que ningún archivo de prueba se pierda ni se repita
+      # entre las partes, y que la lista repartida sea la misma que corre PHPUnit con
+      # phpunit.xml. Son segundos y no corre ninguna prueba ni toca la base.
+      - name: Comprobar el reparto de pruebas
+        run: |
+          bash scripts/ci/reparto-pruebas.sh comprobar "${{ strategy.job-total }}"
+          bash scripts/ci/reparto-pruebas.sh contra-phpunit
+
       # PHPUnit respeta estas variables: los <env> de DB no tienen force="true".
       # Laravel aplica el modo estricto ('strict' => true en config/database.php);
       # no hace falta configurarlo en el servidor MySQL.
-      # Un solo proceso; tests/bootstrap.php ya fija memory_limit=1G.
+      # Un solo proceso por parte; tests/bootstrap.php ya fija memory_limit=1G.
       # PRUEBAS_MYSQL_EFIMERA pide la única excepción al candado de Tests\TestCase, que
       # solo acepta esta base `testing` del runner (ver mysqlEfimeraDeCiSolicitada()).
       - name: Ejecutar PHPUnit
@@ -224,4 +246,4 @@ jobs:
           DB_USERNAME: root
           DB_PASSWORD: ci-solo-pruebas
           DB_URL: ''
-        run: vendor/bin/phpunit
+        run: bash scripts/ci/reparto-pruebas.sh correr "${{ matrix.parte }}" "${{ strategy.job-total }}"
