@@ -760,7 +760,7 @@ final class PrepararPlanilla
         }
 
         $base = $this->descuentos->baseDeLinea(Dinero::centavos($linea['salario']), $otros)['base'];
-        $calculo = $this->descuentos->calcular($base, $planilla->desde->toDateString());
+        $calculo = $this->descuentos->calcular($base, $planilla->desde->toDateString(), $this->pagadoEnElMes($planilla, $empleado));
 
         // Sin parámetros vigentes no se pone nada: {@see reparosParaConfirmar()} lo frena.
         if ($calculo === null) {
@@ -812,6 +812,57 @@ final class PrepararPlanilla
         }
 
         return array_merge($deLey, $otros);
+    }
+
+    /**
+     * Lo ya pagado a esta persona en el mismo mes que esta planilla, para que el ISSS no
+     * pase del tope mensual ({@see DescuentosLey::calcular()}): las planillas confirmadas
+     * en que llevó descuentos de ley, sin esta. El mes de una quincena o una mensual es el
+     * de sus fechas; el de un pago individual (vacaciones), el de su fecha de pago.
+     *
+     * @return array{pagos: int, previos: array<int, array{base: int, pagos: int}>, cotizado: array<string, int>}
+     */
+    private function pagadoEnElMes(Planilla $planilla, PlanillaEmpleado $empleado): array
+    {
+        $mes = $this->mesDe($planilla);
+        $inicio = $mes->startOfMonth()->toDateString();
+        $fin = $mes->endOfMonth()->toDateString();
+        $previos = [];
+        $cotizado = [];
+
+        $detalles = PlanillaDetalle::where('planilla_empleado_id', $empleado->id)
+            ->where('planilla_id', '!=', $planilla->id)
+            ->whereHas('planilla', fn ($q) => $q->where('estado', 'confirmada')->where(fn ($q) => $q
+                ->where(fn ($q) => $q->whereDate('desde', '>=', $inicio)->whereDate('desde', '<=', $fin))
+                ->orWhere(fn ($q) => $q->whereDate('fecha_pago', '>=', $inicio)->whereDate('fecha_pago', '<=', $fin))))
+            ->with('planilla', 'conceptos')
+            ->get();
+
+        foreach ($detalles as $detalle) {
+            $deLey = $detalle->conceptos->whereNotNull('ley');
+
+            if ($deLey->isEmpty() || $this->mesDe($detalle->planilla)->format('Y-m') !== $mes->format('Y-m')) {
+                continue;
+            }
+
+            $previos[] = [
+                'base' => $this->descuentos->baseDeLinea(Dinero::centavos((string) $detalle->salario), $detalle->conceptos->toArray())['base'],
+                'pagos' => $this->descuentos->pagosDelMes($detalle->planilla),
+            ];
+
+            foreach ($deLey as $concepto) {
+                $cotizado[$concepto->ley] = ($cotizado[$concepto->ley] ?? 0) + Dinero::centavos((string) $concepto->importe);
+            }
+        }
+
+        return ['pagos' => $this->descuentos->pagosDelMes($planilla), 'previos' => $previos, 'cotizado' => $cotizado];
+    }
+
+    private function mesDe(Planilla $planilla): CarbonImmutable
+    {
+        $fecha = $planilla->esIndividual() && $planilla->fecha_pago !== null ? $planilla->fecha_pago : $planilla->desde;
+
+        return CarbonImmutable::parse($fecha->toDateString());
     }
 
     /**
@@ -1103,8 +1154,10 @@ final class PrepararPlanilla
             if ($calculaLey && $hayTasas && $detalle->empleado?->con_descuentos_ley) {
                 foreach (['isss' => 'ISSS', 'afp' => 'AFP'] as $clave => $nombre) {
                     $concepto = $detalle->conceptos->firstWhere('ley', $clave);
+                    // En cero solo si el sistema propuso cero: el mes ya llegó al tope.
+                    $propuestoCero = $concepto?->importe_calculado !== null && Dinero::centavos((string) $concepto->importe_calculado) === 0;
 
-                    if ($concepto === null || Dinero::centavos((string) $concepto->importe) <= 0) {
+                    if ($concepto === null || (Dinero::centavos((string) $concepto->importe) <= 0 && ! $propuestoCero)) {
                         $reparos[] = $detalle->nombre_snapshot.': falta el importe de '.$nombre.'.';
                     }
                 }

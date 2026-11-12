@@ -25,8 +25,8 @@ use Illuminate\Support\Str;
  * EL RECÁLCULO DE JUNIO Y DICIEMBRE lo calcula {@see recalcularRenta()} con lo
  * acumulado del año, que junta {@see AcumuladoRenta}.
  *
- * Solo calcula planillas regulares quincenales: la tabla es la quincenal y `Topes`
- * se reparten entre `pagos_por_mes`. Y las vacaciones, si
+ * Solo calcula planillas regulares quincenales: la tabla es la quincenal y los topes
+ * son por mes, repartidos entre `pagos_por_mes` ({@see cotizacion()}). Y las vacaciones, si
  * `planilla_prestaciones.vacaciones.con_descuentos_ley` lo dice: se calculan igual que
  * una quincena, sobre el monto de las vacaciones solo. Lo mismo la indemnización y la
  * prestación por renuncia, con `planilla_prestaciones.indemnizacion.con_descuentos_ley`, que
@@ -89,10 +89,15 @@ final class DescuentosLey
     }
 
     /**
+     * `$mes` es lo ya pagado a la persona en el mismo mes, para el tope mensual
+     * ({@see cotizacion()}). Sin él, el tope solo se reparte entre los pagos del mes: así lo
+     * usan las estimaciones.
+     *
+     * @param  array{pagos: int, previos: array<int, array{base: int, pagos: int}>, cotizado: array<string, int>}|null  $mes
      * @return array{conceptos: array<string, array{ley: string, concepto: string, tercero: string, centavos: int}>, avisos: array<int, string>}|null
      *                                                                                                                                                null si no hay parámetros para esa fecha
      */
-    public function calcular(int $base, string $fecha): ?array
+    public function calcular(int $base, string $fecha, ?array $mes = null): ?array
     {
         $version = $this->versionEn($fecha);
 
@@ -101,8 +106,8 @@ final class DescuentosLey
         }
 
         $base = max($base, 0);
-        $isss = $this->cotizacion($base, $version['isss']);
-        $afp = $this->cotizacion($base, $version['afp']);
+        $isss = $this->cotizacion($base, $version['isss'], 'isss', $mes);
+        $afp = $this->cotizacion($base, $version['afp'], 'afp', $mes);
 
         [$renta, $aviso] = $this->renta($base - $isss - $afp, $version['renta']['tramos']);
 
@@ -200,14 +205,52 @@ final class DescuentosLey
         ];
     }
 
-    /** @param  array<string, mixed>  $parametros */
-    private function cotizacion(int $base, array $parametros): int
+    /** Cuántos pagos de esta clase hay en un mes: entre ellos se reparte el tope mensual. */
+    public function pagosDelMes(Planilla $planilla): int
     {
-        if ($parametros['tope_mensual'] !== null) {
-            $base = min($base, intdiv(Dinero::centavos($parametros['tope_mensual']), (int) config('planilla.pagos_por_mes')));
+        return (int) config('planilla.pagos_por_mes');
+    }
+
+    /**
+     * Lo que cotiza este pago. El tope de ley es POR MES (Melqui, 12/11/2026), y se
+     * descuenta repartido en los pagos.
+     *
+     * Cada pago cotiza, como siempre, hasta su parte del tope (tope ÷ pagos del mes), y
+     * nunca más de lo que le falta al mes: tasa × tope, menos lo ya cotizado en los pagos
+     * confirmados del mismo mes. Con unas vacaciones en el mes, la quincena que viene
+     * después cotiza solo lo que falta para el tope.
+     *
+     * Después del primer pago del mes, si lo cobrado en el mes ya llega al tope o un pago
+     * anterior quedó cortado por su parte del tope, este pago completa lo que el mes tiene
+     * que cotizar: con quincenas de 400 y 700, la segunda completa los 30.00. Un mes de
+     * quincenas por debajo del tope, o de dos iguales, queda como antes.
+     *
+     * @param  array<string, mixed>  $parametros
+     * @param  array{pagos: int, previos: array<int, array{base: int, pagos: int}>, cotizado: array<string, int>}|null  $mes
+     */
+    private function cotizacion(int $base, array $parametros, string $ley, ?array $mes): int
+    {
+        if ($parametros['tope_mensual'] === null) {
+            return $this->porcentaje($base, $parametros['tasa']);
         }
 
-        return $this->porcentaje($base, $parametros['tasa']);
+        $tope = Dinero::centavos($parametros['tope_mensual']);
+        $parte = fn (int $pagos) => intdiv($tope, max($pagos, 1));
+        $cotiza = $this->porcentaje(min($base, $parte($mes['pagos'] ?? (int) config('planilla.pagos_por_mes'))), $parametros['tasa']);
+
+        if ($mes === null) {
+            return $cotiza;
+        }
+
+        $yaCotizado = $mes['cotizado'][$ley] ?? 0;
+        $delMes = array_sum(array_column($mes['previos'], 'base')) + $base;
+        $cortado = collect($mes['previos'])->contains(fn (array $p) => $p['base'] > $parte($p['pagos']));
+
+        if ($mes['previos'] !== [] && ($cortado || $delMes >= $tope)) {
+            $cotiza = max($cotiza, $this->porcentaje(min($delMes, $tope), $parametros['tasa']) - $yaCotizado);
+        }
+
+        return max(min($cotiza, $this->porcentaje($tope, $parametros['tasa']) - $yaCotizado), 0);
     }
 
     /**
