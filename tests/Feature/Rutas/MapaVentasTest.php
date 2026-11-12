@@ -27,9 +27,10 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * El mapa de ventas por zona del tablero de Rutas (paso 1, 09/11/2026): ventas nacionales
- * por departamento y distrito con las reglas de Ventas, salas sin compra hace 30 días o más,
- * última entrega, rutas que pasan y salas sin ubicación.
+ * El mapa de ventas del tablero de Rutas (paso 1, 09/11/2026; segunda versión, 11/11/2026):
+ * ventas nacionales por departamento y distrito con las reglas de Ventas, salas atrasadas o
+ * por visitar según su ritmo, última entrega, zonas que pasan, salas sin ubicación y las
+ * listas que dicen lo mismo que el mapa en palabras («Quién vendió más» y «A dónde ir primero»).
  */
 class MapaVentasTest extends TestCase
 {
@@ -101,6 +102,28 @@ class MapaVentasTest extends TestCase
             'distrito_id' => $distrito?->id,
             'activo' => true,
         ]);
+    }
+
+    /** Compra cada 10 días y la última vez fue el 01/10: al 09/11 está atrasada. */
+    private function atrasada(string $nombre, Ruta $ruta, Distrito $distrito): ClienteSucursal
+    {
+        $sala = $this->sala($nombre, $ruta, $distrito);
+        foreach (['2026-09-11', '2026-09-21', '2026-10-01'] as $fecha) {
+            $this->documento($sala, $fecha, 10);
+        }
+
+        return $sala;
+    }
+
+    /** Compra cada 7 días y la última vez fue el 02/11: al 09/11 ya le toca visita. */
+    private function porVisitar(string $nombre, Ruta $ruta, Distrito $distrito): ClienteSucursal
+    {
+        $sala = $this->sala($nombre, $ruta, $distrito);
+        foreach (['2026-10-19', '2026-10-26', '2026-11-02'] as $fecha) {
+            $this->documento($sala, $fecha, 10);
+        }
+
+        return $sala;
     }
 
     /** Un documento con una línea, aceptado de verdad por Hacienda salvo que `$datos` diga otra cosa. */
@@ -253,8 +276,9 @@ class MapaVentasTest extends TestCase
 
         $mapa = $this->mapa();
 
-        $sur = ['nombre' => 'Sala de prueba Sur', 'estado' => Ritmo::ATRASADA, 'dias' => 39, 'faltan' => -29];
-        $leToca = ['nombre' => 'Sala de prueba Este', 'estado' => Ritmo::PRONTO, 'dias' => 7, 'faltan' => 0];
+        // Cada sala lleva su distrito (`lugar`): la ficha del departamento dice dónde queda.
+        $sur = ['nombre' => 'Sala de prueba Sur', 'lugar' => 'Distrito Playa', 'estado' => Ritmo::ATRASADA, 'dias' => 39, 'faltan' => -29];
+        $leToca = ['nombre' => 'Sala de prueba Este', 'lugar' => 'Distrito Centro', 'estado' => Ritmo::PRONTO, 'dias' => 7, 'faltan' => 0];
         $this->assertSame([1, 0, 1], [$mapa['distritos']['06-15']['faltan'], $mapa['distritos']['06-15']['leToca'], $mapa['distritos']['06-15']['atrasadas']]);
         $this->assertSame([1, 1, 0], [$mapa['distritos']['06-14']['faltan'], $mapa['distritos']['06-14']['leToca'], $mapa['distritos']['06-14']['atrasadas']]);
         $this->assertSame([$sur], $mapa['distritos']['06-15']['porVisitar']);
@@ -264,14 +288,39 @@ class MapaVentasTest extends TestCase
         $this->assertSame([2, 1], [$mapa['totales']['faltan'], $mapa['totales']['atrasadas']]);
 
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()->getContent();
-        $this->assertStringContainsString('Salas atrasadas', $html);
         $this->assertStringNotContainsString('30+ días', $html);
+        // El resumen: cuántas hay para visitar, y lleva a «A dónde ir».
+        $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))
+            ->assertSeeInOrder(['Salas para visitar', '>2<', '1 atrasada', 'y 1 por visitar', 'Ver a dónde ir'], false)
+            ->assertSeeInOrder(['A dónde ir', '2<span class="sr-only"> salas para visitar</span>'], false)
+            ->assertDontSee('Distritos sin ninguna sala')
+            ->assertDontSee('Dónde falta');
 
         // La última entrega sale de las entregas de Rutas.
         $this->assertSame('2026-11-04', $mapa['distritos']['06-14']['entrega']);
         $this->assertSame(5, $mapa['distritos']['06-14']['entregaDias']);
         $this->assertSame('2026-11-04', $mapa['departamentos']['06']['entrega']);
         $this->assertNull($mapa['distritos']['06-15']['entrega']);
+    }
+
+    /**
+     * La ficha nombra hasta 5 salas por lugar; `faltan` es el total, para decir «y N más».
+     */
+    public function test_la_ficha_nombra_cinco_salas_y_el_lugar_dice_cuantas_son(): void
+    {
+        $playa = Distrito::where('codigo', '15')->first();
+        for ($i = 1; $i <= 6; $i++) {
+            $sala = $this->sala('Sala de prueba '.$i, $this->costa, $playa);
+            // Cada 10 días hasta el 01/10: atrasada. La 6 compró un día después: es la menos atrasada.
+            foreach (['2026-09-11', '2026-09-21', $i === 6 ? '2026-10-02' : '2026-10-01'] as $fecha) {
+                $this->documento($sala, $fecha, 10);
+            }
+        }
+
+        $playa = $this->mapa()['distritos']['06-15'];
+
+        $this->assertSame([6, 6], [$playa['faltan'], $playa['atrasadas']]);
+        $this->assertSame(['Sala de prueba 1', 'Sala de prueba 2', 'Sala de prueba 3', 'Sala de prueba 4', 'Sala de prueba 5'], array_column($playa['porVisitar'], 'nombre'));
     }
 
     /** Sin 3 visitas no hay ritmo: no se la da por atrasada, se cuenta aparte. */
@@ -307,8 +356,10 @@ class MapaVentasTest extends TestCase
         $this->assertEqualsCanonicalizing([$this->oriente->id, $this->costa->id], $mapa['departamentos']['06']['rutas']);
         $this->assertSame([$this->costa->id], $mapa['departamentos']['12']['rutas']);
         $this->assertSame(['id' => $this->costa->id, 'nombre' => 'Ruta Costa'], $mapa['rutas'][0]);
-        // San Miguel no tiene salas: es un distrito sin ninguna sala.
-        $this->assertSame(1, $mapa['totales']['distritosSinSalas']);
+        // Cuántos distritos tiene cada departamento: la lista dice cuántos quedan sin salas.
+        $this->assertSame([2, 1], [$mapa['departamentos']['06']['distritos'], $mapa['departamentos']['12']['distritos']]);
+        $this->assertArrayNotHasKey('distritos', $mapa['distritos']['06-14']);
+        $this->assertArrayNotHasKey('distritosSinSalas', $mapa['totales']);
     }
 
     public function test_filtro_de_ruta(): void
@@ -326,37 +377,125 @@ class MapaVentasTest extends TestCase
         // Ni las salas que tiene la zona: Sur es de Costa, así que la zona no está vacía.
         $this->assertSame(1, $mapa['distritos']['06-15']['todas']);
         $this->assertSame(2, $mapa['departamentos']['06']['todas']);
-        $this->assertSame(1, $mapa['totales']['distritosSinSalas']);
     }
 
     /**
-     * Con una ruta elegida, un distrito con salas de otra ruta no es «con ruta y sin ninguna
-     * sala»: la lista de «Dónde falta» solo cuenta los lugares de esa ruta sin ninguna sala, y
-     * los nombra para encontrarlos sin el mapa.
+     * «Quién vendió más»: lo mismo que el mapa, en palabras. Primero los que vendieron, del que
+     * más al que menos; después los que tienen salas y nadie compró; al final los sin salas.
+     * Adentro de un departamento, sus distritos, y cuántos quedan sin salas.
      */
-    public function test_donde_falta_nombra_las_zonas_con_ruta_y_sin_salas(): void
+    public function test_la_lista_de_ventas_va_del_que_mas_vendio_al_que_menos(): void
     {
         $this->ventasDeEjemplo();
-        $admin = $this->usuario('administrador');
+        $puerto = $this->distrito($this->departamento('05', 'La Libertad'), '01', 'Distrito Puerto');
+        $this->documento($this->sala('Sala de prueba Puerto', $this->costa, $puerto), '2026-11-03', 200);
+        $this->sala('Sala de prueba Izalco', $this->oriente, $this->distrito($this->departamento('03', 'Sonsonate'), '01', 'Distrito Izalco'));
+        // Un distrito de San Salvador sin salas ni zona: no viaja en los datos, pero se cuenta.
+        $this->distrito(Departamento::where('codigo', '06')->first(), '16', 'Distrito Cerro');
 
-        // Sin filtro: San Miguel (Costa la cubre) no tiene ninguna sala.
-        $html = $this->actingAs($admin)->get(route('rutas.mapa'))->assertOk()->getContent();
-        $this->assertStringContainsString('<strong>1 distrito</strong> con zona y sin ninguna sala', $html);
-        $this->assertStringContainsString('<strong>1 departamento</strong> con zona y sin ninguna sala', $html);
-        $this->assertStringContainsString('data-zona="12-01"', $html);
-        $this->assertStringContainsString('Ver cuáles', $html);
+        $listas = app(MapaVentas::class)->listas($this->mapa());
 
-        // Con Oriente: el distrito de Sur (Costa) no está vacío y San Miguel no es de Oriente.
-        $html = $this->actingAs($admin)->get(route('rutas.mapa', ['ruta' => $this->oriente->id]))->assertOk()->getContent();
-        $this->assertStringContainsString('<strong>0 distritos</strong> de Ruta Oriente sin ninguna sala', $html);
-        $this->assertStringContainsString('Cada lugar que cubre esta zona ya tiene salas.', $html);
-        $this->assertStringNotContainsString('data-zona="06-15"', $html);
-        $this->assertStringNotContainsString('data-zona="12-01"', $html);
+        $this->assertSame(['05', '06'], $listas['pais']['ventas']['con']);
+        $this->assertSame(['03'], $listas['pais']['ventas']['cero']);
+        // San Miguel: Costa lo cubre y todavía no hay salas.
+        $this->assertSame(['12'], $listas['pais']['ventas']['sin']);
+        $this->assertSame(200.0, $listas['pais']['ventas']['maximo']);
+        $this->assertSame(['06-14'], $listas['06']['ventas']['con']);
+        $this->assertSame(['06-15'], $listas['06']['ventas']['cero']);
+        $this->assertSame(1, $listas['06']['ventas']['sinSalas']);
+        $this->assertSame([[], [], 1], [$listas['12']['ventas']['con'], $listas['12']['ventas']['cero'], $listas['12']['ventas']['sinSalas']]);
 
-        // Con Costa: San Miguel sí.
-        $html = $this->actingAs($admin)->get(route('rutas.mapa', ['ruta' => $this->costa->id]))->assertOk()->getContent();
-        $this->assertStringContainsString('<strong>1 distrito</strong> de Ruta Costa sin ninguna sala', $html);
-        $this->assertStringContainsString('data-zona="12-01"', $html);
+        $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()
+            ->assertSeeInOrder(['Quién vendió más', 'La Libertad', '$200.00', '1 sala · compró', 'San Salvador', '$90.00', '2 salas · compró 1',
+                'Tienen salas y este mes nadie compró', 'Sonsonate', '1 sala', 'Sin salas', 'San Miguel', 'todavía no vendemos acá'])
+            ->assertSeeInOrder(['Distritos de San Salvador', 'Distrito Centro', '$90.00', 'Tienen salas y este mes nadie compró', 'Distrito Playa',
+                'El otro distrito de San Salvador no tiene salas.'])
+            ->assertSeeInOrder(['Lugar', 'Vendido', 'Cambio', 'Salas', 'Compraron', 'Atrasadas', 'Por visitar', 'Zonas', 'Última entrega']);
+    }
+
+    /**
+     * Con una zona elegida, el mapa apaga lo que esa zona no cubre (`fuera`): un lugar donde la
+     * zona no pasa y no tiene salas ni ventas suyas. Las listas no lo cuentan como «sin salas».
+     */
+    public function test_con_una_zona_elegida_lo_que_no_cubre_queda_fuera(): void
+    {
+        $this->ventasDeEjemplo();
+        $puerto = $this->distrito($this->departamento('05', 'La Libertad'), '01', 'Distrito Puerto');
+        $this->documento($this->sala('Sala de prueba Puerto', $this->costa, $puerto), '2026-11-03', 200);
+        $servicio = app(MapaVentas::class);
+
+        // Sin zona elegida nada queda fuera.
+        $todas = $this->mapa();
+        $this->assertSame([false, false, false], [$todas['departamentos']['05']['fuera'], $todas['departamentos']['12']['fuera'], $todas['distritos']['06-15']['fuera']]);
+
+        // Oriente: La Libertad y San Miguel son de Costa; el distrito de Sur, también.
+        $oriente = $this->mapa(ruta: $this->oriente->id);
+        $this->assertSame([false, true, true], [$oriente['departamentos']['06']['fuera'], $oriente['departamentos']['05']['fuera'], $oriente['departamentos']['12']['fuera']]);
+        $this->assertSame([false, true], [$oriente['distritos']['06-14']['fuera'], $oriente['distritos']['06-15']['fuera']]);
+        $listas = $servicio->listas($oriente);
+        $this->assertSame([['06'], [], []], [$listas['pais']['ventas']['con'], $listas['pais']['ventas']['cero'], $listas['pais']['ventas']['sin']]);
+        $this->assertSame(0, $listas['06']['ventas']['sinSalas']);
+
+        // Costa: San Miguel no queda fuera (lo cubre) y sigue sin salas; San Salvador tiene a Sur, que no compró.
+        $costa = $this->mapa(ruta: $this->costa->id);
+        $this->assertFalse($costa['departamentos']['12']['fuera']);
+        $listas = $servicio->listas($costa);
+        $this->assertSame([['05'], ['06'], ['12']], [$listas['pais']['ventas']['con'], $listas['pais']['ventas']['cero'], $listas['pais']['ventas']['sin']]);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa', ['ruta' => $this->costa->id]))->assertOk()
+            ->assertSeeInOrder(['Quién vendió más', 'La Libertad', 'Tienen salas y este mes nadie compró', 'San Salvador', 'Sin salas', 'San Miguel', 'sin salas de esta zona'])
+            ->assertSee('"fuera":false', false);
+        $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa', ['ruta' => $this->oriente->id]))->assertOk()
+            ->assertSee('"fuera":true', false);
+    }
+
+    /**
+     * «A dónde ir primero»: por urgencia. Primero donde hay más salas atrasadas; a igual
+     * cantidad, donde hay más por visitar; después, por nombre. Los lugares al día no se listan.
+     */
+    public function test_a_donde_ir_va_por_urgencia(): void
+    {
+        $distrito = fn (string $dep, string $nombre) => $this->distrito($this->departamento($dep, $nombre), '01', 'Distrito de '.$nombre);
+        $sonsonate = $distrito('03', 'Sonsonate');
+        $libertad = $distrito('05', 'La Libertad');
+        $santaAna = $distrito('02', 'Santa Ana');
+        $sanMiguel = Distrito::where('nombre', 'Distrito Oriente')->first();
+        $this->atrasada('Sala de prueba A', $this->oriente, $sonsonate);
+        $this->atrasada('Sala de prueba B', $this->oriente, $sonsonate);
+        $this->atrasada('Sala de prueba C', $this->oriente, $libertad);
+        $this->porVisitar('Sala de prueba D', $this->costa, $libertad);
+        $this->atrasada('Sala de prueba E', $this->costa, Distrito::where('nombre', 'Distrito Playa')->first());
+        $this->atrasada('Sala de prueba F', $this->oriente, $santaAna);
+        $this->porVisitar('Sala de prueba G', $this->costa, $sanMiguel);
+        $this->porVisitar('Sala de prueba H', $this->costa, $sanMiguel);
+        // Ahuachapán: una sala sin ritmo todavía. No está atrasada ni por visitar.
+        $this->sala('Sala de prueba I', $this->oriente, $distrito('01', 'Ahuachapán'));
+
+        $listas = app(MapaVentas::class)->listas($this->mapa());
+
+        // Sonsonate (2 atrasadas), La Libertad (1 y 1 por visitar), San Salvador y Santa Ana (1), San Miguel (2 por visitar).
+        $this->assertSame(['03', '05', '06', '02', '12'], $listas['pais']['ir']['con']);
+        $this->assertSame(1, $listas['pais']['ir']['alDia']);
+        // Adentro de San Salvador: Playa (la atrasada); Centro, con Norte sin ritmo, está al día.
+        $this->assertSame([['06-15'], 1], [$listas['06']['ir']['con'], $listas['06']['ir']['alDia']]);
+
+        $this->actingAs($this->usuario('jefe_vendedores'))->get(route('rutas.mapa'))->assertOk()
+            ->assertSeeInOrder(['A dónde ir primero', 'Sonsonate', 'Atrasada', '2 salas atrasadas', 'Zona Ruta Oriente',
+                'La Libertad', 'Atrasada', '1 sala atrasada y 1 por visitar', 'Zonas Ruta Costa y Ruta Oriente',
+                'San Salvador', '1 sala atrasada', 'Santa Ana', '1 sala atrasada',
+                'San Miguel', 'Por visitar', '2 salas por visitar', 'Zona Ruta Costa',
+                'El otro departamento con salas está al día.'])
+            ->assertSeeInOrder(['A dónde ir en San Salvador', 'Distrito Playa', 'Atrasada', '1 sala atrasada', 'El otro distrito con salas está al día.']);
+    }
+
+    public function test_sin_salas_atrasadas_ni_por_visitar_la_lista_lo_dice(): void
+    {
+        $listas = app(MapaVentas::class)->listas($this->mapa());
+
+        $this->assertSame([[], 1], [$listas['pais']['ir']['con'], $listas['pais']['ir']['alDia']]);
+        $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()
+            ->assertSeeInOrder(['Salas para visitar', '>0<', 'Ninguna atrasada ni por visitar'], false)
+            ->assertSeeInOrder(['A dónde ir primero', 'Ninguna sala atrasada ni por visitar', 'Todos los departamentos con salas están al día.']);
     }
 
     /** Como en PropuestaRutas: el distrito con cobertura propia es de su ruta, no de la del departamento. */
@@ -420,16 +559,18 @@ class MapaVentasTest extends TestCase
         $this->assertSame('2026-11-04', $this->mapa()['distritos']['06-14']['entrega']);
 
         $html = $this->actingAs($admin)->get(route('rutas.mapa', ['mes' => '2026-10']))->assertOk()->getContent();
-        $this->assertStringContainsString('contados al 31/10, el cierre del mes', $html);
+        $this->assertStringContainsString('Contadas al 31/10, el cierre del mes', $html);
         $this->assertStringContainsString('se cuentan al 31/10, el cierre del mes', $html);
         $this->assertStringContainsString('21/10/2026', $html);
-        $this->assertStringContainsString('vs. septiembre', $html);
+        $this->assertStringContainsString('frente a septiembre', $html);
+        $this->assertStringContainsString('Vendido en octubre', $html);
         $this->assertStringContainsString('"corte":"31\/10"', $html);
 
         // El mes en curso compara contra el mismo tramo, y lo dice también en la tabla.
         $html = $this->actingAs($admin)->get(route('rutas.mapa'))->assertOk()->getContent();
-        $this->assertStringContainsString('vs. 1 al 9 de octubre', $html);
-        $this->assertStringNotContainsString('vs. mes anterior', $html);
+        $this->assertStringContainsString('frente al 1 al 9 de octubre', $html);
+        $this->assertStringContainsString('Vendido en noviembre', $html);
+        $this->assertStringNotContainsString('frente al mes anterior', $html);
         $this->assertStringContainsString('"corte":null', $html);
         $this->assertStringNotContainsString('el cierre del mes', $html);
     }
@@ -451,7 +592,7 @@ class MapaVentasTest extends TestCase
             $this->documento($this->sur, $fecha, 10);
         }
         $mapa = $this->mapa('2026-10');
-        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'estado' => Ritmo::ATRASADA, 'dias' => 30, 'faltan' => -20]], $mapa['distritos']['06-15']['porVisitar']);
+        $this->assertSame([['nombre' => 'Sala de prueba Sur', 'lugar' => 'Distrito Playa', 'estado' => Ritmo::ATRASADA, 'dias' => 30, 'faltan' => -20]], $mapa['distritos']['06-15']['porVisitar']);
         $this->assertSame(1, $mapa['distritos']['06-15']['atrasadas']);
     }
 

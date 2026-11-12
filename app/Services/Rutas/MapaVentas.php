@@ -13,16 +13,16 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * El mapa de ventas por zona del tablero de Rutas (paso 1, aprobado por Melqui el
- * 09/11/2026): por departamento y por distrito, lo vendido en el mes, cuántas salas hay,
- * cuántas compraron, a cuántas les toca visita o están atrasadas, la última entrega y qué
- * rutas pasan. Nada se inventa acá:
+ * El mapa de ventas del tablero de Rutas (paso 1, aprobado por Melqui el 09/11/2026; la
+ * segunda versión, con dos vistas y la lista al lado, el 11/11/2026): por departamento y por
+ * distrito, lo vendido en el mes, cuántas salas hay, cuántas compraron, cuántas están
+ * atrasadas o por visitar, la última entrega y qué zonas pasan. Nada se inventa acá:
  *
  *  · Ventas: {@see VentasRutas::porSala()}, las reglas de la pantalla de Ventas. Solo
  *    nacional, sin IVA, sin invalidados, y la NC en el mes del documento que corrige.
- *  · Dónde falta: el estado de cada sala por su RITMO ({@see RitmoPedidos}, el del tablero)
- *    al último día del tramo: «le toca» si llegó su fecha y «atrasada» si pasó con margen
- *    ({@see Ritmo::estado()}). Se cuenta desde su última visita: el último pedido o CCF del
+ *  · A dónde ir: el estado de cada sala por su RITMO ({@see RitmoPedidos}, el del tablero)
+ *    al último día del tramo: «por visitar» (`leToca`) si llegó su fecha y «atrasada» si pasó
+ *    con margen ({@see Ritmo::estado()}). Se cuenta desde su última visita: el último pedido o CCF del
  *    ritmo, el último CCF o la última entrega, la más nueva. Sin 3 visitas no hay ritmo: la
  *    sala se cuenta aparte, sin darla por atrasada.
  *  · Última entrega: {@see EntregasCcf::ultimaVisitaPorSala()}, la de las entregas de Rutas,
@@ -35,8 +35,11 @@ use Illuminate\Support\Str;
  * pasado se compara con el mes anterior completo. Una sala cuenta en el mes si ya existía
  * (o si compró en él). Las salas sin distrito cargado no tienen lugar en el mapa: se cuentan
  * aparte. Con una ruta elegida, cada zona dice también cuántas salas tiene en total
- * (`todas`), para no tomar por vacía una zona que atiende otra ruta. Todo sale de unas pocas
- * consultas agregadas, sin importar cuántas salas, zonas o rutas haya.
+ * (`todas`), para no tomar por vacía una zona que atiende otra ruta, y si queda `fuera`: la
+ * ruta no pasa por ahí y no tiene salas ni ventas suyas (el mapa la apaga). Todo sale de unas
+ * pocas consultas agregadas, sin importar cuántas salas, zonas o rutas haya.
+ *
+ * {@see listas()} dice lo mismo en palabras y ya ordenado: quién vendió más y a dónde ir primero.
  */
 class MapaVentas
 {
@@ -76,9 +79,9 @@ class MapaVentas
     /**
      * @param  string  $mes  'Y-m', ya validado
      * @return array{
-     *     mes: string, hoy: string, enCurso: bool,
+     *     mes: string, hoy: string, enCurso: bool, ruta: ?int,
      *     periodo: array{desde: string, hasta: string, anteriorDesde: string, anteriorHasta: string},
-     *     totales: array{ventas: float, anterior: float, salas: int, compraron: int, faltan: int, atrasadas: int, distritosSinSalas: int},
+     *     totales: array{ventas: float, anterior: float, salas: int, compraron: int, faltan: int, atrasadas: int},
      *     sinUbicacion: array{salas: int, ventas: float, sinSala: float},
      *     rutas: array<int, array{id: int, nombre: string}>,
      *     departamentos: array<string, array>,
@@ -135,7 +138,8 @@ class MapaVentas
 
         $zonasDep = [];
         foreach ($departamentos as $d) {
-            $zonasDep[$d->codigo] = self::zona($d->nombre, $d->codigo);
+            // `distritos`: cuántos tiene, para decir cuántos quedan sin salas.
+            $zonasDep[$d->codigo] = self::zona($d->nombre, $d->codigo) + ['distritos' => 0];
         }
         $zonasDis = [];
         $claveDistrito = [];
@@ -143,6 +147,9 @@ class MapaVentas
             $claveDistrito[$d->id] = self::clave($d->departamento, $d->codigo);
             if ($claveDistrito[$d->id] !== null) {
                 $zonasDis[$claveDistrito[$d->id]] = self::zona($d->nombre, $d->departamento);
+                if (isset($zonasDep[$d->departamento])) {
+                    $zonasDep[$d->departamento]['distritos']++;
+                }
             }
         }
 
@@ -188,7 +195,7 @@ class MapaVentas
         // siempre; como sala solo cuenta la activa que ya existía en el tramo o la que compró
         // en él: una que se desactivó no es una sala «sin compra», y una dada de alta después
         // no estaba. Cuándo se desactivó una sala no queda guardado: para eso vale cómo está hoy.
-        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'faltan' => 0, 'atrasadas' => 0, 'distritosSinSalas' => 0];
+        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'faltan' => 0, 'atrasadas' => 0];
         $sinUbicacion = ['salas' => 0, 'ventas' => 0.0];
         foreach ($salas as $sala) {
             $venta = $ventas[$sala->id] ?? ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
@@ -221,6 +228,8 @@ class MapaVentas
 
             $fila = [
                 'nombre' => $sala->nombre,
+                // Su distrito: la ficha del departamento dice dónde queda cada sala por visitar.
+                'lugar' => $ubicada ? $zonasDis[$dis]['nombre'] : null,
                 'cuenta' => $cuenta,
                 'dias' => $dias,
                 'actual' => $venta['actual'],
@@ -248,15 +257,14 @@ class MapaVentas
             self::sumar($zonasDis[$dis], $fila);
             self::sumar($zonasDep[$sala->departamento], $fila);
         }
-        // Del país entero, sin el filtro de ruta: como la tarjeta lo dice.
-        $totales['distritosSinSalas'] = count($claveDistrito) - count(array_filter($zonasDis, fn (array $z) => $z['todas'] > 0));
 
-        $cerrar = fn (array $zona) => self::cerrar($zona, $rutas->pluck('id')->all(), $hasta);
+        $cerrar = fn (array $zona) => self::cerrar($zona, $rutas->pluck('id')->all(), $hasta, $rutaId);
 
         return [
             'mes' => $desde->format('Y-m'),
             'hoy' => $hoy->toDateString(),
             'enCurso' => $enCurso,
+            'ruta' => $rutaId,
             'periodo' => [
                 'desde' => $desde->toDateString(),
                 'hasta' => $hasta->toDateString(),
@@ -300,18 +308,20 @@ class MapaVentas
             $zona['entrega'] = $fila['entrega'];
         }
         if (in_array($fila['estado'], [Ritmo::PRONTO, Ritmo::ATRASADA], true)) {
-            $zona['lista'][] = ['nombre' => $fila['nombre'], 'estado' => $fila['estado'], 'dias' => $fila['dias'], 'faltan' => $fila['faltan']];
+            $zona['lista'][] = ['nombre' => $fila['nombre'], 'lugar' => $fila['lugar'], 'estado' => $fila['estado'], 'dias' => $fila['dias'], 'faltan' => $fila['faltan']];
         }
     }
 
     /**
      * Redondea, ordena las rutas como la lista de rutas y deja las 5 salas que toca visitar:
-     * las atrasadas primero y, en cada grupo, la que más pasó de su fecha.
+     * las atrasadas primero y, en cada grupo, la que más pasó de su fecha (`faltan` dice
+     * cuántas son en total, para el «y N más» de la ficha). Con una ruta elegida, marca lo
+     * que queda `fuera` de ella.
      *
      * @param  array<int, int>  $orden  ids de las rutas activas, por nombre
      * @param  Carbon  $hasta  el último día del tramo, el mismo de los días sin compra
      */
-    private static function cerrar(array $zona, array $orden, Carbon $hasta): array
+    private static function cerrar(array $zona, array $orden, Carbon $hasta, ?int $rutaId): array
     {
         $lista = $zona['lista'];
         usort($lista, fn ($a, $b) => ($b['estado'] === Ritmo::ATRASADA) <=> ($a['estado'] === Ritmo::ATRASADA)
@@ -326,6 +336,76 @@ class MapaVentas
             'rutas' => array_values(array_filter($orden, fn (int $id) => isset($zona['rutas'][$id]))),
             'faltan' => $zona['leToca'] + $zona['atrasadas'],
             'porVisitar' => array_slice($lista, 0, self::POR_VISITAR),
+            'fuera' => $rutaId !== null && ! isset($zona['rutas'][$rutaId]) && $zona['salas'] === 0
+                && round($zona['ventas'], 2) == 0 && round($zona['anterior'], 2) == 0,
         ]);
+    }
+
+    /**
+     * Lo mismo que el mapa, en palabras y ya ordenado: el país por departamento (`pais`) y
+     * cada departamento por distrito (con su código). De cada uno, dos listas:
+     *
+     *  · `ventas`: `con`, los que vendieron, del que más al que menos; `cero`, los que tienen
+     *    salas y nadie compró; `sin`, los que no tienen salas, y `sinSalas`, cuántos son: de
+     *    los distritos también cuentan los que no viajan en los datos. `maximo` es lo que
+     *    vendió el primero, para la barra de cada renglón.
+     *  · `ir`: `con`, donde hay salas atrasadas o por visitar, por urgencia: primero donde
+     *    hay más atrasadas; a igual cantidad, donde hay más por visitar; después, por nombre.
+     *    `alDia`: cuántos lugares con salas no tienen ninguna pendiente.
+     *
+     * Con una zona elegida, lo que queda `fuera` de ella no es «sin salas»: no se lista.
+     *
+     * @param  array  $datos  lo que devuelve {@see calcular()}
+     * @return array<int|string, array{nombre: ?string, ventas: array{con: array<int, string>, cero: array<int, string>, sin: array<int, string>, sinSalas: int, maximo: float}, ir: array{con: array<int, string>, alDia: int}}>
+     */
+    public function listas(array $datos): array
+    {
+        $porDepartamento = [];
+        foreach ($datos['distritos'] as $clave => $zona) {
+            $porDepartamento[$zona['dep']][$clave] = $zona;
+        }
+
+        $listas = ['pais' => self::lista(null, $datos['departamentos'], 0)];
+        foreach ($datos['departamentos'] as $codigo => $departamento) {
+            $suyos = $porDepartamento[$codigo] ?? [];
+            // Sin zona elegida, los distritos que no viajan en los datos tampoco tienen salas.
+            $ocultos = $datos['ruta'] === null ? $departamento['distritos'] - count($suyos) : 0;
+            $listas[$codigo] = self::lista($departamento['nombre'], $suyos, $ocultos);
+        }
+
+        return $listas;
+    }
+
+    /**
+     * @param  array<int|string, array>  $lugares  código => lugar
+     * @param  int  $ocultos  lugares sin salas que no vienen en `$lugares`
+     */
+    private static function lista(?string $nombre, array $lugares, int $ocultos): array
+    {
+        // Los códigos van como texto: PHP guarda «12» como número y «06» no.
+        $claves = function (callable $filtro, ?callable $orden = null) use ($lugares): array {
+            $claves = array_keys(array_filter($lugares, $filtro));
+            usort($claves, fn ($a, $b) => ($orden ? $orden($lugares[$a], $lugares[$b]) : 0)
+                ?: strcmp(Str::ascii($lugares[$a]['nombre']), Str::ascii($lugares[$b]['nombre'])));
+
+            return array_map('strval', $claves);
+        };
+        $con = $claves(fn (array $z) => $z['ventas'] > 0, fn (array $a, array $b) => [$b['ventas'], $b['salas']] <=> [$a['ventas'], $a['salas']]);
+        $sin = $claves(fn (array $z) => $z['salas'] === 0 && $z['ventas'] <= 0 && ! $z['fuera']);
+
+        return [
+            'nombre' => $nombre,
+            'ventas' => [
+                'con' => $con,
+                'cero' => $claves(fn (array $z) => $z['salas'] > 0 && $z['ventas'] <= 0, fn (array $a, array $b) => $b['salas'] <=> $a['salas']),
+                'sin' => $sin,
+                'sinSalas' => count($sin) + $ocultos,
+                'maximo' => $con === [] ? 0.0 : (float) $lugares[$con[0]]['ventas'],
+            ],
+            'ir' => [
+                'con' => $claves(fn (array $z) => $z['faltan'] > 0, fn (array $a, array $b) => [$b['atrasadas'], $b['leToca']] <=> [$a['atrasadas'], $a['leToca']]),
+                'alDia' => count(array_filter($lugares, fn (array $z) => $z['salas'] > 0 && $z['faltan'] === 0)),
+            ],
+        ];
     }
 }

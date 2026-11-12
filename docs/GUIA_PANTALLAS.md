@@ -166,7 +166,8 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 
 De la revisión del 11/11/2026. En todo Rutas, y en Fábrica y Facturación cuando nombran lo mismo:
 
-- **Zona** es lo que antes se llamaba ruta (el catálogo). Sin zona se dice «Sin zona». En el mapa, el departamento o distrito es el **lugar**, y el selector se llama «Ver por».
+- **Zona** es lo que antes se llamaba ruta (el catálogo). Sin zona se dice «Sin zona». En el mapa, el departamento o distrito es el **lugar**. No hay selector de nivel: tocar un departamento entra a sus distritos y «‹ Todo el país» vuelve.
+- Una sala está **atrasada** (ya pasó su fecha de visita) o **por visitar** (le toca en estos días). No se dice «le toca» ni «dónde falta»: la vista se llama «A dónde ir».
 - **Viaje** es lo que antes se llamaba salida. El enlace dice «Ver viaje». «Salida» queda solo para las armadas a mano de antes del 10/11/2026.
 - El viaje está **Abierto** o **Cerrado** (o Cancelado). No se mezcla con «en curso», «finalizada» ni «en camino». Sale de `SalidaRuta::estadoLegible()`.
 - **Sugerido** es solo la hoja que firma el gerente de la sala. La pantalla del celular se llama «Pedido de <sala>».
@@ -174,10 +175,16 @@ De la revisión del 11/11/2026. En todo Rutas, y en Fábrica y Facturación cuan
 
 ### Mapas y gráficos
 
-Tomado del mapa de ventas de Rutas (09/11/2026).
+Tomado del mapa de ventas de Rutas (09/11/2026; segunda versión del 11/11/2026, aprobada por Melqui sobre una maqueta).
 
 - Los colores propios del dibujo (rampas, rayado, leyenda) van como variables en un bloque `<style>` de la vista, con sus tonos para la clase `dark` de `<html>`. Lo demás (cajas, textos, botones) usa las clases de siempre.
-- Siempre con leyenda y con una tabla de los mismos datos, que sirve sin el dibujo y con lector de pantalla.
+- **El color dice lo mismo en claro y en oscuro:** el que más tiene es el tono más fuerte en los dos temas. El cero va en gris, con su rótulo («$0 este mes»); donde no hay datos, rayado («Sin salas»). Ningún color del dibujo es igual al fondo, y los bordes entre lugares se ven.
+- Cuando el color es un estado y no una cantidad, pocos colores con nombre (rojo: hay salas atrasadas; amarillo: solo por visitar; gris: al día), nunca una escala que haya que descifrar. El número va escrito encima.
+- **Las cifras van sobre el dibujo** (nombre y monto corto), sin encimarse: si no entra el nombre, queda la cifra; lo que no entra está en la lista.
+- **Al lado del dibujo (abajo en el celular), una lista que dice lo mismo en palabras**, ya ordenada («1. La Libertad · $1,548.75 · 26 salas · compraron 10»). La tabla completa queda plegada debajo, con encabezados cortos: sirve sin el dibujo y con lector de pantalla. Como la lista ya hace de tarjetas, esa tabla no se cambia por tarjetas en el celular.
+- La leyenda va debajo del dibujo, no encima: no tapa el mapa.
+- **En el celular el dibujo no atrapa el dedo:** sin `touch-action: none` ni arrastre; deslizar sobre el mapa mueve la página. Para ver el detalle se toca un lugar y el mapa se acerca solo.
+- Pocos controles: la vista, el mes y la zona. No se agrega un selector si tocar el dibujo alcanza.
 - Las librerías van como archivo en `public/vendor/<nombre>/` con su licencia, no por CDN: así andan en contingencia y sin internet.
 
 ### Fichas y detalles
