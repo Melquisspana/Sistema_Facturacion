@@ -52,6 +52,7 @@ final class PrepararPlanilla
         private PrestacionAnual $prestaciones,
         private AcumuladoRenta $acumulados,
         private SaldosGastos $saldos,
+        private RegistrarAnticipo $anticipos,
     ) {}
 
     /**
@@ -737,7 +738,7 @@ final class PrepararPlanilla
      */
     public function avisosParaConfirmar(Planilla $planilla, bool $verImportes): array
     {
-        $avisos = [];
+        $avisos = $this->pendientesDeRevisar($planilla, $verImportes);
         $regular = $planilla->clase === 'regular';
 
         foreach ($this->cruces($planilla) as $cruce) {
@@ -747,7 +748,7 @@ final class PrepararPlanilla
         }
 
         if ($this->prestaciones->es($planilla->clase)) {
-            return $this->avisosDePrestacion($planilla, $verImportes);
+            return array_merge($avisos, $this->avisosDePrestacion($planilla, $verImportes));
         }
 
         if (! $this->descuentos->aplicaA($planilla)) {
@@ -784,6 +785,45 @@ final class PrepararPlanilla
         }
 
         return $avisos;
+    }
+
+    /**
+     * Lo que pide pasar por «Preparar» antes de confirmar, persona por persona. Con algo
+     * de esto, {@see GenerarPlanilla} no confirma en un paso: deja el borrador.
+     *
+     * UN ANTICIPO CON SALDO. Generar pone a cada quien con su sueldo y sin descuentos, y el
+     * anticipo solo se descuenta eligiéndolo en la línea. Sin este freno, quien tenía un
+     * anticipo cobraba la quincena entera y el anticipo quedaba «por recuperar» para
+     * siempre. Cuenta solo lo que esta planilla puede descontar: de esa persona, en su
+     * moneda y de un pago vigente ({@see motivoContraAnticipo()}).
+     *
+     * @return array<int, string>
+     */
+    public function pendientesDeRevisar(Planilla $planilla, bool $verImportes): array
+    {
+        $pendientes = [];
+
+        foreach ($planilla->detalles as $detalle) {
+            $empleado = $detalle->empleado;
+
+            if ($empleado === null) {
+                continue;
+            }
+
+            // Con el descuento ya puesto en la línea no queda nada que avisar.
+            $yaDescuenta = $detalle->conceptos->contains(fn (PlanillaConcepto $c) => $c->destino === 'anticipo' && $c->planilla_anticipo_id !== null);
+            $saldo = $yaDescuenta ? 0 : $this->anticipos->disponibles($empleado)
+                ->filter(fn (PlanillaAnticipo $a) => $this->motivoContraAnticipo($a, (int) $empleado->id, $planilla->moneda) === null)
+                ->sum(fn (PlanillaAnticipo $a) => $a->pendiente());
+
+            if ($saldo > 0) {
+                // El importe solo lo ve quien ve importes.
+                $pendientes[] = $detalle->nombre_snapshot.': tiene un anticipo por descontar'
+                    .($verImportes ? ' de '.$planilla->moneda.' '.Dinero::mostrar($saldo) : '').'.';
+            }
+        }
+
+        return $pendientes;
     }
 
     /** @return array<int, string> */

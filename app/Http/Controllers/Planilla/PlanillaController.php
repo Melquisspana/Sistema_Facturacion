@@ -116,6 +116,13 @@ class PlanillaController extends Controller
     {
         $planilla = $generar->generar($request->user(), $request->only(self::DATOS_DEL_PERIODO));
 
+        // Con algo que revisar no se confirmó: se termina en «Preparar».
+        if ($planilla->borrador()) {
+            return redirect()->route('planilla.preparar', $planilla)->with('planilla.aviso',
+                ($planilla->esIndividual() ? 'El pago' : 'La planilla '.$planilla->periodo)
+                .' quedó en borrador. Mirá los avisos de abajo, poné los descuentos o corregí los importes, y generá desde acá.');
+        }
+
         if ($planilla->esIndividual()) {
             return $this->alRecibo($planilla);
         }

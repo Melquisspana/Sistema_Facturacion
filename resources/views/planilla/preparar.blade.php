@@ -72,7 +72,7 @@
             @endif
 
             <p class="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-                <strong>Esto es un borrador y no debe nada.</strong> Quedó de antes: revisalo y generalo.
+                <strong>Esto es un borrador y no debe nada.</strong> Revisalo y generalo.
                 Al generar queda lo que se le debe a cada persona, y sale la hoja para firmar.
             </p>
 
