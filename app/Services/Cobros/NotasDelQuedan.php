@@ -11,6 +11,7 @@ use App\Models\Dte;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\Exportadores\ExportadorNc;
 use App\Services\Ppq\NcExportacionService;
+use App\Support\Albaran;
 use Illuminate\Support\Collection;
 
 /**
@@ -239,7 +240,7 @@ class NotasDelQuedan
         }
         if ($nc->albaran === null) {
             $faltan[] = 'su albarán propio de crédito (AC02/AC04)';
-        } elseif (! in_array(strtoupper(trim((string) $nc->albaran->tipo_codigo)), ['AC02', 'AC04'], true)) {
+        } elseif (! Albaran::esDeCredito($nc->albaran->tipo_codigo)) {
             $faltan[] = 'un tipo de albarán de crédito AC02 o AC04';
         }
         if ($exportador === null || $perfil === null) {

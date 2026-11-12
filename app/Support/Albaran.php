@@ -10,6 +10,20 @@ use Carbon\Carbon;
 class Albaran
 {
     /**
+     * Tipos de albarán de CRÉDITO: los que respaldan una nota de crédito. AC02 es la
+     * avería y AC04 la devolución; AC06 no se usa. Es la única lista: la consultan el
+     * quedan del lote PPQ y la preparación de notas en Cobros, para que una nota no
+     * pase por un circuito y se trabe en el otro.
+     */
+    public const TIPOS_DE_CREDITO = ['AC02', 'AC04'];
+
+    /** ¿Ese código es de un albarán de crédito? Tolera minúsculas y espacios. */
+    public static function esDeCredito(?string $tipo): bool
+    {
+        return in_array(strtoupper(trim((string) $tipo)), self::TIPOS_DE_CREDITO, true);
+    }
+
+    /**
      * Normaliza una fecha de albarán a "Y-m-d" interpretándola como salvadoreña
      * (día/mes/año). `Carbon::parse("09/06/2026")` asume formato americano (m/d) y
      * devolvería septiembre; aquí forzamos d/m/Y|d/m/y y solo caemos a parse libre

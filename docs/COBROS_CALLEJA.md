@@ -291,6 +291,7 @@ Estas reglas estaban repartidas en las revisiones fechadas de septiembre de 2026
 
 ### Importes: CCF, albarán y nota de crédito
 
+- Los albaranes de crédito válidos son AC02 (avería) y AC04 (devolución), en PPQ y en Cobros por igual; AC06 no se usa. La lista es una sola: `App\Support\Albaran::TIPOS_DE_CREDITO`.
 - El CCF se compara con su albarán de entrega; la nota, con su propio albarán de crédito. El total fiscal de la nota puede diferir del albarán por descuento o retención: no se ajustan importes para que coincidan.
 - El descuento de la nota por modalidad lo define el perfil documental del cliente (por ejemplo: avería AC02 hereda el del CCF; devolución AC04 va sin descuento). Sin perfil activo queda una regla histórica que hereda también en AC04: hay que revisar el perfil del ambiente antes de atribuirle un importe al código.
 - En PPQ la diferencia de una nota lleva el mismo signo que sus montos; sin monto de albarán queda vacía.
