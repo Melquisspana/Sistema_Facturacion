@@ -168,4 +168,10 @@ class ConsultasTableroRutasTest extends TestCase
     {
         $this->noCreceConLosDatos('rutas.viajes', 19);
     }
+
+    public function test_por_entregar_del_vendedor_no_pide_nada_de_a_uno(): void
+    {
+        // «Todas»: los CCF de todos los viajes, cada uno con el viaje en el que va.
+        $this->noCreceConLosDatos('rutas.por-entregar.index', 24, fn () => $this->vendedores[0], ['ver' => 'todas']);
+    }
 }
