@@ -295,8 +295,14 @@ class AguinaldoUnaVezPorAnioTest extends TestCase
             'tipo_periodo' => 'quincenal', 'fecha' => '2026-10-01', 'clase' => 'regular', 'moneda' => 'USD', 'fecha_pago' => '',
         ]);
 
+        // Confirmar bloquea las fichas de SUS personas, por id, para que dos pagos de la misma
+        // persona en el mes no se pasen del tope del ISSS. Nunca la tabla entera, como el aguinaldo.
         $conCandado = array_filter($consultas->getArrayCopy(),
             fn (array $c) => $this->nombra($c['sql'], 'planilla_empleados') && str_contains($c['sql'], 'for update'));
-        $this->assertSame([], $conCandado);
+        $this->assertNotSame([], $conCandado);
+
+        foreach ($conCandado as $consulta) {
+            $this->assertMatchesRegularExpression('/where [`"]planilla_empleados[`"]\.[`"]id[`"] in \(/', $consulta['sql']);
+        }
     }
 }

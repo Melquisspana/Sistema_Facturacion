@@ -7,6 +7,7 @@ use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaDetalle;
+use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
@@ -73,14 +74,24 @@ final class ConfirmarPlanilla
         abort_unless($usuario->activo && $usuario->can('planilla.gestionar'), 403);
         abort_unless($usuario->can('planilla.salarios'), 403);
 
+        // Quiénes están en la planilla, leído antes de abrir la transacción: adentro, lo
+        // primero tiene que ser el candado.
+        $personas = PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->all();
+
         try {
-            return DB::transaction(function () use ($usuario, $planilla) {
+            return DB::transaction(function () use ($usuario, $planilla, $personas) {
                 // Un aguinaldo se confirma con las fichas bloqueadas, y antes de leer nada:
                 // así la revisión de «ya cobró el aguinaldo del año» ve el que otra pantalla
                 // acaba de confirmar. Primero las fichas y después la planilla, el mismo
                 // orden que al generarlo. La clase de una planilla no cambia: vale la que trae.
+                //
+                // Las demás, con las fichas de SUS personas, por id: dos pagos de la misma
+                // persona en el mismo mes (una quincena y unas vacaciones) se confirman de a
+                // uno, y el segundo ve lo que cotizó el primero (tope mensual del ISSS).
                 if ($planilla->clase === 'aguinaldo') {
                     $this->preparar->bloquearPersonasDelAguinaldo();
+                } else {
+                    $this->bloquearFichas($personas);
                 }
 
                 $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
@@ -97,7 +108,16 @@ final class ConfirmarPlanilla
                     ]);
                 }
 
-                $planilla->load('detalles.conceptos');
+                $planilla->load('detalles.conceptos', 'detalles.empleado');
+
+                // Alguien agregado a la planilla entre la lectura de arriba y el candado.
+                if ($planilla->clase !== 'aguinaldo') {
+                    $this->bloquearFichas(array_diff($planilla->detalles->pluck('planilla_empleado_id')->all(), $personas));
+                }
+
+                // Lo cotizado en el mes pudo cambiar desde que se guardó el borrador.
+                $this->preparar->actualizarDescuentosDeLey($usuario, $planilla);
+                $planilla->load('detalles.conceptos', 'detalles.empleado');
 
                 if ($reparos = $this->preparar->reparosParaConfirmar($planilla)) {
                     throw ValidationException::withMessages(['reparos' => $reparos]);
@@ -151,6 +171,14 @@ final class ConfirmarPlanilla
             }
 
             throw $e;
+        }
+    }
+
+    /** @param  array<int, int|string>  $ids */
+    private function bloquearFichas(array $ids): void
+    {
+        if ($ids !== []) {
+            PlanillaEmpleado::whereKey(array_values($ids))->orderBy('id')->lockForUpdate()->get(['id']);
         }
     }
 

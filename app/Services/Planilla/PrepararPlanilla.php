@@ -830,9 +830,12 @@ final class PrepararPlanilla
      * en que llevó descuentos de ley, sin esta. El mes de una quincena o una mensual es el
      * de sus fechas; el de un pago individual (vacaciones), el de su fecha de pago.
      *
+     * `$bloquear`, al confirmar: lecturas con candado compartido, que en MySQL ven lo último
+     * confirmado aunque la transacción ya haya leído antes (al generar en un paso).
+     *
      * @return array{pagos: int, previos: array<int, array{base: int, pagos: int}>, cotizado: array<string, int>}
      */
-    private function pagadoEnElMes(Planilla $planilla, PlanillaEmpleado $empleado): array
+    private function pagadoEnElMes(Planilla $planilla, PlanillaEmpleado $empleado, bool $bloquear = false): array
     {
         $mes = $this->mesDe($planilla);
         $inicio = $mes->startOfMonth()->toDateString();
@@ -840,32 +843,128 @@ final class PrepararPlanilla
         $previos = [];
         $cotizado = [];
 
-        $detalles = PlanillaDetalle::where('planilla_empleado_id', $empleado->id)
-            ->where('planilla_id', '!=', $planilla->id)
-            ->whereHas('planilla', fn ($q) => $q->where('estado', 'confirmada')->where(fn ($q) => $q
-                ->where(fn ($q) => $q->whereDate('desde', '>=', $inicio)->whereDate('desde', '<=', $fin))
-                ->orWhere(fn ($q) => $q->whereDate('fecha_pago', '>=', $inicio)->whereDate('fecha_pago', '<=', $fin))))
-            ->with('planilla', 'conceptos')
-            ->get();
+        $filas = DB::table('planilla_detalles as d')
+            ->join('planillas as p', 'p.id', '=', 'd.planilla_id')
+            ->where('d.planilla_empleado_id', $empleado->id)
+            ->where('p.id', '!=', $planilla->id)
+            ->where('p.estado', 'confirmada')
+            ->where(fn ($q) => $q
+                ->where(fn ($q) => $q->whereDate('p.desde', '>=', $inicio)->whereDate('p.desde', '<=', $fin))
+                ->orWhere(fn ($q) => $q->whereDate('p.fecha_pago', '>=', $inicio)->whereDate('p.fecha_pago', '<=', $fin)))
+            ->when($bloquear, fn ($q) => $q->sharedLock())
+            ->get(['d.id', 'd.salario', 'p.tipo_periodo', 'p.clase', 'p.desde', 'p.fecha_pago']);
 
-        foreach ($detalles as $detalle) {
-            $deLey = $detalle->conceptos->whereNotNull('ley');
+        $conceptos = DB::table('planilla_conceptos')
+            ->whereIn('planilla_detalle_id', $filas->pluck('id'))
+            ->when($bloquear, fn ($q) => $q->sharedLock())
+            ->get(['planilla_detalle_id', 'tipo', 'ley', 'concepto', 'importe'])
+            ->groupBy('planilla_detalle_id');
 
-            if ($deLey->isEmpty() || $this->mesDe($detalle->planilla)->format('Y-m') !== $mes->format('Y-m')) {
+        foreach ($filas as $fila) {
+            $deLinea = collect($conceptos->get($fila->id, []))->map(fn ($c) => (array) $c);
+            $deLey = $deLinea->whereNotNull('ley');
+            $otra = (new Planilla)->forceFill(['tipo_periodo' => $fila->tipo_periodo, 'clase' => $fila->clase, 'desde' => $fila->desde, 'fecha_pago' => $fila->fecha_pago]);
+
+            if ($deLey->isEmpty() || $this->mesDe($otra)->format('Y-m') !== $mes->format('Y-m')) {
                 continue;
             }
 
             $previos[] = [
-                'base' => $this->descuentos->baseDeLinea(Dinero::centavos((string) $detalle->salario), $detalle->conceptos->toArray())['base'],
-                'pagos' => $this->descuentos->pagosDelMes($detalle->planilla),
+                'base' => $this->descuentos->baseDeLinea(Dinero::centavos((string) $fila->salario), $deLinea->all())['base'],
+                'pagos' => $this->descuentos->pagosDelMes($otra),
             ];
 
             foreach ($deLey as $concepto) {
-                $cotizado[$concepto->ley] = ($cotizado[$concepto->ley] ?? 0) + Dinero::centavos((string) $concepto->importe);
+                $cotizado[$concepto['ley']] = ($cotizado[$concepto['ley']] ?? 0) + Dinero::centavos((string) $concepto['importe']);
             }
         }
 
         return ['pagos' => $this->descuentos->pagosDelMes($planilla), 'previos' => $previos, 'cotizado' => $cotizado];
+    }
+
+    /**
+     * ISSS, AFP y renta que el sistema propondría HOY para una línea guardada, por ley, con
+     * lo ya pagado en el mes a esta hora. Vacío si la línea no lleva descuentos de ley. La
+     * misma cuenta que {@see conDescuentosDeLey()}: la renta usa el ISSS y la AFP que quedan
+     * en la línea, corregidos a mano o no.
+     *
+     * @return array<string, int> ley => centavos
+     */
+    private function deLeyAhora(Planilla $planilla, PlanillaDetalle $detalle, bool $bloquear): array
+    {
+        $empleado = $detalle->empleado;
+
+        if ($empleado === null || ! $empleado->con_descuentos_ley || ! $this->descuentos->aplicaA($planilla)) {
+            return [];
+        }
+
+        $guardados = $detalle->conceptos->whereNotNull('ley')->keyBy('ley');
+        $otros = $detalle->conceptos->whereNull('ley')
+            ->map(fn (PlanillaConcepto $c) => ['tipo' => $c->tipo, 'concepto' => $c->concepto, 'importe' => (string) $c->importe])->values()->all();
+        $base = $this->descuentos->baseDeLinea(Dinero::centavos((string) $detalle->salario), $otros)['base'];
+        $calculo = $this->descuentos->calcular($base, $planilla->desde->toDateString(), $this->pagadoEnElMes($planilla, $empleado, $bloquear));
+
+        if ($calculo === null) {
+            return [];
+        }
+
+        $ahora = [];
+        $quedan = 0;
+
+        foreach ($calculo['conceptos'] as $clave => $propuesta) {
+            $centavos = $propuesta['centavos'];
+
+            if ($clave === 'renta') {
+                $centavos = $this->rentaRecalculada($planilla, $empleado, $base - $quedan)['centavos'] ?? $centavos;
+            } else {
+                $guardado = $guardados->get($clave);
+                $quedan += $guardado?->corregidoAMano() ? Dinero::centavos((string) $guardado->importe) : $centavos;
+            }
+
+            $ahora[$clave] = $centavos;
+        }
+
+        return $ahora;
+    }
+
+    /**
+     * Al confirmar, con las personas ya bloqueadas: pone al día el ISSS, la AFP y la renta
+     * que propuso el sistema y nadie tocó, por si desde que se guardó el borrador se
+     * confirmó o se anuló otro pago del mismo mes (el tope del ISSS es por mes). Lo
+     * corregido a mano no se toca: si su propuesta cambió, {@see reparosParaConfirmar()}
+     * frena para revisarlo.
+     */
+    public function actualizarDescuentosDeLey(User $usuario, Planilla $planilla): void
+    {
+        foreach ($planilla->detalles as $detalle) {
+            $ahora = $this->deLeyAhora($planilla, $detalle, true);
+            $cambio = false;
+
+            foreach ($detalle->conceptos->whereNotNull('ley') as $concepto) {
+                $calculado = Dinero::centavos((string) ($concepto->importe_calculado ?? $concepto->importe));
+
+                if ($concepto->corregidoAMano() || ! isset($ahora[$concepto->ley]) || $ahora[$concepto->ley] === $calculado) {
+                    continue;
+                }
+
+                $concepto->update(['importe' => Dinero::decimal($ahora[$concepto->ley]), 'importe_calculado' => Dinero::decimal($ahora[$concepto->ley])]);
+                $cambio = true;
+            }
+
+            if ($cambio) {
+                $totales = $this->totales->deDetalle($detalle->load('conceptos'));
+                $detalle->update([
+                    'total_ingresos' => Dinero::decimal($totales['total_ingresos']),
+                    'descuentos' => Dinero::decimal($totales['descuentos']),
+                    'a_pagar' => Dinero::decimal($totales['a_pagar']),
+                ]);
+
+                // Sin importes: la bitácora la ve quien no tiene `planilla.salarios`.
+                activity('planilla')->performedOn($planilla)->causedBy($usuario)
+                    ->withProperties(['planilla_empleado_id' => $detalle->planilla_empleado_id])
+                    ->log('puso al día al confirmar un descuento de ley por lo ya cotizado en el mes');
+            }
+        }
     }
 
     private function mesDe(Planilla $planilla): CarbonImmutable
@@ -1177,6 +1276,18 @@ final class PrepararPlanilla
 
                     if ($falta !== null) {
                         $reparos[] = $detalle->nombre_snapshot.': '.$falta.'.';
+                    }
+                }
+
+                // Corregido a mano con una propuesta que ya no es la de ahora: otro pago del
+                // mes se confirmó o se anuló después. Lo decide una persona, no el sistema.
+                $ahora = $this->deLeyAhora($planilla, $detalle, false);
+
+                foreach ($detalle->conceptos->filter->corregidoAMano() as $concepto) {
+                    if (isset($ahora[$concepto->ley]) && $ahora[$concepto->ley] !== Dinero::centavos((string) $concepto->importe_calculado)) {
+                        $reparos[] = $detalle->nombre_snapshot.': '.(['isss' => 'el ISSS', 'afp' => 'la AFP'][$concepto->ley] ?? 'la renta')
+                            .' se corrigió a mano a '.$concepto->importe.', y con lo ya cotizado en el mes ahora se propone '
+                            .Dinero::decimal($ahora[$concepto->ley]).'. Revisalo.';
                     }
                 }
             }
