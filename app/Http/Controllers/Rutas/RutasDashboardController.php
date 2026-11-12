@@ -201,14 +201,18 @@ class RutasDashboardController extends Controller
         // Las fichas de los empleados son solo de la administración (04/11/2026).
         $verFichas = $usuario->can('planilla.ver') && $usuario->can('rutas.personal.ver');
 
-        $administradores = User::whereIn('id', $personas->pluck('user_id')->filter())
-            ->whereHas('roles', fn ($q) => $q->where('name', RolSistema::Administrador->value))
-            ->pluck('id')
-            ->flip();
-        $personas = $personas->reject(fn (PersonalRuta $persona) => isset($administradores[$persona->user_id])
+        // Quien tiene usuario y no fue en ningún viaje ni entregó en esos 90 días: si es
+        // Administrador, no sale. Solo por ellos se consultan los roles, de una vez.
+        $quietos = $personas->filter(fn (PersonalRuta $persona) => $persona->user_id !== null
             && ! $participaciones->has($persona->id)
-            && (! isset($entregas[$persona->id]) || substr((string) $entregas[$persona->id], 0, 10) < $desde))
-            ->values();
+            && (! isset($entregas[$persona->id]) || substr((string) $entregas[$persona->id], 0, 10) < $desde));
+        if ($quietos->isNotEmpty()) {
+            $administradores = User::whereIn('id', $quietos->pluck('user_id'))
+                ->whereHas('roles', fn ($q) => $q->where('name', RolSistema::Administrador->value))
+                ->pluck('id')
+                ->flip();
+            $personas = $personas->reject(fn (PersonalRuta $persona) => $quietos->contains($persona) && isset($administradores[$persona->user_id]))->values();
+        }
 
         return $personas->map(function (PersonalRuta $persona) use ($participaciones, $entregas, $enPersonal, $verFichas) {
             $salidas = $participaciones->get($persona->id, collect())->pluck('salida')->sortByDesc(fn (SalidaRuta $s) => [$s->fecha_inicio, $s->id]);
