@@ -100,22 +100,14 @@
                  total que las abarque. --}}
             <div class="grid gap-3 sm:grid-cols-2">
                 {{-- «Saldo registrado» y no «confirmado»: que algo esté anotado no quiere
-                     decir que esté respaldado. Parte de este total son saldos acordados
-                     de palabra, y eso se dice en vez de presentarlo todo como cerrado. --}}
+                     decir que esté respaldado. No se dice cuánto es provisional ni que
+                     todo tenga documento: ese dato no se carga en ninguna pantalla. --}}
                 <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                     <p class="text-xs font-semibold uppercase tracking-wide text-emerald-800">Se debe hoy</p>
                     <p class="mt-1 text-3xl font-bold tabular-nums text-emerald-800">
                         ${{ Dinero::mostrar((int) $datos['se_debe']) }}
                     </p>
-                    <p class="mt-1 text-xs text-emerald-800">
-                        Saldo registrado.
-                        @if ($datos['se_debe_provisional'] > 0)
-                            De eso, <span class="font-semibold">${{ Dinero::mostrar((int) $datos['se_debe_provisional']) }}</span>
-                            es provisional y espera documento.
-                        @else
-                            Todo respaldado con documento.
-                        @endif
-                    </p>
+                    <p class="mt-1 text-xs text-emerald-800">Saldo registrado.</p>
                 </div>
 
                 {{-- «Programado · pendiente de confirmar» y no «todavía no se debe»: que el
@@ -236,7 +228,7 @@
 
             {{-- ══════════════ CUENTAS ABIERTAS ══════════════
                  Se debe, pero no hay fecha que reclamar. Acá viven Proveedor A, Proveedor B y
-                 Distribuidora Ejemplo, S.A. de C.V., y el saldo provisional se dice con todas las letras.
+                 Distribuidora Ejemplo, S.A. de C.V.
                  «Abonar» es de las COMPRAS, que forman la cuenta del proveedor. Otra deuda sin
                  fecha —un alquiler, un servicio— no es de esa cuenta: se paga ella misma. --}}
             @if ($datos['sin_fecha']->isNotEmpty())

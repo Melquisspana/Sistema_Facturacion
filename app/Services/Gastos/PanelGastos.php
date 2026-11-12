@@ -93,10 +93,6 @@ final class PanelGastos
                 + $obligaciones['este_mes']->sum('pendiente')
                 + $obligaciones['mas_adelante']->sum('pendiente')
                 + $obligaciones['sin_fecha']->sum('pendiente'),
-            // Parte del total de arriba, no un sumando aparte: lo que está registrado
-            // pero acordado de palabra. Se dice para no presentar como respaldado algo
-            // que todavía espera su papel.
-            'se_debe_provisional' => $this->provisionalDe($obligaciones),
             'se_espera' => $previsiones->sum('importe'),
 
             'vencido' => $obligaciones['vencido'],
@@ -390,23 +386,6 @@ final class PanelGastos
         }
 
         return null;
-    }
-
-    /**
-     * Cuánto del saldo registrado es PROVISIONAL: acordado de palabra, sin papel.
-     *
-     * Va como cifra aparte para poder decir «de este total, tanto está pendiente de
-     * confirmar». Se debe igual —por eso suma dentro de `se_debe` y no fuera—, pero
-     * presentar el total como si todo estuviera respaldado sería afirmar de más.
-     *
-     * @param  array<string, Collection<int, Gasto>>  $obligaciones
-     */
-    private function provisionalDe(array $obligaciones): int
-    {
-        return collect(['vencido', 'este_mes', 'mas_adelante', 'sin_fecha'])
-            ->sum(fn (string $grupo) => $obligaciones[$grupo]
-                ->filter(fn (Gasto $g) => $g->esProvisional())
-                ->sum('pendiente'));
     }
 
     /**

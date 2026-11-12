@@ -18,9 +18,8 @@
      ya cargado con todo lo que el sistema sabe. Solo se pide lo que no puede saber:
      la fecha, el método, o la cifra del recibo.
 
-     EL SALDO PROVISIONAL SE DICE. Proveedor A y Proveedor B se cargaron con un saldo acordado de
-     palabra; Distribuidora Ejemplo, S.A. de C.V. con un estado de cuenta en la mano. Los tres se deben igual,
-     pero no son el mismo dato, y la fila lo marca en vez de presentarlos como iguales. --}}
+     La fila no dice qué tan firme es el saldo (provisional o confirmado): ninguna
+     pantalla carga ese dato, así que mostrarlo afirmaba algo que nadie escribió. --}}
 <div class="border-t border-gray-100 first:border-t-0">
     <div class="flex items-center justify-between gap-3 px-4 py-3">
         <div class="min-w-0">
@@ -33,18 +32,6 @@
                     · vence el {{ $vence->format('d/m') }}
                 @endif
             </p>
-            @if ($g->esProvisional())
-                <p class="mt-0.5 text-[11px] font-medium text-amber-700">
-                    Saldo provisional · pendiente de confirmar con documento
-                </p>
-            @elseif ($g->confirmadoPorElUsuario())
-                {{-- Confirmado por una persona, no por un papel. La distinción se dice
-                     en vez de callarse: decir «confirmado» a secas al lado de uno que
-                     sí tiene estado de cuenta los igualaría, y no son iguales. --}}
-                <p class="mt-0.5 text-[11px] font-medium text-slate-500">
-                    Confirmado por el usuario · sin documento de respaldo
-                </p>
-            @endif
         </div>
 
         <div class="flex shrink-0 items-center gap-3">
