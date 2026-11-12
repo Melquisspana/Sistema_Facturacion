@@ -69,7 +69,15 @@ final class AnularPlanilla
             ]);
         }
 
+        // Tres intentos, como al registrar un pago: si MySQL corta esta transacción por un
+        // interbloqueo, se vuelve a entrar. Es seguro porque de ese intento no quedó nada.
         return DB::transaction(function () use ($usuario, $planilla, $motivo) {
+            // Primero quien anula, como en los pagos y los ajustes de Gastos (usuario, gasto,
+            // cuota). Los ajustes de más abajo apuntan a este usuario, y escribirlos espera
+            // su candado: sin tomarlo acá, la misma persona pagando y anulando a la vez podía
+            // quedar con cada pedido esperando al otro.
+            User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
+
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
 
             if ($planilla->estado === 'anulada') {
@@ -131,7 +139,7 @@ final class AnularPlanilla
             ]);
 
             return $planilla->fresh();
-        });
+        }, 3);
     }
 
     private function exigirQueNoHayaPagos(Planilla $planilla): void
