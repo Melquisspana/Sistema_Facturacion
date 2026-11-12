@@ -49,6 +49,7 @@ class MapaVentasController extends Controller
         // la tabla, casi la mitad de la página eran espacios al comienzo de los renglones. El
         // navegador no los muestra (la página no tiene <pre> ni <textarea>) y en el celular
         // pesaban.
-        return response(preg_replace('/^[ \t]+/m', '', $html));
+        // Si la expresión fallara (devuelve null), la página sale tal cual, nunca en blanco.
+        return response(preg_replace('/^[ \t]+/m', '', $html) ?? $html);
     }
 }
