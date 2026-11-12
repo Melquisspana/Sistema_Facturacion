@@ -8,6 +8,42 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.12] - 2026-11-12
+
+Rutas queda con el Tablero como centro y sin el flujo viejo de salidas armadas a mano (#339), con el mapa de ventas nuevo (#341). El correo diario pasa a las 6 de la tarde con lo vendido en el día y el PDF de cada vendedor (#343). Entra la auditoría de código hecha entre Codex y Claude (#340) y los arreglos serios de dinero y concurrencia que salieron de ella (#342). La CI corre MySQL estricto en 4 partes y por fin termina (#338). Sin migraciones. Se quitan los permisos `rutas.ventas.ver` al rol Facturación y `rutas.salidas.terminar` al rol Jefe de vendedores.
+
+### Agregado
+
+- Rutas: mapa de ventas nuevo, con dos vistas («Ventas» y «A dónde ir»), el monto escrito sobre cada departamento, colores que se leen en claro y en oscuro, y una lista al lado que dice lo mismo en palabras. Al filtrar por zona entran también las salas sin ruta fija que esa zona cubre (#341).
+- Pedidos: el correo diario sale a las 18:00, suma «Vendido hoy hasta las 6 de la tarde» (solo el total del día, sin IVA) y adjunta el PDF del día de cada vendedor con movimiento, el mismo de «Terminar el día» (#343).
+- DTE: un mismo documento no se puede emitir dos veces a la vez; el segundo pedido recibe «Este documento ya se está emitiendo». El candado también cubre la anulación interna y el JSON que se genera al enviar un correo (#342).
+- DTE: una aceptación de Hacienda con sello prevalece sobre un rechazo anterior del mismo código de generación. Si ese rechazado ya tenía una copia corregida, la copia no se emite hasta que alguien con permiso de emitir diga que es otra venta, con un motivo que queda en la bitácora (#342).
+- Contingencia: «Volver a consultar en Hacienda» para un documento rechazado de un lote ya cerrado, con una espera de 2 minutos por lote (#342).
+
+### Cambiado
+
+- Rutas: el menú abre con el Tablero; lo del celular es una sola entrada, «Menú del vendedor», y el Administrador hace ahí todo lo del vendedor. Ventas es solo de Administrador y Jefatura. «CCF por entregar» y Ventas por zona cuentan todas las salas, con la zona que cubre su lugar (#339).
+- DTE: una respuesta de Hacienda sin sello de recepción, o de otro documento u otro ambiente, ya no acepta ni rechaza el documento: queda firmado, con la anotación de qué faltó, y el reintento de siempre lo resuelve (#342).
+- Planilla: con un anticipo por descontar, o con alguien de baja dentro del período, la planilla queda en borrador para revisarla antes de confirmar. El aguinaldo no se genera dos veces en el mismo año, tampoco si se generan dos a la vez (#342).
+- Gastos: pagar, ajustar y anular una planilla leen el saldo con candado, para que dos movimientos a la vez no se pasen de una cuota (#342).
+- PPQ: una fila del archivo de pagos sin importe ya no deja el documento como pagado; se aparta y se muestra como fila incompleta (#340).
+- Albaranes de crédito: AC02 y AC04 en una sola lista para el quedan, Cobros y el archivo de carga masiva de notas de crédito; AC06 deja de aceptarse (#340).
+- Perfil: cambiar el correo exige la contraseña actual (#340).
+- Gastos: el correo de resumen respeta su tope de filas, con los totales completos (#340).
+- CI: la suite contra MySQL estricto corre en 4 partes en paralelo y termina con resultado (#338).
+
+### Corregido
+
+- El menú no se cae si falla el contador de avisos de Gastos (#340).
+- Planilla: al adjuntar un documento firmado se comprueba que el archivo se guardó; si algo falla no queda registro ni archivo suelto (#340).
+
+### Quitado
+
+- Rutas: «Salir ahora», el bloque «Programadas», el cierre de día viejo con «Reabrir día», «Terminar ruta» con la liquidación y sus PDF, la hoja vieja del vendedor y «Facturados después de entregar». Las salidas viejas ya guardadas se siguen viendo en «Todos los viajes», en solo lectura (#339).
+- Perfil: borrar la propia cuenta. Las cuentas se administran solo desde Personal (#340).
+- La verificación de correo que venía con la plantilla, los controladores y vistas viejos de Exportaciones y otro código sin uso (#340).
+- Gastos: la marca «provisional / confirmado» en pantalla, que ninguna pantalla cargaba (#340).
+
 ## [2026.11.11.2] - 2026-11-11
 
 Rutas pasa a ser un solo flujo, del pedido a la entrega (#331): el viaje se arma solo al sacar el primer pedido, cualquier vendedor entrega cualquier CCF y marca cómo le pagaron, y el día se cierra con un PDF para entregar el dinero a la oficina. Trae 3 migraciones (`2026_11_10_200000`, `2026_11_10_210000` y `2026_11_10_220000`) y el permiso `clientes.alta` para Facturación.
