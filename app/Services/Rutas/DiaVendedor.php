@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Support\HoraNegocio;
 use App\Support\NombreEmpresa;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Barryvdh\DomPDF\PDF as HojaPdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -160,15 +161,44 @@ class DiaVendedor
         return $dias;
     }
 
-    /** El PDF del día de una persona: el mismo para el vendedor y para la oficina. */
+    /**
+     * Quienes tienen algo que va en el PDF de ese día (una entrega, un «No se pudo» o un
+     * gasto), por nombre. Lo pide el correo diario ({@see ResumenDiarioPedidos}).
+     *
+     * @return Collection<int, PersonalRuta>
+     */
+    public function personasConMovimiento(string $fecha): Collection
+    {
+        return PersonalRuta::query()->with('user')->orderBy('nombre')->orderBy('id')->get()
+            ->filter(fn (PersonalRuta $persona) => $this->diasConMovimiento($persona, $persona->user, $fecha, $fecha) !== [])
+            ->values();
+    }
+
+    /** El PDF del día de una persona: el mismo para el vendedor, la oficina y el correo diario. */
     public function pdf(PersonalRuta $persona, ?User $usuario, string $fecha): Response
+    {
+        return $this->hoja($persona, $usuario, $fecha)->stream(self::nombrePdf($persona, $fecha));
+    }
+
+    /** Ese mismo PDF, en bytes: es el que adjunta el correo diario. */
+    public function pdfBinario(PersonalRuta $persona, ?User $usuario, string $fecha): string
+    {
+        return $this->hoja($persona, $usuario, $fecha)->output();
+    }
+
+    public static function nombrePdf(PersonalRuta $persona, string $fecha): string
+    {
+        return 'dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf';
+    }
+
+    private function hoja(PersonalRuta $persona, ?User $usuario, string $fecha): HojaPdf
     {
         return Pdf::loadView('rutas.mi-salida.dia-pdf', [
             'resumen' => $this->resumen($persona, $usuario, $fecha),
             'persona' => $persona,
             'empresa' => NombreEmpresa::actual(),
             'generado' => HoraNegocio::aLocal(now()),
-        ])->setPaper('letter')->stream('dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf');
+        ])->setPaper('letter');
     }
 
     /**

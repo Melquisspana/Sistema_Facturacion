@@ -294,7 +294,7 @@ class CorreoDiarioPedidosTest extends TestCase
         Mail::assertSentCount(1);
         $auditoria = Activity::where('log_name', 'pedido_sala')->where('description', ResumenDiarioPedidos::AUDITORIA)->sole();
         // assertEquals: MySQL reordena las claves de la columna JSON.
-        $this->assertEquals(['fecha' => '2026-11-09', 'estado' => 'enviado', 'destinatarios' => 2, 'hasta' => '2026-11-09 18:00:00'], $auditoria->properties->all());
+        $this->assertEquals(['fecha' => '2026-11-09', 'estado' => 'enviado', 'destinatarios' => 2, 'hasta' => '2026-11-09 18:00:00', 'adjuntos' => 0], $auditoria->properties->all());
         $this->assertStringNotContainsString('ejemplo.test', $auditoria->properties->toJson(), 'los correos son datos personales');
 
         $this->travelTo('2026-11-10 18:00:00');

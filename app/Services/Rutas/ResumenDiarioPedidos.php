@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
@@ -24,8 +25,15 @@ use Throwable;
  * (con su motivo), lo que se marcó «No se trae» y lo que sigue por mandar con sus días de
  * atraso. Si no salió nada, sale igual con «Hoy no salió ningún pedido» y los pendientes.
  *
- * DESDE EL CORREO ANTERIOR. Cubre desde el instante hasta el que llegó el último resumen
- * (`hasta` en su auditoría) hasta ahora, no solo el día: lo que la fábrica hace después
+ * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
+ * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,
+ * adjunto, el PDF del día de cada vendedor con movimiento, el mismo de «Terminar el día»,
+ * con lo que lleve marcado a esa hora. Si falla la cuenta de ventas o el PDF de alguien, se
+ * reporta y el correo sale igual diciendo qué faltó. Lleva dinero: va solo a la lista de
+ * Configuración › Rutas.
+ *
+ * LO DE LA FÁBRICA, DESDE EL CORREO ANTERIOR. Cubre desde el instante hasta el que llegó
+ * el último resumen (`hasta` en su auditoría) hasta ahora, no solo el día: lo que la fábrica hace después
  * de las 18:00 sale en el correo siguiente. Sin un resumen anterior, desde el inicio del
  * día. Los dos extremos entran: algo del mismo segundo del corte puede salir en los dos
  * correos, pero nunca en ninguno.
@@ -46,7 +54,7 @@ use Throwable;
  * FUERA DE PRODUCCIÓN NO SALE: pasa por {@see CandadoCorreoReal}, como los demás correos,
  * y queda como simulado.
  *
- * Solo lee pedidos: no cambia ninguno.
+ * Solo lee: no cambia pedidos, entregas ni documentos.
  */
 class ResumenDiarioPedidos
 {
@@ -60,6 +68,8 @@ class ResumenDiarioPedidos
     public function __construct(
         private PedidosFabrica $fabrica,
         private CandadoCorreoReal $candado,
+        private VentasRutas $ventas,
+        private DiaVendedor $dia,
     ) {}
 
     /** @return list<string> */
@@ -98,7 +108,9 @@ class ResumenDiarioPedidos
 
         // Se arma ANTES de tomar la marca: si la consulta falla, no queda tomada.
         $hasta = now()->startOfSecond();
-        $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta);
+        $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta)
+            + ['ventas' => $this->vendido($fecha)];
+        [$contenido['vendedores'], $pdf] = $this->pdfDeVendedores($fecha);
 
         $clave = 'pedidos.correo_resumen_diario.'.$fecha;
         if (! $forzar && ! Cache::add($clave, true, now()->addDays(2))) {
@@ -107,7 +119,7 @@ class ResumenDiarioPedidos
 
         if ($this->candado->debeSimular()) {
             Log::info('Pedidos: resumen diario SIMULADO', ['fecha' => $fecha, 'motivo' => $this->candado->motivo()]);
-            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta, $forzar);
+            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta, $forzar, count($pdf));
 
             return 'simulado';
         }
@@ -115,7 +127,7 @@ class ResumenDiarioPedidos
         try {
             // El servidor de correo guardado en Configuración, no el del arranque del proceso.
             app(ConfiguracionCorreoRuntime::class)->aplicar();
-            Mail::to($destinatarios)->send(new ResumenDiarioPedidosCorreo($contenido));
+            Mail::to($destinatarios)->send(new ResumenDiarioPedidosCorreo($contenido, $pdf));
         } catch (Throwable $e) {
             // Puede haber salido igual; se suelta la marca para poder reintentarlo a mano.
             if (! $forzar) {
@@ -126,7 +138,7 @@ class ResumenDiarioPedidos
             return 'fallido';
         }
 
-        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta, $forzar);
+        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta, $forzar, count($pdf));
 
         return 'enviado';
     }
@@ -232,6 +244,62 @@ class ResumenDiarioPedidos
         ];
     }
 
+    /**
+     * Lo vendido en el día, con la cuenta de la pantalla de Ventas ({@see VentasRutas::delDia()}).
+     * Null si la cuenta falla: el correo sale igual y lo dice.
+     *
+     * @return array{nacional: array{monto: float, facturas: int}, exportacion: array{monto: float, facturas: int}}|null
+     */
+    private function vendido(string $fecha): ?array
+    {
+        try {
+            return $this->ventas->delDia($fecha);
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * El PDF del día de cada vendedor con movimiento, el mismo de «Terminar el día»
+     * ({@see DiaVendedor::pdfBinario()}), con lo que lleve marcado hasta ahora. De a uno: si
+     * el de alguien falla, se reporta, el correo lo nombra y siguen los demás. Devuelve los
+     * nombres para el cuerpo (null si no se pudo ni buscar quién tuvo movimiento) y los PDF,
+     * nombre de archivo => contenido.
+     *
+     * @return array{0: array{adjuntos: list<string>, fallaron: list<string>}|null, 1: array<string, string>}
+     */
+    private function pdfDeVendedores(string $fecha): array
+    {
+        try {
+            $personas = $this->dia->personasConMovimiento($fecha);
+        } catch (Throwable $e) {
+            report($e);
+
+            return [null, []];
+        }
+
+        $nombres = ['adjuntos' => [], 'fallaron' => []];
+        $pdf = [];
+        foreach ($personas as $persona) {
+            try {
+                $archivo = DiaVendedor::nombrePdf($persona, $fecha);
+                // Dos personas con el mismo nombre: la segunda lleva su número.
+                if (isset($pdf[$archivo])) {
+                    $archivo = Str::replaceLast('.pdf', '-'.$persona->id.'.pdf', $archivo);
+                }
+                $pdf[$archivo] = $this->dia->pdfBinario($persona, $persona->user, $fecha);
+                $nombres['adjuntos'][] = $persona->nombre;
+            } catch (Throwable $e) {
+                report($e);
+                $nombres['fallaron'][] = $persona->nombre;
+            }
+        }
+
+        return [$nombres, $pdf];
+    }
+
     /** Hasta dónde llegó el último resumen, en la hora de la base; null si nunca salió uno. */
     private function desdeElAnterior(): ?Carbon
     {
@@ -254,11 +322,14 @@ class ResumenDiarioPedidos
             ->exists();
     }
 
-    /** Sin los correos: son datos personales y la auditoría la lee más gente. */
-    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta, bool $aMano): void
+    /**
+     * Sin los correos, sin montos y sin nombres de vendedores: la auditoría la lee más gente.
+     * De los PDF, solo cuántos fueron.
+     */
+    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta, bool $aMano, int $adjuntos): void
     {
         activity('pedido_sala')
-            ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios, 'hasta' => $hasta->format('Y-m-d H:i:s')])
+            ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios, 'hasta' => $hasta->format('Y-m-d H:i:s'), 'adjuntos' => $adjuntos])
             ->log($aMano ? self::AUDITORIA_A_MANO : self::AUDITORIA);
     }
 }

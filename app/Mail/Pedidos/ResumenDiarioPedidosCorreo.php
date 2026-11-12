@@ -5,23 +5,26 @@ namespace App\Mail\Pedidos;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * El resumen de las 18:00 de lo que hizo la fábrica con los pedidos de sala. Es un aviso
- * interno: sin adjuntos, sin precios y sin nada fiscal. El contenido lo arma
- * {@see ResumenDiarioPedidos}.
+ * El correo de las 18:00, el cierre del día para la dueña: lo que hizo la fábrica con los
+ * pedidos de sala, lo vendido en el día en una línea (el total, no cada CCF) y, adjunto, el
+ * PDF del día de cada vendedor. LLEVA DINERO (ventas y cobros): va solo a quien esté en
+ * Configuración › Rutas. No es un documento fiscal. Todo lo arma {@see ResumenDiarioPedidos}.
  *
  * @param  array<string, mixed>  $contenido
+ * @param  array<string, string>  $pdf  nombre de archivo => contenido del PDF
  */
 class ResumenDiarioPedidosCorreo extends Mailable
 {
     use Queueable;
     use SerializesModels;
 
-    public function __construct(public array $contenido) {}
+    public function __construct(public array $contenido, public array $pdf = []) {}
 
     public function envelope(): Envelope
     {
@@ -34,6 +37,15 @@ class ResumenDiarioPedidosCorreo extends Mailable
             'contenido' => $this->contenido,
             'literal' => self::literal(...),
         ]);
+    }
+
+    /** @return list<Attachment> */
+    public function attachments(): array
+    {
+        return array_map(
+            fn (string $archivo) => Attachment::fromData(fn () => $this->pdf[$archivo], $archivo)->withMime('application/pdf'),
+            array_keys($this->pdf),
+        );
     }
 
     /**
