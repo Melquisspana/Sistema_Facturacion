@@ -1242,7 +1242,8 @@ class DteController extends Controller
         $estadoIncierto = $dte->estado === EstadoDte::Firmado;
 
         // 1. Asegurar el JSON oficial (genera si falta, reusando la misma garantía del correo).
-        if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
+        //    Sin tomar el candado otra vez: quien llega hasta acá ya lo tiene.
+        if (($error = $this->asegurarJson($dte, $jsonService)) !== null) {
             return ['error' => 'No se puede firmar/transmitir: '.$error];
         }
 
@@ -2122,6 +2123,27 @@ class DteController extends Controller
      * mensaje de error para mostrar al usuario; null = todo OK.
      */
     private function asegurarJsonParaCorreo(Dte $dte, DteJsonService $jsonService): ?string
+    {
+        // Con el JSON ya guardado no se genera nada: no hace falta el candado.
+        if (filled($dte->json_generado_path)) {
+            return null;
+        }
+
+        // Generarlo asigna numeración y escribe el archivo, igual que al emitir: va bajo el
+        // mismo candado por documento, que además lo relee antes de decidir que falta. Sin
+        // esto, «enviar correo» y «firmar y transmitir» a la vez podían generarlo los dos.
+        try {
+            return CandadoEmisionDte::ejecutar($dte, fn () => $this->asegurarJson($dte, $jsonService));
+        } catch (DteEmisionEnCursoException $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /**
+     * Lo de {@see asegurarJsonParaCorreo()}, para quien YA tiene el candado del documento
+     * (el flujo de emisión). El candado no se puede tomar dos veces desde el mismo pedido.
+     */
+    private function asegurarJson(Dte $dte, DteJsonService $jsonService): ?string
     {
         if (filled($dte->json_generado_path)) {
             return null;
