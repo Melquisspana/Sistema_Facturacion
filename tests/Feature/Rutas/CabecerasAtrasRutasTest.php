@@ -36,7 +36,6 @@ class CabecerasAtrasRutasTest extends TestCase
             route('rutas.viajes'),
             route('rutas.mapa'),
             route('rutas.pedidos.index'),
-            route('rutas.rutas.index'),
             route('rutas.ventas.index'),
             route('rutas.salidas.index'),
         ] as $url) {
@@ -45,6 +44,29 @@ class CabecerasAtrasRutasTest extends TestCase
             $this->assertContains('no-cache', $directivas, $url);
             $this->assertNotContains('no-store', $directivas, $url);
             $this->assertNotContains('public', $directivas, $url);
+        }
+    }
+
+    /**
+     * Lo que se edita en la misma página (Zonas, el detalle de un pedido con su orden de
+     * compra) y las descargas de Ventas no se guardan: «atrás» no puede devolver un
+     * formulario viejo que pise lo que otro ya cambió, ni dejar el Excel en la caché.
+     */
+    public function test_lo_que_se_edita_y_las_descargas_no_se_guardan(): void
+    {
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('administrador'));
+
+        foreach ([
+            route('rutas.rutas.index'),
+            route('rutas.ventas.excel'),
+        ] as $url) {
+            $directivas = $this->directivas($url);
+            $this->assertContains('no-store', $directivas, $url);
+            $this->assertContains('private', $directivas, $url);
+        }
+
+        foreach (['rutas.pedidos.show', 'rutas.ventas.pdf'] as $nombre) {
+            $this->assertContains('cache.headers:no_store;private', app('router')->getRoutes()->getByName($nombre)->gatherMiddleware(), $nombre);
         }
     }
 
