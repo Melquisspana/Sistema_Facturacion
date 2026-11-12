@@ -125,6 +125,24 @@ class SaldoFrescoAlEscribirTest extends TestCase
         });
     }
 
+    // ═══════════════════════ Las pruebas valen en SQLite y en MySQL ═══════════════════════
+
+    public function test_las_consultas_se_reconocen_con_las_comillas_de_sqlite_y_con_las_de_mysql(): void
+    {
+        // MySQL cita los nombres con acentos graves; SQLite, con comillas dobles. La lectura
+        // de «¿ya se registró este mismo ajuste?» no decide ningún saldo y no lleva candado:
+        // si no se la reconoce en MySQL, la prueba le exigiría uno que no tiene que tener.
+        foreach (['select * from `gastos_ajustes` where `clave` = ? limit 1', 'select * from "gastos_ajustes" where "clave" = ? limit 1'] as $consulta) {
+            $this->assertTrue($this->nombra($consulta, 'clave'), $consulta);
+            $this->assertFalse($this->nombra($consulta, 'gastos'), $consulta);
+            $this->assertCount(1, $this->lecturasDe(new \ArrayObject([$consulta]), 'gastos_ajustes'), $consulta);
+        }
+
+        $this->assertTrue($this->llevaCandado('select * from `gastos` where `id` = ? limit 1 for update'));
+        $this->assertTrue($this->llevaCandado('select `importe` from `gastos_ajustes` where `cuota_id` = ? lock in share mode'));
+        $this->assertFalse($this->llevaCandado('select * from `gastos_ajustes` where `clave` = ? limit 1'));
+    }
+
     // ═══════════════════════ Registrar un pago ═══════════════════════
 
     public function test_registrar_un_pago_lee_el_saldo_con_candado(): void
@@ -169,10 +187,10 @@ class SaldoFrescoAlEscribirTest extends TestCase
 
         $this->assertTodasLeidasConCandado($sql, 'gastos_pago_aplicaciones');
         // La primera lectura de ajustes es la de «¿ya se registró este mismo?», por su clave.
-        $deSaldo = array_filter($this->lecturasDe($sql, 'gastos_ajustes'), fn (string $q) => ! str_contains($q, '"clave"'));
+        $deSaldo = array_filter($this->lecturasDe($sql, 'gastos_ajustes'), fn (string $q) => ! $this->nombra($q, 'clave'));
         $this->assertNotEmpty($deSaldo);
         foreach ($deSaldo as $lectura) {
-            $this->assertMatchesRegularExpression('/for update|lock in share mode/', $lectura);
+            $this->assertTrue($this->llevaCandado($lectura), $lectura);
         }
     }
 
@@ -208,10 +226,10 @@ class SaldoFrescoAlEscribirTest extends TestCase
 
         $this->ajustar($cuota, 'credito', '60.00', ['tipo' => 'nota_credito', 'documento_recibido_id' => $nota->id]);
 
-        $delDocumento = array_filter($this->lecturasDe($sql, 'gastos_ajustes'), fn (string $q) => str_contains($q, '"documento_recibido_id"'));
+        $delDocumento = array_filter($this->lecturasDe($sql, 'gastos_ajustes'), fn (string $q) => $this->nombra($q, 'documento_recibido_id'));
         $this->assertNotEmpty($delDocumento);
         foreach ($delDocumento as $lectura) {
-            $this->assertMatchesRegularExpression('/for update|lock in share mode/', $lectura);
+            $this->assertTrue($this->llevaCandado($lectura), $lectura);
         }
         $this->assertSame(0, app(VincularCompra::class)->creditoDelDocumento($nota)['disponible']);
     }
@@ -272,8 +290,8 @@ class SaldoFrescoAlEscribirTest extends TestCase
 
         $this->assertSame('anulada', $planilla->fresh()->estado);
         $conCandado = array_values(array_filter($sql->getArrayCopy(), fn (string $q) => str_starts_with($q, 'select') && str_contains($q, 'for update')));
-        $gasto = array_key_first(array_filter($conCandado, fn (string $q) => preg_match('/from "gastos"/', $q) === 1));
-        $cuota = array_key_first(array_filter($conCandado, fn (string $q) => preg_match('/from "gastos_cuotas"/', $q) === 1));
+        $gasto = array_key_first(array_filter($conCandado, fn (string $q) => preg_match('/from [`"]gastos[`"]/', $q) === 1));
+        $cuota = array_key_first(array_filter($conCandado, fn (string $q) => preg_match('/from [`"]gastos_cuotas[`"]/', $q) === 1));
         // El mismo orden que en los pagos y los ajustes, para que no se crucen.
         $this->assertNotNull($gasto, 'Anular no tomó el candado del gasto.');
         $this->assertNotNull($cuota);
