@@ -46,7 +46,7 @@ Un despliegue cambia la **imagen** completa: ya no se copian archivos sueltos. L
 8. **Comprobar:** `exec -T web curl -s http://localhost/salud -H "Host: facturacion.test"` con `"estado":"ok"`, `/login` en 200, `ps` con los tres contenedores en la imagen nueva y lo que pida el PR en el navegador.
 9. El `CHANGELOG.md` y la etiqueta `vAAAA.MM.DD.n` van en su propio PR, después del despliegue.
 
-Los `.env` no se cambian en un despliegue salvo que el PR lo pida. Si cambia el `.env` de Laravel, hay que recrear los contenedores PHP (`up -d --force-recreate web worker scheduler`): el `config:cache` se hace al arrancar.
+Los `.env` no se cambian en un despliegue salvo que el PR lo pida. Si cambia el `.env` de Laravel, hay que recrear los contenedores PHP (`up -d --force-recreate web worker scheduler`): el `config:cache` (y el de rutas y eventos) se hace al arrancar.
 
 ## Cuidados
 
