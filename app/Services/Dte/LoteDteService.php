@@ -178,14 +178,23 @@ class LoteDteService
             ->withHeaders(['Authorization' => $this->auth->obtenerToken(), 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')]);
     }
 
-    public function consultar(LoteDte $lote): array
+    /**
+     * Pregunta a Hacienda por el resultado de un lote recibido y lo guarda.
+     *
+     * `$reconciliar` vuelve a preguntar por un lote YA CERRADO que dejó documentos
+     * rechazados: Hacienda puede tenerlos aceptados. Es a pedido de una persona (el
+     * botón de la pantalla); la tarea programada no vuelve a consultar lo cerrado.
+     */
+    public function consultar(LoteDte $lote, bool $reconciliar = false): array
     {
         abort_unless(config('dte.contingencia.enabled', false), 404);
 
-        return DB::transaction(function () use ($lote) {
+        return DB::transaction(function () use ($lote, $reconciliar) {
             Contingencia::whereKey($lote->contingenciaEvento->contingencia_id)->lockForUpdate()->firstOrFail();
             $lote = LoteDte::whereKey($lote->id)->lockForUpdate()->firstOrFail();
-            if ($lote->estado !== 'recibido' || blank($lote->codigo_lote)) {
+            $cerradoConRechazos = $reconciliar && $lote->estado === 'procesado'
+                && $lote->dtes()->where('estado', EstadoDte::Rechazado->value)->exists();
+            if (($lote->estado !== 'recibido' && ! $cerradoConRechazos) || blank($lote->codigo_lote)) {
                 return ['resultado' => $lote->estado];
             }
             $ambiente = $lote->dtes()->firstOrFail()->ambiente;
@@ -217,11 +226,19 @@ class LoteDteService
             }
             foreach ($entradas as $codigo => $items) {
                 $dte = $documentos->get($codigo);
-                if (! $dte || count($items) !== 1 || $dte->estado !== EstadoDte::Firmado) {
+                if (! $dte || count($items) !== 1) {
                     continue;
                 }
                 [$estado, $item] = $items[0];
                 if ($estado === 'aceptado' && blank($item['selloRecibido'] ?? null)) {
+                    continue;
+                }
+                // Lo normal es un documento firmado. Uno que acá figura RECHAZADO solo pasa si
+                // ahora Hacienda lo informa aceptado: si el sello prevalece lo decide la regla
+                // compartida de la transmisión (mismo código de generación), no este servicio.
+                // Lo demás —un aceptado otra vez, un rechazo repetido— no trae nada nuevo.
+                $aceptacionTardia = $dte->estado === EstadoDte::Rechazado && $estado === 'aceptado';
+                if ($dte->estado !== EstadoDte::Firmado && ! $aceptacionTardia) {
                     continue;
                 }
                 $item['estado'] = $estado === 'aceptado' ? 'PROCESADO' : 'RECHAZADO';
@@ -233,7 +250,7 @@ class LoteDteService
             $rechazados = $lote->dtes()->where('estado', 'rechazado')->count();
             $cerrado = $aceptados + $rechazados === $lote->cantidad;
             $lote->update(['procesados' => $aceptados, 'rechazados' => $rechazados,
-                'estado' => $cerrado ? 'procesado' : 'recibido', 'cerrado_en' => $cerrado ? HoraNegocio::ahora() : null]);
+                'estado' => $cerrado ? 'procesado' : 'recibido', 'cerrado_en' => $cerrado ? ($lote->cerrado_en ?? HoraNegocio::ahora()) : null]);
             $this->actualizarEstado($lote->contingenciaEvento->contingencia);
 
             return ['resultado' => $lote->estado];

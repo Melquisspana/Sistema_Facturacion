@@ -2,10 +2,13 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
 use App\Services\Dte\DteConsultaService;
+use App\Services\Dte\DteTransmisionService;
+use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Console\Command;
 
 /**
@@ -21,7 +24,8 @@ use Illuminate\Console\Command;
 class DteConsultarCommand extends Command
 {
     protected $signature = 'dte:consultar {dte : ID del DTE}
-        {--consultar : Hace la consulta REAL al MH (por defecto solo muestra qué se enviaría)}';
+        {--consultar : Hace la consulta REAL al MH (por defecto solo muestra qué se enviaría)}
+        {--aplicar : Con --consultar: si Hacienda tiene el documento, guarda acá lo que contestó}';
 
     protected $description = 'Consulta el estado de un DTE en Hacienda (solo lectura; por defecto sin HTTP)';
 
@@ -80,9 +84,44 @@ class DteConsultarCommand extends Command
             $this->line('Sello       : '.$r['sello']);
         }
 
+        if ($this->option('aplicar')) {
+            return $this->aplicar($dte, $r);
+        }
+
         $this->newLine();
         $this->warn('*** SOLO LECTURA — el estado del documento no se modificó. ***');
 
         return $r['recibido'] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Guarda lo que Hacienda contestó, por el MISMO camino que la emisión: el candado por
+     * documento y {@see DteTransmisionService::aplicarResultadoDeConsulta()}, con su regla
+     * del sello. Es la forma de corregir a mano un documento que acá figura rechazado y
+     * Hacienda tiene aceptado. Solo con una respuesta que confirma que lo tiene.
+     *
+     * @param  array<string, mixed>  $r
+     */
+    private function aplicar(Dte $dte, array $r): int
+    {
+        $this->newLine();
+
+        if (! $r['recibido']) {
+            $this->warn('Hacienda no confirmó tener el documento: no se guardó nada.');
+
+            return self::FAILURE;
+        }
+
+        try {
+            CandadoEmisionDte::ejecutar($dte, fn () => app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $r));
+        } catch (DteEmisionEnCursoException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->info('Estado guardado: '.$dte->refresh()->estado->label().'.');
+
+        return self::SUCCESS;
     }
 }

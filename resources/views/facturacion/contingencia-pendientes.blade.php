@@ -98,6 +98,11 @@
                             @if ($dte->loteDte?->estado === 'recibido')
                                 <form method="POST" action="{{ route('facturacion.contingencia.lotes.consultar', $dte->loteDte) }}">@csrf<button class="underline" type="submit">Consultar resultado</button></form>
                             @endif
+                            {{-- Rechazado en un lote ya cerrado: Hacienda puede tenerlo aceptado.
+                                 Antes de corregirlo conviene preguntar otra vez. --}}
+                            @if ($dte->estado === \App\Enums\EstadoDte::Rechazado && $dte->loteDte?->estado === 'procesado' && filled($dte->loteDte->codigo_lote))
+                                <form method="POST" action="{{ route('facturacion.contingencia.lotes.consultar', $dte->loteDte) }}">@csrf<input type="hidden" name="reconciliar" value="1"><button class="underline" type="submit">Volver a consultar en Hacienda</button></form>
+                            @endif
                             @if ($dte->estado === \App\Enums\EstadoDte::Rechazado)
                                 @if ($dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal)
                                     <form method="POST" action="{{ route('facturacion.contingencia.corregir', $dte) }}">@csrf<button class="underline" type="submit">Emitir corregido</button></form>
