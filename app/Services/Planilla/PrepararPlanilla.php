@@ -124,7 +124,8 @@ final class PrepararPlanilla
         return DB::transaction(function () use ($usuario, $datos, $periodo, $individual, $alta) {
             // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
-            $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
+            // Sin costo para una quincena: solo bloquea en un pago individual o un aguinaldo.
+            $persona = $this->bloquearPersona($datos);
 
             // Un pago individual sin su persona bloqueada no pasaría por sus comprobaciones.
             if ($individual > 0 && $persona === null) {
@@ -213,6 +214,12 @@ final class PrepararPlanilla
     public function bloquearPersona(array $datos): ?PlanillaEmpleado
     {
         $clase = (string) ($datos['clase'] ?? '');
+
+        if ($clase === 'aguinaldo') {
+            $this->bloquearPersonasDelAguinaldo();
+
+            return null;
+        }
         // El mismo entero que acepta la regla `integer` de {@see abrir()}: «+5» o « 5» también
         // son la persona 5, y tienen que bloquearla y pasar por sus comprobaciones.
         $id = is_scalar($datos['empleado'] ?? null)
@@ -224,6 +231,22 @@ final class PrepararPlanilla
         }
 
         return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
+    }
+
+    /**
+     * El aguinaldo es de todas las personas a la vez y una vez por año, pero su planilla
+     * es del MES en que se paga: dos aguinaldos en meses distintos no chocan en la clave
+     * única. Para que dos generaciones —o una generación y una confirmación— no se pisen,
+     * las dos toman el candado de las fichas, que es el mismo mecanismo de vacaciones e
+     * indemnización con su persona. La segunda espera, y cuando entra ya ve a quién le
+     * pagó la primera ({@see PrestacionAnual::calcular()}, `repetido`).
+     *
+     * Todas las fichas, y siempre por id: en el mismo orden dos pedidos no pueden quedar
+     * esperándose entre sí. Como en {@see bloquearPersona()}, va antes de leer nada.
+     */
+    public function bloquearPersonasDelAguinaldo(): void
+    {
+        PlanillaEmpleado::query()->orderBy('id')->lockForUpdate()->get(['id']);
     }
 
     /**
