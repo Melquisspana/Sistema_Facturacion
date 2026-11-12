@@ -98,6 +98,19 @@ class ConciliacionTxtParser
         return $limpio === '' ? null : mb_strtoupper($limpio);
     }
 
+    /**
+     * ¿A esta fila de documento (CF o NC) le falta el número o el importe? Una fila así no
+     * identifica ni informa nada: no es evidencia de pago. Quien aplica el archivo la aparta
+     * y la muestra; el documento queda como estaba. Es un solo criterio para los dos
+     * circuitos (lote PPQ y seguimiento de Cobros).
+     *
+     * @param  array<string, mixed>  $fila  una fila de {@see parse()}
+     */
+    public static function filaIncompleta(array $fila): bool
+    {
+        return $fila['numeroNorm'] === null || $fila['valor'] === null;
+    }
+
     /** Convierte "08-JUN-26" (u otras variantes) a Y-m-d; null si no se reconoce. */
     private function fecha(string $texto): ?string
     {

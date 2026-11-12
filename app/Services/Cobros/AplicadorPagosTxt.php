@@ -243,7 +243,7 @@ class AplicadorPagosTxt
                 continue;
             }
 
-            if ($fila['numeroNorm'] === null || $fila['valor'] === null) {
+            if (ConciliacionTxtParser::filaIncompleta($fila)) {
                 // Una fila de documento sin número o sin importe no identifica ni informa
                 // nada. Se muestra para que el cliente la corrija.
                 $invalidas[] = $fila;

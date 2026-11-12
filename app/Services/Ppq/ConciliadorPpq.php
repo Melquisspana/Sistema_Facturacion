@@ -128,7 +128,7 @@ class ConciliadorPpq
 
         // Indexar puede rechazar el archivo. Va ANTES de abrir la transacción: un archivo
         // que se contradice no llega siquiera a tocar un renglón.
-        [$cf, $nc, $qd, $repetidas] = $this->indexar($filas);
+        [$cf, $nc, $qd, $repetidas, $invalidas] = $this->indexar($filas);
 
         $porNumero = ($candidatos ?? $lote->items)->groupBy(fn ($i) => $i->numeroNormalizado());
         $usadosCf = [];
@@ -143,7 +143,7 @@ class ConciliadorPpq
 
         try {
             $corrida = DB::transaction(function () use (
-                $lote, $cf, $nc, $qd, $filas, $usuario, $archivo, $repetidas, $porNumero,
+                $lote, $cf, $nc, $qd, $filas, $usuario, $archivo, $repetidas, $invalidas, $porNumero,
                 &$usadosCf, &$usadosNc, &$ccfPagados, &$ccfPendientes,
                 &$ncAplicadas, &$ncPendientes, &$conservados, &$movimientos, &$sinCambio,
             ) {
@@ -190,7 +190,7 @@ class ConciliadorPpq
                         : $ccfPagados[] = $this->detalle($item, $fila);
                 }
 
-                return $this->registrar($lote, $usuario, $archivo, $filas, $cf, $nc, $qd, $movimientos, $sinCambio, $repetidas);
+                return $this->registrar($lote, $usuario, $archivo, $filas, $cf, $nc, $qd, $movimientos, $sinCambio, $repetidas, $invalidas);
             });
         } catch (QueryException $e) {
             // El índice único ganó la carrera contra otra pestaña que subía el mismo
@@ -218,9 +218,12 @@ class ConciliadorPpq
             // Documentos que venían más de una vez con datos IDÉNTICOS. No cambian nada,
             // pero se informan: un archivo que repite filas suele venir mal armado.
             'repetidas' => $repetidas,
+            // Filas de documento sin número o sin importe. No se aplicaron: el renglón
+            // que nombran quedó como estaba. Se muestran para reclamarlas al cliente.
+            'invalidas' => $invalidas,
             'noEnPpq' => $this->noEnPpq($cf, $nc, $usadosCf, $usadosNc),
             'ajustesQd' => $qd,
-            'totales' => $this->totales($cf, $nc, $qd, $ccfPagados, $ccfPendientes, $ncAplicadas, $ncPendientes, $conservados, $repetidas),
+            'totales' => $this->totales($cf, $nc, $qd, $ccfPagados, $ccfPendientes, $ncAplicadas, $ncPendientes, $conservados, $repetidas, $invalidas),
             // Si este MISMO archivo ya dejó pagos o ajustes en el seguimiento de Cobros. Solo
             // se informa: la conciliación del lote no cambia por eso.
             'enCobros' => $archivo !== null ? app(EvidenciaEntreCircuitos::class)->enCobros($archivo->hash) : null,
@@ -247,8 +250,15 @@ class ConciliadorPpq
      * repetirlo no puede producir un cobro equivocado. Dos ajustes distintos con la misma
      * referencia son perfectamente posibles.
      *
+     * ─────────────────────── Una fila sin importe no es un pago ───────────────────────
+     *
+     * La fila de documento a la que le falta el número o el importe (vacío o no numérico)
+     * NO entra al índice: marcaría el renglón como pagado sin decir cuánto se pagó. Se
+     * aparta con el mismo criterio que usa Cobros
+     * ({@see ConciliacionTxtParser::filaIncompleta()}) y se devuelve para mostrarla.
+     *
      * @param  array<int, array<string, mixed>>  $filas
-     * @return array{0: array<string, array<string, mixed>>, 1: array<string, array<string, mixed>>, 2: array<int, array<string, mixed>>, 3: array<int, array<string, mixed>>}
+     * @return array{0: array<string, array<string, mixed>>, 1: array<string, array<string, mixed>>, 2: array<int, array<string, mixed>>, 3: array<int, array<string, mixed>>, 4: array<int, array<string, mixed>>}
      *
      * @throws ArchivoConciliacionInconsistenteException
      */
@@ -257,6 +267,7 @@ class ConciliadorPpq
         /** @var array<string, array<int, array<string, mixed>>> $porNumero */
         $porNumero = [];
         $qd = [];
+        $invalidas = [];
 
         foreach ($filas as $f) {
             if (! in_array($f['tipo'], self::TIPOS_DE_DOCUMENTO, true)) {
@@ -267,8 +278,10 @@ class ConciliadorPpq
                 continue; // tipos no esperados se ignoran, como siempre
             }
 
-            if ($f['numeroNorm'] === null) {
-                continue; // fila de documento sin número: no identifica nada
+            if (ConciliacionTxtParser::filaIncompleta($f)) {
+                $invalidas[] = $f;
+
+                continue;
             }
 
             $ejercicio = EjercicioControl::de($f['fecha'] ?? null);
@@ -296,7 +309,7 @@ class ConciliadorPpq
                 : $cf[$numero] = $fila;
         }
 
-        return [$cf, $nc, $qd, $repetidas];
+        return [$cf, $nc, $qd, $repetidas, $invalidas];
     }
 
     /**
@@ -402,6 +415,7 @@ class ConciliadorPpq
      * @param  array<int, array<string, mixed>>  $qd
      * @param  array<int, array<string, mixed>>  $movimientos
      * @param  array<int, array<string, mixed>>  $repetidas
+     * @param  array<int, array<string, mixed>>  $invalidas
      */
     private function registrar(
         PpqLote $lote,
@@ -414,6 +428,7 @@ class ConciliadorPpq
         array $movimientos,
         int $sinCambio,
         array $repetidas,
+        array $invalidas,
     ): PpqConciliacion {
         $corrida = PpqConciliacion::create([
             'ppq_lote_id' => $lote->id,
@@ -447,6 +462,8 @@ class ConciliadorPpq
                 // Se registra aunque no cambie nada: un archivo que repite filas suele
                 // venir mal armado y conviene poder verlo después.
                 'filas_repetidas' => count($repetidas),
+                // Filas sin número o sin importe que se apartaron sin aplicar.
+                'filas_incompletas' => count($invalidas),
             ])
             ->log('concilió el lote contra el archivo de pagos');
 
@@ -507,9 +524,10 @@ class ConciliadorPpq
      * @param  array<string, array<string, mixed>>  $nc
      * @param  array<int, array<string, mixed>>  $qd
      * @param  array<int, array<string, mixed>>  $repetidas
+     * @param  array<int, array<string, mixed>>  $invalidas
      * @return array<string, int|string>
      */
-    private function totales(array $cf, array $nc, array $qd, array $ccfPagados, array $ccfPendientes, array $ncAplicadas, array $ncPendientes, array $conservados, array $repetidas): array
+    private function totales(array $cf, array $nc, array $qd, array $ccfPagados, array $ccfPendientes, array $ncAplicadas, array $ncPendientes, array $conservados, array $repetidas, array $invalidas): array
     {
         // Suma exacta: `array_sum` sobre floats acumula el error una vez por fila, y un
         // lote de sesenta renglones lo vuelve visible en el neto final.
@@ -535,6 +553,7 @@ class ConciliadorPpq
             // conservaron tal cual.
             'cantidad_conservados' => count($conservados),
             'cantidad_repetidas' => count($repetidas),
+            'cantidad_invalidas' => count($invalidas),
             'cantidad_no_en_ppq' => (count($cf) - count($ccfPagados)) + (count($nc) - count($ncAplicadas)),
             'cantidad_qd' => count($qd),
             'total_ccf_pagado' => $totalCf,

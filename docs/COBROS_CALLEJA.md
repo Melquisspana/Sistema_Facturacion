@@ -285,6 +285,7 @@ Estas reglas estaban repartidas en las revisiones fechadas de septiembre de 2026
 
 - PPQ y Cobros validan el código de proveedor de cada fila contra `PPQ_CODIGO_PROVEEDOR`. Sin configuración, o con una fila de otro código o vacía, se rechaza el archivo entero antes de registrar nada.
 - Los importes son decimales exactos: `-.50` es −0.50.
+- Una fila de CF o NC sin número o sin importe (vacío o no numérico) no se toma como pago, ni en PPQ ni en Cobros: se aparta, se muestra como «fila incompleta» y el documento queda como estaba.
 - El mismo TXT se reconoce por el SHA-256 de su contenido exacto. Si ya se procesó en el otro circuito (PPQ o Cobros), el informe lo avisa y enlaza. El aviso es informativo: no sincroniza estados, no suma pagos y no bloquea la carga.
 - Cobros no guarda el archivo como entidad: un TXT sin documentos identificados puede no dejar rastro, así que la falta de aviso no prueba que nunca se cargó.
 
