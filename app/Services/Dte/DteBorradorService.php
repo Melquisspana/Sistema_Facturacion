@@ -204,6 +204,12 @@ class DteBorradorService
             ]);
         }
 
+        // La copia de un rechazado que Hacienda después aceptó no se duplica mientras nadie
+        // la revise: la copia nueva sería la misma venta otra vez.
+        if ($motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoDuplicar($original)) {
+            throw ValidationException::withMessages(['duplicar' => $motivo]);
+        }
+
         return DB::transaction(function () use ($original, $usuario) {
             $nuevo = $this->crearBorrador([
                 'tipo_dte' => TipoDte::CreditoFiscal,

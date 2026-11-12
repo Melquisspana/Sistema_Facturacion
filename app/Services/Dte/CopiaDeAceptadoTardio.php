@@ -37,6 +37,9 @@ class CopiaDeAceptadoTardio
 
     public const RESUELTO = 'Es otra venta: se emite igual.';
 
+    /** Hasta cuántas copias encadenadas se sube buscando el original. De sobra, y sin lazos. */
+    private const NIVELES = 10;
+
     /** Deja escrito de qué documento es copia, y cómo estaba ese documento al copiarlo. */
     public function anotarCopia(Dte $copia, Dte $original, ?User $usuario = null): void
     {
@@ -53,11 +56,15 @@ class CopiaDeAceptadoTardio
     }
 
     /**
-     * El original que frena a este documento, o null si no hay conflicto: es copia de un
-     * documento que al copiarlo figuraba RECHAZADO, que hoy está aceptado por una
-     * aceptación tardía, y nadie dijo todavía que es otra venta.
+     * El original que frena a este documento, o null si no hay conflicto: es copia —o
+     * copia de una copia— de un documento que al copiarlo figuraba RECHAZADO, que hoy está
+     * aceptado por una aceptación tardía, y nadie dijo todavía que es otra venta.
      *
-     * Duplicar un documento ya aceptado para repetir una venta no es un conflicto.
+     * Sube por los padres: A rechazado → B lo corrige → C copia a B. Si después Hacienda
+     * acepta A, C es la misma venta que B. La subida se corta donde deja de ser la misma
+     * venta: en una copia que alguien ya resolvió como «otra venta», o en una copia sacada
+     * de un documento que ya estaba aceptado (duplicar un aceptado es repetir una venta, no
+     * corregirla).
      */
     public function originalEnConflicto(Dte $dte): ?Dte
     {
@@ -66,17 +73,48 @@ class CopiaDeAceptadoTardio
             return null;
         }
 
-        $anotaciones = $this->anotaciones($dte);
-        $copiado = $anotaciones->firstWhere('description', self::COPIADO);
+        $nodo = $dte;
 
-        if ($copiado === null || $anotaciones->contains('description', self::RESUELTO)
-            || ($copiado->properties['original_estado'] ?? null) !== EstadoDte::Rechazado->value) {
+        for ($nivel = 0; $nivel < self::NIVELES; $nivel++) {
+            $anotaciones = $this->anotaciones($nodo);
+            $copiado = $anotaciones->firstWhere('description', self::COPIADO);
+            $estadoAlCopiar = $copiado?->properties['original_estado'] ?? null;
+
+            if ($copiado === null || $anotaciones->contains('description', self::RESUELTO)
+                || $estadoAlCopiar === EstadoDte::Aceptado->value) {
+                return null;
+            }
+
+            $padre = Dte::whereKey((int) ($copiado->properties['original_id'] ?? 0))->first();
+
+            if ($padre === null) {
+                return null;
+            }
+
+            if ($estadoAlCopiar === EstadoDte::Rechazado->value && $this->aceptadoTarde($padre)) {
+                return $padre;
+            }
+
+            $nodo = $padre;
+        }
+
+        return null;
+    }
+
+    /**
+     * Por qué este documento no se puede DUPLICAR, o null si se puede. Mientras su conflicto
+     * esté pendiente, una copia nueva sería la misma venta otra vez, y ya sin el aviso.
+     */
+    public function motivoParaNoDuplicar(Dte $dte): ?string
+    {
+        $original = $this->originalEnConflicto($dte);
+
+        if ($original === null) {
             return null;
         }
 
-        $original = Dte::whereKey((int) ($copiado->properties['original_id'] ?? 0))->first();
-
-        return $original !== null && $this->aceptadoTarde($original) ? $original : null;
+        return 'Este documento es copia del '.$this->nombre($original).', que figuraba rechazado y Hacienda después aceptó. '
+            .'Resolvé ese aviso en su ficha antes de duplicarlo: una copia nueva sería la misma venta otra vez.';
     }
 
     /**

@@ -365,4 +365,61 @@ class CopiaDeAceptadoTardioTest extends TestCase
 
         $this->assertNull(app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($dte));
     }
+
+    // ─────────── A → B → C: la copia de la copia ───────────
+
+    public function test_la_copia_en_conflicto_no_se_puede_duplicar_hasta_resolverlo(): void
+    {
+        [, $copia] = $this->conflicto();
+        $cuantos = Dte::count();
+
+        $this->actingAs($this->emisor)->from(route('facturacion.edit', $copia))
+            ->post(route('facturacion.duplicar', $copia))
+            ->assertRedirect(route('facturacion.edit', $copia))
+            ->assertSessionHas('error', fn ($error) => str_contains($error, 'es copia del') && str_contains($error, 'antes de duplicarlo'));
+
+        $this->assertSame($cuantos, Dte::count(), 'No tiene que haber nacido otra copia.');
+
+        // Resuelto, se duplica como cualquier documento.
+        $this->resolver($copia);
+        $this->actingAs($this->emisor)->post(route('facturacion.duplicar', $copia))->assertSessionHasNoErrors();
+        $this->assertSame($cuantos + 1, Dte::count());
+    }
+
+    public function test_la_copia_de_la_copia_tambien_queda_frenada(): void
+    {
+        // A rechazado → B lo corrige → C copia a B, todo antes de que llegue el sello de A.
+        $a = $this->rechazado();
+        $b = $this->copiaDe($a);
+        $c = $this->copiaDe($b);
+        $this->haciendaAceptaTarde($a);
+
+        $motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($c);
+        $this->assertNotNull($motivo, 'C es la misma venta que A: no puede emitirse sin revisarla.');
+        $this->assertStringContainsString($a->numero_control, $motivo);
+        try {
+            app(DteGeneracionService::class)->generar($c);
+            $this->fail('La copia de la copia no se genera sin revisarla.');
+        } catch (GeneracionException $e) {
+            $this->assertStringContainsString('es copia del', $e->getMessage());
+        }
+        $this->assertNotNull(app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($b));
+
+        // Decir que C es otra venta libera a C y no a B.
+        $this->resolver($c);
+        $this->assertNull(app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($c->fresh()));
+        $this->assertNotNull(app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($b->fresh()));
+    }
+
+    public function test_si_la_copia_del_medio_ya_se_resolvio_como_otra_venta_la_suya_no_hereda_el_conflicto(): void
+    {
+        $a = $this->rechazado();
+        $b = $this->copiaDe($a);
+        $c = $this->copiaDe($b);
+        $this->haciendaAceptaTarde($a);
+
+        $this->resolver($b);
+
+        $this->assertNull(app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($c->fresh()));
+    }
 }
