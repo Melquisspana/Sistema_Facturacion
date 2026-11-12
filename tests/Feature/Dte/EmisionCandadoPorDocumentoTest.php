@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Exceptions\Dte\GeneracionException;
+use App\Exceptions\Dte\TransicionInvalidaException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -13,14 +14,17 @@ use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Services\Cobros\AltaCobrosService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\DteStateMachine;
 use App\Services\Dte\DteTransmisionService;
 use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
@@ -272,7 +276,15 @@ class EmisionCandadoPorDocumentoTest extends TestCase
         $this->assertSame(1, $guardado->historial()->where('estado_nuevo', 'aceptado')->count());
     }
 
-    public function test_una_aceptacion_tardia_sobre_un_documento_rechazado_no_cambia_el_estado_y_queda_anotada(): void
+    // ===================== 2b) PERO UN SELLO DE HACIENDA PARA EL MISMO CÓDIGO MANDA
+
+    /**
+     * Deja el documento RECHAZADO por el primer pedido y devuelve la copia que el segundo
+     * cargó cuando todavía estaba firmado. La respuesta del segundo es la que se le pase.
+     *
+     * @param  array<string, mixed>  $respuestaTardia
+     */
+    private function rechazadoConRespuestaTardia(array $respuestaTardia, int $status = 200): Dte
     {
         $this->habilitar();
         $dte = $this->firmado();
@@ -280,25 +292,149 @@ class EmisionCandadoPorDocumentoTest extends TestCase
 
         Http::fakeSequence('*')
             ->push(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Código de generación ya existe', 'observaciones' => []], 400)
-            ->push(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO'], 200);
+            ->push($respuestaTardia, $status);
 
-        $transmision = app(DteTransmisionService::class);
-        $this->assertSame('rechazado', $transmision->transmitir($dte)['resultado']);
+        $this->assertSame('rechazado', app(DteTransmisionService::class)->transmitir($dte)['resultado']);
+        $this->assertSame(EstadoDte::Rechazado, $dte->fresh()->estado);
 
-        $tardio = $transmision->transmitir($copiaVieja);
+        return $copiaVieja;
+    }
 
-        $guardado = $dte->fresh();
-        $this->assertSame(EstadoDte::Rechazado, $guardado->estado);
-        $this->assertNull($guardado->sello_recepcion);
-        // No se inventa una transición que la máquina de estados no permite, pero el sello
-        // que mandó Hacienda no se pierde: queda en la bitácora y en el aviso a la persona.
-        $this->assertSame('rechazado', $tardio['resultado']);
-        $this->assertStringContainsString('SELLO-DE-PRUEBA-0002', $tardio['mensaje']);
+    public function test_una_aceptacion_tardia_con_sello_prevalece_sobre_el_rechazo_del_mismo_codigo(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO']);
+
+        $tardio = app(DteTransmisionService::class)->transmitir($copiaVieja);
+
+        // Hacienda tiene la venta aceptada: el sistema no puede seguir tratándola como rechazada.
+        $guardado = Dte::findOrFail($copiaVieja->id);
+        $this->assertSame(EstadoDte::Aceptado, $guardado->estado);
+        $this->assertSame('SELLO-DE-PRUEBA-0002', $guardado->sello_recepcion);
+        $this->assertSame('aceptado', $tardio['resultado']);
+        $this->assertSame('SELLO-DE-PRUEBA-0002', $tardio['sello']);
+
+        // Por la máquina de estados, con su renglón en el historial: Rechazado → Aceptado.
+        $this->assertSame(1, $guardado->historial()->where('estado_anterior', 'rechazado')->where('estado_nuevo', 'aceptado')->count());
+        $this->assertSame(1, $guardado->historial()->where('estado_nuevo', 'aceptado')->count());
+
+        // El rechazo anterior no se pierde: queda en la respuesta, en disco y en la bitácora.
+        $this->assertTrue($guardado->respuesta_mh['aceptacion_tardia']);
+        $this->assertSame('aceptado', $guardado->respuesta_mh['resultado']);
+        $this->assertSame('Código de generación ya existe', $guardado->respuesta_mh['rechazo_anterior']['descripcionMsg']);
+        Storage::disk('local')->assertExists($guardado->respuesta_mh['rechazo_anterior']['archivo']);
         $this->assertDatabaseHas('activity_log', [
             'log_name' => 'dte_transmision',
-            'subject_id' => $dte->id,
+            'subject_id' => $guardado->id,
+            'description' => 'Llegó una aceptación tardía de Hacienda con sello y prevaleció sobre el rechazo que tenía el documento.',
+        ]);
+    }
+
+    public function test_lo_que_cuelga_de_aceptado_ocurre_una_sola_vez(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO']);
+        $otraCopiaVieja = Dte::findOrFail($copiaVieja->id);
+        // El alta en Seguimiento de cobros la dispara el paso a Aceptado: una vez, ni cero ni dos.
+        $this->mock(AltaCobrosService::class, fn ($alta) => $alta->shouldReceive('darDeAlta')->once());
+
+        app(DteTransmisionService::class)->transmitir($copiaVieja);
+        // Otra respuesta tardía del mismo documento ya no cambia nada.
+        $segunda = app(DteTransmisionService::class)->aplicarResultadoDeConsulta($otraCopiaVieja, [
+            'resultado' => 'aceptado', 'http_status' => 200, 'mensaje' => 'RECIBIDO', 'sello' => 'SELLO-DE-PRUEBA-0002',
+        ]);
+
+        $this->assertSame('aceptado', $segunda['resultado']);
+        $this->assertSame(1, Dte::findOrFail($copiaVieja->id)->historial()->where('estado_nuevo', 'aceptado')->count());
+    }
+
+    public function test_un_sello_tardio_de_otro_codigo_de_generacion_no_prevalece(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia([
+            'estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0003', 'descripcionMsg' => 'RECIBIDO',
+            'codigoGeneracion' => strtoupper((string) Str::uuid()),
+        ]);
+
+        $tardio = app(DteTransmisionService::class)->transmitir($copiaVieja);
+
+        $guardado = Dte::findOrFail($copiaVieja->id);
+        $this->assertSame(EstadoDte::Rechazado, $guardado->estado);
+        $this->assertNull($guardado->sello_recepcion);
+        $this->assertSame('rechazado', $tardio['resultado']);
+        // El sello ajeno no se pierde: queda en la bitácora para revisarlo.
+        $this->assertDatabaseHas('activity_log', [
+            'log_name' => 'dte_transmision',
+            'subject_id' => $guardado->id,
             'description' => 'Llegó una respuesta tardía de Hacienda y se conservó el estado que ya tenía el documento.',
         ]);
+    }
+
+    public function test_una_aceptacion_tardia_sin_sello_no_prevalece(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'descripcionMsg' => 'RECIBIDO']);
+
+        app(DteTransmisionService::class)->transmitir($copiaVieja);
+
+        $this->assertSame(EstadoDte::Rechazado, Dte::findOrFail($copiaVieja->id)->estado);
+    }
+
+    public function test_la_aceptacion_tardia_devuelve_a_la_operacion_un_rechazado_que_se_habia_archivado(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO']);
+        Dte::whereKey($copiaVieja->id)->update(['archivado' => true, 'archivado_en' => now()]);
+
+        app(DteTransmisionService::class)->transmitir($copiaVieja);
+
+        // Un aceptado escondido entre los archivados no se cobraría ni se vería en el día a día.
+        $guardado = Dte::findOrFail($copiaVieja->id);
+        $this->assertSame(EstadoDte::Aceptado, $guardado->estado);
+        $this->assertFalse($guardado->estaArchivado());
+        $this->assertTrue($guardado->respuesta_mh['rechazo_anterior']['estaba_archivado']);
+    }
+
+    public function test_la_ficha_avisa_que_se_acepto_despues_de_rechazado_para_revisar_un_posible_duplicado(): void
+    {
+        $copiaVieja = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DE-PRUEBA-0002', 'descripcionMsg' => 'RECIBIDO']);
+        $usuario = $this->usuario();
+
+        $this->actingAs($usuario)->get(route('facturacion.show', $copiaVieja))
+            ->assertOk()->assertDontSee('después de que acá figuró como rechazado');
+
+        app(DteTransmisionService::class)->transmitir($copiaVieja);
+
+        $this->actingAs($usuario)->get(route('facturacion.show', $copiaVieja))
+            ->assertOk()
+            ->assertSee('Hacienda aceptó este documento después de que acá figuró como rechazado')
+            ->assertSee('facturada dos veces');
+    }
+
+    public function test_la_maquina_de_estados_solo_deja_salir_de_rechazado_con_un_sello(): void
+    {
+        $maquina = app(DteStateMachine::class);
+        $firmado = $this->firmado();
+
+        // Desde otro estado, no: la salida es solo para un Rechazado.
+        try {
+            $maquina->aceptarTrasRechazo($firmado);
+            $this->fail('Solo un documento rechazado puede aceptarse por esta vía.');
+        } catch (TransicionInvalidaException) {
+        }
+
+        $rechazado = $this->rechazadoConRespuestaTardia(['estado' => 'PROCESADO', 'descripcionMsg' => 'RECIBIDO'])->fresh();
+
+        // Sin sello, tampoco.
+        try {
+            $maquina->aceptarTrasRechazo($rechazado);
+            $this->fail('Sin sello de recepción no hay aceptación.');
+        } catch (TransicionInvalidaException) {
+        }
+
+        // Y la vía general sigue cerrada: Rechazado no tiene estados siguientes.
+        try {
+            $maquina->transicionar($rechazado, EstadoDte::Aceptado);
+            $this->fail('La transición general no puede sacar un documento de Rechazado.');
+        } catch (TransicionInvalidaException) {
+        }
+
+        $this->assertSame(EstadoDte::Rechazado, $rechazado->fresh()->estado);
     }
 
     // ===================== 3) GENERAR CON UNA COPIA VIEJA NO CAMBIA NÚMERO NI CÓDIGO

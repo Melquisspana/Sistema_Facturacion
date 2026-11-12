@@ -23,6 +23,17 @@
                  sin importar sello/estado. No confundir con el aviso de MODO DTE de abajo. --}}
             <x-ambiente-pruebas-aviso :dte="$dte" />
 
+            {{-- Aceptación tardía: figuró como rechazado y después llegó el sello de Hacienda
+                 para el mismo código de generación. El documento ya está aceptado; lo que una
+                 persona tiene que mirar es si mientras tanto se corrigió o se duplicó. --}}
+            @if (data_get($dte->respuesta_mh, 'aceptacion_tardia'))
+                <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800" role="alert">
+                    <strong>Hacienda aceptó este documento después de que acá figuró como rechazado.</strong>
+                    Vale el sello de Hacienda: el documento está aceptado.
+                    Si mientras tanto se corrigió o se duplicó, revisá esa copia: si también se emite, la misma venta queda facturada dos veces.
+                </div>
+            @endif
+
             {{-- El aviso GRANDE de modo DTE ya no va en la ficha. El mismo dato —modo activo y
                  si una emisión real a producción es posible— lo da el indicador COMPACTO del
                  layout superior (<x-app-layout> → navigation), visible en todas las pantallas

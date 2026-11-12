@@ -7,6 +7,7 @@ use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use App\Observers\DteObserver;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Http\Client\Response;
@@ -264,14 +265,21 @@ class DteTransmisionService
         }
 
         return DB::transaction(function () use ($dte, $tipo, $resultado) {
+            // El código que ESTE pedido transmitió o consultó, antes de releer la fila.
+            $codigoDeEstePedido = (string) $dte->codigo_generacion;
+
             // Relectura bajo candado, igual que al guardar una invalidación: lo que este
             // pedido tiene en memoria puede ser de antes de que otro guardara su respuesta.
-            // Un documento que ya dejó de estar firmado no se toca: un «Aceptado» no se
-            // convierte en «Rechazado» por una respuesta que llegó tarde.
+            // Un documento que ya dejó de estar firmado no se pisa: un «Aceptado» no se
+            // convierte en «Rechazado» por una respuesta que llegó tarde. Lo contrario sí
+            // vale, y es la única excepción: un sello de Hacienda para el mismo código
+            // manda sobre un rechazo guardado.
             $actual = Dte::withTrashed()->whereKey($dte->id)->lockForUpdate()->firstOrFail();
             $dte->setRawAttributes($actual->getAttributes(), true);
             if ($dte->estado !== EstadoDte::Firmado) {
-                return $this->conservarEstado($dte, $resultado);
+                return $this->selloTardioPrevalece($dte, $codigoDeEstePedido, $resultado)
+                    ? $this->aceptarTrasRechazo($dte, $resultado)
+                    : $this->conservarEstado($dte, $resultado);
             }
 
             // Envío efectivo a recepción.
@@ -294,6 +302,103 @@ class DteTransmisionService
 
             return $resultado;
         });
+    }
+
+    /**
+     * ¿Una aceptación que llega tarde manda sobre el rechazo que quedó guardado?
+     *
+     * Solo si Hacienda mandó SELLO y es del MISMO código de generación que tiene la fila:
+     * el que este pedido transmitió o consultó, y el que nombra la respuesta cuando lo
+     * trae. Con otro código, o sin sello, no se toca nada y queda en la bitácora.
+     *
+     * @param  array<string, mixed>  $tardio
+     */
+    private function selloTardioPrevalece(Dte $dte, string $codigoDeEstePedido, array $tardio): bool
+    {
+        if ($dte->estado !== EstadoDte::Rechazado || ($tardio['resultado'] ?? null) !== 'aceptado' || blank($tardio['sello'] ?? null)) {
+            return false;
+        }
+
+        $deLaFila = strtoupper(trim((string) $dte->codigo_generacion));
+
+        if ($deLaFila === '' || strtoupper(trim($codigoDeEstePedido)) !== $deLaFila) {
+            return false;
+        }
+
+        $deLaRespuesta = $tardio['cuerpo']['codigoGeneracion'] ?? null;
+
+        return blank($deLaRespuesta) || strtoupper(trim((string) $deLaRespuesta)) === $deLaFila;
+    }
+
+    /**
+     * Pasa a ACEPTADO un documento que figuraba rechazado, porque Hacienda lo tiene
+     * aceptado con sello. Va por el paso propio de la máquina de estados, así que todo lo
+     * que cuelga de «aceptado» ocurre como en cualquier aceptación y una sola vez: el alta
+     * en Seguimiento de cobros, lo de las notas de crédito y el correo automático salen
+     * del cambio de estado ({@see DteObserver}).
+     *
+     * El rechazo no se borra: sus datos quedan dentro de la respuesta guardada, su archivo
+     * se aparta antes de escribir el de la aceptación, y todo va a la bitácora. Si estaba
+     * ARCHIVADO, vuelve a la operación diaria: un aceptado escondido no se vería ni se
+     * cobraría.
+     *
+     * Lo que NO hace: buscar ni tocar un documento que haya salido de «corregir y
+     * duplicar» mientras este figuraba rechazado. Eso lo revisa una persona; la ficha lo
+     * avisa por la marca `aceptacion_tardia`.
+     *
+     * @param  array<string, mixed>  $resultado
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
+     */
+    private function aceptarTrasRechazo(Dte $dte, array $resultado): array
+    {
+        $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
+        $rechazo = is_array($dte->respuesta_mh) ? $dte->respuesta_mh : [];
+        $estabaArchivado = $dte->estaArchivado();
+
+        // La respuesta de la aceptación se guarda con el mismo nombre que la del rechazo.
+        $archivoDelRechazo = null;
+        if (filled($dte->respuesta_mh_path) && $disco->exists($dte->respuesta_mh_path)) {
+            $archivoDelRechazo = preg_replace('/\.json$/', '', (string) $dte->respuesta_mh_path).'-rechazo-anterior.json';
+            $disco->put($archivoDelRechazo, (string) $disco->get($dte->respuesta_mh_path));
+        }
+
+        $dte->sello_recepcion = (string) $resultado['sello'];
+        $this->persistirRespuesta($dte, $resultado);
+
+        $rechazoAnterior = [
+            'codigoMsg' => $rechazo['codigoMsg'] ?? null,
+            'descripcionMsg' => $rechazo['descripcionMsg'] ?? null,
+            'observaciones' => $rechazo['observaciones'] ?? [],
+            'fhProcesamiento' => $rechazo['fhProcesamiento'] ?? null,
+            'archivo' => $archivoDelRechazo,
+            'estaba_archivado' => $estabaArchivado,
+        ];
+        $dte->respuesta_mh = array_merge((array) $dte->respuesta_mh, [
+            'aceptacion_tardia' => true,
+            'rechazo_anterior' => $rechazoAnterior,
+        ]);
+        if ($estabaArchivado) {
+            $dte->archivado = false;
+            $dte->archivado_en = null;
+        }
+        $dte->save();
+
+        $this->maquina->aceptarTrasRechazo($dte, null,
+            'Aceptación tardía de Hacienda: el sello del mismo código de generación prevalece sobre el rechazo');
+
+        activity('dte_transmision')
+            ->performedOn($dte)
+            ->withProperties([
+                'codigo_generacion' => $dte->codigo_generacion,
+                'sello' => $dte->sello_recepcion,
+                'rechazo_anterior' => $rechazoAnterior,
+            ])
+            ->log('Llegó una aceptación tardía de Hacienda con sello y prevaleció sobre el rechazo que tenía el documento.');
+
+        return $this->resultado('aceptado', $resultado['http_status'] ?? null,
+            'Hacienda aceptó el documento después de que acá figuró como rechazado. Vale su sello: quedó aceptado. '
+            .'Si mientras tanto se corrigió o se duplicó, revisá esa copia.',
+            $dte->sello_recepcion, $resultado['observaciones'] ?? [], $resultado['cuerpo'] ?? null);
     }
 
     /**
@@ -328,11 +433,11 @@ class DteTransmisionService
         }
 
         if ($dte->estado === EstadoDte::Rechazado) {
-            // No se inventa una transición Rechazado → Aceptado. Si la respuesta tardía
-            // trae sello, se dice bien claro: hay que revisarlo antes de corregir o duplicar.
+            // Acá solo llega una aceptación que NO prevaleció ({@see selloTardioPrevalece()}):
+            // el sello es de otro código de generación. No se toca nada y se dice bien claro.
             $mensaje = $tardio['resultado'] === 'aceptado' && $selloTardio !== null
-                ? 'El documento ya figuraba como rechazado, pero Hacienda respondió ACEPTADO con el sello '.$selloTardio
-                    .' a otro pedido de este mismo documento. No se cambió nada: avisá a soporte antes de corregirlo o duplicarlo.'
+                ? 'El documento ya figuraba como rechazado, y Hacienda respondió ACEPTADO con el sello '.$selloTardio
+                    .', pero para otro código de generación. No se cambió nada: avisá a soporte antes de corregirlo o duplicarlo.'
                 : 'El documento ya había sido rechazado por Hacienda en otro pedido. Se conservó ese resultado.';
 
             return $this->resultado('rechazado', $tardio['http_status'] ?? null, $mensaje);

@@ -31,6 +31,40 @@ class DteStateMachine
             );
         }
 
+        return $this->aplicar($dte, $actual, $nuevo, $usuario, $comentario);
+    }
+
+    /**
+     * La ÚNICA salida de «Rechazado», y solo hacia «Aceptado»: Hacienda aceptó ese mismo
+     * código de generación y mandó su sello, pero la respuesta llegó después de que acá
+     * se guardara un rechazo. El sello de Hacienda manda.
+     *
+     * Es un paso aparte y no un estado siguiente más de «Rechazado» a propósito: por
+     * {@see transicionar()} un rechazado sigue sin poder ir a ningún lado. Quien decide
+     * que el sello es del mismo documento es {@see DteTransmisionService}, con la fila
+     * bloqueada; acá se exige lo que no se puede saltar: que esté rechazado y que el
+     * sello ya esté puesto.
+     *
+     * @throws TransicionInvalidaException
+     */
+    public function aceptarTrasRechazo(Dte $dte, ?User $usuario = null, ?string $comentario = null): Dte
+    {
+        if ($dte->estado !== EstadoDte::Rechazado) {
+            throw new TransicionInvalidaException(
+                'Solo un documento rechazado se acepta por una respuesta tardía de Hacienda (estado actual: '.$dte->estado->label().').'
+            );
+        }
+
+        if (blank($dte->sello_recepcion)) {
+            throw new TransicionInvalidaException('Sin sello de recepción de Hacienda un documento rechazado no pasa a aceptado.');
+        }
+
+        return $this->aplicar($dte, EstadoDte::Rechazado, EstadoDte::Aceptado, $usuario, $comentario);
+    }
+
+    /** Guarda el estado nuevo y su renglón en el historial. Quien llama ya validó el paso. */
+    private function aplicar(Dte $dte, EstadoDte $actual, EstadoDte $nuevo, ?User $usuario, ?string $comentario): Dte
+    {
         $usuarioId = $usuario?->id ?? Auth::id();
 
         DB::transaction(function () use ($dte, $actual, $nuevo, $usuarioId, $comentario) {
