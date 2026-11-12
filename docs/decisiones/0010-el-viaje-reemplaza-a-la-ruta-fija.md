@@ -33,11 +33,21 @@ El **viaje** se arma solo y reemplaza a la salida armada a mano.
 ## Consecuencias
 
 - El vendedor usa tres pantallas: Inicio, Sacar pedido y Por entregar. La oficina mira los viajes en el tablero y no arma nada.
-- Las salidas armadas a mano que ya existen quedan como historial en «Todos los viajes». Las que siguen abiertas se pueden terminar como antes; no se crean nuevas.
+- Las salidas armadas a mano que ya existen quedan como historial en «Todos los viajes», solo para leer; no se crean nuevas. Desde el 11/11/2026 ya no se terminan ni se liquidan (ver «Revisión del 11/11/2026»).
 - No se borran tablas ni columnas. `rutas.frecuencia_objetivo_dias`, `cliente_sucursales.ruta_id` y el propósito de la salida se conservan con sus datos, sin pantalla que los edite. Volver atrás es reponer pantallas, no recuperar datos.
 - Una sala sin zona (ninguna ruta cubre su lugar) no bloquea nada: su pedido y su entrega van a un viaje sin zona. El tablero avisa cuántas salas están así para que se agregue la cobertura.
 - Se pierde el control de caja por salida (cierre del día y liquidación) para lo nuevo. Lo reemplaza el PDF firmado, fuera del sistema. Si hiciera falta volver a controlarlo adentro, habría que diseñarlo sobre el viaje.
-- Los permisos para armar salidas dejan de tener uso. El de terminar salidas se conserva mientras quede alguna salida vieja abierta.
+- Los permisos para armar salidas dejan de tener uso. El de terminar salidas (`rutas.salidas.terminar`) se retiró el 11/11/2026.
+
+## Revisión del 11/11/2026: se quita el flujo viejo
+
+Una lectura de producción mostró una sola salida armada a mano, ya terminada y liquidada, y ninguna programada ni en camino. Ningún código crea salidas a mano. Melqui decidió quitar las pantallas que solo servían a esas salidas:
+
+- **Se quitó:** «Salir ahora» y el bloque «Programadas» del tablero; el cierre de día viejo («Terminar día»), «Reabrir día» y su PDF; «Terminar ruta», la liquidación y su PDF; la hoja vieja del vendedor («Salidas de antes en camino»); el bloque «Facturados después de entregar»; «toda la sala entregada»; las redirecciones de las pantallas retiradas; y el permiso `rutas.salidas.terminar`.
+- **Se quedó:** todo el flujo del viaje; que la oficina anote o deshaga una entrega por el vendedor, sume o quite un CCF de un viaje, corrija un gasto y cancele un viaje abierto por error; y las salidas de antes en «Todos los viajes» y en su detalle, solo para leer.
+- **No se borró ninguna tabla ni columna.** `salida_ruta_cierres` y las columnas de la liquidación (`liquidada_en`, `liquidada_por`, `entrega_dinero_personal_id`) conservan sus datos, sin pantalla. El sistema los sigue leyendo para no tocar un día cerrado ni una salida liquidada.
+- **Lo que se pierde:** abrir desde el sistema la liquidación y el PDF de cada día de las salidas de antes. Volver atrás es reponer pantallas, no recuperar datos.
+- Si quedara una salida de antes programada o en camino, la oficina la cancela desde su detalle y sus CCF vuelven a «Por entregar».
 
 ## Referencias
 
