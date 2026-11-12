@@ -555,7 +555,7 @@
                         + '<span class="shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + (s.estado === 'atrasada' ? PASTILLA.mal : PASTILLA.ojo) + '">' + visitaTexto(s) + '</span></li>').join('')
                         + (mas > 0 ? '<li class="py-2 text-sm text-gray-500">y ' + mas + ' más</li>' : '') + '</ul>'
                     : '<p class="mt-1"><span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ' + PASTILLA.bien + '">✓ Al día: ninguna atrasada ni por visitar</span></p>')
-                + (z.sinRitmo ? '<p class="mt-1 text-xs text-gray-500">' + (z.sinRitmo === 1 ? '1 sala todavía no tiene ritmo' : z.sinRitmo + ' salas todavía no tienen ritmo') + ': con menos de tres visitas no se sabe cuándo le toca.</p>' : '')
+                + (z.sinRitmo ? '<p class="mt-1 text-xs text-gray-500">' + (z.sinRitmo === 1 ? '1 sala todavía no tiene ritmo: con menos de tres visitas no se sabe cada cuánto compra.' : z.sinRitmo + ' salas todavía no tienen ritmo: con menos de tres visitas no se sabe cada cuánto compran.') + '</p>' : '')
                 + '</div>';
         }
         return '<div class="space-y-4">'

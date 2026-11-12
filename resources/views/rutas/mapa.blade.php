@@ -90,6 +90,14 @@
             .mv-abajo { grid-column:1; }
         }
 
+        /* El resumen: tres cajas iguales; en el celular, lo vendido arriba a todo el ancho. */
+        .mv-resumen { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.75rem; }
+        .mv-resumen > :first-child { grid-column:1 / -1; }
+        @media (min-width: 1024px) {
+            .mv-resumen { grid-template-columns:repeat(3, minmax(0,1fr)); }
+            .mv-resumen > :first-child { grid-column:auto; }
+        }
+
         .mv-seg { display:inline-flex; gap:2px; padding:3px; border-radius:.625rem; }
         .mv-seg button { display:inline-flex; min-height:2.75rem; align-items:center; justify-content:center; gap:.5rem; padding:0 1.125rem; border-radius:.45rem; font-size:.9375rem; font-weight:600; }
         .mv-seg button[aria-pressed="false"]:hover { background:rgba(99,102,241,.08); }
@@ -208,8 +216,8 @@
             {{-- ===================== Resumen del mes ===================== --}}
             <section aria-labelledby="mapa-resumen">
                 <h2 id="mapa-resumen" class="sr-only">Resumen del mes</h2>
-                <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                    <div class="{{ $caja }} col-span-2 p-4 lg:col-span-1">
+                <div class="mv-resumen">
+                    <div class="{{ $caja }} p-4">
                         <span class="block text-sm text-gray-600">Vendido en {{ $mes }}</span>
                         <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-800">{{ $plata($t['ventas']) }}</span>
                         <span class="mt-0.5 block text-sm text-gray-500">
