@@ -160,4 +160,108 @@ class AceptacionPorConsultaTest extends TestCase
         $this->assertSame('aceptado', $r['resultado']);
         $this->assertSame(EstadoDte::Aceptado, $dte->fresh()->estado);
     }
+
+    // ─────────── Un RECHAZO por consulta también tiene que ser de este documento ───────────
+    //
+    // El sello solo hace falta para aceptar. La IDENTIDAD —el código por el que se preguntó,
+    // el que trae la respuesta y el ambiente— hace falta para los dos: un rechazo de otro
+    // documento dejaba este como Rechazado, y de ahí a «corregirlo y duplicarlo» hay un clic.
+
+    private const RECHAZO_NO_GUARDADO = 'No se guardó un rechazo informado por una consulta a Hacienda.';
+
+    /**
+     * @param  array<string, mixed>  $cambios
+     * @return array<string, mixed>
+     */
+    private function consultaRechaza(Dte $dte, array $cambios = []): array
+    {
+        return array_replace([
+            'resultado' => 'rechazado', 'http_status' => 200, 'mensaje' => 'Rechazo de prueba', 'sello' => null,
+            'cuerpo' => ['estado' => 'RECHAZADO', 'descripcionMsg' => 'Rechazo de prueba', 'codigoGeneracion' => $dte->codigo_generacion],
+        ], $cambios);
+    }
+
+    private function assertNoSeRechazoPorque(Dte $dte, array $respuesta, string $falta): void
+    {
+        $this->assertNotSame('rechazado', $respuesta['resultado']);
+        $guardado = $dte->fresh();
+        $this->assertSame(EstadoDte::Firmado, $guardado->estado);
+        $this->assertSame(0, $guardado->historial()->where('estado_nuevo', 'rechazado')->count());
+        $anotacion = Activity::where('log_name', 'dte_transmision')->where('subject_id', $dte->id)->where('description', self::RECHAZO_NO_GUARDADO)->sole();
+        $this->assertStringContainsString($falta, $anotacion->properties['falta']);
+    }
+
+    public function test_un_rechazo_por_consulta_del_mismo_documento_y_ambiente_se_guarda_como_siempre(): void
+    {
+        $dte = $this->firmado();
+
+        $r = app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $this->consultaRechaza($dte));
+
+        $this->assertSame('rechazado', $r['resultado']);
+        $this->assertSame(EstadoDte::Rechazado, $dte->fresh()->estado);
+    }
+
+    public function test_un_firmado_no_se_rechaza_con_la_respuesta_de_otro_codigo_de_generacion(): void
+    {
+        $dte = $this->firmado();
+
+        $r = app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $this->consultaRechaza($dte, [
+            'cuerpo' => ['estado' => 'RECHAZADO', 'descripcionMsg' => 'Rechazo de prueba', 'codigoGeneracion' => strtoupper((string) Str::uuid())],
+        ]));
+
+        $this->assertNoSeRechazoPorque($dte, $r, 'código de generación');
+    }
+
+    public function test_un_firmado_no_se_rechaza_si_se_consulto_por_un_codigo_que_ya_no_es_el_suyo(): void
+    {
+        $dte = $this->firmado();
+        $copia = Dte::findOrFail($dte->id);
+        $copia->codigo_generacion = strtoupper((string) Str::uuid());
+
+        $r = app(DteTransmisionService::class)->aplicarResultadoDeConsulta($copia, $this->consultaRechaza($dte, [
+            'cuerpo' => ['estado' => 'RECHAZADO', 'descripcionMsg' => 'Rechazo de prueba'],
+        ]));
+
+        $this->assertNoSeRechazoPorque($dte, $r, 'código de generación');
+    }
+
+    public function test_un_firmado_no_se_rechaza_con_una_consulta_hecha_en_otro_ambiente(): void
+    {
+        $dte = $this->firmado();
+
+        $r = app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $this->consultaRechaza($dte, ['ambiente' => '01']));
+        $this->assertNoSeRechazoPorque($dte, $r, 'ambiente');
+
+        Activity::query()->delete();
+        config()->set('dte.transmision.ambiente', 'produccion');
+        $r = app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $this->consultaRechaza($dte));
+        $this->assertNoSeRechazoPorque($dte, $r, 'ambiente');
+    }
+
+    public function test_el_comando_no_guarda_un_rechazo_de_otro_documento(): void
+    {
+        $dte = $this->firmado();
+        Http::swap(new Factory);
+        Http::fake(['*' => Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Rechazo de prueba',
+            'codigoGeneracion' => strtoupper((string) Str::uuid())], 200)]);
+
+        $this->artisan('dte:consultar', ['dte' => $dte->id, '--consultar' => true, '--aplicar' => true])
+            ->expectsOutputToContain('no se guardó')
+            ->assertExitCode(1);
+
+        $this->assertSame(EstadoDte::Firmado, $dte->fresh()->estado);
+    }
+
+    public function test_la_respuesta_a_un_envio_que_nombra_otro_documento_tampoco_cambia_este(): void
+    {
+        $dte = $this->firmado();
+        Http::swap(new Factory);
+        Http::fake(['*' => Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Rechazo de prueba',
+            'codigoGeneracion' => strtoupper((string) Str::uuid())], 400)]);
+
+        $r = app(DteTransmisionService::class)->transmitir($dte);
+
+        $this->assertNotSame('rechazado', $r['resultado']);
+        $this->assertSame(EstadoDte::Firmado, $dte->fresh()->estado);
+    }
 }

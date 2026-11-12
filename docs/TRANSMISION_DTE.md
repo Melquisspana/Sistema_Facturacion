@@ -481,6 +481,12 @@ tanto ese rechazado se «corrigió» duplicándolo, la copia queda **frenada** �
 se firma, no se transmite ni se duplica— hasta que alguien con permiso de emitir diga, con
 un motivo, que es otra venta (`App\Services\Dte\CopiaDeAceptadoTardio`).
 
+**Una respuesta definitiva solo se guarda si se puede comprobar que es del documento.**
+Aceptación o rechazo, tiene que traer el mismo código de generación (el del pedido y, si la
+respuesta lo informa, el suyo) y, cuando viene de una consulta, el mismo ambiente. Si no, el
+documento queda como estaba y la bitácora `dte_transmision` dice qué faltó
+(`aceptacion_sin_comprobar` / `rechazo_sin_comprobar`).
+
 **La bitácora `dte_copia` es estado operativo y no se depura.** De qué documento es copia
 cada copia, y quién resolvió cada conflicto, se guarda en `activity_log` con
 `log_name = 'dte_copia'`; no hay columna para eso. Borrar esas filas quita el freno o vuelve

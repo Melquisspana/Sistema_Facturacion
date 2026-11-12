@@ -114,7 +114,8 @@ class DteConsultarCommand extends Command
     /**
      * Qué pasó con `--aplicar`. Lo que Hacienda contestó se guardó por el MISMO camino que
      * la emisión ({@see DteTransmisionService::aplicarResultadoDeConsulta()}), con su regla:
-     * una aceptación solo se guarda con sello, mismo código de generación y mismo ambiente.
+     * una respuesta solo se guarda si es de este documento (mismo código de generación y
+     * mismo ambiente) y, si es una aceptación, con sello.
      * Es la forma de corregir a mano un documento que acá figura rechazado y Hacienda
      * tiene aceptado.
      *
