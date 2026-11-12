@@ -568,6 +568,60 @@ class AvisosTest extends TestCase
         $this->assertStringNotContainsString('Colegiatura', json_encode($contenido));
     }
 
+    // ──────────────────────────── Tope de filas del correo ────────────────────────────
+
+    public function test_el_correo_muestra_hasta_el_tope_de_filas_y_dice_cuantas_faltan(): void
+    {
+        config()->set('gastos.avisos.max_filas_resumen', 3);
+
+        $u = $this->operador();
+        foreach ([1, 2] as $n) {
+            $this->gasto($u, ['concepto' => "Vencido de prueba {$n}"], [['100.00', '2026-03-0'.$n]]);
+        }
+        foreach ([1, 2, 3, 4] as $n) {
+            $this->gasto($u, ['concepto' => "Por vencer de prueba {$n}"], [['50.00', '2026-04-0'.$n]]);
+        }
+        $this->gasto($u, ['concepto' => 'Recibo sin monto de prueba', 'importe' => null], []);
+
+        $contenido = app(EnviarResumenes::class)->contenido(['empresarial'], CarbonImmutable::parse('2026-03-10'));
+        $correo = new ResumenGastosCorreo('Usuario de prueba', $contenido);
+
+        // Los vencidos van primero y entran los dos; de los próximos entra uno solo.
+        $correo->assertSeeInText('Vencido de prueba 1');
+        $correo->assertSeeInText('Vencido de prueba 2');
+        $correo->assertSeeInText('Por vencer de prueba 1');
+        $correo->assertDontSeeInText('Por vencer de prueba 2');
+        $correo->assertDontSeeInText('Por vencer de prueba 4');
+        $correo->assertDontSeeInText('Recibo sin monto de prueba');
+
+        // Los títulos cuentan TODO, y cada grupo recortado dice cuántas faltan.
+        $correo->assertSeeInText('Vencidos (2)');
+        $correo->assertSeeInText('Próximos (4)');
+        $correo->assertSeeInText('y 3 más, miralos en el sistema');
+        $correo->assertSeeInText('Esperando monto (1)');
+        $correo->assertSeeInText('y 1 más, miralos en el sistema');
+
+        // El total es el de todas las obligaciones, no el de las filas mostradas.
+        $correo->assertSeeInText('USD 400.00');
+        $this->assertSame(7, $contenido['obligaciones']);
+    }
+
+    public function test_el_correo_que_no_pasa_el_tope_no_habla_de_filas_que_faltan(): void
+    {
+        config()->set('gastos.avisos.max_filas_resumen', 3);
+
+        $u = $this->operador();
+        $this->gasto($u, ['concepto' => 'Vencido de prueba'], [['100.00', '2026-03-01']]);
+        $this->gasto($u, ['concepto' => 'Por vencer de prueba'], [['50.00', '2026-04-01']]);
+
+        $contenido = app(EnviarResumenes::class)->contenido(['empresarial'], CarbonImmutable::parse('2026-03-10'));
+        $correo = new ResumenGastosCorreo('Usuario de prueba', $contenido);
+
+        $correo->assertSeeInText('Vencido de prueba');
+        $correo->assertSeeInText('Por vencer de prueba');
+        $correo->assertDontSeeInText('miralos en el sistema');
+    }
+
     // ──────────────────────────── Pantallas ────────────────────────────
 
     public function test_la_bandeja_muestra_los_avisos_propios(): void
