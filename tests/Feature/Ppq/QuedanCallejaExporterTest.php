@@ -364,7 +364,7 @@ class QuedanCallejaExporterTest extends TestCase
             $control = 'DTE-03-M001P002-'.str_pad((string) ($indice + 1), 15, '0', STR_PAD_LEFT);
             $this->ccf($lote, $control, $oc, $this->albaran($numero, $oc, fecha: $fecha));
         }
-        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000001', 'AC06/0207/00/6');
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000001', 'AC04/0207/00/6');
         $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000002', 'AC04/0207/00/4');
         $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000003', 'AC02/0207/00/3');
 
@@ -379,9 +379,21 @@ class QuedanCallejaExporterTest extends TestCase
             ['0230', '100', 26, 10, 'AC01'],
             ['0207', '3', 26, 8, 'AC02'],
             ['0207', '4', 26, 8, 'AC04'],
-            ['0207', '6', 26, 8, 'AC06'],
+            ['0207', '6', 26, 8, 'AC04'],
         ], array_slice($libro->getActiveSheet()->toArray(formatData: false), 1));
         $libro->disconnectWorksheets();
+    }
+
+    /** AC06 no se usa: los albaranes de crédito válidos son AC02 y AC04, igual que en Cobros. */
+    public function test_una_nc_con_albaran_ac06_bloquea_el_archivo(): void
+    {
+        $lote = $this->lote();
+        $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000001', 'AC06/0207/00/6');
+
+        $this->expectException(ArchivoQuedanIncompletoException::class);
+        $this->expectExceptionMessage('la NC no tiene completo su albarán de crédito (AC02/AC04 con sala, número y fecha)');
+        $this->exportador()->generar($lote->fresh());
     }
 
     public function test_nc_de_un_lote_anterior_borrado_se_incluye_en_el_nuevo_quedan(): void

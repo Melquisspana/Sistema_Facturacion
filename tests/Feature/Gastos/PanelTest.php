@@ -34,7 +34,8 @@ use Tests\TestCase;
  *  4. SIN FECHA ES «POR COMPLETAR». A una regla sin día no se le inventa un período
  *     ni un vencimiento con tal de mostrarle una fila con botón.
  *  5. UN MONTO DESCONOCIDO NO ES CERO. No suma a ninguna cifra.
- *  6. EL SALDO PROVISIONAL SIGUE DICIÉNDOSE PROVISIONAL.
+ *  6. LA PANTALLA NO AFIRMA QUÉ TAN FIRME ES UN SALDO. La columna `certeza` existe,
+ *     pero ninguna pantalla la escribe, así que tampoco se muestra (11/11/2026).
  *  7. EL CANDADO DE ÁMBITO ES EL DE SIEMPRE, también en esta pantalla y también en
  *     las previsiones.
  */
@@ -299,62 +300,38 @@ class PanelTest extends TestCase
         $this->assertSame(0, (int) $datos['se_espera'], 'No se inventa cero para poder sumar.');
     }
 
-    // ═══════════ 6. El saldo provisional sigue diciéndose ═══════════
-
-    public function test_el_saldo_provisional_llega_marcado_a_la_pantalla(): void
-    {
-        $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
-
-        $datos = $this->panel($u);
-        $porNombre = $datos['sin_fecha']->keyBy('beneficiario');
-
-        $this->assertTrue($porNombre['Proveedor A']->esProvisional());
-        $this->assertFalse($porNombre['Distribuidora Ejemplo, S.A. de C.V.']->esProvisional());
-
-        // Provisional NO significa que no se deba: suma igual que cualquier otra.
-        $this->assertSame(235678, (int) $datos['se_debe']);
-    }
+    // ═══════════ 6. La certeza del saldo no se muestra (por ahora) ═══════════
 
     /**
-     * «Lo confirmó una persona» y «lo respalda un papel» no son lo mismo.
-     *
-     * El caso real: el usuario confirmó los 850 de Proveedor A, pero no hay estado de cuenta
-     * detrás. Marcarlo `confirmado` habría hecho decir a la pantalla «Confirmado con
-     * documento», que es sencillamente falso. Por eso hay un tercer estado, y por eso
-     * la fila dice de dónde viene la confirmación.
+     * Ninguna pantalla escribe `gastos.certeza`, así que mostrarla afirmaba algo que
+     * nadie cargó. La columna se queda y el modelo la sigue aceptando; lo que se quita
+     * es la etiqueta de la fila y la frase de la cifra de arriba.
      */
-    public function test_un_saldo_confirmado_por_el_usuario_no_se_presenta_como_respaldado(): void
-    {
-        $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '850.00', 'confirmado_usuario');
-
-        $gasto = Gasto::where('beneficiario', 'Proveedor A')->firstOrFail();
-        $this->assertFalse($gasto->esProvisional(), 'Ya no es una estimación.');
-        $this->assertTrue($gasto->confirmadoPorElUsuario());
-        $this->assertSame('Confirmado por el usuario', $gasto->etiquetaCerteza());
-
-        $this->actingAs($u)->get(route('gastos.panel'))
-            ->assertOk()
-            ->assertSee('Confirmado por el usuario · sin documento de respaldo', false)
-            // Ni se le llama provisional, ni se insinúa que tenga papel.
-            ->assertDontSee('Saldo provisional')
-            ->assertDontSee('Confirmado con documento');
-
-        // Y deja de contar como provisional en la cifra de arriba.
-        $this->assertSame(0, (int) $this->panel($u)['se_debe_provisional']);
-        $this->assertSame(85000, (int) $this->panel($u)['se_debe']);
-    }
-
-    public function test_la_pantalla_dice_provisional_con_todas_las_letras(): void
+    public function test_la_certeza_del_saldo_no_se_muestra_ni_cambia_lo_que_se_debe(): void
     {
         $u = $this->operador();
         $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Proveedor B', '850.00', 'confirmado_usuario');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
+
+        // La columna sigue ahí y guarda lo que se le pasa.
+        $this->assertSame('provisional', Gasto::where('beneficiario', 'Proveedor A')->value('certeza'));
+
+        $datos = $this->panel($u);
+
+        // Los tres se deben igual: la marca nunca cambió un cálculo.
+        $this->assertSame(320678, (int) $datos['se_debe']);
+        $this->assertArrayNotHasKey('se_debe_provisional', $datos);
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
-            ->assertSee('Saldo provisional', false);
+            ->assertSee('Saldo registrado', false)
+            ->assertDontSee('Saldo provisional')
+            ->assertDontSee('es provisional y espera documento')
+            ->assertDontSee('Confirmado por el usuario')
+            // Tampoco se afirma lo contrario: nadie cargó ese dato.
+            ->assertDontSee('Todo respaldado con documento')
+            ->assertDontSee('Confirmado con documento');
     }
 
     // ═══════════ 7. El candado de ámbito, también acá ═══════════
@@ -382,7 +359,7 @@ class PanelTest extends TestCase
     public function test_la_pantalla_abre_y_muestra_las_dos_cifras(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
@@ -409,7 +386,7 @@ class PanelTest extends TestCase
     public function test_abonar_desde_la_pantalla_baja_el_saldo_sin_cancelarlo(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
 
         $this->actingAs($u)->post(route('gastos.panel.abonos'), [
             'clave' => (string) Str::uuid(),
@@ -916,24 +893,17 @@ class PanelTest extends TestCase
 
     // ═══════════ Los textos que afirman de menos o de más ═══════════
 
-    public function test_la_cifra_registrada_dice_cuanto_es_provisional(): void
+    public function test_la_cifra_registrada_no_afirma_que_todo_este_confirmado(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
-        $this->cuentaAbierta($u, 'Proveedor B Hernández', '1000.00', 'provisional');
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
 
-        $datos = $this->panel($u);
-
-        $this->assertSame(335678, (int) $datos['se_debe']);
-        // El provisional es PARTE del total, no un sumando aparte.
-        $this->assertSame(240000, (int) $datos['se_debe_provisional']);
-        $this->assertLessThan((int) $datos['se_debe'], (int) $datos['se_debe_provisional']);
+        $this->assertSame(235678, (int) $this->panel($u)['se_debe']);
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
             ->assertSee('Saldo registrado', false)
-            ->assertSee('2,400.00')
             // Ya no se afirma que todo esté confirmado.
             ->assertDontSee('Confirmado: hay papel o saldo acordado', false);
     }
@@ -955,7 +925,7 @@ class PanelTest extends TestCase
     public function test_sin_vencidos_se_resuelve_en_una_linea(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
@@ -968,7 +938,7 @@ class PanelTest extends TestCase
     public function test_entrar_al_area_abre_el_panel(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
 
         // La raíz del área ES el panel, no una redirección hacia él.
         $this->actingAs($u)->get('/gastos')
@@ -993,8 +963,8 @@ class PanelTest extends TestCase
     public function test_el_listado_clasico_sigue_existiendo_con_su_busqueda_y_sus_filtros(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
 
         // Sigue en pie, en su URL propia, y sigue filtrando.
         $this->assertSame(url('/gastos/listado'), route('gastos.index'));
@@ -1088,7 +1058,7 @@ class PanelTest extends TestCase
     public function test_un_abono_iniciado_en_la_cuenta_vuelve_a_la_cuenta(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
 
         // Quien abona tres compras seguidas del mismo proveedor no quiere salir de la
         // libreta y volver a entrar cada vez.
@@ -1101,7 +1071,7 @@ class PanelTest extends TestCase
     public function test_un_abono_iniciado_en_el_panel_vuelve_al_panel(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
 
         $this->actingAs($u)->post(route('gastos.panel.abonos'), [
             'clave' => (string) Str::uuid(),
@@ -1117,7 +1087,7 @@ class PanelTest extends TestCase
     public function test_sin_origen_declarado_el_abono_vuelve_al_panel(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
 
         // El panel es el destino por defecto, y desde ahí la cuenta queda a un clic.
         $this->abonar($u, 'Proveedor A')->assertRedirect(route('gastos.panel'));
@@ -1151,7 +1121,7 @@ class PanelTest extends TestCase
     public function test_la_compra_a_cuenta_tambien_vuelve_a_la_libreta(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
+        $this->cuentaAbierta($u, 'Proveedor A', '1400.00');
 
         $this->actingAs($u)->post(route('gastos.cuentas.compras'), [
             'clave' => (string) Str::uuid(),
@@ -1198,7 +1168,7 @@ class PanelTest extends TestCase
     public function test_quien_solo_ve_no_recibe_los_botones_de_accion(): void
     {
         $u = $this->usuario([PermisoSistema::GastosVer]);
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()

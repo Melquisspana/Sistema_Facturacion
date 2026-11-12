@@ -114,34 +114,52 @@ class DatosInicialesNegritaSeederTest extends TestCase
         $this->assertSame(4, Correlativo::count());
         $this->assertSame(2, Cliente::count());                 // Calleja + exportación
         $this->assertSame(3, Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail()->sucursales()->count());
-        $this->assertSame(23, Producto::count());               // 4 base + 19 reales de Calleja
+        $this->assertSame(23, Producto::count());               // 4 base + 19 de ejemplo con precio especial
         $this->assertSame(7, $ccf->refresh()->ultimo_numero, 'El correlativo no debe reiniciarse.');
     }
 
-    // --- Productos reales de Calleja (por código de barra, precio especial) ---
+    // --- Productos de ejemplo con precio especial (por código de barra) ---
 
-    public function test_crea_productos_calleja_por_codigo_de_barra(): void
+    /**
+     * El repositorio es público: el catálogo con precio especial que trae el seeder es
+     * inventado. Nombres «Producto de ejemplo N» y códigos de barra del rango 200…, que
+     * GS1 reserva para uso interno y no corresponde a ningún producto del comercio.
+     */
+    public function test_el_catalogo_con_precio_especial_es_de_ejemplo(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
+
+        $conPrecioEspecial = Producto::whereIn('id', ProductoPrecioCliente::where('cliente_id', $calleja->id)->select('producto_id'))
+            ->where('codigo', 'not like', 'DUL-%')->get();
+
+        $this->assertCount(19, $conPrecioEspecial);
+        foreach ($conPrecioEspecial as $producto) {
+            $this->assertMatchesRegularExpression('/^Producto de ejemplo \d+$/', $producto->nombre);
+            $this->assertMatchesRegularExpression('/^2000000001\d{3}$/', $producto->codigo_barra);
+        }
+    }
+
+    public function test_crea_productos_de_ejemplo_por_codigo_de_barra(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
 
-        // Se identifican por código de barra (no por la columna ignorada "B Item").
-        foreach (['7412201700031', '7412201700079', '7412201700024', '7412201700135'] as $barra) {
+        foreach (['2000000001001', '2000000001002', '2000000001014', '2000000001015'] as $barra) {
             $this->assertDatabaseHas('productos', ['codigo_barra' => $barra, 'activo' => true]);
         }
 
-        $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
-        $this->assertSame('CANILLITAS', $canillitas->nombre);
-        $this->assertSame('79873', $canillitas->codigo); // código interno de la tabla
+        $primero = Producto::where('codigo_barra', '2000000001001')->firstOrFail();
+        $this->assertSame('Producto de ejemplo 1', $primero->nombre);
+        $this->assertSame('EJ-0001', $primero->codigo); // código interno declarado
     }
 
-    public function test_no_usa_b_item_como_codigo_interno(): void
+    public function test_genera_un_codigo_interno_cuando_el_producto_no_lo_trae(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
 
-        // Códigos internos = los de la tabla de precios; los que no traían, generados (CAL-…).
-        $this->assertSame('79866', Producto::where('codigo_barra', '7412201700024')->value('codigo')); // LECHE DE BURRA
-        $this->assertSame('CAL-700135', Producto::where('codigo_barra', '7412201700135')->value('codigo')); // MIX (generado)
-        $this->assertSame('CAL-700192', Producto::where('codigo_barra', '7412201700192')->value('codigo')); // DULCES DE ANIS (generado)
+        $this->assertSame('EJ-0014', Producto::where('codigo_barra', '2000000001014')->value('codigo'));
+        $this->assertSame('CAL-001015', Producto::where('codigo_barra', '2000000001015')->value('codigo')); // generado
+        $this->assertSame('CAL-001016', Producto::where('codigo_barra', '2000000001016')->value('codigo')); // generado
     }
 
     public function test_precio_especial_de_calleja_correcto(): void
@@ -149,38 +167,25 @@ class DatosInicialesNegritaSeederTest extends TestCase
         $this->seed(DatosInicialesNegritaSeeder::class);
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
 
-        $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
+        $primero = Producto::where('codigo_barra', '2000000001001')->firstOrFail();
         $this->assertDatabaseHas('producto_precios_cliente', [
-            'producto_id' => $canillitas->id,
+            'producto_id' => $primero->id,
             'cliente_id' => $calleja->id,
             'cliente_sucursal_id' => null,
-            'precio' => '1.0500',
+            'precio' => '1.1000',
             'activo' => 1,
         ]);
     }
 
-    public function test_producto_sin_precio_en_tabla_queda_en_1(): void
+    public function test_producto_sin_precio_propio_queda_en_1(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
 
-        // BESITOS no traía precio → $1.00.
-        $besitos = Producto::where('codigo_barra', '7412201700284')->firstOrFail();
-        $this->assertSame('BESITOS', $besitos->nombre);
+        $sinPrecio = Producto::where('codigo_barra', '2000000001019')->firstOrFail();
+        $this->assertSame('Producto de ejemplo 19', $sinPrecio->nombre);
         $this->assertDatabaseHas('producto_precios_cliente', [
-            'producto_id' => $besitos->id, 'cliente_id' => $calleja->id, 'precio' => '1.0000', 'activo' => 1,
-        ]);
-    }
-
-    public function test_mix_codigo_barra_y_precio(): void
-    {
-        $this->seed(DatosInicialesNegritaSeeder::class);
-        $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
-
-        $mix = Producto::where('codigo_barra', '7412201700135')->firstOrFail();
-        $this->assertSame('MIX', $mix->nombre);
-        $this->assertDatabaseHas('producto_precios_cliente', [
-            'producto_id' => $mix->id, 'cliente_id' => $calleja->id, 'precio' => '1.0400', 'activo' => 1,
+            'producto_id' => $sinPrecio->id, 'cliente_id' => $calleja->id, 'precio' => '1.0000', 'activo' => 1,
         ]);
     }
 
@@ -189,12 +194,12 @@ class DatosInicialesNegritaSeederTest extends TestCase
         $this->seed(DatosInicialesNegritaSeeder::class);
         $this->seed(DatosInicialesNegritaSeeder::class);
 
-        $this->assertSame(1, Producto::where('codigo_barra', '7412201700031')->count());
+        $this->assertSame(1, Producto::where('codigo_barra', '2000000001001')->count());
         $this->assertSame(23, Producto::count());
 
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
-        $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
-        $this->assertSame(1, ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        $primero = Producto::where('codigo_barra', '2000000001001')->firstOrFail();
+        $this->assertSame(1, ProductoPrecioCliente::where('producto_id', $primero->id)
             ->where('cliente_id', $calleja->id)->where('activo', true)->count());
     }
 
@@ -202,17 +207,17 @@ class DatosInicialesNegritaSeederTest extends TestCase
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
-        $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
+        $primero = Producto::where('codigo_barra', '2000000001001')->firstOrFail();
 
         // Alguien cambió el precio a mano…
-        ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        ProductoPrecioCliente::where('producto_id', $primero->id)
             ->where('cliente_id', $calleja->id)->update(['precio' => 9.99]);
 
-        // …reseed lo restaura al valor de la tabla, sin duplicar.
+        // …reseed lo restaura al valor del seeder, sin duplicar.
         $this->seed(DatosInicialesNegritaSeeder::class);
-        $this->assertSame('1.0500', ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        $this->assertSame('1.1000', ProductoPrecioCliente::where('producto_id', $primero->id)
             ->where('cliente_id', $calleja->id)->where('activo', true)->value('precio'));
-        $this->assertSame(1, ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        $this->assertSame(1, ProductoPrecioCliente::where('producto_id', $primero->id)
             ->where('cliente_id', $calleja->id)->count());
     }
 

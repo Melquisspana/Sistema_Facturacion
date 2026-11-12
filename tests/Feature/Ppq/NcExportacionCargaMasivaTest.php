@@ -439,6 +439,88 @@ class NcExportacionCargaMasivaTest extends TestCase
         $this->assertSame(1, $lote->items()->count());
     }
 
+    // ------------------------------------------------------------------ tipo de albarán
+
+    /**
+     * AC06 no se usa: el archivo de notas acepta los mismos tipos de albarán de crédito
+     * que el quedan y Cobros (AC02 y AC04). Una nota con otro tipo no entra, y el aviso
+     * nombra la nota y el tipo que tiene.
+     */
+    public function test_una_nota_con_albaran_ac06_no_entra_al_archivo_y_el_aviso_la_nombra(): void
+    {
+        $cliente = $this->cliente();
+        $buena = $this->notasAceptadas($cliente, 1)[0];
+        $conAc06 = $this->notasAceptadas($cliente, 1, null, ['tipo' => 'AC06'])[0];
+        $servicio = app(NcExportacionService::class);
+
+        // La pantalla lo sabe antes de generar nada.
+        $faltantes = $servicio->faltantes($cliente, $servicio->pendientes($cliente));
+        $this->assertArrayNotHasKey($buena->id, $faltantes);
+        $this->assertStringContainsString('AC02 o AC04', implode(' ', $faltantes[$conAc06->id] ?? []));
+        $this->assertStringContainsString('AC06', implode(' ', $faltantes[$conAc06->id] ?? []));
+
+        try {
+            $servicio->crear($cliente, [$buena->id, $conAc06->id], $this->usuario());
+            $this->fail('Una nota con albarán AC06 no debe poder exportarse.');
+        } catch (ValidationException $e) {
+            $mensaje = implode(' ', $e->errors()['dtes']);
+            $this->assertStringContainsString($conAc06->numero_control, $mensaje);
+            $this->assertStringContainsString('AC06', $mensaje);
+        }
+
+        $this->assertSame(0, NcExportacion::count());
+    }
+
+    /**
+     * Un lote armado antes de la regla (o cuyo albarán se cambió después) se revisa otra
+     * vez al generar su archivo por PRIMERA vez: no se archiva un archivo con AC06.
+     */
+    public function test_un_lote_sin_descargar_con_ac06_no_genera_ni_archiva_su_archivo(): void
+    {
+        $cliente = $this->cliente();
+        $nota = $this->notasAceptadas($cliente, 1)[0];
+        $servicio = app(NcExportacionService::class);
+        $lote = $servicio->crear($cliente, [$nota->id], $this->usuario());
+
+        $nota->albaran->forceFill(['tipo_codigo' => 'AC06'])->save();
+
+        try {
+            $servicio->archivo($lote);
+            $this->fail('No debe generarse un archivo con un albarán AC06.');
+        } catch (ValidationException $e) {
+            $mensaje = implode(' ', $e->errors()['archivo']);
+            $this->assertStringContainsString($nota->numero_control, $mensaje);
+            $this->assertStringContainsString('AC06', $mensaje);
+        }
+
+        // Por la pantalla: vuelve a la ficha con el aviso y no cuenta la descarga.
+        $this->actingAs($this->usuario())
+            ->post(route('ppq.nc-exportaciones.descargar', $lote))
+            ->assertRedirect(route('ppq.nc-exportaciones.show', $lote))
+            ->assertSessionHasErrors('archivo');
+
+        $lote->refresh();
+        $this->assertFalse($lote->tieneCopiaArchivada());
+        $this->assertSame(0, $lote->descargas);
+    }
+
+    /** Lo que ya se archivó no se toca: se sigue sirviendo la misma copia. */
+    public function test_la_copia_ya_archivada_se_sigue_sirviendo_aunque_el_albaran_sea_ac06(): void
+    {
+        $cliente = $this->cliente();
+        $nota = $this->notasAceptadas($cliente, 1)[0];
+        $servicio = app(NcExportacionService::class);
+        $lote = $servicio->crear($cliente, [$nota->id], $this->usuario());
+
+        $primero = $this->leer($servicio->archivo($lote));
+        $huella = $lote->refresh()->archivo_hash;
+
+        $nota->albaran->forceFill(['tipo_codigo' => 'AC06'])->save();
+
+        $this->assertSame($primero, $this->leer($servicio->archivo($lote->refresh())));
+        $this->assertSame($huella, $lote->refresh()->archivo_hash);
+    }
+
     // ------------------------------------------------------------------ pantalla
 
     /** La pantalla dice qué formato se usa, que se sube al portal y que bajarlo no es entregarlo. */

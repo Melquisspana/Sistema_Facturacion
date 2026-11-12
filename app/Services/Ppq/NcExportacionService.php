@@ -248,7 +248,7 @@ class NcExportacionService
                 ->get();
 
             $this->verificarSeleccion($notas, $dteIds);
-            $this->verificarDatosCompletos($notas, $perfil);
+            $this->verificarDatosCompletos($notas, $perfil, $this->exportadores->para($perfil), 'dtes');
 
             $lote = NcExportacion::create([
                 'cliente_id' => $cliente->id,
@@ -346,7 +346,8 @@ class NcExportacionService
      * anotada en la bitácora (#12); si no queda ninguna, no se genera ni se archiva nada.
      *
      * @throws RuntimeException
-     * @throws ValidationException si ninguna nota del lote sigue vigente
+     * @throws ValidationException si ninguna nota del lote sigue vigente, o si en la primera
+     *                             generación a alguna le falta un dato que el formato exige
      */
     public function archivo(NcExportacion $lote): string
     {
@@ -376,7 +377,17 @@ class NcExportacionService
 
             $fila->loadMissing('cliente');
             $perfil = $this->perfilExportador($fila->cliente);
-            $generado = $this->exportadores->porSlug($fila->formato)->generar($fila, $perfil);
+            $exportador = $this->exportadores->porSlug($fila->formato);
+
+            // Lo que se exige al armar el lote se vuelve a exigir al generar su archivo por
+            // PRIMERA vez: el lote pudo armarse antes de una regla (un albarán AC06) o el
+            // albarán pudo cambiar después. La reconstrucción de un lote que ya se había
+            // descargado no pasa por acá: ese archivo ya se entregó y no se le cambia la regla.
+            if ($procedencia === ProcedenciaArchivoNc::PrimeraDescarga) {
+                $this->verificarDatosCompletos($fila->notas(), $perfil, $exportador, 'archivo');
+            }
+
+            $generado = $exportador->generar($fila, $perfil);
             $contenido = file_get_contents($generado);
             @unlink($generado);
 
@@ -551,14 +562,15 @@ class NcExportacionService
      * a medias obliga a rastrear después cuáles quedaron fuera, y las que entraron ya no
      * pueden volver a salir en otro archivo.
      *
-     * @param  Collection<int, Dte>  $notas
+     * Se llama al armar el lote y otra vez al generar su archivo por primera vez; `$campo`
+     * es dónde se muestra el error en cada pantalla.
+     *
+     * @param  iterable<int, Dte>  $notas
      *
      * @throws ValidationException
      */
-    private function verificarDatosCompletos(Collection $notas, ClientePerfilDocumento $perfil): void
+    private function verificarDatosCompletos(iterable $notas, ClientePerfilDocumento $perfil, ExportadorNc $exportador, string $campo): void
     {
-        $exportador = $this->exportadores->para($perfil);
-
         $problemas = [];
         foreach ($notas as $nota) {
             $faltantes = $exportador->faltantes($nota, $perfil);
@@ -569,7 +581,7 @@ class NcExportacionService
 
         if ($problemas !== []) {
             throw ValidationException::withMessages([
-                'dtes' => 'No se generó ningún archivo: a estas notas les falta un dato que el formato '
+                $campo => 'No se generó ningún archivo: a estas notas les falta un dato que el formato '
                     .'exige, y el sistema no lo inventa. Completalo y volvé a intentar. — '
                     .implode(' · ', $problemas),
             ]);

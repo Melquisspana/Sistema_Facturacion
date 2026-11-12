@@ -9,6 +9,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
+use App\Support\Albaran;
 use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroAlbaran;
@@ -40,7 +41,7 @@ use Throwable;
  *
  * ═══════════════ CCF y después sus NC ═══════════════
  *
- * Una fila por albarán: primero AC01, después AC02, AC04 y AC06. Dentro de cada tipo,
+ * Una fila por albarán: primero AC01, después AC02 y AC04. Dentro de cada tipo,
  * por año y mes ascendentes, luego por sala y número (entero cuando es numérico).
  * Regla del usuario (10/10/2026).
  *
@@ -123,7 +124,7 @@ class QuedanCallejaExporter
         }
 
         // usort conserva el orden original de los empates desde PHP 8.
-        $ordenTipos = ['AC01' => 0, 'AC02' => 1, 'AC04' => 2, 'AC06' => 3];
+        $ordenTipos = array_flip(['AC01', ...Albaran::TIPOS_DE_CREDITO]);
         usort($filas, static function (array $a, array $b) use ($ordenTipos): int {
             $orden = [$ordenTipos[$a['tipo']] ?? 9, $a['anio'], $a['mes'], $a['sala']]
                 <=> [$ordenTipos[$b['tipo']] ?? 9, $b['anio'], $b['mes'], $b['sala']];
@@ -197,7 +198,7 @@ class QuedanCallejaExporter
             $sala = $this->salaConfirmada($item) ?? ($ppq?->sala_codigo ?: $partesPpq?->sala ?: $partesPropio?->sala);
             $fecha = $propio?->fecha !== null ? Carbon::parse($propio->fecha) : $ppq?->fecha_albaran;
 
-            if (! in_array($tipo, ['AC02', 'AC04', 'AC06'], true) || blank($numero) || blank($sala) || $fecha === null) {
+            if (! Albaran::esDeCredito($tipo) || blank($numero) || blank($sala) || $fecha === null) {
                 $motivos[] = "{$control}: la NC no tiene completo su albarán de crédito (AC02/AC04 con sala, número y fecha).";
 
                 continue;

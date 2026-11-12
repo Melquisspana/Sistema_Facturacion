@@ -2,14 +2,24 @@
 
 namespace Tests\Feature\Exportaciones;
 
+use App\Http\Controllers\Exportaciones\ExportacionClienteController;
+use App\Http\Controllers\Exportaciones\ExportacionController;
 use App\Models\Cliente;
+use App\Models\Correlativo;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
+use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Exportaciones\CrearFexDesdeExportacionService;
+use App\Services\Exportaciones\FacturaExportacionExcel;
+use Database\Seeders\CatalogosMhSeeder;
+use Database\Seeders\CatalogosMhTablaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Tests\TestCase;
 
 /**
@@ -24,17 +34,17 @@ class EliminarFlujoPrepararFacturaTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->seed(\Database\Seeders\CatalogosMhSeeder::class);
-        $this->seed(\Database\Seeders\CatalogosMhTablaSeeder::class);
+        $this->seed(CatalogosMhSeeder::class);
+        $this->seed(CatalogosMhTablaSeeder::class);
         foreach (['administrador', 'facturacion'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $empresa = \App\Models\Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
-        $estab = \App\Models\Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
-        $pv = \App\Models\PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
-        \App\Models\Correlativo::create(['tipo_dte' => '11', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
+        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        Correlativo::create(['tipo_dte' => '11', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
     }
 
     private function usuario(): User
@@ -119,20 +129,24 @@ class EliminarFlujoPrepararFacturaTest extends TestCase
 
     public function test_no_existe_ruta_huerfana_preparar_factura(): void
     {
-        $this->expectException(\Symfony\Component\Routing\Exception\RouteNotFoundException::class);
+        $this->expectException(RouteNotFoundException::class);
         route('exportaciones.preparar-factura', ['exportacion' => 1]);
     }
 
     public function test_no_existe_ruta_huerfana_preparar_factura_excel(): void
     {
-        $this->expectException(\Symfony\Component\Routing\Exception\RouteNotFoundException::class);
+        $this->expectException(RouteNotFoundException::class);
         route('exportaciones.preparar-factura.excel', ['exportacion' => 1]);
     }
 
     public function test_clase_controlador_ya_no_tiene_los_metodos_viejos(): void
     {
-        $this->assertFalse(method_exists(\App\Http\Controllers\Exportaciones\ExportacionController::class, 'prepararFactura'));
-        $this->assertFalse(method_exists(\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excelFactura'));
-        $this->assertFalse(class_exists(\App\Services\Exportaciones\FacturaExportacionExcel::class));
+        $this->assertFalse(class_exists(ExportacionController::class));
+        $this->assertFalse(class_exists(ExportacionClienteController::class));
+        foreach (['index', 'create', 'edit', 'show', '_form'] as $vista) {
+            $this->assertFalse(view()->exists('exportaciones.'.$vista));
+            $this->assertFalse(view()->exists('exportaciones.clientes.'.$vista));
+        }
+        $this->assertFalse(class_exists(FacturaExportacionExcel::class));
     }
 }

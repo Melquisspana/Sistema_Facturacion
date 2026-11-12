@@ -39,8 +39,6 @@ return [
     |
     */
 
-    'calculo_legal' => true,
-
     // Cuántos pagos hay en un mes. Melqui confirmó la quincena: el importe por pago es el
     // sueldo mensual ÷ 2, y los topes mensuales de ley se reparten igual.
     'pagos_por_mes' => 2,

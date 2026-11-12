@@ -265,7 +265,14 @@ class CobrosQuedanNotasCreditoTest extends TestCase
         $documento = $this->ccf($ccfDte);
 
         $respuesta = $this->previa([$documento->id], $usuario)->assertOk();
-        $respuesta->assertSeeText('un tipo de albarán de crédito AC02 o AC04');
+        $respuesta->assertSeeText('un tipo de albarán de crédito AC02 o AC04 (el registrado es AC01)');
+
+        // Cobros y el formato del archivo revisan lo mismo: el aviso sale una sola vez.
+        $avisos = array_filter(
+            $respuesta->viewData('notas')['bloqueadas'][0]['faltantes'],
+            fn (string $falta) => str_contains($falta, 'tipo de albarán de crédito'),
+        );
+        $this->assertCount(1, $avisos);
 
         $this->actingAs($usuario)
             ->post(route('cobros.solicitudes.notas', $this->cliente), ['previa' => $respuesta->viewData('token')])

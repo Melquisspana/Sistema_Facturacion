@@ -6,6 +6,7 @@ use App\Models\ClientePerfilDocumento;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
 use App\Models\NcExportacion;
+use App\Support\Albaran;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -94,6 +95,11 @@ class ExportadorNcCargaMasivaV1 implements ExportadorNc
      * Los seis datos que el portal necesita para identificar la fila. Cinco salen del
      * albarán y uno de la nota; ninguno se suple con un valor por defecto.
      *
+     * El tipo de albarán tiene que ser uno de crédito de la lista única
+     * ({@see Albaran::TIPOS_DE_CREDITO}: AC02 y AC04), la misma que usan el quedan y
+     * Cobros. El perfil del cliente dice qué código corresponde a cada modalidad; este
+     * formato, que es el del portal, dice cuáles acepta. Un albarán AC06 no pasa.
+     *
      * @return array<int, string>
      */
     public function faltantes(Dte $nc, ClientePerfilDocumento $perfil): array
@@ -117,6 +123,8 @@ class ExportadorNcCargaMasivaV1 implements ExportadorNc
         }
         if (blank($albaran->tipo_codigo)) {
             $faltan[] = 'el tipo de albarán';
+        } elseif (($tipoInvalido = Albaran::faltaTipoDeCredito($albaran->tipo_codigo)) !== null) {
+            $faltan[] = $tipoInvalido;
         }
         if (blank($nc->codigo_generacion)) {
             $faltan[] = 'el código de generación de la nota de crédito';

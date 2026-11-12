@@ -734,4 +734,98 @@ class ConciliacionNoDestructivaTest extends TestCase
         $this->assertNull($ccf->refresh()->conciliacion_estado);
         $this->assertSame(0, PpqConciliacion::count());
     }
+
+    // ══════════════════════════════ 11) filas sin importe
+
+    /**
+     * Una fila que nombra el documento pero no dice cuánto se pagó no es evidencia de
+     * pago: se aparta, se muestra y el renglón queda como estaba.
+     */
+    public function test_una_fila_sin_importe_no_marca_el_documento_como_pagado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $sinImporte = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+        $completo = $this->item($lote, 'DTE-03-M001P001-000000000000968', 80.00);
+
+        $txt = implode("\n", [
+            '000123;TITULAR DE EJEMPLO;CF;DTE03M001P001000000000000967;05-JUN-26;',
+            $this->linea('CF', 'DTE-03-M001P001-000000000000968', '05-JUN-26', 80.00),
+        ]);
+
+        $respuesta = $this->subir($lote, $usuario, $txt)->assertOk()
+            ->assertSeeText('Filas incompletas (1)');
+
+        $sinImporte->refresh();
+        $this->assertNull($sinImporte->conciliacion_estado);
+        $this->assertNull($sinImporte->monto_pagado);
+        $this->assertNull($sinImporte->fecha_pago);
+
+        // La fila completa del mismo archivo sí se aplica.
+        $this->assertSame('pagado', $completo->refresh()->conciliacion_estado);
+
+        $reporte = $respuesta->viewData('reporte');
+        $this->assertCount(1, $reporte['invalidas']);
+        $this->assertSame(1, $reporte['invalidas'][0]['linea']);
+        $this->assertSame(1, $reporte['totales']['cantidad_invalidas']);
+        $this->assertCount(1, $reporte['ccfPagados']);
+        $this->assertCount(1, $reporte['ccfPendientes']);
+
+        // Solo el renglón completo dejó movimiento.
+        $this->assertSame($completo->id, PpqConciliacionMovimiento::sole()->ppq_item_id);
+    }
+
+    public function test_una_fila_con_importe_no_numerico_conserva_el_cobro_anterior(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44))->assertOk();
+
+        // Otro archivo nombra el mismo documento con un importe que no es un número.
+        $respuesta = $this->subir(
+            $lote,
+            $usuario,
+            '000123;TITULAR DE EJEMPLO;CF;DTE03M001P001000000000000967;12-JUN-26;pendiente',
+            'pagos-2.txt',
+        )->assertOk();
+
+        $item->refresh();
+        $this->assertSame('pagado', $item->conciliacion_estado);
+        $this->assertSame('126.44', (string) $item->monto_pagado);
+        $this->assertSame('2026-06-05', $item->fecha_pago->toDateString());
+
+        $reporte = $respuesta->viewData('reporte');
+        $this->assertCount(1, $reporte['invalidas']);
+        $this->assertCount(1, $reporte['conservados']);
+        $this->assertSame([], $reporte['ccfPagados']);
+        $this->assertSame(1, PpqConciliacionMovimiento::count(), 'La fila incompleta no deja movimiento.');
+    }
+
+    public function test_volver_a_procesar_un_archivo_con_filas_sin_importe_no_cambia_nada(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+
+        $txt = '000123;TITULAR DE EJEMPLO;CF;DTE03M001P001000000000000967;05-JUN-26;';
+
+        $this->subir($lote, $usuario, $txt)->assertOk();
+        $this->assertNull($item->refresh()->conciliacion_estado);
+
+        // El mismo archivo otra vez: se avisa que ya se procesó.
+        $this->subir($lote, $usuario, $txt, 'pagos-copia.txt')
+            ->assertRedirect(route('ppq.lotes.show', $lote))
+            ->assertSessionHas('status');
+
+        // Y las mismas filas en un archivo distinto (otra huella) tampoco lo dan por pagado.
+        $this->subir($lote, $usuario, $txt."\n\n", 'pagos-otra-huella.txt')->assertOk();
+
+        $item->refresh();
+        $this->assertNull($item->conciliacion_estado);
+        $this->assertNull($item->monto_pagado);
+        $this->assertSame(0, PpqConciliacionMovimiento::count());
+        $this->assertSame(0, PpqConciliacion::sum('items_cambiados'));
+    }
 }

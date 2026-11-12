@@ -19,6 +19,19 @@ use Illuminate\Validation\Validator;
  */
 class PerfilDocumentoRequest extends FormRequest
 {
+    /*
+     * Reglas de formato de los tres campos que también se cargan por consola
+     * (`perfil-documento:cliente`). Viven acá y el comando las usa tal cual, para que la
+     * consola no acepte lo que esta pantalla rechaza.
+     */
+    public const REGLAS_TOLERANCIA = ['numeric', 'min:0', 'max:9999.99'];
+
+    public const REGLAS_CODIGO_EXTERNO = ['string', 'max:10', 'regex:/^[A-Za-z0-9]+$/'];
+
+    public const REGLAS_TASA = ['numeric', 'min:0', 'max:100'];
+
+    public const MENSAJE_CODIGO_EXTERNO = 'El código externo solo admite letras y números (por ejemplo AC02).';
+
     /** La autorización real la hace el controlador con la ClientePolicy (clientes.gestionar). */
     public function authorize(): bool
     {
@@ -33,14 +46,14 @@ class PerfilDocumentoRequest extends FormRequest
             'codigo_proveedor' => ['nullable', 'string', 'max:20'],
             'formato_export' => ['nullable', 'string', 'max:40', Rule::in(ExportadorNcFactory::slugs())],
             'exige_albaran_en_nc' => ['nullable', 'boolean'],
-            'tolerancia_albaran' => ['required', 'numeric', 'min:0', 'max:9999.99'],
+            'tolerancia_albaran' => ['required', ...self::REGLAS_TOLERANCIA],
 
             'modalidades' => ['nullable', 'array'],
             'modalidades.*.usar' => ['nullable', 'boolean'],
-            'modalidades.*.codigo_externo' => ['nullable', 'string', 'max:10', 'regex:/^[A-Za-z0-9]+$/'],
+            'modalidades.*.codigo_externo' => ['nullable', ...self::REGLAS_CODIGO_EXTERNO],
             'modalidades.*.etiqueta_externa' => ['nullable', 'string', 'max:60'],
             'modalidades.*.descuento_origen' => ['nullable', Rule::in(array_keys(OrigenDescuentoNc::opciones()))],
-            'modalidades.*.descuento_tasa' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'modalidades.*.descuento_tasa' => ['nullable', ...self::REGLAS_TASA],
         ];
     }
 
@@ -65,7 +78,7 @@ class PerfilDocumentoRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'modalidades.*.codigo_externo.regex' => 'El código externo solo admite letras y números (por ejemplo AC02).',
+            'modalidades.*.codigo_externo.regex' => self::MENSAJE_CODIGO_EXTERNO,
             'formato_export.in' => 'Ese formato de exportación no existe.',
         ];
     }

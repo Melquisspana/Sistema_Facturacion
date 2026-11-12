@@ -4,13 +4,16 @@ namespace App\Console\Commands;
 
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoNotaCredito;
+use App\Http\Requests\Clientes\PerfilDocumentoRequest;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\ClientePerfilTipoNc;
 use App\Services\Ppq\Exportadores\ExportadorNcFactory;
 use App\Services\Ppq\NcExportacionService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * Consulta y configura el PERFIL DE DOCUMENTOS de un cliente: si exige albarán en sus
@@ -104,6 +107,14 @@ class PerfilDocumentoClienteCommand extends Command
 
     private function aplicar(Cliente $cliente): void
     {
+        // Todo lo que llega por consola se revisa ANTES de escribir, con las mismas
+        // reglas del formulario: si un dato no vale, no se guarda ninguno.
+        $tolerancia = $this->option('tolerancia');
+        if ($tolerancia !== null) {
+            $this->exigir('tolerancia contra el albarán', $tolerancia, PerfilDocumentoRequest::REGLAS_TOLERANCIA);
+        }
+        $mapeos = array_map(fn ($spec) => $this->interpretar((string) $spec), $this->option('mapear'));
+
         $perfil = ClientePerfilDocumento::firstOrNew(['cliente_id' => $cliente->id]);
 
         if ($this->option('activar')) {
@@ -121,7 +132,7 @@ class PerfilDocumentoClienteCommand extends Command
         if (($codigo = $this->option('codigo-proveedor')) !== null) {
             $perfil->codigo_proveedor = $codigo;
         }
-        if (($tolerancia = $this->option('tolerancia')) !== null) {
+        if ($tolerancia !== null) {
             $perfil->tolerancia_albaran = (float) $tolerancia;
         }
         if (($formato = $this->option('formato')) !== null) {
@@ -141,13 +152,40 @@ class PerfilDocumentoClienteCommand extends Command
             $perfil->tiposNc()->where('tipo_nota_credito', $modalidad)->delete();
         }
 
-        foreach ($this->option('mapear') as $spec) {
-            $this->mapear($perfil, (string) $spec);
+        foreach ($mapeos as $mapeo) {
+            ClientePerfilTipoNc::updateOrCreate(
+                ['cliente_perfil_documento_id' => $perfil->id, 'tipo_nota_credito' => $mapeo['tipo_nota_credito']],
+                Arr::except($mapeo, 'tipo_nota_credito'),
+            );
         }
     }
 
-    /** Interpreta `modalidad:CODIGO:origen[:tasa]`. */
-    private function mapear(ClientePerfilDocumento $perfil, string $spec): void
+    /**
+     * Revisa un valor con las reglas que el formulario del perfil aplica a ese campo
+     * ({@see PerfilDocumentoRequest}). Si no pasa, corta con el mismo mensaje.
+     *
+     * @param  array<int, string>  $reglas
+     */
+    private function exigir(string $campo, mixed $valor, array $reglas): void
+    {
+        $validador = Validator::make(
+            ['valor' => $valor],
+            ['valor' => ['required', ...$reglas]],
+            ['valor.regex' => PerfilDocumentoRequest::MENSAJE_CODIGO_EXTERNO],
+            ['valor' => $campo],
+        );
+
+        if ($validador->fails()) {
+            throw new \InvalidArgumentException($validador->errors()->first().' Valor recibido: «'.$valor.'».');
+        }
+    }
+
+    /**
+     * Interpreta y valida `modalidad:CODIGO:origen[:tasa]`. No escribe nada.
+     *
+     * @return array{tipo_nota_credito: string, codigo_externo: string, descuento_origen: string, descuento_tasa: ?float}
+     */
+    private function interpretar(string $spec): array
     {
         $partes = explode(':', $spec);
 
@@ -176,14 +214,18 @@ class PerfilDocumentoClienteCommand extends Command
             );
         }
 
-        ClientePerfilTipoNc::updateOrCreate(
-            ['cliente_perfil_documento_id' => $perfil->id, 'tipo_nota_credito' => $tipo->value],
-            [
-                'codigo_externo' => strtoupper($codigo),
-                'descuento_origen' => $origenEnum->value,
-                'descuento_tasa' => $origenEnum->requiereTasa() ? (float) $tasa : null,
-            ]
-        );
+        $this->exigir('código externo', $codigo, PerfilDocumentoRequest::REGLAS_CODIGO_EXTERNO);
+
+        if ($origenEnum->requiereTasa()) {
+            $this->exigir('tasa', $tasa, PerfilDocumentoRequest::REGLAS_TASA);
+        }
+
+        return [
+            'tipo_nota_credito' => $tipo->value,
+            'codigo_externo' => strtoupper($codigo),
+            'descuento_origen' => $origenEnum->value,
+            'descuento_tasa' => $origenEnum->requiereTasa() ? (float) $tasa : null,
+        ];
     }
 
     private function mostrar(Cliente $cliente): int

@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Enums\RolSistema;
 use App\Models\User;
+use Database\Seeders\RolesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ProfileTest extends TestCase
@@ -18,7 +21,12 @@ class ProfileTest extends TestCase
             ->actingAs($user)
             ->get('/profile');
 
-        $response->assertOk();
+        $response->assertOk()
+            ->assertSee('Para cambiar tu correo, escribí tu contraseña actual.')
+            ->assertSee('name="current_password"', false)
+            ->assertDontSee('Delete Account')
+            ->assertDontSee('confirm-user-deletion')
+            ->assertDontSee('name="_method" value="delete"', false);
     }
 
     public function test_profile_information_can_be_updated(): void
@@ -30,6 +38,7 @@ class ProfileTest extends TestCase
             ->patch('/profile', [
                 'name' => 'Test User',
                 'email' => 'test@example.com',
+                'current_password' => 'password',
             ]);
 
         $response
@@ -40,10 +49,10 @@ class ProfileTest extends TestCase
 
         $this->assertSame('Test User', $user->name);
         $this->assertSame('test@example.com', $user->email);
-        $this->assertNull($user->email_verified_at);
+        $this->assertArrayNotHasKey('current_password', $user->getAttributes());
     }
 
-    public function test_email_verification_status_is_unchanged_when_the_email_address_is_unchanged(): void
+    public function test_guardar_sin_cambiar_el_correo_no_pide_contrasena(): void
     {
         $user = User::factory()->create();
 
@@ -58,42 +67,54 @@ class ProfileTest extends TestCase
             ->assertSessionHasNoErrors()
             ->assertRedirect('/profile');
 
-        $this->assertNotNull($user->refresh()->email_verified_at);
+        $this->assertSame('Test User', $user->refresh()->name);
     }
 
-    public function test_user_can_delete_their_account(): void
+    public function test_el_borrado_del_perfil_no_existe_para_invitados(): void
     {
-        $user = User::factory()->create();
-
-        $response = $this
-            ->actingAs($user)
-            ->delete('/profile', [
-                'password' => 'password',
-            ]);
-
-        $response
-            ->assertSessionHasNoErrors()
-            ->assertRedirect('/');
-
-        $this->assertGuest();
-        $this->assertNull($user->fresh());
+        $this->delete('/profile')->assertStatus(405);
     }
 
-    public function test_correct_password_must_be_provided_to_delete_account(): void
+    public function test_ningun_rol_puede_borrar_su_cuenta_desde_el_perfil(): void
     {
+        $this->seed(RolesSeeder::class);
         $user = User::factory()->create();
 
-        $response = $this
-            ->actingAs($user)
-            ->from('/profile')
-            ->delete('/profile', [
-                'password' => 'wrong-password',
-            ]);
+        $this->actingAs($user)->delete('/profile', ['password' => 'password'])->assertStatus(405);
+        foreach (RolSistema::cases() as $rol) {
+            $user->syncRoles([$rol->value]);
+            $this->actingAs($user)->delete('/profile', ['password' => 'password'])->assertStatus(405);
+            $this->assertNotNull($user->fresh());
+        }
+    }
 
-        $response
-            ->assertSessionHasErrorsIn('userDeletion', 'password')
-            ->assertRedirect('/profile');
+    /** @return array<string, array{?string}> */
+    public static function contrasenasInvalidas(): array
+    {
+        return ['sin contraseña' => [null], 'contraseña incorrecta' => ['incorrecta']];
+    }
 
-        $this->assertNotNull($user->fresh());
+    #[DataProvider('contrasenasInvalidas')]
+    public function test_cambiar_el_correo_exige_la_contrasena_correcta(?string $contrasena): void
+    {
+        $user = User::factory()->create();
+        $correo = $user->email;
+
+        $this->actingAs($user)->from('/profile')->patch('/profile', [
+            'name' => 'Cuenta de prueba',
+            'email' => 'nuevo@example.test',
+            'current_password' => $contrasena,
+        ])->assertRedirect('/profile')->assertSessionHasErrors('current_password');
+
+        $this->assertSame($correo, $user->fresh()->email);
+        $this->assertFalse(session()->hasOldInput('current_password'));
+    }
+
+    public function test_las_direcciones_retiradas_de_verificacion_no_existen(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user)->get('/verify-email')->assertNotFound();
+        $this->get('/verify-email/'.$user->id.'/'.sha1($user->email))->assertNotFound();
+        $this->post('/email/verification-notification')->assertNotFound();
     }
 }

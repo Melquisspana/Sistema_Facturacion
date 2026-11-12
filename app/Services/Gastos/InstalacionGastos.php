@@ -6,6 +6,7 @@ use App\Http\Middleware\ModuloGastosActivo;
 use App\Models\Gastos\Aviso;
 use App\Models\User;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 /**
  * ¿Está instalada la fase 2 de Gastos en ESTA base de datos?
@@ -56,7 +57,13 @@ final class InstalacionGastos
     /** ¿Existen las tablas de recurrencias y avisos? */
     public function fase2Instalada(): bool
     {
-        return $this->fase2 ??= Schema::hasTable('gastos_avisos') && Schema::hasTable('gastos_reglas');
+        try {
+            return $this->fase2 ??= Schema::hasTable('gastos_avisos') && Schema::hasTable('gastos_reglas');
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->fase2 = false;
+        }
     }
 
     /**
@@ -88,7 +95,13 @@ final class InstalacionGastos
             return 0;
         }
 
-        return Aviso::where('usuario_id', $usuario->id)->whereNull('leido_at')->count();
+        try {
+            return Aviso::where('usuario_id', $usuario->id)->whereNull('leido_at')->count();
+        } catch (Throwable $e) {
+            report($e);
+
+            return 0;
+        }
     }
 
     /** Mensaje para quien tenga que resolverlo: dice qué falta y qué hay que correr. */

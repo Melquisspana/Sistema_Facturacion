@@ -47,6 +47,30 @@ class ResumenGastosCorreo extends Mailable
         return new Content(markdown: 'emails.gastos-resumen', with: [
             'nombre' => $this->nombre,
             'contenido' => $this->contenido,
+            'detalle' => $this->detalle(),
         ]);
+    }
+
+    /**
+     * Las filas que se MUESTRAN, recortadas al tope `gastos.avisos.max_filas_resumen`.
+     *
+     * El tope es para todo el correo, no por grupo, y se reparte en el orden en que se
+     * lee: primero lo vencido, después lo próximo y al final lo que espera monto. Lo que
+     * no entra no se pierde: los títulos y los totales siguen contando TODO (salen de
+     * `contenido`, que no se recorta) y cada grupo dice cuántas filas le faltan.
+     *
+     * @return array{vencidos: array<int, array<string, mixed>>, proximos: array<int, array<string, mixed>>, sin_monto: array<int, array<string, mixed>>}
+     */
+    private function detalle(): array
+    {
+        $quedan = max(0, (int) config('gastos.avisos.max_filas_resumen'));
+        $detalle = [];
+
+        foreach (['vencidos', 'proximos', 'sin_monto'] as $grupo) {
+            $detalle[$grupo] = array_slice($this->contenido[$grupo] ?? [], 0, $quedan);
+            $quedan -= count($detalle[$grupo]);
+        }
+
+        return $detalle;
     }
 }

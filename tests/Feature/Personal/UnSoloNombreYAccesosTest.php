@@ -133,7 +133,9 @@ class UnSoloNombreYAccesosTest extends TestCase
         $this->assertSame('Ana Ficticia', $usuario->fresh()->name);
 
         // Sin el nombre, el resto del perfil se guarda igual.
-        $this->actingAs($usuario)->patch(route('profile.update'), ['email' => 'ana.nueva@example.test'])->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->patch(route('profile.update'), [
+            'email' => 'ana.nueva@example.test', 'current_password' => self::CLAVE,
+        ])->assertSessionHasNoErrors();
         $this->assertSame(['Ana Ficticia', 'ana.nueva@example.test'], [$usuario->fresh()->name, $usuario->fresh()->email]);
     }
 

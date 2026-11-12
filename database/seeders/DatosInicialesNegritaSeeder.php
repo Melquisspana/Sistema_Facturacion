@@ -248,17 +248,20 @@ class DatosInicialesNegritaSeeder extends Seeder
     }
 
     /**
-     * Productos REALES de Calleja, identificados por CÓDIGO DE BARRA, con su
-     * precio especial para "Calleja, S.A. de C.V.".
+     * Productos de EJEMPLO con precio especial para el cliente "Calleja, S.A. de C.V.",
+     * identificados por CÓDIGO DE BARRA. Todo es inventado: el repositorio es público y
+     * acá no va el catálogo real ni los precios de ningún cliente. Los nombres son
+     * «Producto de ejemplo N» y los códigos de barra usan el rango 200…, que GS1 reserva
+     * para uso interno: no corresponden a ningún producto del comercio. El catálogo y
+     * los precios reales se cargan desde las pantallas del sistema.
      *
      * Reglas (idempotente, se puede correr varias veces):
      *  - Se identifica por código de barra: si existe, se actualiza; si no, se crea.
-     *  - El "código interno" viene de la tabla de precios cuando existe; para los
-     *    que no lo traen se GENERA uno propio (CAL-…). NUNCA se usa la columna
-     *    "B Item" como código interno (se ignora por completo).
-     *  - El precio se guarda como PRECIO ESPECIAL ACTIVO de Calleja (no monto fijo
+     *  - El "código interno" es el declarado en la lista; para los que no lo traen se
+     *    GENERA uno propio (CAL-…).
+     *  - El precio se guarda como PRECIO ESPECIAL ACTIVO del cliente (no monto fijo
      *    global). Si ya hay uno activo, se actualiza; no se duplica.
-     *  - Productos sin precio en la tabla → $1.00.
+     *  - Productos sin precio propio → $1.00.
      *  - Factor de empaque BOLSA (se anota en observaciones; no afecta inventario).
      */
     private function productosCalleja(?UnidadMedida $unidad): void
@@ -268,32 +271,33 @@ class DatosInicialesNegritaSeeder extends Seeder
             return;
         }
 
-        // [nombre, codigo_interno|null, codigo_barra, precio_calleja]
+        // [nombre, codigo_interno|null, codigo_barra, precio_especial] — todo ficticio.
         $items = [
-            ['CANILLITAS', '79873', '7412201700031', '1.0500'],
-            ['COCO RALLADO', '106753', '7412201700079', '1.0000'],
-            ['DULCE DE MIEL', '117925', '7412201700109', '0.9500'],
-            ['DULCE DE NANCE', '79875', '7412201700055', '0.9500'],
-            ['DULCE DE TAMARINDO', '79877', '7412201700062', '0.9800'],
-            ['HUEVITOS', '232837', '7412201700185', '0.9000'],
-            ['MANI CON AJONJOLI', '224195', '7412201700154', '1.0400'],
-            ['MANI DULCE', '224194', '7412201700147', '1.0400'],
-            ['MANI HORNEADO', '214362', '7412201700123', '1.0400'],
-            ['PEPIAYIOTE / PEPITORIA', '218350', '7412201700130', '1.0000'],
-            ['QUEBRADIENTE', '79869', '7412201700017', '1.0400'],
-            ['SEMILLA DE MARAÑON DULCE', '265771', '7412201700222', '1.0500'],
-            ['SEMILLA DE MARAÑON HORNEADA', '230477', '7412201700178', '1.2700'],
-            ['LECHE DE BURRA', '79866', '7412201700024', '1.0900'],
-            ['MIX', null, '7412201700135', '1.0400'],
-            // Sin precio en la tabla → $1.00.
-            ['DULCES DE ANIS', null, '7412201700192', '1.0000'],
-            ['BESITOS', null, '7412201700284', '1.0000'],
-            ['CONSERVA DE COCO', null, '7412201700048', '1.0000'],
-            ['MAZAPÁN', null, '7412201700115', '1.0000'],
+            ['Producto de ejemplo 1', 'EJ-0001', '2000000001001', '1.1000'],
+            ['Producto de ejemplo 2', 'EJ-0002', '2000000001002', '1.2000'],
+            ['Producto de ejemplo 3', 'EJ-0003', '2000000001003', '1.3000'],
+            ['Producto de ejemplo 4', 'EJ-0004', '2000000001004', '1.4000'],
+            ['Producto de ejemplo 5', 'EJ-0005', '2000000001005', '1.5000'],
+            ['Producto de ejemplo 6', 'EJ-0006', '2000000001006', '1.6000'],
+            ['Producto de ejemplo 7', 'EJ-0007', '2000000001007', '1.7000'],
+            ['Producto de ejemplo 8', 'EJ-0008', '2000000001008', '1.8000'],
+            ['Producto de ejemplo 9', 'EJ-0009', '2000000001009', '1.9000'],
+            ['Producto de ejemplo 10', 'EJ-0010', '2000000001010', '2.0000'],
+            ['Producto de ejemplo 11', 'EJ-0011', '2000000001011', '2.1000'],
+            ['Producto de ejemplo 12', 'EJ-0012', '2000000001012', '2.2000'],
+            ['Producto de ejemplo 13', 'EJ-0013', '2000000001013', '2.3000'],
+            ['Producto de ejemplo 14', 'EJ-0014', '2000000001014', '2.4000'],
+            // Sin código interno: se genera uno propio.
+            ['Producto de ejemplo 15', null, '2000000001015', '2.5000'],
+            // Sin precio propio → $1.00.
+            ['Producto de ejemplo 16', null, '2000000001016', '1.0000'],
+            ['Producto de ejemplo 17', null, '2000000001017', '1.0000'],
+            ['Producto de ejemplo 18', null, '2000000001018', '1.0000'],
+            ['Producto de ejemplo 19', null, '2000000001019', '1.0000'],
         ];
 
         foreach ($items as [$nombre, $codigoInterno, $codigoBarra, $precio]) {
-            // Código interno propio cuando la tabla no lo trae (NO se usa B Item).
+            // Código interno propio cuando la lista no lo trae.
             $codigo = $codigoInterno ?? ('CAL-'.substr($codigoBarra, -6));
 
             // Identidad por CÓDIGO DE BARRA.

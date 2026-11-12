@@ -47,6 +47,19 @@
                 </div>
             @endif
 
+            {{-- Filas del archivo sin número o sin importe: no se aplicaron. --}}
+            @if (count($reporte['invalidas']))
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800" role="alert">
+                    <p><strong>Filas incompletas ({{ count($reporte['invalidas']) }})</strong></p>
+                    <p class="mt-1">Les falta el número o el importe. No se tomaron como pago: esos documentos quedaron como estaban. Pedile a {{ $nombreCliente }} el archivo corregido.</p>
+                    <ul class="mt-2 font-mono text-xs space-y-0.5">
+                        @foreach ($reporte['invalidas'] as $fila)
+                            <li>línea {{ $fila['linea'] }} · {{ \Illuminate\Support\Str::limit($fila['raw'], 90) }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             {{-- Renglones que YA estaban cobrados y que este archivo no menciona.
                  Es la sección que prueba que la corrida no borró nada: antes, un archivo
                  parcial les vaciaba el pago sin dejar rastro. --}}

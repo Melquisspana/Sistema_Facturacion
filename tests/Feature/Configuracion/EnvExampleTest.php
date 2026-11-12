@@ -83,10 +83,10 @@ class EnvExampleTest extends TestCase
     {
         // Barrido inverso: cualquier clave del ejemplo que ningún config/*.php lea es
         // documentación que engaña. Se excluyen las que consume el framework o el build
-        // fuera de config/ (Vite, PHP CLI).
+        // fuera de los archivos de configuración publicados por el proyecto.
         // Estas las lee el framework desde config/*.php que este proyecto NO publica
-        // (hashing.php, broadcasting.php) o el build de front, fuera de config/.
-        $exentas = ['VITE_APP_NAME', 'BCRYPT_ROUNDS', 'BROADCAST_CONNECTION'];
+        // (hashing.php, broadcasting.php).
+        $exentas = ['BCRYPT_ROUNDS', 'BROADCAST_CONNECTION'];
 
         $configs = '';
         foreach (glob(config_path('*.php')) as $archivo) {

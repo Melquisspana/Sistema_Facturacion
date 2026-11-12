@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Observers\UserObserver;
 use App\Services\Planilla\NombreUnico;

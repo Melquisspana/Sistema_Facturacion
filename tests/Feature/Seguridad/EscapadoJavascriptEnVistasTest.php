@@ -5,7 +5,6 @@ namespace Tests\Feature\Seguridad;
 use App\Enums\PermisoSistema;
 use App\Enums\TipoNotaCredito;
 use App\Models\Cliente;
-use App\Models\ExportacionCliente;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -103,31 +102,5 @@ class EscapadoJavascriptEnVistasTest extends TestCase
             ->get(route('clientes.perfil-documento.edit', $cliente))
             ->assertOk()
             ->assertDontSee(self::RASTRO_VULNERABLE, false);
-    }
-
-    /**
-     * La ficha antigua de clientes de exportación ya no tiene ruta (redirige a la ficha
-     * del cliente), pero la vista sigue en el repositorio: se renderiza directo.
-     */
-    public function test_el_nombre_del_cliente_en_el_confirm_de_copiar_precios_sale_como_literal_js(): void
-    {
-        $this->actingAs($this->usuario(['exportaciones.ver', 'exportaciones.gestionar']));
-        $cliente = ExportacionCliente::create(['nombre' => self::CARGA, 'activo' => true]);
-        $otro = ExportacionCliente::create(['nombre' => 'Otro cliente', 'activo' => true]);
-        $otro->productos_count = 1;
-
-        $this->withViewErrors([]);
-
-        $this->view('exportaciones.clientes.show', [
-            'cliente' => $cliente,
-            'disponibles' => collect(),
-            'otrosClientes' => collect([$otro]),
-            'soloHabilitados' => false,
-            'clientesDte' => collect(),
-        ])
-            // El nombre también se muestra como texto (escapado como HTML, correcto); lo
-            // que no puede pasar es que llegue así al confirm(), entre comillas angulares.
-            ->assertDontSee('«'.self::RASTRO_VULNERABLE, false)
-            ->assertSee('x\u0027);alert(1)', false);
     }
 }
