@@ -287,6 +287,38 @@ class DteInvalidacionRealTest extends TestCase
         $this->assertSame($b->id, $log->properties['dte_anterior']);
     }
 
+    public static function respuestasConReemplazoQueNoSeComprueban(): array
+    {
+        return [
+            'sin sello' => [['estado' => 'PROCESADO', 'descripcionMsg' => 'RECIBIDO']],
+            'de otro código' => [['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-OTRO', 'codigoGeneracion' => '00000000-0000-4000-8000-0000000000AA']],
+        ];
+    }
+
+    /**
+     * Si la invalidación no se guarda, el CCF sigue vigente: lo que llegó de la fábrica
+     * facturado en él no puede pasar al reemplazo.
+     *
+     * @param  array<string, mixed>  $respuesta
+     */
+    #[DataProvider('respuestasConReemplazoQueNoSeComprueban')]
+    public function test_invalidacion_sin_comprobar_no_pasa_lo_de_la_fabrica_al_reemplazo(array $respuesta): void
+    {
+        $base = $this->ncAceptada();
+        $b = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $c = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $envio = $this->envioFacturadoEn($b);
+        $evento = new EventoInvalidacionData(tipoAnulacion: TipoAnulacionMh::ErrorInformacion, codigoGeneracionReemplazo: strtoupper($c->codigo_generacion), nombreResponsable: 'Responsable', tipoDocResponsable: '13', numDocResponsable: '040000000', nombreSolicita: 'Solicitante', tipoDocSolicita: '13', numDocSolicita: '040000001');
+        $this->fakeHttp($respuesta);
+
+        $r = $this->servicio()->transmitir($b, $evento, true, true);
+
+        $this->assertSame('aceptacion_sin_comprobar', $r['resultado']);
+        $this->assertSame(EstadoDte::Aceptado, $b->refresh()->estado);
+        $this->assertSame($b->id, $envio->refresh()->dte_id, 'Lo que llegó de la fábrica sigue en el CCF original.');
+        $this->assertFalse(Activity::where('description', 'el CCF que corrige se quedó con lo que llegó del pedido')->exists());
+    }
+
     public function test_invalidacion_real_guarda_codigo_del_sustituto(): void
     {
         $base = $this->ncAceptada();

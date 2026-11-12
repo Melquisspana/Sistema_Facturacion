@@ -471,17 +471,19 @@ class DteInvalidacionService
                     : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ');
         });
 
+        // Lo primero: si la respuesta no se pudo comprobar, no se guardó nada y el CCF sigue
+        // vigente, así que nada de lo que cuelga de una invalidación puede ocurrir.
+        if ($falta !== null) {
+            return $this->resultado($aceptado ? 'aceptacion_sin_comprobar' : 'rechazo_sin_comprobar', $interpretado['http_status'],
+                'Hacienda informa '.($aceptado ? 'la invalidación como aceptada' : 'un rechazo de la invalidación').', pero no se guardó: '.$falta
+                .'. El documento queda como estaba; revisalo en el portal de Hacienda y avisá a soporte antes de reintentar.', null, $dte, false);
+        }
+
         // Lo que llegó de la fábrica facturado en este CCF pasa al que lo reemplaza. Va fuera de
         // la transacción de arriba: si esto fallara, la invalidación que Hacienda ya aceptó
         // queda guardada igual.
         if ($aceptado && ! $tardia && filled($evento->codigoGeneracionReemplazo)) {
             $this->pasarEnviosAlReemplazo($dte, (string) $evento->codigoGeneracionReemplazo);
-        }
-
-        if ($falta !== null) {
-            return $this->resultado($aceptado ? 'aceptacion_sin_comprobar' : 'rechazo_sin_comprobar', $interpretado['http_status'],
-                'Hacienda informa '.($aceptado ? 'la invalidación como aceptada' : 'un rechazo de la invalidación').', pero no se guardó: '.$falta
-                .'. El documento queda como estaba; revisalo en el portal de Hacienda y avisá a soporte antes de reintentar.', null, $dte, false);
         }
 
         if ($tardia) {
