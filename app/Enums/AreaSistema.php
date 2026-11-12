@@ -106,7 +106,6 @@ enum AreaSistema: string
                 // El vendedor entra por su inicio, «Mi salida» (maqueta del 10/11/2026): su viaje,
                 // «Sacar pedido» y «Por entregar» a un toque.
                 ['permiso' => PermisoSistema::RutasEntregasRegistrar->value, 'habilitada' => true, 'ruta' => 'rutas.mi-salida.index'],
-                ['permiso' => PermisoSistema::RutasEntregasRegistrar->value, 'habilitada' => true, 'ruta' => 'rutas.por-entregar.index'],
             ],
             self::Asistencia => [
                 ['permiso' => PermisoSistema::AsistenciaVer->value,

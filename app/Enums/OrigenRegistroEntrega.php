@@ -17,13 +17,4 @@ enum OrigenRegistroEntrega: string
      * en la salida sin dinero: no entra en el cierre del día ni en la liquidación.
      */
     case FacturadoDespues = 'facturado_despues';
-
-    public function label(): string
-    {
-        return match ($this) {
-            self::Vendedor => 'Vendedor',
-            self::Oficina => 'Oficina',
-            self::FacturadoDespues => 'Facturado después de entregar',
-        };
-    }
 }

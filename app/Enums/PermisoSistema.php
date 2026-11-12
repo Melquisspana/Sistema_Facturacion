@@ -146,8 +146,8 @@ enum PermisoSistema: string
     // el dinero: lo recibe la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 7).
     case RutasSalidasTerminar = 'rutas.salidas.terminar';
     // Pedidos de sala (docs/PLAN_TABLERO_RUTAS.md, etapa 3). `registrar`: sacar el pedido
-    // en la sala desde «Mi salida», solo en las salidas donde va. `ver`: la lista y el
-    // detalle de la oficina. Lo que manda la fábrica va con su propio permiso, abajo.
+    // de cualquier sala desde «Sacar pedido». `ver`: la lista y el detalle de la oficina.
+    // Lo que manda la fábrica va con su propio permiso, abajo.
     case RutasPedidosRegistrar = 'rutas.pedidos.registrar';
     case RutasPedidosVer = 'rutas.pedidos.ver';
     // La fábrica marca qué manda de cada pedido (/fabrica/pedidos): mandar todo o una

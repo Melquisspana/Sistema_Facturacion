@@ -55,7 +55,7 @@ class PersonalRutaTest extends TestCase
         // Las funciones son combinables y van normalizadas: se pueden consultar.
         $this->assertCount(2, $persona->funcionesEnum());
         $this->assertTrue($persona->tieneFuncion(FuncionPersonalRuta::Vendedor));
-        $this->assertFalse($persona->puedeSerResponsable());
+        $this->assertFalse($persona->tieneFuncion(FuncionPersonalRuta::ResponsableSalida));
         // Sin login: es lo normal en el personal de campo.
         $this->assertNull($persona->user_id);
     }
@@ -77,7 +77,7 @@ class PersonalRutaTest extends TestCase
             SalidaDePrueba::participantes($salida, [$persona->id], null);
         }
 
-        $this->assertSame(2, $persona->salidas()->count());
+        $this->assertSame(2, $persona->participaciones()->count());
     }
 
     public function test_una_persona_no_se_borra_se_desactiva(): void

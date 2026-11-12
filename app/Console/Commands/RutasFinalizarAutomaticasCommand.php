@@ -15,7 +15,7 @@ use Illuminate\Console\Command;
  *    día sin pedidos deja de sumar; el que ya no suma se cierra cuando todo está facturado y
  *    entregado, o tras {@see Viajes::DIAS_SIN_MOVIMIENTO} días sin movimiento.
  *
- * No liquida nada: la oficina hace «Terminar ruta».
+ * No liquida nada: el dinero se entrega con el PDF del día, firmado.
  */
 class RutasFinalizarAutomaticasCommand extends Command
 {

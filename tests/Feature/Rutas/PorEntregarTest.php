@@ -233,7 +233,7 @@ class PorEntregarTest extends TestCase
         $this->assertSame([$facturadoDespues->id], $auto->entregas()->pluck('dte_id')->all());
 
         $this->assertSame([$ana->id], $deAna->participantes()->pluck('rutas_personal_id')->all());
-        $this->assertSame($ana->id, $formal->responsable->rutas_personal_id);
+        $this->assertSame($ana->id, $formal->participantes()->where('rol', RolEnSalida::Responsable->value)->sole()->rutas_personal_id);
         $this->assertFalse(Activity::whereIn('subject_id', [$formal->id, $deAna->id])->where('subject_type', SalidaRuta::class)
             ->where('description', 'cambió los participantes de la salida')->where('properties->desde', 'por_entregar')->exists());
     }

@@ -115,7 +115,6 @@ class RutasDashboardController extends Controller
                 'semana' => $this->filtrar($salas, 'semana', $rutaId, $buscar)->count(),
                 'todas' => $this->filtrar($salas, 'todas', $rutaId, $buscar)->count(),
             ],
-            'vendedores' => $vendedores,
             'tarjetasVendedores' => $this->tarjetasVendedores($vendedores, $usuario, $hoy),
             'salasSinZona' => $salas->whereNull('ruta')->count(),
         ]);

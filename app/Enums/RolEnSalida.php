@@ -32,11 +32,6 @@ enum RolEnSalida: string
         };
     }
 
-    public function esResponsable(): bool
-    {
-        return $this === self::Responsable;
-    }
-
     /** Clases del badge. Sin variantes `dark:`: ver la nota en {@see FuncionPersonalRuta::clase()}. */
     public function clase(): string
     {
@@ -44,16 +39,5 @@ enum RolEnSalida: string
             self::Responsable => 'bg-amber-100 text-amber-800',
             self::Acompanante => 'bg-gray-100 text-gray-600',
         };
-    }
-
-    /** @return array<string, string> */
-    public static function opciones(): array
-    {
-        $opciones = [];
-        foreach (self::cases() as $caso) {
-            $opciones[$caso->value] = $caso->label();
-        }
-
-        return $opciones;
     }
 }

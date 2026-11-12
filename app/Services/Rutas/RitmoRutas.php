@@ -74,7 +74,6 @@ class RitmoRutas
      *     ultima: ?SalidaRuta,
      *     enCurso: ?SalidaRuta,
      *     faltan: ?int,
-     *     avance: ?int,
      *     ritmo: ?int,
      *     origenRitmo: ?string,
      *     ritmoSalas: array<int, Ritmo>,
@@ -327,8 +326,6 @@ class RitmoRutas
             'enCurso' => $enCurso,
             // Días que faltan para la fecha esperada; negativo = días de atraso.
             'faltan' => $ritmo && $dias !== null ? $ritmo - $dias : null,
-            // Cuánto del ritmo ya pasó, de 0 a 100, para la barra.
-            'avance' => $ritmo && $dias !== null ? (int) min(100, round($dias * 100 / $ritmo)) : null,
             'ritmo' => $ritmo ?: null,
             // confiable, aproximado, manual o null (sin ritmo).
             'origenRitmo' => $origen,

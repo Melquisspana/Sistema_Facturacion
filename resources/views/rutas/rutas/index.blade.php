@@ -29,7 +29,6 @@
             @if ($gestiona)
                 <form method="POST" action="{{ route('rutas.rutas.store') }}" class="{{ $caja }} flex flex-wrap items-end gap-3 p-4">
                     @csrf
-                    <input type="hidden" name="en_linea" value="1">
                     <input type="hidden" name="activa" value="1">
                     <div class="min-w-0 flex-1">
                         <label for="nueva_nombre" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Nueva zona</label>
@@ -48,7 +47,6 @@
                     @if ($gestiona)
                         <form method="POST" action="{{ route('rutas.rutas.update', $ruta) }}" class="flex flex-wrap items-end gap-3">
                             @csrf @method('PUT')
-                            <input type="hidden" name="en_linea" value="1">
                             <input type="hidden" name="activa" value="{{ $ruta->activa ? 1 : 0 }}">
                             <input name="nombre" value="{{ $ruta->nombre }}" required maxlength="120" aria-label="Nombre de la zona"
                                    class="min-h-11 min-w-0 flex-1 rounded-lg border-transparent bg-transparent px-2 text-lg font-semibold text-gray-800 hover:border-gray-300 focus:border-indigo-500 dark:text-paper-100">

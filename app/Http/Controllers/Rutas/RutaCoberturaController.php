@@ -58,7 +58,7 @@ class RutaCoberturaController extends Controller
             ->withProperties([$campo => $datos[$campo], 'lugar' => $lugar])
             ->log('agregó a la cobertura de la ruta');
 
-        return back()->with('status', "«{$lugar}» agregado a la cobertura. Las salas no se mueven solas: revisalas en «Asignar salas».");
+        return back()->with('status', "«{$lugar}» agregado a la cobertura. Las salas de ese lugar que no tienen zona puesta pasan a contarse en esta.");
     }
 
     public function destroy(Request $request, Ruta $ruta, RutaCobertura $cobertura): RedirectResponse
