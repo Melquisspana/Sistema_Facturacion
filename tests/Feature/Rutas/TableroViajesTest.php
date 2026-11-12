@@ -259,6 +259,48 @@ class TableroViajesTest extends TestCase
         $this->get(route('rutas.viajes'))->assertForbidden();
     }
 
+    /**
+     * «Todos los viajes» salió del menú (12/11/2026): lo suyo pasó a esta pestaña. La oficina
+     * cancela acá el viaje abierto por error (la misma ruta y el mismo permiso de siempre) y
+     * el listado completo se abre con «Ver viajes anteriores». El menú resalta «Tablero».
+     */
+    public function test_la_oficina_cancela_aca_el_viaje_abierto_por_error_y_abre_los_anteriores(): void
+    {
+        $viaje = $this->viaje();
+        $this->pedido($viaje, 'Sala de prueba Norte');
+        $cancelar = 'action="'.route('rutas.salidas.cancelar', $viaje).'"';
+        $anteriores = 'href="'.route('rutas.salidas.index').'"';
+
+        $oficina = User::factory()->create(['activo' => true])->assignRole('facturacion');
+        $this->actingAs($oficina)->get(route('rutas.viajes'))->assertOk()
+            ->assertSee($cancelar, false)
+            ->assertSee('Cancelar viaje')
+            ->assertSee('¿Cancelar este viaje?')
+            ->assertSee($anteriores, false)
+            ->assertSee('Ver viajes anteriores');
+
+        // El jefe de vendedores mira, pero no cancela (no tiene `rutas.gestionar`).
+        $jefe = User::factory()->create(['activo' => true])->assignRole('jefe_vendedores');
+        $this->actingAs($jefe)->get(route('rutas.viajes'))->assertOk()
+            ->assertDontSee($cancelar, false)
+            ->assertSee($anteriores, false);
+        $this->actingAs($jefe)->patch(route('rutas.salidas.cancelar', $viaje))->assertForbidden();
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $viaje->fresh()->estado);
+
+        // Vuelve a la pestaña con el aviso, y el viaje ya no está entre los abiertos.
+        $this->actingAs($oficina)->from(route('rutas.viajes'))->patch(route('rutas.salidas.cancelar', $viaje))
+            ->assertRedirect(route('rutas.viajes'))->assertSessionHas('status', 'Viaje cancelado.');
+        $this->assertSame(EstadoSalidaRuta::Cancelada, $viaje->fresh()->estado);
+        $this->actingAs($oficina)->get(route('rutas.viajes'))->assertOk()->assertDontSee($cancelar, false);
+
+        // El listado y el detalle siguen abriendo; el menú resalta «Tablero».
+        $tablero = '/href="'.preg_quote(route('rutas.dashboard'), '/').'"\s+aria-current="page"/u';
+        foreach ([route('rutas.salidas.index'), route('rutas.salidas.show', $viaje)] as $url) {
+            $html = $this->actingAs($oficina)->get($url)->assertOk()->getContent();
+            $this->assertMatchesRegularExpression($tablero, $html, $url);
+        }
+    }
+
     public function test_sin_viajes_lo_dice(): void
     {
         $jefe = User::factory()->create(['activo' => true])->assignRole('jefe_vendedores');
