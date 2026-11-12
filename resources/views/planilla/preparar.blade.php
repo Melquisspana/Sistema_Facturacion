@@ -121,6 +121,8 @@
                           if (!p) return;
                           this.lineas.push({ planilla_empleado_id: p.id, nombre: p.nombre, cargo: p.cargo,
                               salario: p.salario, habitual: p.habitual || '', periodo_desde: p.periodo_desde || '', periodo_hasta: p.periodo_hasta || '',
+                              // La propuesta viaja con la línea: si se vuelve a quitar, no se pierde.
+                              propuesto: { salario: p.salario, periodo_desde: p.periodo_desde, periodo_hasta: p.periodo_hasta },
                               observaciones: '', conceptos: [] });
                           this.disponibles = this.disponibles.filter(d => String(d.id) !== String(this.nuevo));
                           this.nuevo = '';

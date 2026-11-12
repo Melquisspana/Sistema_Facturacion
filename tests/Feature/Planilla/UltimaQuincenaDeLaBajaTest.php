@@ -310,5 +310,7 @@ class UltimaQuincenaDeLaBajaTest extends TestCase
         $this->assertSame([$this->beto->id], $pantalla->viewData('disponibles')->pluck('id')->all());
         // Al volver a agregarlo se le proponen sus días, no la quincena entera.
         $this->assertSame(['salario' => '75.00', 'periodo_desde' => '2026-10-01', 'periodo_hasta' => '2026-10-05'], $pantalla->viewData('propuestos')[$this->beto->id]);
+        // Y la línea que se agrega se lleva la propuesta: al quitarla otra vez no vuelve a la quincena entera.
+        $pantalla->assertSee('propuesto: { salario: p.salario, periodo_desde: p.periodo_desde, periodo_hasta: p.periodo_hasta }', false);
     }
 }
