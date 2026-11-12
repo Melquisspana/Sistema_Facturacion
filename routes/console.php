@@ -318,10 +318,10 @@ Schedule::command('rutas:finalizar-automaticas')
     ->withoutOverlapping(10);
 
 /*
-| Pedidos: el resumen de las 5 de la tarde a quien esté en Configuración › Rutas (qué salió
-| de la fábrica, qué faltó, qué no se trae y qué sigue por mandar). Hora de El Salvador
-| aunque el servidor tenga otra zona. Solo lee pedidos; sin correo cargado no manda nada y
-| lo deja en el log. Una vez por día: la auditoría marca el envío.
+| Pedidos: el resumen de las 6 de la tarde a quien esté en Configuración › Rutas (qué salió
+| de la fábrica, qué faltó, qué no se trae y qué sigue por mandar, lo vendido en el día y el
+| PDF del día de cada vendedor). Hora de El Salvador aunque el servidor tenga otra zona.
+| Solo lee; sin correo cargado no manda nada y lo deja en el log. Una vez por día: la auditoría marca el envío.
 */
 Schedule::command('pedidos:correo-diario')
     ->dailyAt(ResumenDiarioPedidos::HORA)

@@ -15,38 +15,47 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
- * El correo de las 17:00 con lo que hizo la fábrica, por sala: lo que salió en cada envío,
+ * El correo de las 18:00 con lo que hizo la fábrica, por sala: lo que salió en cada envío,
  * lo que se deshizo de un envío que ya había salido en un correo anterior, lo que faltó
  * (con su motivo), lo que se marcó «No se trae» y lo que sigue por mandar con sus días de
  * atraso. Si no salió nada, sale igual con «Hoy no salió ningún pedido» y los pendientes.
  *
- * DESDE EL CORREO ANTERIOR. Cubre desde el instante hasta el que llegó el último resumen
- * (`hasta` en su auditoría) hasta ahora, no solo el día: lo que la fábrica hace después
- * de las 17:00 sale en el correo siguiente. Sin un resumen anterior, desde el inicio del
+ * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
+ * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,
+ * adjunto, el PDF del día de cada vendedor con movimiento, el mismo de «Terminar el día»,
+ * con lo que lleve marcado a esa hora. Es una foto de esa hora y el correo lo dice: lo
+ * facturado o marcado después no entra en ningún correo. Si falla la cuenta de ventas o el PDF de alguien, se
+ * reporta y el correo sale igual diciendo qué faltó. Lleva dinero: va solo a la lista de
+ * Configuración › Rutas.
+ *
+ * LO DE LA FÁBRICA, DESDE EL CORREO ANTERIOR. Cubre desde el instante hasta el que llegó
+ * el último resumen (`hasta` en su auditoría) hasta ahora, no solo el día: lo que la fábrica hace después
+ * de las 18:00 sale en el correo siguiente. Sin un resumen anterior, desde el inicio del
  * día. Los dos extremos entran: algo del mismo segundo del corte puede salir en los dos
  * correos, pero nunca en ninguno.
  *
  * A QUIÉN. El ajuste `pedidos.correo_resumen_diario` (Configuración › Rutas, dato
  * personal). Vacío: no se manda y queda en el log.
  *
- * UNA VEZ POR DÍA, DESDE LAS 17:00. Antes de esa hora no sale: una corrida a mano de la
- * mañana no le quita el día al de las 17:00. La auditoría («mandó el resumen diario de
+ * UNA VEZ POR DÍA, DESDE LAS 18:00. Antes de esa hora no sale: una corrida a mano de la
+ * mañana no le quita el día al de las 18:00. La auditoría («mandó el resumen diario de
  * pedidos», con la fecha) es la marca que dura: sobrevive a un `cache:clear` del despliegue.
  * `Cache::add` con la fecha en la clave cubre dos corridas a la vez. Si el envío falla, la
  * marca de la caché se suelta y no se audita, así que se puede volver a correr a mano.
  *
  * A MANO (`--forzar`). Sale ya, a cualquier hora y aunque el del día ya haya salido, con lo
- * mismo que traería el siguiente. Queda auditado aparte y no cuenta como el de las 17:00:
+ * mismo que traería el siguiente. Queda auditado aparte y no cuenta como el de las 18:00:
  * ni lo frena ni corre el período del siguiente.
  *
  * FUERA DE PRODUCCIÓN NO SALE: pasa por {@see CandadoCorreoReal}, como los demás correos,
  * y queda como simulado.
  *
- * Solo lee pedidos: no cambia ninguno.
+ * Solo lee: no cambia pedidos, entregas ni documentos.
  */
 class ResumenDiarioPedidos
 {
@@ -55,12 +64,27 @@ class ResumenDiarioPedidos
     public const AUDITORIA_A_MANO = 'mandó a mano el resumen de pedidos';
 
     /** La hora del día (de El Salvador) a la que sale; la usa también el planificador. */
-    public const HORA = '17:00';
+    public const HORA = '18:00';
 
     public function __construct(
         private PedidosFabrica $fabrica,
         private CandadoCorreoReal $candado,
+        private VentasRutas $ventas,
+        private DiaVendedor $dia,
     ) {}
+
+    /**
+     * Una hora «HH:MM» como se dice: «las 6 de la tarde», «las 10:15 de la mañana». Sin
+     * argumento, la del envío de todos los días ({@see HORA}): los textos la toman de acá.
+     */
+    public static function horaDicha(string $hora = self::HORA): string
+    {
+        [$h, $m] = array_map('intval', explode(':', $hora));
+        $doce = $h % 12 ?: 12;
+
+        return ($doce === 1 ? 'la ' : 'las ').$doce.($m > 0 ? ':'.sprintf('%02d', $m) : '')
+            .' de la '.($h < 12 ? 'mañana' : ($h < 19 ? 'tarde' : 'noche'));
+    }
 
     /** @return list<string> */
     public function destinatarios(): array
@@ -98,7 +122,12 @@ class ResumenDiarioPedidos
 
         // Se arma ANTES de tomar la marca: si la consulta falla, no queda tomada.
         $hasta = now()->startOfSecond();
-        $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta);
+        $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta)
+            + ['ventas' => $this->vendido($fecha)];
+        [$contenido['vendedores'], $pdf] = $this->pdfDeVendedores($fecha);
+        // Es una foto: lo vendido y lo marcado después no entra. El de todos los días es de
+        // su hora; el que se manda a mano, de la hora en que sale.
+        $contenido['hasta_las'] = self::horaDicha($forzar ? HoraNegocio::ahora()->format('H:i') : self::HORA);
 
         $clave = 'pedidos.correo_resumen_diario.'.$fecha;
         if (! $forzar && ! Cache::add($clave, true, now()->addDays(2))) {
@@ -107,7 +136,7 @@ class ResumenDiarioPedidos
 
         if ($this->candado->debeSimular()) {
             Log::info('Pedidos: resumen diario SIMULADO', ['fecha' => $fecha, 'motivo' => $this->candado->motivo()]);
-            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta, $forzar);
+            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta, $forzar, count($pdf));
 
             return 'simulado';
         }
@@ -115,7 +144,7 @@ class ResumenDiarioPedidos
         try {
             // El servidor de correo guardado en Configuración, no el del arranque del proceso.
             app(ConfiguracionCorreoRuntime::class)->aplicar();
-            Mail::to($destinatarios)->send(new ResumenDiarioPedidosCorreo($contenido));
+            Mail::to($destinatarios)->send(new ResumenDiarioPedidosCorreo($contenido, $pdf));
         } catch (Throwable $e) {
             // Puede haber salido igual; se suelta la marca para poder reintentarlo a mano.
             if (! $forzar) {
@@ -126,7 +155,7 @@ class ResumenDiarioPedidos
             return 'fallido';
         }
 
-        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta, $forzar);
+        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta, $forzar, count($pdf));
 
         return 'enviado';
     }
@@ -147,7 +176,7 @@ class ResumenDiarioPedidos
             return $nombre;
         };
         $hoy = Carbon::parse($hasta->toDateString());
-        // La hora sola si es del día del correo; si no (después de las 17:00 de ayer), con la fecha.
+        // La hora sola si es del día del correo; si no (después de las 18:00 de ayer), con la fecha.
         $envio = function (PedidoSalaEnvio $envio) use ($hoy): array {
             $local = HoraNegocio::aLocal($envio->created_at);
 
@@ -232,6 +261,62 @@ class ResumenDiarioPedidos
         ];
     }
 
+    /**
+     * Lo vendido en el día, con la cuenta de la pantalla de Ventas ({@see VentasRutas::delDia()}).
+     * Null si la cuenta falla: el correo sale igual y lo dice.
+     *
+     * @return array{nacional: array{monto: float, facturas: int}, exportacion: array{monto: float, facturas: int}}|null
+     */
+    private function vendido(string $fecha): ?array
+    {
+        try {
+            return $this->ventas->delDia($fecha);
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * El PDF del día de cada vendedor con movimiento, el mismo de «Terminar el día»
+     * ({@see DiaVendedor::pdfBinario()}), con lo que lleve marcado hasta ahora. De a uno: si
+     * el de alguien falla, se reporta, el correo lo nombra y siguen los demás. Devuelve los
+     * nombres para el cuerpo (null si no se pudo ni buscar quién tuvo movimiento) y los PDF,
+     * nombre de archivo => contenido.
+     *
+     * @return array{0: array{adjuntos: list<string>, fallaron: list<string>}|null, 1: array<string, string>}
+     */
+    private function pdfDeVendedores(string $fecha): array
+    {
+        try {
+            $personas = $this->dia->personasConMovimiento($fecha);
+        } catch (Throwable $e) {
+            report($e);
+
+            return [null, []];
+        }
+
+        $nombres = ['adjuntos' => [], 'fallaron' => []];
+        $pdf = [];
+        foreach ($personas as $persona) {
+            try {
+                $archivo = DiaVendedor::nombrePdf($persona, $fecha);
+                // Dos personas con el mismo nombre: la segunda lleva su número.
+                if (isset($pdf[$archivo])) {
+                    $archivo = Str::replaceLast('.pdf', '-'.$persona->id.'.pdf', $archivo);
+                }
+                $pdf[$archivo] = $this->dia->pdfBinario($persona, $persona->user, $fecha);
+                $nombres['adjuntos'][] = $persona->nombre;
+            } catch (Throwable $e) {
+                report($e);
+                $nombres['fallaron'][] = $persona->nombre;
+            }
+        }
+
+        return [$nombres, $pdf];
+    }
+
     /** Hasta dónde llegó el último resumen, en la hora de la base; null si nunca salió uno. */
     private function desdeElAnterior(): ?Carbon
     {
@@ -254,11 +339,14 @@ class ResumenDiarioPedidos
             ->exists();
     }
 
-    /** Sin los correos: son datos personales y la auditoría la lee más gente. */
-    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta, bool $aMano): void
+    /**
+     * Sin los correos, sin montos y sin nombres de vendedores: la auditoría la lee más gente.
+     * De los PDF, solo cuántos fueron.
+     */
+    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta, bool $aMano, int $adjuntos): void
     {
         activity('pedido_sala')
-            ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios, 'hasta' => $hasta->format('Y-m-d H:i:s')])
+            ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios, 'hasta' => $hasta->format('Y-m-d H:i:s'), 'adjuntos' => $adjuntos])
             ->log($aMano ? self::AUDITORIA_A_MANO : self::AUDITORIA);
     }
 }

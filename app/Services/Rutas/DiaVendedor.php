@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Support\HoraNegocio;
 use App\Support\NombreEmpresa;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Barryvdh\DomPDF\PDF as HojaPdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -160,15 +161,58 @@ class DiaVendedor
         return $dias;
     }
 
-    /** El PDF del día de una persona: el mismo para el vendedor y para la oficina. */
+    /**
+     * Quienes tienen algo que va en el PDF de ese día (una entrega, un «No se pudo» o un
+     * gasto), por nombre. Lo pide el correo diario ({@see ResumenDiarioPedidos}).
+     *
+     * Las mismas personas que daría {@see diasConMovimiento()} ficha por ficha, con la regla
+     * de {@see suyas()}, pero partiendo de lo anotado ese día: las consultas no crecen con
+     * la cantidad de fichas del Personal.
+     *
+     * @return Collection<int, PersonalRuta>
+     */
+    public function personasConMovimiento(string $fecha): Collection
+    {
+        $entregas = SalidaRutaEntrega::query()->sinFacturadosDespues()->whereDate('fecha_resultado', $fecha)
+            ->whereIn('resultado', [ResultadoEntrega::Entregado->value, ResultadoEntrega::NoEntregado->value])
+            ->select('resultado', 'entregado_por_id', 'registrado_por')->distinct()->toBase()->get();
+        // Quien entregó o tiene un gasto, por su ficha; quien anotó un «No se pudo», por su login.
+        $fichas = $entregas->where('resultado', ResultadoEntrega::Entregado->value)->pluck('entregado_por_id')
+            ->concat(SalidaRutaGasto::query()->whereDate('fecha', $fecha)->distinct()->pluck('personal_id'))
+            ->filter()->unique()->values();
+        $usuarios = $entregas->where('resultado', ResultadoEntrega::NoEntregado->value)->pluck('registrado_por')
+            ->filter()->unique()->values();
+
+        return PersonalRuta::query()->with('user')
+            ->where(fn (Builder $q) => $q->whereIn('id', $fichas)->orWhereIn('user_id', $usuarios))
+            ->orderBy('nombre')->orderBy('id')->get();
+    }
+
+    /** El PDF del día de una persona: el mismo para el vendedor, la oficina y el correo diario. */
     public function pdf(PersonalRuta $persona, ?User $usuario, string $fecha): Response
+    {
+        return $this->hoja($persona, $usuario, $fecha)->stream(self::nombrePdf($persona, $fecha));
+    }
+
+    /** Ese mismo PDF, en bytes: es el que adjunta el correo diario. */
+    public function pdfBinario(PersonalRuta $persona, ?User $usuario, string $fecha): string
+    {
+        return $this->hoja($persona, $usuario, $fecha)->output();
+    }
+
+    public static function nombrePdf(PersonalRuta $persona, string $fecha): string
+    {
+        return 'dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf';
+    }
+
+    private function hoja(PersonalRuta $persona, ?User $usuario, string $fecha): HojaPdf
     {
         return Pdf::loadView('rutas.mi-salida.dia-pdf', [
             'resumen' => $this->resumen($persona, $usuario, $fecha),
             'persona' => $persona,
             'empresa' => NombreEmpresa::actual(),
             'generado' => HoraNegocio::aLocal(now()),
-        ])->setPaper('letter')->stream('dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf');
+        ])->setPaper('letter');
     }
 
     /**

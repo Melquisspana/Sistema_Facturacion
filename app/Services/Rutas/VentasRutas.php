@@ -185,6 +185,31 @@ class VentasRutas
         return array_map(fn (array $s) => ['actual' => round($s['actual'], 2), 'anterior' => round($s['anterior'], 2), 'compro' => $s['compro']], $salas);
     }
 
+    /**
+     * Lo vendido en un día, por canal, con las mismas reglas de {@see consultar()}: sin IVA,
+     * solo documentos reales y la NC en la fecha del documento que corrige. `facturas`
+     * cuenta los documentos de venta de ese día (CCF y facturas, o FEX), no las notas. Lo
+     * pide el correo diario ({@see ResumenDiarioPedidos}).
+     *
+     * @return array{nacional: array{monto: float, facturas: int}, exportacion: array{monto: float, facturas: int}}
+     */
+    public function delDia(string $fecha): array
+    {
+        $dia = Carbon::parse($fecha);
+        $canales = [];
+        foreach (['nacional', 'exportacion'] as $canal) {
+            // Se pide hasta el día siguiente y se filtra acá por la fecha ya recortada, como
+            // hace consultar(): donde la fecha se guarda con hora, el tope del mismo día la deja afuera.
+            $lineas = $this->lineas($dia, $dia->copy()->addDay(), ['canal' => $canal])->where('fecha', $dia->toDateString());
+            $canales[$canal] = [
+                'monto' => round($lineas->sum('monto'), 2),
+                'facturas' => $lineas->where('tipo', '!=', '05')->unique('documento_id')->count(),
+            ];
+        }
+
+        return $canales;
+    }
+
     private function devoluciones(Collection $lineas): array
     {
         $grupos = ['productos' => [], 'salas' => []];
