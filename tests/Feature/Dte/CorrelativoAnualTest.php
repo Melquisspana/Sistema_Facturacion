@@ -5,7 +5,6 @@ namespace Tests\Feature\Dte;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
-use App\Exceptions\Dte\GeneracionException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -202,36 +201,40 @@ class CorrelativoAnualTest extends TestCase
         $this->assertNotNull($registro, 'El reinicio anual del correlativo debe quedar auditado.');
     }
 
-    public function test_borrador_con_fecha_de_un_ejercicio_ya_reiniciado_no_se_genera(): void
+    /**
+     * La fecha de emisión es la del día en que se genera (regla del 12/11/2026), así que un
+     * borrador de diciembre generado en enero es un documento de enero: toma el número que
+     * le toca en la serie del año nuevo, sin pedir que alguien le cambie la fecha.
+     */
+    public function test_borrador_de_diciembre_generado_en_enero_sale_con_fecha_y_numero_de_enero(): void
     {
         $this->en('2026-12-31 22:00:00');
         $this->generar($this->borradorCcf());
-        $viejo = $this->borradorCcf(); // fecha de emisión 2026-12-31, sin generar
+        $viejo = $this->borradorCcf(); // borrador del 2026-12-31, sin generar
 
         $this->en('2027-01-02 08:00:00');
         $this->generar($this->borradorCcf()); // ya reinició el ejercicio 2027
+        $this->en('2027-01-02 08:10:00');
+        $generado = $this->generar($viejo);
 
-        try {
-            $this->generar($viejo);
-            $this->fail('Un documento con fecha de 2026 no puede tomar número después del reinicio de 2027.');
-        } catch (GeneracionException $e) {
-            $this->assertStringContainsString('ejercicio', $e->getMessage());
-        }
-        $this->assertNull(Dte::query()->findOrFail($viejo->id)->numero_control);
+        $this->assertSame('2027-01-02', $generado->fecha_emision->format('Y-m-d'));
+        $this->assertSame('08:10:00', (string) $generado->hora_emision);
+        $this->assertSame(2027, (int) $generado->ejercicio);
+        $this->assertSame('000000000000002', $this->correlativoDe($generado));
     }
 
-    public function test_el_borrador_con_fecha_del_anio_anterior_se_genera_si_todavia_no_hubo_reinicio(): void
+    public function test_borrador_de_diciembre_generado_el_primero_de_enero_abre_la_serie_del_anio_nuevo(): void
     {
         $this->en('2026-12-31 22:00:00');
         $this->generar($this->borradorCcf());
         $viejo = $this->borradorCcf();
 
-        // Se genera el 01/01 antes que cualquier documento de 2027: sigue la serie de 2026.
         $this->en('2027-01-01 07:00:00');
         $generado = $this->generar($viejo);
 
-        $this->assertSame('000000000000002', $this->correlativoDe($generado));
-        $this->assertSame(2026, (int) $generado->ejercicio);
+        $this->assertSame('2027-01-01', $generado->fecha_emision->format('Y-m-d'));
+        $this->assertSame(2027, (int) $generado->ejercicio);
+        $this->assertSame('000000000000001', $this->correlativoDe($generado));
     }
 
     public function test_la_base_admite_el_mismo_numero_de_control_en_otro_ejercicio_pero_no_en_el_mismo(): void

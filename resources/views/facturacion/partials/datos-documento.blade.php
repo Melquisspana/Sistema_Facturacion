@@ -49,7 +49,8 @@
                     @if ($dte->numero_control)
                         <div><dt class="text-gray-500">Número de control</dt><dd class="font-mono break-all">{{ $dte->numero_control }}</dd></div>
                     @endif
-                    <div><dt class="text-gray-500">Fecha</dt><dd>{{ $dte->fecha_emision?->format('d/m/Y') }}</dd></div>
+                    {{-- En borrador no hay fecha: la de emisión es la del día en que se genera. --}}
+                    <div><dt class="text-gray-500">Fecha</dt><dd>{{ $dte->esEditable() ? 'La del día en que se emita' : $dte->fecha_emision?->format('d/m/Y') }}</dd></div>
                     <div><dt class="text-gray-500">Orden de compra</dt><dd>{{ $dte->numero_orden_compra ?? '—' }}</dd></div>
                     {{-- Identificador TÉCNICO de la fila: solo para soporte y auditoría,
                          nunca como número de documento frente al cliente. --}}

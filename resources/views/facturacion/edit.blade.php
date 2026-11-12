@@ -97,7 +97,8 @@
                             <x-estado-dte-badge :estado="$dte->estado" />
                         </div>
                         <dl class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
-                            <div><dt class="inline text-gray-400">Fecha:</dt> <dd class="inline">{{ $dte->fecha_emision?->format('d/m/Y') ?? '—' }}</dd></div>
+                            {{-- En borrador no hay fecha: la de emisión es la del día en que se genera. --}}
+                            <div><dt class="inline text-gray-400">Fecha:</dt> <dd class="inline">{{ $dte->esEditable() ? 'la del día en que se emita' : ($dte->fecha_emision?->format('d/m/Y') ?? '—') }}</dd></div>
                             <div><dt class="inline text-gray-400">Orden de compra:</dt> <dd class="inline">{{ $dte->numero_orden_compra ?? '—' }}</dd></div>
                             <div><dt class="inline text-gray-400">Emisor:</dt> <dd class="inline">{{ $dte->establecimiento?->nombre ?? '—' }} / {{ $dte->puntoVenta?->nombre ?? '—' }}</dd></div>
                             <div><dt class="inline text-gray-400">Retención IVA:</dt> <dd class="inline">{{ $dte->aplica_retencion_iva ? 'Sí' : 'No' }}</dd></div>
