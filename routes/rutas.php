@@ -41,9 +41,16 @@ use Illuminate\Support\Facades\Route;
 | El selector superior de áreas y los botones de las vistas son solo presentación
 | y NUNCA autorizan.
 |
-| Ninguna pantalla de Rutas se guarda en el navegador (`no-store`): al tocar «atrás»
-| después de marcar, cerrar o anotar un gasto, se vuelve a pedir y muestra lo hecho,
-| no la copia vieja.
+| «Atrás» (12/11/2026), dos casos:
+|   - Las pantallas del vendedor que MARCAN cosas (Inicio, Terminar el día, Por entregar,
+|     Sacar pedido y el pedido de una sala) y el detalle de un viaje, donde la oficina
+|     anota entregas y gastos, no se guardan en el navegador (`no-store`): al tocar «atrás»
+|     después de marcar se vuelven a pedir y muestran lo hecho. Una copia vieja llevaría a
+|     marcar dos veces.
+|   - Las de la oficina que solo se miran (Tablero, Viajes, Mapa, Pedidos, Zonas, Ventas y
+|     Todos los viajes) usan `private, no-cache`: «atrás» las restaura al instante como
+|     estaban, una visita nueva las pide frescas y ningún proxy las guarda. Al salir, el
+|     logout manda `Clear-Site-Data: "cache"` para que «atrás» no las muestre sin sesión.
 |
 | Las rutas literales van ANTES que las paramétricas (regla del repo).
 |
@@ -51,7 +58,10 @@ use Illuminate\Support\Facades\Route;
 | da «no encontrado».
 */
 
-Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers:no_store;private'])
+$sinCopia = 'cache.headers:no_store;private';
+$atrasAlInstante = 'cache.headers:no_cache;private';
+
+Route::middleware(['auth', 'permission:rutas.entregas.registrar', $sinCopia])
     ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
     ->group(function () {
         Route::get('/', [MiSalidaController::class, 'index'])->name('index');
@@ -71,7 +81,7 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
 | armada; el pedido se suma solo a su viaje. Que tenga su ficha de Rutas, que la sala esté
 | activa y quién corrige lo deciden la policy y PedidosSala.
 */
-Route::middleware(['auth', 'permission:rutas.pedidos.registrar', 'cache.headers:no_store;private'])
+Route::middleware(['auth', 'permission:rutas.pedidos.registrar', $sinCopia])
     ->prefix('rutas/sacar-pedido')->name('rutas.sacar-pedido.')
     ->group(function () {
         Route::get('/', [MiPedidoController::class, 'index'])->name('index');
@@ -93,7 +103,7 @@ Route::middleware(['auth', 'permission:rutas.pedidos.registrar', 'cache.headers:
 | marcar es solo del vendedor. El PDF, solo de un CCF de la lista. Deshacer usa la ruta de
 | «Mi salida».
 */
-Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', 'cache.headers:no_store;private'])
+Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', $sinCopia])
     ->prefix('rutas/por-entregar')->name('rutas.por-entregar.')
     ->group(function () {
         Route::get('/', [PorEntregarController::class, 'index'])->name('index');
@@ -104,63 +114,69 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', 'cac
             ->middleware('permission:rutas.entregas.registrar');
     });
 
-Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;private'])
+// Pantallas de la oficina: cada bloque dice si «atrás» la restaura o la vuelve a pedir.
+Route::middleware(['auth', 'permission:rutas.ver'])
     ->prefix('rutas')
     ->name('rutas.')
-    ->group(function () {
-        Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
-        // La pestaña «Viajes» del tablero: en qué paso va cada pedido de cada viaje (10/11/2026).
-        Route::get('viajes', [ViajesController::class, 'index'])->name('viajes');
-        // La pestaña «Mapa» del tablero: ventas por zona, con montos (09/11/2026).
-        Route::get('mapa', [MapaVentasController::class, 'index'])
-            ->middleware('permission:rutas.mapa.ver')->name('mapa');
-        Route::get('ventas', [VentasController::class, 'index'])
-            ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
-        Route::get('ventas/excel', [VentasController::class, 'excel'])
-            ->middleware('permission:rutas.ventas.ver')->name('ventas.excel');
-        Route::get('ventas/pdf', [VentasController::class, 'pdf'])
-            ->middleware('permission:rutas.ventas.ver')->name('ventas.pdf');
+    ->group(function () use ($sinCopia, $atrasAlInstante) {
+        // Solo se miran: «atrás» las restaura al instante.
+        Route::middleware($atrasAlInstante)->group(function () {
+            Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+            // La pestaña «Viajes» del tablero: en qué paso va cada pedido de cada viaje (10/11/2026).
+            Route::get('viajes', [ViajesController::class, 'index'])->name('viajes');
+            // La pestaña «Mapa» del tablero: ventas por zona, con montos (09/11/2026).
+            Route::get('mapa', [MapaVentasController::class, 'index'])
+                ->middleware('permission:rutas.mapa.ver')->name('mapa');
+            Route::get('ventas', [VentasController::class, 'index'])
+                ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
+            Route::get('ventas/excel', [VentasController::class, 'excel'])
+                ->middleware('permission:rutas.ventas.ver')->name('ventas.excel');
+            Route::get('ventas/pdf', [VentasController::class, 'pdf'])
+                ->middleware('permission:rutas.ventas.ver')->name('ventas.pdf');
 
-        /*
-        | «Zonas»: el catálogo de rutas, con su nombre y los lugares que cubre. La zona le pone
-        | nombre al viaje y agrupa el tablero y el mapa. Sin `destroy`: una zona no se elimina,
-        | se desactiva. Todo se hace en la misma página.
-        */
-        Route::get('rutas', [RutaController::class, 'index'])->name('rutas.index');
-        Route::post('rutas', [RutaController::class, 'store'])->name('rutas.store')
-            ->middleware('permission:rutas.gestionar');
-        Route::put('rutas/{ruta}', [RutaController::class, 'update'])->name('rutas.update')
-            ->middleware('permission:rutas.gestionar');
-        Route::patch('rutas/{ruta}/toggle-activa', [RutaController::class, 'toggleActiva'])->name('rutas.toggle-activa')
-            ->middleware('permission:rutas.gestionar');
+            /*
+            | «Zonas»: el catálogo de rutas, con su nombre y los lugares que cubre. La zona le pone
+            | nombre al viaje y agrupa el tablero y el mapa. Sin `destroy`: una zona no se elimina,
+            | se desactiva. Todo se hace en la misma página.
+            */
+            Route::get('rutas', [RutaController::class, 'index'])->name('rutas.index');
+            Route::post('rutas', [RutaController::class, 'store'])->name('rutas.store')
+                ->middleware('permission:rutas.gestionar');
+            Route::put('rutas/{ruta}', [RutaController::class, 'update'])->name('rutas.update')
+                ->middleware('permission:rutas.gestionar');
+            Route::patch('rutas/{ruta}/toggle-activa', [RutaController::class, 'toggleActiva'])->name('rutas.toggle-activa')
+                ->middleware('permission:rutas.gestionar');
 
-        /*
-        | Cobertura: departamentos completos y distritos sueltos de la zona. Con ella se sabe
-        | de qué zona es una sala que no tiene una puesta.
-        */
-        Route::post('rutas/{ruta}/cobertura', [RutaCoberturaController::class, 'store'])->name('rutas.cobertura.store')
-            ->middleware('permission:rutas.gestionar');
-        Route::delete('rutas/{ruta}/cobertura/{cobertura}', [RutaCoberturaController::class, 'destroy'])->name('rutas.cobertura.destroy')
-            ->middleware('permission:rutas.gestionar')
-            ->scopeBindings();
+            /*
+            | Cobertura: departamentos completos y distritos sueltos de la zona. Con ella se sabe
+            | de qué zona es una sala que no tiene una puesta.
+            */
+            Route::post('rutas/{ruta}/cobertura', [RutaCoberturaController::class, 'store'])->name('rutas.cobertura.store')
+                ->middleware('permission:rutas.gestionar');
+            Route::delete('rutas/{ruta}/cobertura/{cobertura}', [RutaCoberturaController::class, 'destroy'])->name('rutas.cobertura.destroy')
+                ->middleware('permission:rutas.gestionar')
+                ->scopeBindings();
 
-        /*
-        | «Todos los viajes»: los viajes y las salidas de antes, como historial. El viaje se
-        | cierra solo; desde acá la oficina solo lo cancela si se abrió por error.
-        */
-        Route::get('salidas', [SalidaRutaController::class, 'index'])->name('salidas.index');
-        Route::prefix('salidas/{salida}/gastos')->name('salidas.gastos.')->scopeBindings()->group(function () {
+            /*
+            | «Todos los viajes»: los viajes y las salidas de antes, como historial. El viaje se
+            | cierra solo; desde acá la oficina solo lo cancela si se abrió por error.
+            */
+            Route::get('salidas', [SalidaRutaController::class, 'index'])->name('salidas.index');
+        });
+
+        // El detalle de un viaje: la oficina anota entregas y gastos ahí; no se guarda (ver arriba).
+        Route::prefix('salidas/{salida}/gastos')->name('salidas.gastos.')->middleware($sinCopia)->scopeBindings()->group(function () {
             Route::post('/', [SalidaGastoController::class, 'store'])->middleware('permission:rutas.gestionar')->name('store');
             Route::delete('{gasto}', [SalidaGastoController::class, 'destroy'])->middleware('permission:rutas.gestionar')->name('destroy');
             Route::get('{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('foto');
         });
         // El PDF del día de quien va en un viaje, para la oficina y el jefe.
         Route::get('salidas/{salida}/dia/{fecha}/{persona}/pdf', [ViajesController::class, 'diaPdf'])
-            ->where('fecha', '\d{4}-\d{2}-\d{2}')->name('salidas.dia-pdf');
-        Route::get('salidas/{salida}', [SalidaRutaController::class, 'show'])->name('salidas.show');
+            ->where('fecha', '\d{4}-\d{2}-\d{2}')->middleware($sinCopia)->name('salidas.dia-pdf');
+        Route::get('salidas/{salida}', [SalidaRutaController::class, 'show'])->middleware($sinCopia)->name('salidas.show');
         // El PDF de un CCF de la salida, para verlo al tocar su tarjeta. Solo lectura.
         Route::get('salidas/{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('salidas.ccf')
-            ->scopeBindings();
+            ->middleware($sinCopia)->scopeBindings();
         Route::patch('salidas/{salida}/cancelar', [SalidaRutaController::class, 'cancelar'])->name('salidas.cancelar')
             ->middleware('permission:rutas.gestionar');
 
@@ -180,9 +196,10 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             });
 
         /*
-        | Pedidos de sala: la lista y el detalle de la oficina.
+        | Pedidos de sala: la lista y el detalle de la oficina. Solo se miran (la OC es un dato
+        | que se reemplaza, no algo que se marque dos veces): «atrás» al instante.
         */
-        Route::prefix('pedidos')->name('pedidos.')->middleware('permission:rutas.pedidos.ver')->group(function () {
+        Route::prefix('pedidos')->name('pedidos.')->middleware(['permission:rutas.pedidos.ver', $atrasAlInstante])->group(function () {
             Route::get('/', [PedidoSalaController::class, 'index'])->name('index');
             Route::get('{pedido}', [PedidoSalaController::class, 'show'])->name('show');
             // La hoja de lo que salió: el sugerido en limpio, para imprimir. Sin precios.
@@ -198,9 +215,9 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
         |
         | Los datos de los empleados son solo de la administración (`planilla.ver`, decisión
         | de Melqui, 04/11/2026): jefe de vendedores, Jefatura y Facturación eligen a quién
-        | va en una salida, pero no abren estas fichas.
+        | va en una salida, pero no abren estas fichas. Son datos de empleados: no se guardan.
         */
-        Route::prefix('personal')->name('personal.')->middleware(['permission:planilla.ver', 'permission:rutas.personal.ver'])->group(function () {
+        Route::prefix('personal')->name('personal.')->middleware(['permission:planilla.ver', 'permission:rutas.personal.ver', $sinCopia])->group(function () {
             Route::get('/', [PersonalRutaController::class, 'index'])->name('index');
             // Literales antes que paramétricas (regla del repo).
             Route::get('crear', [PersonalRutaController::class, 'create'])
