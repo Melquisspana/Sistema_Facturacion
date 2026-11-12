@@ -59,9 +59,8 @@ use Illuminate\Support\Collection;
 class AlbaranLocalizador
 {
     /**
-     * Resuelve en BLOQUE (dos consultas para todos: la de los otros vínculos y la de
-     * albaranes) y devuelve los dos índices con los que después se decide, en este orden
-     * de prioridad, cuál le toca a cada documento.
+     * Resuelve en BLOQUE (una sola consulta) y devuelve los dos índices con los que
+     * después se decide, en este orden de prioridad, cuál le toca a cada documento.
      *
      * El índice por orden de compra guarda una {@see ResolucionAlbaran} y no un albarán
      * suelto: para una misma OC puede haber uno, ninguno o varios, y esa diferencia es
@@ -83,9 +82,9 @@ class AlbaranLocalizador
         // Los otros dos vínculos con que el sistema une un albarán a su CCF son tan explícitos
         // como `ppq_albaranes.dte_id`, y un AC01 que llegó sin orden de compra solo queda
         // unido por ellos: el de Seguimiento (`cobro_documentos.ppq_albaran_id`) y el renglón
-        // del CCF en un PPQ vigente (`ppq_items`). Una consulta para todos los documentos.
-        /** @var array<int, array<int, int>> $deOtrosVinculos ppq_albaran_id => [dte_id, …] */
-        $deOtrosVinculos = $dteIds === [] ? [] : CobroDocumento::query()->toBase()
+        // del CCF en un PPQ vigente (`ppq_items`). Van unidos a la MISMA consulta de los
+        // albaranes: el tablero llama a este método varias veces y no suma consultas.
+        $otrosVinculos = $dteIds === [] ? null : CobroDocumento::query()->toBase()
             ->whereIn('dte_id', $dteIds)
             ->whereNotNull('ppq_albaran_id')
             ->select(['dte_id', 'ppq_albaran_id'])
@@ -96,27 +95,42 @@ class AlbaranLocalizador
                 ->whereIn('dte_id', $dteIds)
                 ->whereNotNull('ppq_albaran_id')
                 ->toBase()
-                ->select(['dte_id', 'ppq_albaran_id']))
-            ->get()
-            ->groupBy('ppq_albaran_id')
-            ->map(fn (Collection $vinculos) => $vinculos->pluck('dte_id')->map(fn ($id) => (int) $id)->unique()->values()->all())
-            ->all();
+                ->select(['dte_id', 'ppq_albaran_id']));
 
-        $albaranes = PpqAlbaran::where(function (Builder $q) use ($dteIds, $ordenes, $deOtrosVinculos) {
-            if ($dteIds !== []) {
-                $q->whereIn('dte_id', $dteIds);
-            }
-            if ($ordenes !== []) {
-                $q->orWhereIn('numero_orden_compra', $ordenes);
-            }
-            if ($deOtrosVinculos !== []) {
-                $q->orWhereIn('id', array_keys($deOtrosVinculos));
-            }
-        })
+        $filas = PpqAlbaran::query()
+            ->select('ppq_albaranes.*')
+            ->when($otrosVinculos !== null, fn (Builder $q) => $q
+                ->leftJoinSub($otrosVinculos, 'otros_vinculos', 'otros_vinculos.ppq_albaran_id', '=', 'ppq_albaranes.id')
+                ->addSelect('otros_vinculos.dte_id as otro_vinculo_dte_id'))
+            ->where(function (Builder $q) use ($dteIds, $ordenes, $otrosVinculos) {
+                if ($dteIds !== []) {
+                    $q->whereIn('ppq_albaranes.dte_id', $dteIds);
+                }
+                if ($ordenes !== []) {
+                    $q->orWhereIn('ppq_albaranes.numero_orden_compra', $ordenes);
+                }
+                if ($otrosVinculos !== null) {
+                    $q->orWhereNotNull('otros_vinculos.dte_id');
+                }
+            })
             // Orden estable: sin él, «cuál vino primero» dependía del plan de la consulta
             // y podía cambiar entre dos cargas de la misma pantalla.
-            ->orderBy('id')
+            ->orderBy('ppq_albaranes.id')
             ->get();
+
+        // Un albarán con varios vínculos viene en varias filas: se queda una sola vez, con
+        // la lista de documentos a los que lo unen. La columna del join no queda en el modelo.
+        /** @var array<int, PpqAlbaran> $albaranes */
+        $albaranes = [];
+        /** @var array<int, array<int, int>> $deOtrosVinculos ppq_albaran_id => [dte_id, …] */
+        $deOtrosVinculos = [];
+        foreach ($filas as $fila) {
+            if ($fila->otro_vinculo_dte_id !== null) {
+                $deOtrosVinculos[$fila->id][] = (int) $fila->otro_vinculo_dte_id;
+            }
+            unset($fila->otro_vinculo_dte_id);
+            $albaranes[$fila->id] ??= $fila->syncOriginal();
+        }
 
         /** @var array<int, Collection<int, PpqAlbaran>> $agrupadosPorDte */
         $agrupadosPorDte = [];
@@ -165,7 +179,7 @@ class AlbaranLocalizador
         return [$porDte, $porOrden];
     }
 
-    /** La resolución de UN documento. Dos consultas por llamada: no usar dentro de un bucle. */
+    /** La resolución de UN documento. Una consulta por llamada: no usar dentro de un bucle. */
     public function paraUno(?int $dteId, ?string $orden): ResolucionAlbaran
     {
         [$porDte, $porOrden] = $this->indices([$dteId], [$orden]);

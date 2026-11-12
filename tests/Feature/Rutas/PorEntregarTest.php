@@ -19,6 +19,7 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
+use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\RitmoRutas;
@@ -205,6 +206,29 @@ class PorEntregarTest extends TestCase
         $borrado->delete();
 
         $this->assertSame([$enLoteBorrado->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+    }
+
+    public function test_el_mismo_albaran_por_varios_caminos_cuenta_una_sola_vez(): void
+    {
+        $ccf = $this->ccf('Antiguo');
+        $entrega = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6719', 'numero_orden_compra' => $ccf->numero_orden_compra,
+            'dte_id' => $ccf->id, 'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        CobroDocumento::create(['cliente_id' => $ccf->cliente_id, 'dte_id' => $ccf->id, 'tipo_dte' => '03',
+            'numero_control' => $ccf->numero_control, 'fecha_emision' => '2026-11-06', 'monto' => '100.25', 'ppq_albaran_id' => $entrega->id]);
+        PpqLote::create(['referencia' => 'PPQ-PRUEBA', 'fecha' => '2026-11-06', 'estado' => 'listo'])->items()->create([
+            'dte_id' => $ccf->id, 'origen' => 'local', 'numero_control' => $ccf->numero_control, 'tipo_dte' => '03',
+            'ppq_albaran_id' => $entrega->id, 'sin_albaran' => false, 'numero_orden_compra' => $ccf->numero_orden_compra,
+            'monto_dte' => 100.25, 'monto_albaran' => 100.25]);
+
+        $resolucion = app(AlbaranLocalizador::class)->paraUno($ccf->id, $ccf->numero_orden_compra);
+
+        // Una sola vez, no «varios albaranes de entrega», y el modelo sale limpio.
+        $this->assertTrue($resolucion->estaVinculado());
+        $this->assertSame($entrega->id, $resolucion->albaran->id);
+        $this->assertSame([$entrega->id], $resolucion->candidatos->pluck('id')->all());
+        $this->assertFalse($resolucion->albaran->isDirty());
+        $this->assertArrayNotHasKey('otro_vinculo_dte_id', $resolucion->albaran->getAttributes());
+        $this->assertSame([], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
     }
 
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void
