@@ -8,6 +8,7 @@ use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
@@ -165,6 +166,24 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
             ->assertDontSee($conDevolucion->numero_control)
             ->assertSee($soloDevolucion->numero_control)->assertSee($sinAlbaran->numero_control);
+    }
+
+    public function test_el_albaran_de_entrega_vinculado_en_seguimiento_lo_saca_de_por_entregar(): void
+    {
+        // El AC01 llegó sin orden de compra y Seguimiento (Cobros) lo vinculó al CCF.
+        $vinculado = $this->ccf('Antiguo');
+        $entrega = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6716', 'monto_albaran' => 100.25,
+            'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        $sinAlbaran = $this->ccf('Antiguo');
+        foreach ([$vinculado, $sinAlbaran] as $ccf) {
+            CobroDocumento::create(['cliente_id' => $ccf->cliente_id, 'dte_id' => $ccf->id, 'tipo_dte' => '03',
+                'numero_control' => $ccf->numero_control, 'fecha_emision' => '2026-11-06', 'monto' => '100.25',
+                'ppq_albaran_id' => $ccf->is($vinculado) ? $entrega->id : null]);
+        }
+
+        $this->assertSame([$sinAlbaran->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertDontSee($vinculado->numero_control)->assertSee($sinAlbaran->numero_control);
     }
 
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void

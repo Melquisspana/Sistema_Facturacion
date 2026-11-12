@@ -2,6 +2,7 @@
 
 namespace App\Services\Rutas;
 
+use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqAlbaran;
 use App\Support\Albaran;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,6 +20,8 @@ use Illuminate\Support\Collection;
  *      albaranes compiten; NO exime del tipo (ver {@see ResolucionAlbaran}). Los de
  *      crédito ({@see Albaran::TIPOS_DE_CREDITO}) no compiten por esta vía: su `dte_id`
  *      dice qué CCF acreditan, no que se haya entregado.
+ *      `cobro_documentos.ppq_albaran_id`, el vínculo que pone Seguimiento, vale lo mismo
+ *      y entra al mismo grupo: Rutas, Cobros y PPQ ven el mismo «entregado».
  *   2. `ppq_albaranes.numero_orden_compra` — la llave real del día a día: la OC es la
  *      que el cliente imprime tanto en el albarán como en el CCF. Sirve además para los
  *      documentos P001 históricos, que no tienen `dte_id` que ofrecer.
@@ -54,7 +57,7 @@ use Illuminate\Support\Collection;
 class AlbaranLocalizador
 {
     /**
-     * Resuelve en BLOQUE (una sola consulta) y devuelve los dos índices con los que
+     * Resuelve en BLOQUE (dos consultas para todos: la de Seguimiento y la de albaranes) y devuelve los dos índices con los que
      * después se decide, en este orden de prioridad, cuál le toca a cada documento.
      *
      * El índice por orden de compra guarda una {@see ResolucionAlbaran} y no un albarán
@@ -74,12 +77,26 @@ class AlbaranLocalizador
             return [[], []];
         }
 
-        $albaranes = PpqAlbaran::where(function (Builder $q) use ($dteIds, $ordenes) {
+        // El vínculo que puso Seguimiento (Cobros) en `cobro_documentos.ppq_albaran_id` es
+        // tan explícito como `ppq_albaranes.dte_id`: el AC01 que llegó sin orden de compra
+        // solo queda unido a su CCF por ahí. Una consulta para todos los documentos.
+        /** @var array<int, array<int, int>> $deSeguimiento ppq_albaran_id => [dte_id, …] */
+        $deSeguimiento = $dteIds === [] ? [] : CobroDocumento::whereIn('dte_id', $dteIds)
+            ->whereNotNull('ppq_albaran_id')
+            ->get(['dte_id', 'ppq_albaran_id'])
+            ->groupBy('ppq_albaran_id')
+            ->map(fn (Collection $docs) => $docs->pluck('dte_id')->unique()->values()->all())
+            ->all();
+
+        $albaranes = PpqAlbaran::where(function (Builder $q) use ($dteIds, $ordenes, $deSeguimiento) {
             if ($dteIds !== []) {
                 $q->whereIn('dte_id', $dteIds);
             }
             if ($ordenes !== []) {
                 $q->orWhereIn('numero_orden_compra', $ordenes);
+            }
+            if ($deSeguimiento !== []) {
+                $q->orWhereIn('id', array_keys($deSeguimiento));
             }
         })
             // Orden estable: sin él, «cuál vino primero» dependía del plan de la consulta
@@ -104,9 +121,15 @@ class AlbaranLocalizador
             // entrega. Si entrara, taparía al AC01 de la orden de compra y el CCF quedaría
             // «por entregar» para siempre. Por la orden de compra sí se agrupa: ahí no tapa a
             // nadie, porque {@see ResolucionAlbaran::decidir()} solo elige albaranes de entrega.
-            if ($albaran->dte_id && ! Albaran::esDeCredito($albaran->tipo_codigo)) {
-                $agrupadosPorDte[$albaran->dte_id] ??= collect();
-                $agrupadosPorDte[$albaran->dte_id]->push($albaran);
+            //
+            // El vínculo de Seguimiento entra al mismo grupo y pasa por la misma regla; si
+            // los dos vínculos señalan el mismo albarán, cuenta una sola vez.
+            $vinculados = array_unique(array_filter([$albaran->dte_id, ...($deSeguimiento[$albaran->id] ?? [])]));
+            if (! Albaran::esDeCredito($albaran->tipo_codigo)) {
+                foreach ($vinculados as $dteId) {
+                    $agrupadosPorDte[$dteId] ??= collect();
+                    $agrupadosPorDte[$dteId]->push($albaran);
+                }
             }
 
             if ($albaran->numero_orden_compra) {
@@ -128,7 +151,7 @@ class AlbaranLocalizador
         return [$porDte, $porOrden];
     }
 
-    /** La resolución de UN documento. Una consulta por llamada: no usar dentro de un bucle. */
+    /** La resolución de UN documento. Dos consultas por llamada: no usar dentro de un bucle. */
     public function paraUno(?int $dteId, ?string $orden): ResolucionAlbaran
     {
         [$porDte, $porOrden] = $this->indices([$dteId], [$orden]);
