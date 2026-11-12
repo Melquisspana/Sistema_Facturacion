@@ -2,12 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteFirmaException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
 use App\Services\Dte\ContingenciaAutomaticaService;
 use App\Services\Dte\DteTransmisionResiliente;
+use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Console\Command;
 
 /**
@@ -38,12 +40,22 @@ class DteTransmitirCommand extends Command
         // de transmitir. Este comando y la UI pasan por la misma, para que no existan
         // dos maneras distintas de enviar un DTE.
         try {
-            $r = $resiliente->transmitir($dte, (bool) $this->option('estado-incierto'));
-            if (app(ContingenciaAutomaticaService::class)->convertirTrasReintentos($dte, $r)) {
+            // El mismo candado por documento que la pantalla: no se transmite desde acá
+            // mientras otro pedido está emitiendo este mismo DTE.
+            [$r, $enContingencia] = CandadoEmisionDte::ejecutar($dte, function () use ($resiliente, $dte) {
+                $r = $resiliente->transmitir($dte, (bool) $this->option('estado-incierto'));
+
+                return [$r, app(ContingenciaAutomaticaService::class)->convertirTrasReintentos($dte, $r)];
+            });
+            if ($enContingencia) {
                 $this->info('Documento emitido en contingencia, pendiente de sello de recepción.');
 
                 return self::SUCCESS;
             }
+        } catch (DteEmisionEnCursoException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         } catch (DteFirmaException $e) {
             $this->error('Se activó la contingencia, pero no se pudo re-firmar: '.$e->getMessage());
 

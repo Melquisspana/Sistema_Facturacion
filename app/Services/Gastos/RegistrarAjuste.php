@@ -53,6 +53,9 @@ final class RegistrarAjuste
             'motivo.min' => 'El motivo tiene que decir algo: un ajuste sin explicación no se puede auditar después.',
         ])->validate();
 
+        // Tres intentos: la lectura con candado del saldo toma el hueco del índice, y dos
+        // movimientos a cuotas vecinas sin historial pueden cruzarse al insertar. MySQL corta
+        // uno y se vuelve a entrar; es seguro porque de ese intento no quedó nada escrito.
         return DB::transaction(function () use ($usuario, $cuota, $datos) {
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
 
@@ -69,7 +72,8 @@ final class RegistrarAjuste
             $cuota = Cuota::whereKey($cuota->id)->lockForUpdate()->firstOrFail();
 
             $importe = Dinero::centavos((string) $datos['importe']);
-            $disponible = $this->saldos->pendienteCuota($cuota);
+            // Con candado: el saldo de AHORA, con el pago o el ajuste que otro acaba de dejar.
+            $disponible = $this->saldos->pendienteCuota($cuota, true);
 
             // Crédito respaldado por una nota de crédito de Compras: no puede aplicarse
             // por más de lo que ese documento vale, ni entre todos los ajustes que
@@ -86,7 +90,8 @@ final class RegistrarAjuste
                     ]);
                 }
 
-                $credito = $this->compras->creditoDelDocumento($documento);
+                // Con candado, por lo mismo: dos deudas distintas pueden aplicar esta nota a la vez.
+                $credito = $this->compras->creditoDelDocumento($documento, true);
 
                 if ($credito['total'] <= 0) {
                     throw ValidationException::withMessages([
@@ -135,7 +140,7 @@ final class RegistrarAjuste
             ]);
 
             return $ajuste;
-        });
+        }, 3);
     }
 
     public function revertir(User $usuario, Ajuste $ajuste, string $motivo): void
@@ -166,7 +171,7 @@ final class RegistrarAjuste
             // comparación es contra lo pagado de verdad.
             if ($ajuste->direccion === 'debito') {
                 $cuota = Cuota::whereKey($cuota->id)->lockForUpdate()->firstOrFail();
-                $futuro = $this->saldos->pendienteCuota($cuota) - Dinero::centavos((string) $ajuste->importe);
+                $futuro = $this->saldos->pendienteCuota($cuota, true) - Dinero::centavos((string) $ajuste->importe);
 
                 if ($futuro < 0) {
                     throw ValidationException::withMessages([

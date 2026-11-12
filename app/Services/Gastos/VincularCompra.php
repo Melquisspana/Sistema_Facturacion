@@ -60,9 +60,12 @@ final class VincularCompra
      * Los ajustes REVERTIDOS no cuentan como aplicados: devuelven su parte al
      * remanente, igual que una reversión de pago devuelve saldo a la deuda.
      *
+     * `$bloquear` es para quien va a aplicar un crédito con este número dentro de una
+     * transacción: lee lo último confirmado y no la foto vieja ({@see SaldosGastos}).
+     *
      * @return array{total: int, aplicado: int, disponible: int}
      */
-    public function creditoDelDocumento(DocumentoRecibido $documento): array
+    public function creditoDelDocumento(DocumentoRecibido $documento, bool $bloquear = false): array
     {
         $total = $documento->total !== null
             ? Dinero::centavos(number_format((float) $documento->total, 2, '.', ''))
@@ -72,6 +75,7 @@ final class VincularCompra
             ->where('documento_recibido_id', $documento->id)
             ->where('direccion', 'credito')
             ->whereNull('revertido_at')
+            ->when($bloquear, fn ($q) => $q->sharedLock())
             ->pluck('importe')
             ->sum(fn ($v) => Dinero::centavos((string) $v));
 

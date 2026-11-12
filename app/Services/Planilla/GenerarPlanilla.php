@@ -18,6 +18,10 @@ use Illuminate\Validation\ValidationException;
  * Lo que se muestra antes de generar ({@see revisar()}) es la misma cuenta, hecha de
  * verdad y deshecha al final: se ve exactamente lo que se va a crear, con los mismos
  * reparos que frenan la confirmación.
+ *
+ * La excepción: si alguien de la planilla tiene algo que una persona debe decidir antes
+ * de confirmar ({@see PrepararPlanilla::pendientesDeRevisar()}), no se confirma en un
+ * paso. Queda el borrador y se termina en «Preparar», que es donde eso se elige.
  */
 final class GenerarPlanilla
 {
@@ -28,12 +32,17 @@ final class GenerarPlanilla
     ) {}
 
     /**
-     * Todo o nada: si algo frena la confirmación, no queda ni el borrador.
+     * Todo o nada: si algo frena la confirmación, no queda ni el borrador. Devuelve la
+     * planilla confirmada, o el BORRADOR cuando hay algo que revisar en «Preparar».
      *
      * @param  array<string, mixed>  $datos
      */
     public function generar(User $usuario, array $datos): Planilla
     {
+        // Lo mismo que pide confirmar. Va antes de crear nada: sin importes no se puede
+        // abrir «Preparar», y quedaría un borrador que esa persona no puede terminar.
+        abort_unless($usuario->can('planilla.salarios'), 403);
+
         return DB::transaction(function () use ($usuario, $datos) {
             // Lo primero de la transacción, antes de leer nada (MySQL, REPEATABLE READ).
             $this->preparar->bloquearPersona($datos);
@@ -41,6 +50,12 @@ final class GenerarPlanilla
 
             if (! $planilla->wasRecentlyCreated) {
                 throw ValidationException::withMessages(['periodo' => $this->yaExiste($planilla)]);
+            }
+
+            $planilla->load('detalles.conceptos', 'detalles.empleado');
+
+            if ($this->preparar->pendientesDeRevisar($planilla, false) !== []) {
+                return $planilla;
             }
 
             return $this->confirmar->confirmar($usuario, $planilla);
@@ -51,7 +66,7 @@ final class GenerarPlanilla
      * Qué se va a crear, sin dejar nada creado.
      *
      * @param  array<string, mixed>  $datos
-     * @return array{existente: ?Planilla, planilla: ?Planilla, personas: array<int, array{nombre: string, a_pagar: int, nota: ?string}>, resumen: ?array<string, int>, avisos: array<int, string>, reparos: array<int, string>}
+     * @return array{existente: ?Planilla, planilla: ?Planilla, personas: array<int, array{nombre: string, a_pagar: int, nota: ?string}>, resumen: ?array<string, int>, avisos: array<int, string>, reparos: array<int, string>, por_preparar: bool}
      */
     public function revisar(User $usuario, array $datos): array
     {
@@ -64,7 +79,7 @@ final class GenerarPlanilla
             $planilla = $this->preparar->abrir($usuario, $datos);
 
             if (! $planilla->wasRecentlyCreated) {
-                return ['existente' => $planilla, 'planilla' => null, 'personas' => [], 'resumen' => null, 'avisos' => [], 'reparos' => []];
+                return ['existente' => $planilla, 'planilla' => null, 'personas' => [], 'resumen' => null, 'avisos' => [], 'reparos' => [], 'por_preparar' => false];
             }
 
             $planilla->load('detalles.conceptos', 'detalles.empleado', 'individual');
@@ -80,6 +95,8 @@ final class GenerarPlanilla
                 'resumen' => $this->totales->dePlanilla($planilla),
                 'avisos' => $this->preparar->avisosParaConfirmar($planilla, true),
                 'reparos' => $this->preparar->reparosParaConfirmar($planilla),
+                // Los motivos ya van dentro de los avisos; esto dice si «Generar» deja el borrador.
+                'por_preparar' => $this->preparar->pendientesDeRevisar($planilla, false) !== [],
             ];
         } finally {
             DB::rollBack();

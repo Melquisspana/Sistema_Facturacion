@@ -267,7 +267,7 @@ class DteFirmaService
      *
      * @return array{ruta: string, numeroControl: ?string, codigoGeneracion: ?string}
      *
-     * @throws DteFirmaException             si falla una precondición o el firmador rechaza
+     * @throws DteFirmaException si falla una precondición o el firmador rechaza
      * @throws DteFirmaDeshabilitadaException si la firma no está habilitada
      */
     public function firmar(Dte $dte, bool $force = false): array
@@ -353,7 +353,7 @@ class DteFirmaService
      *
      * @param  array<string, mixed>  $json
      *
-     * @throws DteFirmaException             si faltan credenciales o el firmador rechaza
+     * @throws DteFirmaException si faltan credenciales o el firmador rechaza
      * @throws DteFirmaDeshabilitadaException si la firma no está habilitada
      */
     public function firmarJson(array $json): string
@@ -476,6 +476,10 @@ class DteFirmaService
     {
         if ($dte->estado !== EstadoDte::Generado) {
             throw new DteFirmaException('Solo se puede firmar un documento en estado generado (actual: '.$dte->estado->label().').');
+        }
+        // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
+        if ($motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($dte)) {
+            throw new DteFirmaException($motivo);
         }
         if (blank($dte->json_generado_path)) {
             throw new DteFirmaException('El documento no tiene JSON generado (json_generado_path vacío). Genere el JSON oficial primero.');

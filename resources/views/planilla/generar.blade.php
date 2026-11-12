@@ -100,6 +100,15 @@
                 </div>
             @endif
 
+            {{-- Con un anticipo por descontar o un importe por revisar no se genera en un
+                 paso: eso se elige en «Preparar». Los motivos van arriba, en los avisos. --}}
+            @if ($por_preparar)
+                <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+                    <p class="font-medium">Queda en borrador para que la revises.</p>
+                    <p>En el paso que sigue ponés los descuentos o corregís los importes de los avisos de arriba, y recién ahí se genera. Mientras tanto no se debe nada.</p>
+                </div>
+            @endif
+
             @unless ($planilla->esIndividual())
             <section class="overflow-hidden rounded-lg border border-gray-200 bg-white" aria-labelledby="personas-a-generar">
                 <h2 id="personas-a-generar" class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Quién entra</h2>
@@ -130,7 +139,11 @@
                 <a href="{{ $planilla->esVacaciones() ? route('planilla.vacaciones')
                     : ($planilla->esIndemnizacion() ? route('planilla.empleados.indemnizacion', $planilla->individual_de)
                     : route('planilla.create', ['tipo' => $datos['tipo_periodo'] ?? null])) }}" class="{{ $secundario }}">Cancelar</a>
-                @if ($reparos === [])
+                @if ($por_preparar)
+                    <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">
+                        {{ $planilla->esIndividual() ? 'Seguir a revisar el pago' : 'Seguir a revisar la planilla' }}
+                    </button>
+                @elseif ($reparos === [])
                     <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">
                         {{ $planilla->esIndividual() ? 'Sí, generar el pago' : 'Sí, generar la planilla' }}
                     </button>

@@ -7,6 +7,7 @@ use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use App\Observers\DteObserver;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Http\Client\Response;
@@ -233,6 +234,10 @@ class DteTransmisionService
      */
     public function aplicarResultadoDeConsulta(Dte $dte, array $resultado): array
     {
+        // El ambiente en el que se preguntó: el que diga quien consultó (un lote pregunta
+        // en el de sus documentos) o, si no lo dice, el configurado para consultar.
+        $ambienteConsultado = (string) ($resultado['ambiente'] ?? EndpointsHacienda::ambienteTransmision()->value);
+
         return $this->aplicarResultado($dte, [
             'resultado' => (string) ($resultado['resultado'] ?? 'desconocido'),
             'http_status' => $resultado['http_status'] ?? null,
@@ -240,37 +245,88 @@ class DteTransmisionService
             'sello' => $resultado['sello'] ?? null,
             'cuerpo' => $resultado['cuerpo'] ?? null,
             'observaciones' => $resultado['observaciones'] ?? $resultado['cuerpo']['observaciones'] ?? [],
-        ]);
+        ], $ambienteConsultado);
     }
 
     /**
      * Aplica el resultado de una respuesta DEFINITIVA del MH al documento, vía
      * DteStateMachine (con historial), dentro de una transacción:
      *  - aceptado  → persiste sello_recepcion y avanza Firmado → Enviado → Aceptado.
+     *                Sin sello no hay aceptación: el documento sigue Firmado.
      *  - rechazado → avanza Firmado → Enviado → Rechazado (sin sello).
      *  - cualquier otro (errores transitorios) → no cambia estado (sigue Firmado).
      *
      * Los flags técnicos (json_firmado_path, sello_recepcion) se mantienen como
      * evidencia; el `estado` representa la fase real del documento.
      *
+     * LO QUE NO SE PUEDE COMPROBAR NO SE GUARDA, sea una aceptación o un rechazo:
+     *   · la IDENTIDAD ({@see faltaDeIdentidad()}): que la respuesta sea de este documento
+     *     —el código de este pedido, el que trae la respuesta y, si es una consulta
+     *     (`$ambienteConsultado` no nulo), el ambiente—. Se pide para los DOS resultados:
+     *     el rechazo de otro documento dejaría este como Rechazado, listo para «corregirlo»;
+     *   · el SELLO, además, para aceptar, venga de una consulta o de la respuesta a un
+     *     envío: un «procesado» sin sello deja el documento firmado, y lo resuelve el
+     *     reintento de siempre, que consulta antes de reenviar.
+     * Y al que ya figuraba Aceptado SIN sello, una consulta comprobada se lo completa
+     * ({@see completarSello()}), sin repetir el paso a Aceptado.
+     * Es la regla de todos los que consultan —el comando, los lotes, la consulta previa de
+     * un reintento y el aviso de contingencia—, porque todos entran por acá.
+     *
      * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>}  $resultado
+     * @param  ?string  $ambienteConsultado  ambiente de la consulta; null si es la respuesta a un envío
      * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>}
      */
-    private function aplicarResultado(Dte $dte, array $resultado): array
+    private function aplicarResultado(Dte $dte, array $resultado, ?string $ambienteConsultado = null): array
     {
         $tipo = $resultado['resultado'] ?? 'desconocido';
         if (! in_array($tipo, ['aceptado', 'rechazado'], true)) {
             return $resultado; // transitorio: el documento sigue Firmado
         }
 
-        DB::transaction(function () use ($dte, $tipo, $resultado) {
+        return DB::transaction(function () use ($dte, $tipo, $resultado, $ambienteConsultado) {
+            // El código que ESTE pedido transmitió o consultó, antes de releer la fila.
+            $codigoDeEstePedido = (string) $dte->codigo_generacion;
+
+            // Relectura bajo candado, igual que al guardar una invalidación: lo que este
+            // pedido tiene en memoria puede ser de antes de que otro guardara su respuesta.
+            // Un documento que ya dejó de estar firmado no se pisa: un «Aceptado» no se
+            // convierte en «Rechazado» por una respuesta que llegó tarde. Lo contrario sí
+            // vale, y es la única excepción: un sello de Hacienda para el mismo código
+            // manda sobre un rechazo guardado.
+            $actual = Dte::withTrashed()->whereKey($dte->id)->lockForUpdate()->firstOrFail();
+            $dte->setRawAttributes($actual->getAttributes(), true);
+            // Qué le falta a esta respuesta para poder guardarse, si le falta algo: la
+            // identidad se pide siempre; el sello, además, para aceptar.
+            $falta = $tipo === 'aceptado' && blank($resultado['sello'] ?? null)
+                ? 'la respuesta no trae sello de recepción'
+                : $this->faltaDeIdentidad($dte, $codigoDeEstePedido, $resultado, $ambienteConsultado);
+
+            if ($dte->estado !== EstadoDte::Firmado) {
+                $aceptacionComprobada = $tipo === 'aceptado' && $falta === null;
+
+                if ($aceptacionComprobada && $dte->estado === EstadoDte::Rechazado) {
+                    return $this->aceptarTrasRechazo($dte, $resultado);
+                }
+
+                // Ya figuraba aceptado, pero sin sello: la consulta comprobada lo completa.
+                if ($aceptacionComprobada && $ambienteConsultado !== null
+                    && $dte->estado === EstadoDte::Aceptado && blank($dte->sello_recepcion)) {
+                    return $this->completarSello($dte, $resultado);
+                }
+
+                return $this->conservarEstado($dte, $resultado, $falta);
+            }
+
+            // Firmado, y la respuesta no se puede comprobar: no se guarda nada.
+            if ($falta !== null) {
+                return $this->respuestaSinComprobar($dte, $resultado, $falta, $ambienteConsultado);
+            }
+
             // Envío efectivo a recepción.
             $this->maquina->transicionar($dte, EstadoDte::Enviado, null, 'Transmisión a Hacienda (recepción)');
 
             if ($tipo === 'aceptado') {
-                if (filled($resultado['sello'] ?? null)) {
-                    $dte->sello_recepcion = (string) $resultado['sello'];
-                }
+                $dte->sello_recepcion = (string) $resultado['sello'];
                 // Guarda la respuesta completa del MH (sello/codigoMsg/observaciones/…)
                 // + el JSON crudo en disco, antes de avanzar el estado.
                 $this->persistirRespuesta($dte, $resultado);
@@ -281,9 +337,243 @@ class DteTransmisionService
                 $this->persistirRespuesta($dte, $resultado);
                 $this->maquina->transicionar($dte, EstadoDte::Rechazado, null, 'Rechazado por Hacienda');
             }
-        });
 
-        return $resultado;
+            return $resultado;
+        });
+    }
+
+    /**
+     * Qué le falta a una respuesta definitiva para saber que es de ESTE documento, o null
+     * si no le falta nada. Vale igual para una aceptación que para un rechazo:
+     *
+     *   · el mismo código de generación: el que este pedido transmitió o consultó tiene
+     *     que ser el de la fila, y si la respuesta trae el suyo, también;
+     *   · el mismo ambiente, cuando es una consulta: lo que diga pruebas no vale para un
+     *     documento de producción, ni al revés.
+     *
+     * El sello de recepción, que además hace falta para aceptar, lo pide quien llama.
+     *
+     * @param  array<string, mixed>  $respuesta
+     */
+    private function faltaDeIdentidad(Dte $dte, string $codigoDeEstePedido, array $respuesta, ?string $ambienteConsultado): ?string
+    {
+        $deLaFila = strtoupper(trim((string) $dte->codigo_generacion));
+
+        if ($deLaFila === '' || strtoupper(trim($codigoDeEstePedido)) !== $deLaFila) {
+            return 'el código de generación por el que se preguntó no es el del documento';
+        }
+
+        $deLaRespuesta = $respuesta['cuerpo']['codigoGeneracion'] ?? null;
+
+        if (filled($deLaRespuesta) && strtoupper(trim((string) $deLaRespuesta)) !== $deLaFila) {
+            return 'la respuesta es de otro código de generación';
+        }
+
+        if ($ambienteConsultado !== null && $ambienteConsultado !== $dte->ambiente?->value) {
+            return 'se consultó en el ambiente '.$ambienteConsultado.' y el documento es del ambiente '.($dte->ambiente?->value ?? '(sin ambiente)');
+        }
+
+        return null;
+    }
+
+    /**
+     * Hacienda informa un resultado definitivo —recibido o rechazado—, pero no se puede
+     * comprobar que sea de este documento, o lo informa recibido sin el sello. No se
+     * guarda: queda firmado, con una anotación
+     * en la bitácora de qué faltó, y quien preguntó recibe un resultado que NO es
+     * definitivo (y que no es silencio: no habilita un reenvío).
+     *
+     * @param  array<string, mixed>  $respuesta
+     * @param  ?string  $ambienteConsultado  ambiente de la consulta; null si es la respuesta a un envío
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
+     */
+    private function respuestaSinComprobar(Dte $dte, array $respuesta, string $falta, ?string $ambienteConsultado): array
+    {
+        $esAceptacion = ($respuesta['resultado'] ?? null) === 'aceptado';
+
+        activity('dte_transmision')
+            ->performedOn($dte)
+            ->withProperties([
+                'falta' => $falta,
+                'estado_conservado' => $dte->estado->value,
+                'resultado_informado' => $respuesta['resultado'] ?? null,
+                'mensaje_informado' => $respuesta['mensaje'] ?? null,
+                'observaciones' => $respuesta['observaciones'] ?? [],
+                'http_status' => $respuesta['http_status'] ?? null,
+                'sello_informado' => filled($respuesta['sello'] ?? null) ? (string) $respuesta['sello'] : null,
+                'codigo_generacion' => $dte->codigo_generacion,
+                'codigo_de_la_respuesta' => $respuesta['cuerpo']['codigoGeneracion'] ?? null,
+                'ambiente_consultado' => $ambienteConsultado,
+                'ambiente_del_documento' => $dte->ambiente?->value,
+            ])
+            ->log('No se guardó '.($esAceptacion ? 'una aceptación informada' : 'un rechazo informado')
+                .' por '.($ambienteConsultado !== null ? 'una consulta a Hacienda' : 'Hacienda al enviar el documento').'.');
+
+        return $this->resultado($esAceptacion ? 'aceptacion_sin_comprobar' : 'rechazo_sin_comprobar', $respuesta['http_status'] ?? null,
+            'Hacienda informa '.($esAceptacion ? 'el documento como recibido' : 'un rechazo').', pero no se guardó: '.$falta.'. El documento queda como estaba.',
+            null, $respuesta['observaciones'] ?? [], $respuesta['cuerpo'] ?? null);
+    }
+
+    /**
+     * Completa el sello de un documento que ya figuraba ACEPTADO sin sello de recepción
+     * (quedaron así los que Hacienda contestó «procesado» sin sello, cuando eso todavía
+     * aceptaba). Una consulta comprobada —con sello, mismo código y mismo ambiente— trae
+     * la evidencia que faltaba: se guarda el sello y la respuesta, y queda en la bitácora.
+     *
+     * NO hay un segundo paso a Aceptado: el estado no cambia y el historial tampoco. Lo
+     * que cuelga de una aceptación REAL —el alta en Seguimiento de cobros pide sello— no
+     * pudo ocurrir cuando el documento quedó aceptado sin él, así que ocurre ahora, una
+     * vez: la próxima consulta ya encuentra el sello y no entra acá.
+     *
+     * La respuesta que tenía no se pisa: la nueva va a un archivo propio y la anterior
+     * queda anotada en la bitácora.
+     *
+     * @param  array<string, mixed>  $resultado
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
+     */
+    private function completarSello(Dte $dte, array $resultado): array
+    {
+        $respuestaAnterior = $dte->respuesta_mh;
+        $archivoAnterior = $dte->respuesta_mh_path;
+
+        $dte->sello_recepcion = (string) $resultado['sello'];
+        $this->persistirRespuesta($dte, $resultado, '-sello-completado');
+
+        activity('dte_transmision')
+            ->performedOn($dte)
+            ->withProperties([
+                'codigo_generacion' => $dte->codigo_generacion,
+                'sello' => $dte->sello_recepcion,
+                'respuesta_anterior' => $respuestaAnterior,
+                'archivo_anterior' => $archivoAnterior,
+            ])
+            ->log('Una consulta a Hacienda completó el sello de recepción de un documento que ya figuraba aceptado.');
+
+        app(DteObserver::class)->alQuedarAceptado($dte);
+
+        return $this->resultado('aceptado', $resultado['http_status'] ?? null,
+            'El documento ya figuraba aceptado, pero sin sello de recepción. Se guardó el sello que informó Hacienda.',
+            $dte->sello_recepcion, $resultado['observaciones'] ?? [], $resultado['cuerpo'] ?? null);
+    }
+
+    /**
+     * Pasa a ACEPTADO un documento que figuraba rechazado, porque Hacienda lo tiene
+     * aceptado con sello. Va por el paso propio de la máquina de estados, así que todo lo
+     * que cuelga de «aceptado» ocurre como en cualquier aceptación y una sola vez: el alta
+     * en Seguimiento de cobros, lo de las notas de crédito y el correo automático salen
+     * del cambio de estado ({@see DteObserver}).
+     *
+     * El rechazo no se borra: sus datos quedan dentro de la respuesta guardada y todo va
+     * a la bitácora. Su ARCHIVO no se toca nunca: la respuesta de la aceptación se escribe
+     * en uno propio, con otro nombre. Los archivos no vuelven atrás cuando la base revierte
+     * una transacción; escribiendo en un lugar nuevo, como ya hace la conversión a
+     * contingencia con la firma, una falla a mitad y su reintento dejan el rechazo como
+     * estaba, byte por byte. Si estaba ARCHIVADO, vuelve a la operación diaria: un aceptado
+     * escondido no se vería ni se cobraría.
+     *
+     * Lo que NO hace: buscar ni tocar un documento que haya salido de «corregir y
+     * duplicar» mientras este figuraba rechazado. Eso lo revisa una persona; la ficha lo
+     * avisa por la marca `aceptacion_tardia`.
+     *
+     * @param  array<string, mixed>  $resultado
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
+     */
+    private function aceptarTrasRechazo(Dte $dte, array $resultado): array
+    {
+        $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
+        $rechazo = is_array($dte->respuesta_mh) ? $dte->respuesta_mh : [];
+        $estabaArchivado = $dte->estaArchivado();
+
+        // El archivo del rechazo queda donde está; solo se anota si sigue ahí.
+        $archivoDelRechazo = filled($dte->respuesta_mh_path) && $disco->exists($dte->respuesta_mh_path)
+            ? (string) $dte->respuesta_mh_path
+            : null;
+
+        $dte->sello_recepcion = (string) $resultado['sello'];
+        $this->persistirRespuesta($dte, $resultado, '-aceptacion-tardia');
+
+        $rechazoAnterior = [
+            'codigoMsg' => $rechazo['codigoMsg'] ?? null,
+            'descripcionMsg' => $rechazo['descripcionMsg'] ?? null,
+            'observaciones' => $rechazo['observaciones'] ?? [],
+            'fhProcesamiento' => $rechazo['fhProcesamiento'] ?? null,
+            'archivo' => $archivoDelRechazo,
+            'estaba_archivado' => $estabaArchivado,
+        ];
+        $dte->respuesta_mh = array_merge((array) $dte->respuesta_mh, [
+            'aceptacion_tardia' => true,
+            'rechazo_anterior' => $rechazoAnterior,
+        ]);
+        if ($estabaArchivado) {
+            $dte->archivado = false;
+            $dte->archivado_en = null;
+        }
+        $dte->save();
+
+        $this->maquina->aceptarTrasRechazo($dte, null,
+            'Aceptación tardía de Hacienda: el sello del mismo código de generación prevalece sobre el rechazo');
+
+        activity('dte_transmision')
+            ->performedOn($dte)
+            ->withProperties([
+                'codigo_generacion' => $dte->codigo_generacion,
+                'sello' => $dte->sello_recepcion,
+                'rechazo_anterior' => $rechazoAnterior,
+            ])
+            ->log('Llegó una aceptación tardía de Hacienda con sello y prevaleció sobre el rechazo que tenía el documento.');
+
+        return $this->resultado('aceptado', $resultado['http_status'] ?? null,
+            'Hacienda aceptó el documento después de que acá figuró como rechazado. Vale su sello: quedó aceptado. '
+            .'Si mientras tanto se corrigió o se duplicó, revisá esa copia.',
+            $dte->sello_recepcion, $resultado['observaciones'] ?? [], $resultado['cuerpo'] ?? null);
+    }
+
+    /**
+     * Una respuesta definitiva que llega cuando el documento ya no está firmado: otro
+     * pedido guardó la suya antes. No se cambia nada del documento; la respuesta tardía
+     * queda en la bitácora (con su sello, si lo trae, para que no se pierda) y quien hizo
+     * este pedido recibe lo que de verdad quedó guardado.
+     *
+     * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>}  $tardio
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
+     */
+    private function conservarEstado(Dte $dte, array $tardio, ?string $falta = null): array
+    {
+        $selloTardio = filled($tardio['sello'] ?? null) ? (string) $tardio['sello'] : null;
+
+        activity('dte_transmision')
+            ->performedOn($dte)
+            ->withProperties([
+                'estado_conservado' => $dte->estado->value,
+                'resultado_tardio' => $tardio['resultado'],
+                'http_status' => $tardio['http_status'] ?? null,
+                'mensaje_tardio' => $tardio['mensaje'] ?? null,
+                'sello_tardio' => $selloTardio,
+                'falta' => $falta,
+                'observaciones' => $tardio['observaciones'] ?? [],
+            ])
+            ->log('Llegó una respuesta tardía de Hacienda y se conservó el estado que ya tenía el documento.');
+
+        if ($dte->estado === EstadoDte::Aceptado) {
+            return $this->resultado('aceptado', $tardio['http_status'] ?? null,
+                'El documento ya había sido aceptado por Hacienda en otro pedido. Se conservó ese resultado.',
+                $dte->sello_recepcion);
+        }
+
+        if ($dte->estado === EstadoDte::Rechazado) {
+            // Una aceptación que llega acá NO prevaleció: le faltó el sello o no se pudo
+            // comprobar que fuera de este documento ({@see faltaDeIdentidad()}). No se
+            // toca nada y se dice bien claro qué faltó.
+            $mensaje = $tardio['resultado'] === 'aceptado' && $falta !== null
+                ? 'El documento ya figuraba como rechazado, y Hacienda lo informa aceptado'.($selloTardio !== null ? ' con el sello '.$selloTardio : '')
+                    .', pero no se guardó: '.$falta.'. No se cambió nada: avisá a soporte antes de corregirlo o duplicarlo.'
+                : 'El documento ya había sido rechazado por Hacienda en otro pedido. Se conservó ese resultado.';
+
+            return $this->resultado('rechazado', $tardio['http_status'] ?? null, $mensaje);
+        }
+
+        return $this->resultado('estado_ya_cambiado', $tardio['http_status'] ?? null,
+            'El documento ya no está firmado (estado actual: '.$dte->estado->label().'): otro pedido lo procesó antes. No se cambió nada.');
     }
 
     /**
@@ -294,7 +584,7 @@ class DteTransmisionService
      *
      * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>, cuerpo?: array<string, mixed>|null}  $resultado
      */
-    private function persistirRespuesta(Dte $dte, array $resultado): void
+    private function persistirRespuesta(Dte $dte, array $resultado, string $sufijo = ''): void
     {
         $cuerpo = $resultado['cuerpo'] ?? null;
         $get = fn (string $k) => is_array($cuerpo) ? ($cuerpo[$k] ?? null) : null;
@@ -302,7 +592,8 @@ class DteTransmisionService
         // JSON crudo de la respuesta (lo que devolvió recepción tal cual).
         $disco = (string) config('dte.storage.disk', 'local');
         $carpeta = trim((string) config('dte.storage.respuestas', 'dte/respuestas'), '/');
-        $ruta = $carpeta.'/dte-'.$dte->tipo_dte->value.'-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
+        // `$sufijo` da un archivo aparte a una respuesta que NO debe pisar la anterior.
+        $ruta = $carpeta.'/dte-'.$dte->tipo_dte->value.'-'.$dte->id.'-'.$dte->codigo_generacion.$sufijo.'.json';
         $crudo = is_array($cuerpo) ? $cuerpo : ['_sin_json' => true, 'mensaje' => $resultado['mensaje'] ?? null];
         Storage::disk($disco)->put($ruta, (string) json_encode($crudo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
@@ -717,6 +1008,10 @@ class DteTransmisionService
         }
         if ($dte->estado !== EstadoDte::Firmado) {
             throw new DteTransmisionException('Solo se transmite un documento firmado (actual: '.$dte->estado->label().'). Firme primero.');
+        }
+        // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
+        if ($motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($dte)) {
+            throw new DteTransmisionException($motivo);
         }
         if (blank($dte->numero_control) || blank($dte->codigo_generacion)) {
             throw new DteTransmisionException('Falta numeración oficial (numero_control / codigo_generacion).');

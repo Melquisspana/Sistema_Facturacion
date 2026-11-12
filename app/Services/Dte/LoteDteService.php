@@ -21,11 +21,19 @@ use Illuminate\Validation\ValidationException;
 
 class LoteDteService
 {
+    /**
+     * Espera mínima para VOLVER a consultar un lote ya cerrado. Cada consulta le pega a
+     * Hacienda y deja un archivo de respuesta, y un rechazado no pasa a aceptado de un
+     * minuto para el otro. No aplica a un lote abierto: ahí pregunta la tarea programada.
+     */
+    private const ESPERA_RECONSULTA_SEGUNDOS = 120;
+
     public function __construct(
         private readonly ContingenciaTransporte $transporte,
         private readonly ContingenciaEventoService $eventos,
         private readonly DteTransmisionAuthService $auth,
         private readonly DteTransmisionService $transmision,
+        private readonly CopiaDeAceptadoTardio $copias,
     ) {}
 
     public function plazo(ContingenciaEvento $evento): ?Carbon
@@ -81,6 +89,9 @@ class LoteDteService
             $documentos = $evento->dtes()->whereNull('lote_dte_id')->where('estado', EstadoDte::Firmado->value)
                 ->where(fn ($q) => $q->whereNull('sello_recepcion')->orWhere('sello_recepcion', ''))
                 ->orderBy('id')->lockForUpdate()->get();
+            // La copia de un rechazado que Hacienda después aceptó espera a que alguien la
+            // revise: queda firmada y sin lote, y entra en el siguiente cuando se resuelva.
+            $documentos = $documentos->reject(fn (Dte $dte) => $this->copias->motivoParaNoEmitir($dte) !== null)->values();
             foreach ($documentos->chunk(max(1, min(100, (int) config('dte.contingencia.lote_max', 100)))) as $chunk) {
                 $lote = LoteDte::create(['contingencia_evento_id' => $evento->id, 'id_envio' => CodigoGeneracion::generar(),
                     'estado' => 'pendiente', 'cantidad' => $chunk->count()]);
@@ -118,6 +129,12 @@ class LoteDteService
             }
             $this->verificarEvento($lote->contingenciaEvento);
             $documentos = $lote->dtes()->with('establecimiento.empresa')->orderBy('id')->get();
+            // El conflicto pudo aparecer con el lote ya armado: entonces el lote no sale.
+            foreach ($documentos as $dte) {
+                if ($motivo = $this->copias->motivoParaNoEmitir($dte)) {
+                    throw ValidationException::withMessages(['contingencia' => 'El lote no se envió. '.$motivo]);
+                }
+            }
             $ambiente = $documentos->first()?->ambiente;
             if (! $ambiente || $documentos->contains(fn ($dte) => $dte->estado !== EstadoDte::Firmado || filled($dte->sello_recepcion)
                 || $dte->ambiente !== $ambiente || $dte->contingencia_evento_id !== $lote->contingencia_evento_id)) {
@@ -172,21 +189,50 @@ class LoteDteService
         });
     }
 
+    /** Segundos que faltan para poder volver a consultar un lote cerrado; 0 si ya se puede. */
+    private function esperaParaReconsultar(LoteDte $lote): int
+    {
+        if ($lote->ultima_consulta_en === null) {
+            return 0;
+        }
+
+        // Se guardó con la hora del negocio: se compara reloj contra reloj en esa zona.
+        $ultima = Carbon::parse($lote->ultima_consulta_en->format('Y-m-d H:i:s'), HoraNegocio::zona());
+
+        return max(0, self::ESPERA_RECONSULTA_SEGUNDOS - (int) $ultima->diffInSeconds(HoraNegocio::ahora(), false));
+    }
+
     private function cliente(): PendingRequest
     {
         return Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
             ->withHeaders(['Authorization' => $this->auth->obtenerToken(), 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')]);
     }
 
-    public function consultar(LoteDte $lote): array
+    /**
+     * Pregunta a Hacienda por el resultado de un lote recibido y lo guarda.
+     *
+     * `$reconciliar` vuelve a preguntar por un lote YA CERRADO que dejó documentos
+     * rechazados: Hacienda puede tenerlos aceptados. Es a pedido de una persona (el
+     * botón de la pantalla); la tarea programada no vuelve a consultar lo cerrado.
+     */
+    public function consultar(LoteDte $lote, bool $reconciliar = false): array
     {
         abort_unless(config('dte.contingencia.enabled', false), 404);
 
-        return DB::transaction(function () use ($lote) {
+        return DB::transaction(function () use ($lote, $reconciliar) {
             Contingencia::whereKey($lote->contingenciaEvento->contingencia_id)->lockForUpdate()->firstOrFail();
             $lote = LoteDte::whereKey($lote->id)->lockForUpdate()->firstOrFail();
-            if ($lote->estado !== 'recibido' || blank($lote->codigo_lote)) {
+            $cerradoConRechazos = $reconciliar && $lote->estado === 'procesado'
+                && $lote->dtes()->where('estado', EstadoDte::Rechazado->value)->exists();
+            if (($lote->estado !== 'recibido' && ! $cerradoConRechazos) || blank($lote->codigo_lote)) {
                 return ['resultado' => $lote->estado];
+            }
+            // Antes de hablar con Hacienda y de escribir nada.
+            if ($cerradoConRechazos && ($faltan = $this->esperaParaReconsultar($lote)) > 0) {
+                $minutos = (int) ceil($faltan / 60);
+
+                return ['resultado' => 'Este lote ya se consultó hace un momento. Probá de nuevo en '
+                    .$minutos.($minutos === 1 ? ' minuto.' : ' minutos.')];
             }
             $ambiente = $lote->dtes()->firstOrFail()->ambiente;
             $url = EndpointsHacienda::consultaLote($ambiente, $lote->codigo_lote);
@@ -217,23 +263,31 @@ class LoteDteService
             }
             foreach ($entradas as $codigo => $items) {
                 $dte = $documentos->get($codigo);
-                if (! $dte || count($items) !== 1 || $dte->estado !== EstadoDte::Firmado) {
+                if (! $dte || count($items) !== 1) {
                     continue;
                 }
                 [$estado, $item] = $items[0];
                 if ($estado === 'aceptado' && blank($item['selloRecibido'] ?? null)) {
                     continue;
                 }
+                // Lo normal es un documento firmado. Uno que acá figura RECHAZADO solo pasa si
+                // ahora Hacienda lo informa aceptado: si el sello prevalece lo decide la regla
+                // compartida de la transmisión (mismo código de generación), no este servicio.
+                // Lo demás —un aceptado otra vez, un rechazo repetido— no trae nada nuevo.
+                $aceptacionTardia = $dte->estado === EstadoDte::Rechazado && $estado === 'aceptado';
+                if ($dte->estado !== EstadoDte::Firmado && ! $aceptacionTardia) {
+                    continue;
+                }
                 $item['estado'] = $estado === 'aceptado' ? 'PROCESADO' : 'RECHAZADO';
                 $item['fhProcesamiento'] ??= $cuerpo['fhProcesamiento'] ?? $cuerpo['fechaHora'] ?? null;
                 $this->transmision->aplicarResultadoDeConsulta($dte, ['resultado' => $estado, 'http_status' => $respuesta->status(),
-                    'sello' => $item['selloRecibido'] ?? null, 'mensaje' => $item['descripcionMsg'] ?? $item['mensaje'] ?? '', 'cuerpo' => $item]);
+                    'ambiente' => $ambiente->value, 'sello' => $item['selloRecibido'] ?? null, 'mensaje' => $item['descripcionMsg'] ?? $item['mensaje'] ?? '', 'cuerpo' => $item]);
             }
             $aceptados = $lote->dtes()->where('estado', 'aceptado')->count();
             $rechazados = $lote->dtes()->where('estado', 'rechazado')->count();
             $cerrado = $aceptados + $rechazados === $lote->cantidad;
             $lote->update(['procesados' => $aceptados, 'rechazados' => $rechazados,
-                'estado' => $cerrado ? 'procesado' : 'recibido', 'cerrado_en' => $cerrado ? HoraNegocio::ahora() : null]);
+                'estado' => $cerrado ? 'procesado' : 'recibido', 'cerrado_en' => $cerrado ? ($lote->cerrado_en ?? HoraNegocio::ahora()) : null]);
             $this->actualizarEstado($lote->contingenciaEvento->contingencia);
 
             return ['resultado' => $lote->estado];

@@ -49,11 +49,12 @@ class ContingenciaController extends Controller
         return back()->with('status', collect($resultados)->pluck('resultado')->implode(' | '));
     }
 
-    public function consultarLote(LoteDte $lote, LoteDteService $service): RedirectResponse
+    public function consultarLote(Request $request, LoteDte $lote, LoteDteService $service): RedirectResponse
     {
         $this->authorize('contingencia', Dte::class);
 
-        return back()->with('status', $service->consultar($lote)['resultado']);
+        // «Volver a consultar en Hacienda»: un lote ya cerrado que dejó rechazados.
+        return back()->with('status', $service->consultar($lote, $request->boolean('reconciliar'))['resultado']);
     }
 
     public function emitirCorregido(Request $request, Dte $dte, DteBorradorService $borradores): RedirectResponse

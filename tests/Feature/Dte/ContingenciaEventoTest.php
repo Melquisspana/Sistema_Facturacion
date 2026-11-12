@@ -352,4 +352,25 @@ class ContingenciaEventoTest extends TestCase
             $this->assertDatabaseCount('contingencia_eventos', 0);
         }
     }
+
+    public function test_una_consulta_que_contesta_por_otro_codigo_no_acepta_el_documento_ni_lo_saca_de_la_contingencia(): void
+    {
+        $dte = $this->documento();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*consultadte*' => Http::response(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-DTE-INVENTADO',
+            'codigoGeneracion' => strtoupper((string) Str::uuid()), 'fhProcesamiento' => '10/10/2026 10:30:00'])]);
+
+        try {
+            $this->service()->preparar($this->contingencia);
+            $this->fail('Con una respuesta de otro documento no se puede dar por recibido este.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString($dte->codigo_generacion, implode(' ', $e->validator->errors()->all()));
+        }
+
+        $dte->refresh();
+        $this->assertSame(EstadoDte::Firmado, $dte->estado);
+        $this->assertNull($dte->sello_recepcion);
+        $this->assertSame($this->contingencia->id, $dte->contingencia_id);
+    }
 }

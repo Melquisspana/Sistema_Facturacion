@@ -2,12 +2,14 @@
 
 namespace App\Console\Commands;
 
-use App\Exceptions\Dte\DteJsonInvalidoException;
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteJsonException;
+use App\Exceptions\Dte\DteJsonInvalidoException;
 use App\Exceptions\Dte\DteNoMapeableException;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\DteJsonService;
+use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Console\Command;
 
 /**
@@ -32,7 +34,11 @@ class DteGenerarJsonCommand extends Command
         }
 
         try {
-            $r = $servicio->generar($dte, (bool) $this->option('force'));
+            $r = CandadoEmisionDte::ejecutar($dte, fn () => $servicio->generar($dte, (bool) $this->option('force')));
+        } catch (DteEmisionEnCursoException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         } catch (DteJsonInvalidoException $e) {
             $this->error('El JSON NO pasó la validación contra el schema (no se guardó nada):');
             foreach (array_slice($e->errores, 0, 40) as $err) {

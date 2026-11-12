@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Gastos\Dinero;
 use App\Services\Gastos\SaldosGastos;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,7 @@ final class PrepararPlanilla
         private PrestacionAnual $prestaciones,
         private AcumuladoRenta $acumulados,
         private SaldosGastos $saldos,
+        private RegistrarAnticipo $anticipos,
     ) {}
 
     /**
@@ -122,7 +124,8 @@ final class PrepararPlanilla
         return DB::transaction(function () use ($usuario, $datos, $periodo, $individual, $alta) {
             // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
-            $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
+            // Sin costo para una quincena: solo bloquea en un pago individual o un aguinaldo.
+            $persona = $this->bloquearPersona($datos);
 
             // Un pago individual sin su persona bloqueada no pasaría por sus comprobaciones.
             if ($individual > 0 && $persona === null) {
@@ -211,6 +214,12 @@ final class PrepararPlanilla
     public function bloquearPersona(array $datos): ?PlanillaEmpleado
     {
         $clase = (string) ($datos['clase'] ?? '');
+
+        if ($clase === 'aguinaldo') {
+            $this->bloquearPersonasDelAguinaldo();
+
+            return null;
+        }
         // El mismo entero que acepta la regla `integer` de {@see abrir()}: «+5» o « 5» también
         // son la persona 5, y tienen que bloquearla y pasar por sus comprobaciones.
         $id = is_scalar($datos['empleado'] ?? null)
@@ -222,6 +231,22 @@ final class PrepararPlanilla
         }
 
         return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
+    }
+
+    /**
+     * El aguinaldo es de todas las personas a la vez y una vez por año, pero su planilla
+     * es del MES en que se paga: dos aguinaldos en meses distintos no chocan en la clave
+     * única. Para que dos generaciones —o una generación y una confirmación— no se pisen,
+     * las dos toman el candado de las fichas, que es el mismo mecanismo de vacaciones e
+     * indemnización con su persona. La segunda espera, y cuando entra ya ve a quién le
+     * pagó la primera ({@see PrestacionAnual::calcular()}, `repetido`).
+     *
+     * Todas las fichas, y siempre por id: en el mismo orden dos pedidos no pueden quedar
+     * esperándose entre sí. Como en {@see bloquearPersona()}, va antes de leer nada.
+     */
+    public function bloquearPersonasDelAguinaldo(): void
+    {
+        PlanillaEmpleado::query()->orderBy('id')->lockForUpdate()->get(['id']);
     }
 
     /**
@@ -384,10 +409,10 @@ final class PrepararPlanilla
      *
      * ── Quién entra ──
      *
-     * Quien está activo y no se fue antes de que empezara el período. Quien causó baja
-     * el 05 no aparece en la quincena siguiente, y la del 1 al 15 en la que sí trabajó
-     * queda intacta: las líneas guardadas son una foto, y esto solo decide qué se
-     * PROPONE al abrir.
+     * Quien estuvo activo algún día del período ({@see entranEn()}). Quien causó baja el
+     * 05 entra en la quincena del 1 al 15, que es la última que trabajó, y no aparece en
+     * la siguiente. Las líneas guardadas son una foto: esto solo decide qué se PROPONE
+     * al abrir.
      *
      * ── Idempotencia ──
      *
@@ -402,8 +427,7 @@ final class PrepararPlanilla
 
         $empleados = PlanillaEmpleado::query()
             // La indemnización es de quien ya se fue: no se mira si sigue activa.
-            ->unless($planilla->esIndemnizacion(), fn ($q) => $q->where('activo', true)
-                ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
+            ->unless($planilla->esIndemnizacion(), fn ($q) => $this->entranEn($q, $planilla))
             // Un pago individual (vacaciones, indemnización) es solo de su persona.
             ->when($planilla->individual_de > 0, fn ($q) => $q->whereKey($planilla->individual_de))
             ->orderBy('nombre')
@@ -431,6 +455,33 @@ final class PrepararPlanilla
         ])->all();
 
         $this->guardarLineas($usuario, $planilla, $lineas);
+    }
+
+    /**
+     * A quién se le puede proponer esta planilla.
+     *
+     * Quien está activo y no se fue antes de que empezara el período, como siempre. Y en
+     * una planilla que paga TIEMPO (una quincena, una mensual), también quien fue dado de
+     * baja con fecha dentro del período o después: la baja apaga a la persona en el acto,
+     * pero esos días los trabajó, y sin esto su última quincena no quedaba en ninguna
+     * planilla. Cuánto se le paga por esos días lo decide una persona
+     * ({@see pendientesDeRevisar()}); acá solo se decide que aparezca.
+     *
+     * Aguinaldo, Quincena 25 y vacaciones no pagan tiempo de un período: siguen siendo de
+     * quien está activo. Lo de quien se fue va en su indemnización.
+     *
+     * @param  Builder<PlanillaEmpleado>  $consulta
+     * @return Builder<PlanillaEmpleado>
+     */
+    public function entranEn(Builder $consulta, Planilla $planilla): Builder
+    {
+        $pagaTiempo = ! $this->prestaciones->es($planilla->clase);
+
+        return $consulta->where(fn ($q) => $q
+            ->where(fn ($q) => $q->where('activo', true)
+                ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
+            ->when($pagaTiempo, fn ($q) => $q->orWhere(fn ($q) => $q->where('activo', false)
+                ->whereDate('baja_el', '>=', $planilla->desde))));
     }
 
     /**
@@ -507,6 +558,14 @@ final class PrepararPlanilla
         }
 
         return DB::transaction(function () use ($usuario, $planilla, $lineas) {
+            // En un aguinaldo, primero las fichas y después la planilla: el mismo orden
+            // que al generarlo y al confirmarlo. Escribir cada línea espera la ficha de su
+            // persona; con la planilla tomada antes, guardar y confirmar a la vez podían
+            // quedar esperándose entre sí. Todo lo que cambia líneas pasa por acá.
+            if ($planilla->clase === 'aguinaldo') {
+                $this->bloquearPersonasDelAguinaldo();
+            }
+
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
             // Otra vez, ya bloqueada: si se confirmó entre la primera mirada y el bloqueo,
             // borrar sus líneas se llevaría las de una planilla con deuda y anticipos aplicados.
@@ -737,7 +796,7 @@ final class PrepararPlanilla
      */
     public function avisosParaConfirmar(Planilla $planilla, bool $verImportes): array
     {
-        $avisos = [];
+        $avisos = $this->pendientesDeRevisar($planilla, $verImportes);
         $regular = $planilla->clase === 'regular';
 
         foreach ($this->cruces($planilla) as $cruce) {
@@ -747,7 +806,7 @@ final class PrepararPlanilla
         }
 
         if ($this->prestaciones->es($planilla->clase)) {
-            return $this->avisosDePrestacion($planilla, $verImportes);
+            return array_merge($avisos, $this->avisosDePrestacion($planilla, $verImportes));
         }
 
         if (! $this->descuentos->aplicaA($planilla)) {
@@ -784,6 +843,61 @@ final class PrepararPlanilla
         }
 
         return $avisos;
+    }
+
+    /**
+     * Lo que pide pasar por «Preparar» antes de confirmar, persona por persona. Con algo
+     * de esto, {@see GenerarPlanilla} no confirma en un paso: deja el borrador.
+     *
+     * UN ANTICIPO CON SALDO. Generar pone a cada quien con su sueldo y sin descuentos, y el
+     * anticipo solo se descuenta eligiéndolo en la línea. Sin este freno, quien tenía un
+     * anticipo cobraba la quincena entera y el anticipo quedaba «por recuperar» para
+     * siempre. Cuenta solo lo que esta planilla puede descontar: de esa persona, en su
+     * moneda y de un pago vigente ({@see motivoContraAnticipo()}).
+     *
+     * UNA BAJA DENTRO DEL PERÍODO. Se propone la quincena de siempre, y cuánto se paga por
+     * los días que trabajó no lo decide el sistema: se revisa el importe antes de confirmar.
+     * Una baja con fecha posterior al período no avisa: esos días los trabajó todos.
+     *
+     * @return array<int, string>
+     */
+    public function pendientesDeRevisar(Planilla $planilla, bool $verImportes): array
+    {
+        // Solo mientras se puede corregir: en una planilla ya confirmada no queda nada por revisar.
+        if (! $planilla->borrador()) {
+            return [];
+        }
+
+        $pendientes = [];
+        $pagaTiempo = ! $this->prestaciones->es($planilla->clase);
+
+        foreach ($planilla->detalles as $detalle) {
+            $empleado = $detalle->empleado;
+
+            if ($empleado === null) {
+                continue;
+            }
+
+            // Con el descuento ya puesto en la línea no queda nada que avisar.
+            $yaDescuenta = $detalle->conceptos->contains(fn (PlanillaConcepto $c) => $c->destino === 'anticipo' && $c->planilla_anticipo_id !== null);
+            $saldo = $yaDescuenta ? 0 : $this->anticipos->disponibles($empleado)
+                ->filter(fn (PlanillaAnticipo $a) => $this->motivoContraAnticipo($a, (int) $empleado->id, $planilla->moneda) === null)
+                ->sum(fn (PlanillaAnticipo $a) => $a->pendiente());
+
+            if ($saldo > 0) {
+                // El importe solo lo ve quien ve importes.
+                $pendientes[] = $detalle->nombre_snapshot.': tiene un anticipo por descontar'
+                    .($verImportes ? ' de '.$planilla->moneda.' '.Dinero::mostrar($saldo) : '').'.';
+            }
+
+            $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el);
+
+            if ($pagaTiempo && $baja !== null && $baja->toDateString() <= $planilla->hasta->toDateString()) {
+                $pendientes[] = $detalle->nombre_snapshot.': tiene baja el '.$baja->format('d/m/Y').': revisá el importe antes de confirmar.';
+            }
+        }
+
+        return $pendientes;
     }
 
     /** @return array<int, string> */
@@ -863,6 +977,11 @@ final class PrepararPlanilla
 
                 if ($calculo['falta'] !== null) {
                     $reparos[] = $detalle->nombre_snapshot.': falta '.$calculo['falta'].' para calcularlo.';
+                }
+
+                // Agregado a mano a un segundo aguinaldo del mismo año: sería pagarlo dos veces.
+                if ($planilla->clase === 'aguinaldo' && ($calculo['repetido'] ?? false)) {
+                    $reparos[] = $detalle->nombre_snapshot.': '.$calculo['fuera'].'.';
                 }
 
                 // Vacaciones de alguien agregado a mano que no las tiene por cobrar: es el

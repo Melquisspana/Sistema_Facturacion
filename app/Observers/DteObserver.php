@@ -94,17 +94,29 @@ class DteObserver
         }
     }
 
-    /**
-     * Auto-envío del DTE por correo al cliente cuando el MH lo ACEPTA, si está
-     * activado en Configuración (correo.auto_envio). Solo encola (afterCommit): NO
-     * bloquea ni modifica la transmisión; vive en el módulo de correo. Sin destinatario
-     * o si ya hay un envío encolado/exitoso, no hace nada.
-     */
     public function updated(Dte $dte): void
     {
-        if (! $dte->wasChanged('estado') || $dte->estado !== EstadoDte::Aceptado) {
-            return;
+        if ($dte->wasChanged('estado') && $dte->estado === EstadoDte::Aceptado) {
+            $this->alQuedarAceptado($dte);
         }
+    }
+
+    /**
+     * Lo que cuelga de que Hacienda ACEPTE el documento: el alta en Seguimiento de cobros,
+     * las notas de crédito en los lotes de su CCF y el correo automático al cliente.
+     *
+     * Ocurre cuando el estado pasa a Aceptado. Lo llama además la transmisión cuando una
+     * consulta le completa el sello a un documento que figuraba aceptado sin él: recién
+     * ahí es una aceptación real. Repetirlo no duplica nada: el alta y las notas no hacen
+     * nada si ya están, y el correo no sale si ya hay un envío encolado o exitoso.
+     *
+     * Auto-envío del DTE por correo al cliente, si está activado en Configuración
+     * (correo.auto_envio). Solo encola (afterCommit): NO bloquea ni modifica la
+     * transmisión; vive en el módulo de correo. Sin destinatario o si ya hay un envío
+     * encolado/exitoso, no hace nada.
+     */
+    public function alQuedarAceptado(Dte $dte): void
+    {
         // Seguimiento de cobros: el CCF/NC entra en el momento en que Hacienda lo acepta, sin
         // esperar a la tarea programada. Va DESPUÉS de confirmada la aceptación y nunca la
         // rompe: si falla, el documento queda aceptado, el error se reporta y lo recoge la

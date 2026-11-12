@@ -2,10 +2,13 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
 use App\Services\Dte\DteConsultaService;
+use App\Services\Dte\DteTransmisionService;
+use App\Support\Dte\CandadoEmisionDte;
 use Illuminate\Console\Command;
 
 /**
@@ -21,7 +24,8 @@ use Illuminate\Console\Command;
 class DteConsultarCommand extends Command
 {
     protected $signature = 'dte:consultar {dte : ID del DTE}
-        {--consultar : Hace la consulta REAL al MH (por defecto solo muestra qué se enviaría)}';
+        {--consultar : Hace la consulta REAL al MH (por defecto solo muestra qué se enviaría)}
+        {--aplicar : Con --consultar: si Hacienda tiene el documento, guarda acá lo que contestó}';
 
     protected $description = 'Consulta el estado de un DTE en Hacienda (solo lectura; por defecto sin HTTP)';
 
@@ -59,8 +63,25 @@ class DteConsultarCommand extends Command
         }
 
         $this->newLine();
+        $aplicar = (bool) $this->option('aplicar');
+        $guardado = null;
         try {
-            $r = $consulta->consultar($dte);
+            if ($aplicar) {
+                // Consulta y guardado bajo el MISMO candado del documento: lo que se
+                // guarda es la respuesta a la pregunta por el documento tal como está
+                // ahora, no por el que este proceso cargó antes de que otro lo cambiara.
+                [$r, $guardado] = CandadoEmisionDte::ejecutar($dte, function () use ($consulta, $dte) {
+                    $r = $consulta->consultar($dte);
+
+                    return [$r, $r['recibido'] ? app(DteTransmisionService::class)->aplicarResultadoDeConsulta($dte, $r) : null];
+                });
+            } else {
+                $r = $consulta->consultar($dte);
+            }
+        } catch (DteEmisionEnCursoException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         } catch (DteTransmisionDeshabilitadaException $e) {
             $this->warn('Consulta bloqueada: '.$e->getMessage());
 
@@ -80,9 +101,44 @@ class DteConsultarCommand extends Command
             $this->line('Sello       : '.$r['sello']);
         }
 
+        if ($aplicar) {
+            return $this->informarLoGuardado($dte, $guardado);
+        }
+
         $this->newLine();
         $this->warn('*** SOLO LECTURA — el estado del documento no se modificó. ***');
 
         return $r['recibido'] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Qué pasó con `--aplicar`. Lo que Hacienda contestó se guardó por el MISMO camino que
+     * la emisión ({@see DteTransmisionService::aplicarResultadoDeConsulta()}), con su regla:
+     * una respuesta solo se guarda si es de este documento (mismo código de generación y
+     * mismo ambiente) y, si es una aceptación, con sello.
+     * Es la forma de corregir a mano un documento que acá figura rechazado y Hacienda
+     * tiene aceptado.
+     *
+     * @param  array<string, mixed>|null  $guardado  null si Hacienda no confirmó tenerlo
+     */
+    private function informarLoGuardado(Dte $dte, ?array $guardado): int
+    {
+        $this->newLine();
+
+        if ($guardado === null) {
+            $this->warn('Hacienda no confirmó tener el documento: no se guardó nada.');
+
+            return self::FAILURE;
+        }
+
+        if (! in_array($guardado['resultado'], ['aceptado', 'rechazado'], true)) {
+            $this->warn((string) $guardado['mensaje']);
+
+            return self::FAILURE;
+        }
+
+        $this->info('Estado guardado: '.$dte->refresh()->estado->label().'.');
+
+        return self::SUCCESS;
     }
 }

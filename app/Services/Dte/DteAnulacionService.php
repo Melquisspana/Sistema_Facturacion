@@ -26,13 +26,21 @@ class DteAnulacionService
      */
     public function anular(Dte $dte, MotivoAnulacion $motivo, ?string $observacion = null, ?User $usuario = null): Dte
     {
-        if ($dte->estado !== EstadoDte::Generado) {
-            throw new AnulacionException(
-                'Solo se puede anular un documento generado (estado actual: '.$dte->estado->label().').'
-            );
-        }
-
         return DB::transaction(function () use ($dte, $motivo, $observacion, $usuario) {
+            // Con la fila bloqueada y releída: otro pedido pudo firmar o transmitir este
+            // documento después de que este lo cargó. Con lo que traía en memoria se
+            // anulaba por dentro un documento que Hacienda estaba aceptando.
+            $actual = Dte::whereKey($dte->id)->lockForUpdate()->first();
+            if ($actual !== null) {
+                $dte->setRawAttributes($actual->getAttributes(), true);
+            }
+
+            if ($actual === null || $dte->estado !== EstadoDte::Generado) {
+                throw new AnulacionException(
+                    'Solo se puede anular un documento generado (estado actual: '.$dte->estado->label().').'
+                );
+            }
+
             // Aún en estado generado: el observer permite estos campos de anulación.
             $dte->motivo_anulacion = $motivo->value;
             $dte->observacion_anulacion = $observacion;

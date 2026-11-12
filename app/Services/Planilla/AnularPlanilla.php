@@ -3,6 +3,7 @@
 namespace App\Services\Planilla;
 
 use App\Models\Gastos\Cuota;
+use App\Models\Gastos\Gasto;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
@@ -68,7 +69,15 @@ final class AnularPlanilla
             ]);
         }
 
+        // Tres intentos, como al registrar un pago: si MySQL corta esta transacción por un
+        // interbloqueo, se vuelve a entrar. Es seguro porque de ese intento no quedó nada.
         return DB::transaction(function () use ($usuario, $planilla, $motivo) {
+            // Primero quien anula, como en los pagos y los ajustes de Gastos (usuario, gasto,
+            // cuota). Los ajustes de más abajo apuntan a este usuario, y escribirlos espera
+            // su candado: sin tomarlo acá, la misma persona pagando y anulando a la vez podía
+            // quedar con cada pedido esperando al otro.
+            User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
+
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
 
             if ($planilla->estado === 'anulada') {
@@ -130,7 +139,7 @@ final class AnularPlanilla
             ]);
 
             return $planilla->fresh();
-        });
+        }, 3);
     }
 
     private function exigirQueNoHayaPagos(Planilla $planilla): void
@@ -174,9 +183,24 @@ final class AnularPlanilla
 
         $hechas = 0;
 
+        // Mismo orden de bloqueo que en los pagos y los ajustes —gasto y después cuota—,
+        // para que anular y pagar a la vez se esperen en vez de cruzarse.
+        Gasto::whereKey($gasto->id)->lockForUpdate()->firstOrFail();
+
         foreach ($gasto->cuotas as $cuota) {
             $cuota = Cuota::whereKey($cuota->id)->lockForUpdate()->firstOrFail();
-            $saldo = $this->saldos->pendienteCuota($cuota);
+
+            // Otra vez, ya con el candado y leyendo lo último confirmado: un pago pudo
+            // entrar después de la revisión de arriba. Sin esto se acreditaba el resto y la
+            // planilla quedaba anulada con un pago vigente.
+            if ($this->saldos->aplicado($cuota->id, true) > 0) {
+                throw ValidationException::withMessages([
+                    'estado' => 'No se puede anular: se acaba de registrar un pago a '.$gasto->beneficiario.'. '
+                        .'Revertí primero ese pago, con su motivo, y después anulá la planilla.',
+                ]);
+            }
+
+            $saldo = $this->saldos->pendienteCuota($cuota, true);
 
             if ($saldo <= 0) {
                 continue;

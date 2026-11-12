@@ -146,6 +146,13 @@ class DteTransmisionResiliente
             throw new DteTransmisionException('Documento de contingencia: debe regularizarse por evento y lote.');
         }
 
+        // La copia de un rechazado que Hacienda después aceptó no se emite sin revisarla.
+        // Va acá además de en el envío: así se frena antes de la consulta previa, sin
+        // hablar con Hacienda y con el motivo de verdad en vez de «estado incierto».
+        if ($motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($dte)) {
+            throw new DteTransmisionException($motivo);
+        }
+
         // Política apagada: comportamiento idéntico al anterior, un solo envío.
         if (! (bool) config('dte.transmision.reintentos.enabled', true)) {
             return $this->conMetadatos($this->transmision->transmitir($dte), 1, 0, [], false);

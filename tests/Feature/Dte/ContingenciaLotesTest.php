@@ -414,4 +414,188 @@ class ContingenciaLotesTest extends TestCase
         $this->get(route('facturacion.contingencia.pendientes'))->assertOk()
             ->assertSee($primero->id_envio)->assertSee('Lote de prueba rechazado');
     }
+
+    // ─────────── Aceptación tardía por lote: el sello de Hacienda manda ───────────
+    //
+    // La consulta de un lote descartaba todo documento que ya no estuviera firmado, antes
+    // de llegar a la regla compartida: un «procesado» con sello para un documento que acá
+    // figuraba rechazado se perdía, y un lote cerrado ni se volvía a consultar.
+
+    private function pasanMinutos(int $minutos): void
+    {
+        Carbon::setTestNow(Carbon::now()->addMinutes($minutos));
+    }
+
+    /** @return array<string, mixed> */
+    private function procesado(Dte $dte, string $sello): array
+    {
+        return ['codigoGeneracion' => $dte->codigo_generacion, 'selloRecibido' => $sello, 'fhProcesamiento' => '13/10/2026 11:20:00'];
+    }
+
+    public function test_un_rechazado_que_el_lote_despues_informa_procesado_con_sello_queda_aceptado(): void
+    {
+        $r = $this->documento();
+        $pendiente = $this->documento();
+        $this->service()->enviar($this->evento);
+        $lote = LoteDte::first();
+        // Primera consulta: uno rechazado, el otro todavía en proceso. El lote sigue abierto.
+        $this->simular(['rechazados' => [['codigoGeneracion' => $r->codigo_generacion, 'observaciones' => ['Motivo inventado']]]]);
+        $this->assertSame('recibido', $this->service()->consultar($lote)['resultado']);
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+
+        // Segunda consulta: Hacienda lo informa procesado, con sello, para el mismo código.
+        $this->simular(['procesados' => [$this->procesado($r, 'SELLO-INVENTADO-TARDIO')]]);
+        $this->service()->consultar($lote);
+
+        $r->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $r->estado);
+        $this->assertSame('SELLO-INVENTADO-TARDIO', $r->sello_recepcion);
+        $this->assertTrue($r->respuesta_mh['aceptacion_tardia']);
+        $this->assertSame(['Motivo inventado'], $r->respuesta_mh['rechazo_anterior']['observaciones']);
+        $this->assertSame(1, $r->historial()->where('estado_anterior', 'rechazado')->where('estado_nuevo', 'aceptado')->count());
+        $this->assertSame(EstadoDte::Firmado, $pendiente->refresh()->estado);
+        $this->assertSame(1, $lote->refresh()->procesados);
+        $this->assertSame(0, $lote->rechazados);
+    }
+
+    public function test_un_lote_ya_cerrado_se_puede_volver_a_consultar_a_pedido_y_recupera_la_aceptacion(): void
+    {
+        $a = $this->documento();
+        $r = $this->documento();
+        $this->service()->enviar($this->evento);
+        $lote = LoteDte::first();
+        $this->simular(['procesados' => [$this->procesado($a, 'SELLO-INVENTADO-A')],
+            'rechazados' => [['codigoGeneracion' => $r->codigo_generacion, 'observaciones' => ['Motivo inventado']]]]);
+        $this->assertSame('procesado', $this->service()->consultar($lote)['resultado']);
+
+        // Solo a pedido: la tarea programada no vuelve a preguntar por un lote cerrado.
+        $this->simular(['procesados' => [$this->procesado($a, 'SELLO-INVENTADO-A'), $this->procesado($r, 'SELLO-INVENTADO-TARDIO')]]);
+        $this->service()->consultar($lote->refresh());
+        Http::assertNothingSent();
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+
+        $this->pasanMinutos(3);
+        $this->post(route('facturacion.contingencia.lotes.consultar', $lote), ['reconciliar' => 1])->assertRedirect();
+
+        $this->assertSame(EstadoDte::Aceptado, $r->refresh()->estado);
+        $this->assertSame('SELLO-INVENTADO-TARDIO', $r->sello_recepcion);
+        $this->assertSame('procesado', $lote->refresh()->estado);
+        $this->assertSame(2, $lote->procesados);
+        $this->assertSame(0, $lote->rechazados);
+        // El que ya estaba aceptado no se toca ni deja ruido en la bitácora.
+        $this->assertSame('SELLO-INVENTADO-A', $a->refresh()->sello_recepcion);
+        $this->assertSame(1, $a->historial()->where('estado_nuevo', 'aceptado')->count());
+        $this->assertDatabaseMissing('activity_log', ['log_name' => 'dte_transmision', 'subject_id' => $a->id]);
+    }
+
+    public function test_al_volver_a_consultar_lo_ambiguo_lo_ajeno_y_lo_sin_sello_no_cambian_un_rechazado(): void
+    {
+        $a = $this->documento();
+        $r = $this->documento();
+        $this->service()->enviar($this->evento);
+        $lote = LoteDte::first();
+        $this->simular(['procesados' => [$this->procesado($a, 'SELLO-INVENTADO-A')],
+            'rechazados' => [['codigoGeneracion' => $r->codigo_generacion, 'observaciones' => ['Motivo inventado']]]]);
+        $this->service()->consultar($lote);
+
+        // Sin sello.
+        $this->pasanMinutos(3);
+        $this->simular(['procesados' => [['codigoGeneracion' => $r->codigo_generacion]]]);
+        $this->service()->consultar($lote->refresh(), true);
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+
+        // En las dos listas a la vez.
+        $this->pasanMinutos(3);
+        $this->simular(['procesados' => [$this->procesado($r, 'SELLO-INVENTADO-TARDIO')],
+            'rechazados' => [['codigoGeneracion' => $r->codigo_generacion]]]);
+        $this->service()->consultar($lote->refresh(), true);
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+
+        // De un documento que no es de este lote.
+        $this->pasanMinutos(3);
+        $this->simular(['procesados' => [['codigoGeneracion' => strtoupper((string) Str::uuid()), 'selloRecibido' => 'SELLO-AJENO']]]);
+        $this->service()->consultar($lote->refresh(), true);
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+        $this->assertNull($r->sello_recepcion);
+
+        // Y un rechazo repetido no deja una anotación nueva cada vez.
+        $this->pasanMinutos(3);
+        $this->simular(['rechazados' => [['codigoGeneracion' => $r->codigo_generacion]]]);
+        $this->service()->consultar($lote->refresh(), true);
+        $this->assertDatabaseMissing('activity_log', ['log_name' => 'dte_transmision', 'subject_id' => $r->id]);
+    }
+
+    public function test_la_pantalla_ofrece_volver_a_consultar_solo_donde_hay_un_rechazado_en_un_lote_cerrado(): void
+    {
+        $a = $this->documento();
+        $r = $this->documento();
+        $this->service()->enviar($this->evento);
+        $this->simular(['procesados' => [$this->procesado($a, 'SELLO-INVENTADO-A')],
+            'rechazados' => [['codigoGeneracion' => $r->codigo_generacion, 'observaciones' => ['Motivo inventado']]]]);
+
+        $this->get(route('facturacion.contingencia.pendientes'))->assertOk()->assertDontSee('Volver a consultar en Hacienda');
+
+        $this->service()->consultar(LoteDte::first());
+
+        $this->get(route('facturacion.contingencia.pendientes'))->assertOk()->assertSee('Volver a consultar en Hacienda');
+    }
+
+    public function test_volver_a_consultar_un_lote_cerrado_tiene_una_espera_y_el_pedido_de_mas_no_llega_a_hacienda(): void
+    {
+        $a = $this->documento();
+        $r = $this->documento();
+        $this->service()->enviar($this->evento);
+        $lote = LoteDte::first();
+        $this->simular(['procesados' => [$this->procesado($a, 'SELLO-INVENTADO-A')],
+            'rechazados' => [['codigoGeneracion' => $r->codigo_generacion, 'observaciones' => ['Motivo inventado']]]]);
+        $this->service()->consultar($lote);
+        $this->pasanMinutos(3);
+
+        // El primero entra.
+        $this->simular(['rechazados' => [['codigoGeneracion' => $r->codigo_generacion]]]);
+        $this->post(route('facturacion.contingencia.lotes.consultar', $lote), ['reconciliar' => 1])->assertSessionHas('status', 'procesado');
+        Http::assertSentCount(1);
+        $consultas = $lote->refresh()->consultas;
+        $archivo = $lote->respuesta_consulta_path;
+        $archivos = count(Storage::allFiles('dte/contingencia/lotes'));
+
+        // El que llega enseguida no: ni pregunta a Hacienda ni escribe otro archivo.
+        $this->pasanMinutos(1);
+        $this->simular(['procesados' => [$this->procesado($r, 'SELLO-INVENTADO-TARDIO')]]);
+        $this->post(route('facturacion.contingencia.lotes.consultar', $lote), ['reconciliar' => 1])
+            ->assertSessionHas('status', 'Este lote ya se consultó hace un momento. Probá de nuevo en 1 minuto.');
+        Http::assertNothingSent();
+        $this->assertSame($consultas, $lote->refresh()->consultas);
+        $this->assertSame($archivo, $lote->respuesta_consulta_path);
+        $this->assertCount($archivos, Storage::allFiles('dte/contingencia/lotes'));
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+
+        // Pasada la espera, vuelve a entrar.
+        $this->pasanMinutos(1);
+        $this->post(route('facturacion.contingencia.lotes.consultar', $lote), ['reconciliar' => 1]);
+        Http::assertSentCount(1);
+        $this->assertSame(EstadoDte::Aceptado, $r->refresh()->estado);
+    }
+
+    public function test_la_consulta_de_un_lote_abierto_no_tiene_esa_espera(): void
+    {
+        $dte = $this->documento();
+        $this->service()->enviar($this->evento);
+        $lote = LoteDte::first();
+        $this->simular([]);
+
+        // La tarea programada y «Consultar resultado» siguen preguntando cuando les toca.
+        $this->service()->consultar($lote);
+        $this->service()->consultar($lote);
+
+        Http::assertSentCount(2);
+        $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
+    }
+
+    public function test_la_ruta_de_consultar_un_lote_tiene_un_limite_de_pedidos(): void
+    {
+        $ruta = app('router')->getRoutes()->getByName('facturacion.contingencia.lotes.consultar');
+
+        $this->assertNotEmpty(array_filter($ruta->gatherMiddleware(), fn ($m) => is_string($m) && str_starts_with($m, 'throttle:')));
+    }
 }

@@ -16,6 +16,7 @@ use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
 use App\Exceptions\Dte\AnulacionException;
 use App\Exceptions\Dte\DocumentoInmutableException;
+use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
 use App\Exceptions\Dte\DteFirmaException;
@@ -57,6 +58,7 @@ use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\ContingenciaAutomaticaService;
+use App\Services\Dte\CopiaDeAceptadoTardio;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
@@ -79,6 +81,7 @@ use App\Services\Rutas\FacturarPedido;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dinero;
 use App\Support\Dte\ArchivoEntregaDte;
+use App\Support\Dte\CandadoEmisionDte;
 use App\Support\Dte\CondicionOperacion;
 use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
@@ -91,6 +94,7 @@ use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
 use App\Support\NumeroAlbaran;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -945,7 +949,13 @@ class DteController extends Controller
         // Orden de compra recibida por correo con el número de este CCF: habilita «PDF + orden».
         $ordenRecibida = OrdenCompraRecibida::deCcf($dte);
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
+        // La copia de un rechazado que Hacienda después aceptó: el aviso va en la ficha de
+        // la copia (con el original) y en la del original (con sus copias).
+        $copias = app(CopiaDeAceptadoTardio::class);
+        ['original' => $originalAceptado, 'sin_determinar' => $copiaSinDeterminar] = $copias->freno($dte);
+        $copiasDelAceptado = $copias->copiasDe($dte);
+
+        return view('facturacion.show', compact('originalAceptado', 'copiaSinDeterminar', 'copiasDelAceptado', 'dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
     }
 
     /**
@@ -1096,6 +1106,15 @@ class DteController extends Controller
         // gestor + estado generado + sin JSON previo (no se regenera desde la UI).
         $this->authorize('generarJson', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->generarJsonConCandado($dte, $jsonService),
+            fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
+        );
+    }
+
+    private function generarJsonConCandado(Dte $dte, DteJsonService $jsonService): RedirectResponse
+    {
         try {
             $jsonService->generar($dte); // force=false: nunca regenera desde la UI
         } catch (DteJsonInvalidoException $e) {
@@ -1134,6 +1153,40 @@ class DteController extends Controller
     ): RedirectResponse {
         $this->authorize('firmarTransmitir', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->firmarTransmitirConCandado($request, $dte, $jsonService, $firma, $transmision),
+            fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
+        );
+    }
+
+    /**
+     * Un solo pedido a la vez por documento: generar, firmar y transmitir van juntos bajo
+     * {@see CandadoEmisionDte}. Quien llega segundo (otra pestaña, otro usuario, un
+     * reenvío con Hacienda lenta) no hace nada y recibe el aviso de `$ocupado`.
+     *
+     * @param  Closure(): RedirectResponse  $accion
+     * @param  Closure(string): RedirectResponse  $ocupado
+     */
+    private function conCandadoDeEmision(Dte $dte, Closure $accion, Closure $ocupado): RedirectResponse
+    {
+        try {
+            return CandadoEmisionDte::ejecutar($dte, $accion);
+        } catch (DteEmisionEnCursoException $e) {
+            Log::info('DTE: emisión ya en curso, el segundo pedido no hizo nada', ['dte_id' => $dte->id]);
+
+            return $ocupado($e->getMessage());
+        }
+    }
+
+    /** Lo de {@see firmarTransmitir()}, ya con el candado del documento y releído. */
+    private function firmarTransmitirConCandado(
+        Request $request,
+        Dte $dte,
+        DteJsonService $jsonService,
+        DteFirmaService $firma,
+        DteTransmisionService $transmision,
+    ): RedirectResponse {
         $volver = redirect()->route('facturacion.show', $dte);
 
         // 0. Idempotencia dura: si ya está aceptado o ya tiene sello, no se hace nada.
@@ -1196,7 +1249,8 @@ class DteController extends Controller
         $estadoIncierto = $dte->estado === EstadoDte::Firmado;
 
         // 1. Asegurar el JSON oficial (genera si falta, reusando la misma garantía del correo).
-        if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
+        //    Sin tomar el candado otra vez: quien llega hasta acá ya lo tiene.
+        if (($error = $this->asegurarJson($dte, $jsonService)) !== null) {
             return ['error' => 'No se puede firmar/transmitir: '.$error];
         }
 
@@ -1266,6 +1320,25 @@ class DteController extends Controller
     ): RedirectResponse {
         $this->authorize('generarTransmitirProduccion', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->generarTransmitirProduccionConCandado($request, $dte, $jsonService, $firma, $transmision, $generacion, $preflightCcf, $preflightFactura, $preflightExportacion),
+            fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
+        );
+    }
+
+    /** Lo de {@see generarTransmitirProduccion()}, ya con el candado del documento y releído. */
+    private function generarTransmitirProduccionConCandado(
+        Request $request,
+        Dte $dte,
+        DteJsonService $jsonService,
+        DteFirmaService $firma,
+        DteTransmisionService $transmision,
+        DteGeneracionService $generacion,
+        PreflightEmisionProduccion $preflightCcf,
+        PreflightEmisionProduccionFactura $preflightFactura,
+        PreflightEmisionProduccionExportacion $preflightExportacion,
+    ): RedirectResponse {
         $volver = redirect()->route('facturacion.show', $dte);
 
         // 0. Idempotencia dura: si ya está aceptado o ya tiene sello, no se repite nada.
@@ -1339,6 +1412,33 @@ class DteController extends Controller
         ]);
 
         return $this->respuestaFirmarTransmitir($volver, $res['resultado']);
+    }
+
+    /**
+     * «Es otra venta: se emite igual». La copia de un CCF rechazado que Hacienda después
+     * aceptó queda frenada ({@see CopiaDeAceptadoTardio}), y también la copia de la que no
+     * se pudo determinar el original; esto la libera, a pedido de quien puede emitir y con
+     * un motivo que queda en la bitácora. No invalida nada ni mueve pedidos.
+     */
+    public function resolverCopiaDeAceptado(Request $request, Dte $dte, CopiaDeAceptadoTardio $copias): RedirectResponse
+    {
+        $this->authorize('resolverCopiaDeAceptado', $dte);
+
+        $datos = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:300'],
+        ], [
+            'motivo.required' => 'Contá por qué es otra venta.',
+            'motivo.min' => 'El motivo tiene que decir algo: después nadie sabrá por qué se emitió.',
+        ]);
+
+        ['original' => $original, 'sin_determinar' => $sinDeterminar] = $copias->freno($dte);
+        if ($original === null && ! $sinDeterminar) {
+            return back()->withErrors(['motivo' => 'Este documento no tiene nada pendiente de revisar.']);
+        }
+
+        $copias->resolver($dte, $original, $request->user(), trim($datos['motivo']));
+
+        return back()->with('status', 'Quedó anotado que es otra venta. Ya se puede emitir.');
     }
 
     /**
@@ -1785,7 +1885,10 @@ class DteController extends Controller
         $dte->load(['enviosPedido' => fn ($q) => $q->vigentes()->orderBy('numero'), 'enviosPedido.pedido']);
         $avisosPedido = app(FacturarPedido::class)->avisosDelCcf($dte);
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
+        // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
+        ['original' => $originalAceptado, 'sin_determinar' => $copiaSinDeterminar] = app(CopiaDeAceptadoTardio::class)->freno($dte);
+
+        return view('facturacion.edit', compact('originalAceptado', 'copiaSinDeterminar', 'dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
     }
 
     /**
@@ -1913,18 +2016,26 @@ class DteController extends Controller
             'observacion_anulacion' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        try {
-            $anulacion->anular(
-                $dte,
-                MotivoAnulacion::from($datos['motivo_anulacion']),
-                $datos['observacion_anulacion'] ?? null,
-                $request->user(),
-            );
-        } catch (AnulacionException $e) {
-            return back()->withErrors(['anular' => $e->getMessage()]);
-        }
+        // El mismo candado que emitir: no se anula por dentro un documento que otro pedido
+        // está firmando o transmitiendo en este momento.
+        return $this->conCandadoDeEmision(
+            $dte,
+            function () use ($request, $dte, $anulacion, $datos) {
+                try {
+                    $anulacion->anular(
+                        $dte,
+                        MotivoAnulacion::from($datos['motivo_anulacion']),
+                        $datos['observacion_anulacion'] ?? null,
+                        $request->user(),
+                    );
+                } catch (AnulacionException $e) {
+                    return back()->withErrors(['anular' => $e->getMessage()]);
+                }
 
-        return redirect()->route('facturacion.show', $dte)->with('status', 'Documento anulado internamente.');
+                return redirect()->route('facturacion.show', $dte)->with('status', 'Documento anulado internamente.');
+            },
+            fn (string $aviso) => back()->withErrors(['anular' => $aviso]),
+        );
     }
 
     /**
@@ -2050,6 +2161,27 @@ class DteController extends Controller
      */
     private function asegurarJsonParaCorreo(Dte $dte, DteJsonService $jsonService): ?string
     {
+        // Con el JSON ya guardado no se genera nada: no hace falta el candado.
+        if (filled($dte->json_generado_path)) {
+            return null;
+        }
+
+        // Generarlo asigna numeración y escribe el archivo, igual que al emitir: va bajo el
+        // mismo candado por documento, que además lo relee antes de decidir que falta. Sin
+        // esto, «enviar correo» y «firmar y transmitir» a la vez podían generarlo los dos.
+        try {
+            return CandadoEmisionDte::ejecutar($dte, fn () => $this->asegurarJson($dte, $jsonService));
+        } catch (DteEmisionEnCursoException $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /**
+     * Lo de {@see asegurarJsonParaCorreo()}, para quien YA tiene el candado del documento
+     * (el flujo de emisión). El candado no se puede tomar dos veces desde el mismo pedido.
+     */
+    private function asegurarJson(Dte $dte, DteJsonService $jsonService): ?string
+    {
         if (filled($dte->json_generado_path)) {
             return null;
         }
@@ -2097,6 +2229,20 @@ class DteController extends Controller
         // 'update' exige borrador + gestor (administrador/facturación).
         $this->authorize('update', $dte);
 
+        return $this->conCandadoDeEmision(
+            $dte,
+            fn () => $this->generarConCandado($request, $dte, $generacion, $albaranes),
+            fn (string $aviso) => back()->withErrors(['generar' => $aviso]),
+        );
+    }
+
+    /** Lo de {@see generar()}, ya con el candado del documento y releído. */
+    private function generarConCandado(
+        Request $request,
+        Dte $dte,
+        DteGeneracionService $generacion,
+        AlbaranNotaCreditoService $albaranes,
+    ): RedirectResponse {
         // Los datos del albarán que el cliente declaró obligatorios SÍ frenan: no son
         // diferencias a valorar sino datos imprescindibles. Se dice QUÉ falta, porque el
         // albarán puede estar guardado a medias y «registre el albarán» mandaría a llenar

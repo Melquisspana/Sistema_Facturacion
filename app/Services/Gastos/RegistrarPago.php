@@ -51,6 +51,9 @@ final class RegistrarPago
         usort($aplicaciones, fn ($a, $b) => $a['cuota_id'] <=> $b['cuota_id']);
         $huella = hash('sha256', json_encode([$datos, $aplicaciones], JSON_THROW_ON_ERROR));
 
+        // Tres intentos: la lectura con candado del saldo toma el hueco del índice, y dos
+        // movimientos a cuotas vecinas sin historial pueden cruzarse al insertar. MySQL corta
+        // uno y se vuelve a entrar; es seguro porque de ese intento no quedó nada escrito.
         return DB::transaction(function () use ($usuario, $datos, $aplicaciones, $huella) {
             // Serializa reintentos del mismo operador; gasto/cuota serializa operadores distintos.
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
@@ -87,7 +90,8 @@ final class RegistrarPago
             $total = 0;
             foreach ($aplicaciones as $fila) {
                 $importe = Dinero::centavos((string) $fila['importe']);
-                if ($importe > $this->saldos->pendienteCuota($cuotas[$fila['cuota_id']])) {
+                // Con candado: el pendiente de AHORA, con lo que otro pago acaba de dejar.
+                if ($importe > $this->saldos->pendienteCuota($cuotas[$fila['cuota_id']], true)) {
                     throw ValidationException::withMessages(['pago' => 'El pago supera el pendiente de una cuota. Revisá el reparto.']);
                 }
                 $total += $importe;
@@ -111,7 +115,7 @@ final class RegistrarPago
             ]);
 
             return $pago;
-        });
+        }, 3);
     }
 
     public function revertir(User $usuario, Pago $pago, string $motivo): void

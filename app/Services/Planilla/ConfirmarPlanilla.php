@@ -75,6 +75,14 @@ final class ConfirmarPlanilla
 
         try {
             return DB::transaction(function () use ($usuario, $planilla) {
+                // Un aguinaldo se confirma con las fichas bloqueadas, y antes de leer nada:
+                // así la revisión de «ya cobró el aguinaldo del año» ve el que otra pantalla
+                // acaba de confirmar. Primero las fichas y después la planilla, el mismo
+                // orden que al generarlo. La clase de una planilla no cambia: vale la que trae.
+                if ($planilla->clase === 'aguinaldo') {
+                    $this->preparar->bloquearPersonasDelAguinaldo();
+                }
+
                 $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
 
                 // Ya confirmada: se devuelve tal cual. Un reintento no puede crear una

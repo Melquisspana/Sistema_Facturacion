@@ -150,6 +150,15 @@ class DtePolicy
             && ! $dte->estaArchivado(); // defensa en profundidad (el estado ya lo excluye)
     }
 
+    /**
+     * Decir que la copia de un rechazado que Hacienda después aceptó «es otra venta» y
+     * se emite igual: quien puede emitir. Queda en la bitácora con su motivo.
+     */
+    public function resolverCopiaDeAceptado(User $user, Dte $dte): bool
+    {
+        return $user->can('dte.emitir');
+    }
+
     /** Tipos habilitados para la acción REAL "Generar y transmitir producción". */
     private const TIPOS_EMISION_PRODUCCION = [
         TipoDte::CreditoFiscal,

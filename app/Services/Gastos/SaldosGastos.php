@@ -22,6 +22,13 @@ use Illuminate\Support\Facades\DB;
  *
  * Un gasto ANULADO tiene pendiente cero en todas sus cuotas. Las consultas en SQL hacen lo
  * mismo en {@see ConsultaGastos::cuotasConSaldo()}.
+ *
+ * QUIEN VA A ESCRIBIR LEE CON `$bloquear`. En MySQL (REPEATABLE READ) una lectura común
+ * devuelve la foto que la transacción tomó en su primera lectura, que suele ser anterior a
+ * esperar el candado del gasto: no ve el pago que otra persona acaba de confirmar, y dos
+ * pagos simultáneos se pasaban del saldo de la cuota. Con candado se lee lo último
+ * confirmado. Es compartido: quien escribe ya tiene bloqueados el gasto y la cuota, y acá
+ * solo hace falta que la cuenta sea la de ahora. Las pantallas siguen leyendo sin candado.
  */
 final class SaldosGastos
 {
@@ -31,42 +38,44 @@ final class SaldosGastos
      * La de un gasto ANULADO es cero: ya no se debe. Su importe, sus pagos revertidos y
      * sus ajustes siguen en la ficha; lo que deja de existir es la deuda.
      */
-    public function pendienteCuota(Cuota $cuota): int
+    public function pendienteCuota(Cuota $cuota, bool $bloquear = false): int
     {
         $anulado = $cuota->relationLoaded('gasto')
             ? $cuota->gasto->anulado()
             : DB::table('gastos')->where('id', $cuota->gasto_id)->whereNotNull('anulado_at')->exists();
 
-        return $anulado ? 0 : $this->saldoBruto($cuota);
+        return $anulado ? 0 : $this->saldoBruto($cuota, $bloquear);
     }
 
     /** Importe + débitos − créditos − pagos vigentes, sin mirar si el gasto se anuló. */
-    private function saldoBruto(Cuota $cuota): int
+    private function saldoBruto(Cuota $cuota, bool $bloquear = false): int
     {
         return Dinero::centavos((string) $cuota->importe)
-            + $this->ajustes($cuota->id, 'debito')
-            - $this->ajustes($cuota->id, 'credito')
-            - $this->aplicado($cuota->id);
+            + $this->ajustes($cuota->id, 'debito', $bloquear)
+            - $this->ajustes($cuota->id, 'credito', $bloquear)
+            - $this->aplicado($cuota->id, $bloquear);
     }
 
     /** Lo aplicado por pagos VIGENTES a una cuota, en centavos. Una reversión lo devuelve. */
-    public function aplicado(int $cuotaId): int
+    public function aplicado(int $cuotaId, bool $bloquear = false): int
     {
         return DB::table('gastos_pago_aplicaciones as a')
             ->join('gastos_pagos as p', 'p.id', '=', 'a.pago_id')
             ->where('a.cuota_id', $cuotaId)
             ->whereNull('p.revertido_at')
+            ->when($bloquear, fn ($q) => $q->sharedLock())
             ->pluck('a.importe')
             ->sum(fn ($valor) => Dinero::centavos((string) $valor));
     }
 
     /** Ajustes VIGENTES de una dirección sobre una cuota, en centavos. */
-    public function ajustes(int $cuotaId, string $direccion): int
+    public function ajustes(int $cuotaId, string $direccion, bool $bloquear = false): int
     {
         return DB::table('gastos_ajustes')
             ->where('cuota_id', $cuotaId)
             ->where('direccion', $direccion)
             ->whereNull('revertido_at')
+            ->when($bloquear, fn ($q) => $q->sharedLock())
             ->pluck('importe')
             ->sum(fn ($valor) => Dinero::centavos((string) $valor));
     }
