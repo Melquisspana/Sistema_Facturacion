@@ -152,9 +152,9 @@ class PlanillaController extends Controller
 
         $disponibles = PlanillaEmpleado::query()
             ->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id'))
-            // La indemnización es de quien ya se fue.
-            ->unless($planilla->esIndemnizacion(), fn ($q) => $q->where('activo', true)
-                ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
+            // La indemnización es de quien ya se fue. En las demás, la misma regla con la
+            // que se propone la planilla: quien se fue a mitad del período también.
+            ->unless($planilla->esIndemnizacion(), fn ($q) => $preparar->entranEn($q, $planilla))
             // Un pago individual es de una sola persona: solo se ofrece la suya, si se quitó.
             ->when($planilla->esIndividual(), fn ($q) => $planilla->detalles->isEmpty() && $planilla->individual_de > 0
                 ? $q->whereKey($planilla->individual_de)
@@ -178,7 +178,7 @@ class PlanillaController extends Controller
             'habitualesDisponibles' => $this->habitualesDe($sueldos, $disponibles, $planilla),
             // Los anticipos con saldo de cada persona. Un descuento de anticipo tiene
             // que apuntar a UNO de estos: escribir la referencia no controla nada.
-            'anticipos' => $this->anticiposDisponibles($anticipos, $preparar, $planilla),
+            'anticipos' => $this->anticiposDisponibles($anticipos, $preparar, $planilla, $disponibles),
         ]);
     }
 
@@ -207,11 +207,15 @@ class PlanillaController extends Controller
      * Solo lo que el servidor deja descontar en esta planilla (misma moneda, pago
      * vigente): elegir otro se rechaza al guardar y se pierde lo escrito.
      */
-    private function anticiposDisponibles(RegistrarAnticipo $anticipos, PrepararPlanilla $preparar, Planilla $planilla): array
+    private function anticiposDisponibles(RegistrarAnticipo $anticipos, PrepararPlanilla $preparar, Planilla $planilla, Collection $disponibles): array
     {
         $salida = [];
 
-        foreach (PlanillaEmpleado::where('activo', true)->get() as $empleado) {
+        // Quien está activo y, además, quien ya está en la planilla o se puede agregar:
+        // quien se fue a mitad del período también tiene que poder devolver su anticipo.
+        $enEstaPlanilla = $planilla->detalles->pluck('planilla_empleado_id')->merge($disponibles->pluck('id'));
+
+        foreach (PlanillaEmpleado::where('activo', true)->orWhereIn('id', $enEstaPlanilla)->get() as $empleado) {
             $salida[$empleado->id] = $anticipos->disponibles($empleado)
                 ->filter(fn ($a) => $preparar->motivoContraAnticipo($a, $empleado->id, $planilla->moneda) === null)
                 ->map(fn ($a) => [
