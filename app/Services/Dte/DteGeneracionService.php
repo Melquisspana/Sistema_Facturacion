@@ -50,7 +50,32 @@ class DteGeneracionService
     {
         $this->validar($dte);
 
-        return DB::transaction(function () use ($dte, $usuario, $motivoExcepcionPlazo, $avisosOcConfirmados) {
+        // FUERA de la transacción, y a propósito: ver «Orden de candados» más abajo.
+        $contingencia = app(ContingenciaService::class)->activa();
+
+        return DB::transaction(function () use ($dte, $usuario, $motivoExcepcionPlazo, $avisosOcConfirmados, $contingencia) {
+            /*
+             | ORDEN DE CANDADOS, Y POR QUÉ NO SE LEE NADA ANTES DE TENERLOS.
+             |
+             |   1. la fila de ESTE documento (un borrador: nadie más la espera);
+             |   2. la contingencia activa, si hay;
+             |   3. el CCF, si esto es una nota de crédito;
+             |   4. el correlativo.
+             |
+             | Contingencia antes que documento es el mismo orden de la conversión
+             | automática ({@see ContingenciaAutomaticaService}), que bloquea la contingencia y
+             | después el documento que convierte, y ese documento puede ser el CCF de una
+             | nota. Con el orden invertido acá, una nota y una conversión podrían quedar
+             | esperándose entre sí.
+             |
+             | MySQL trabaja en REPEATABLE READ: la primera lectura COMÚN de la transacción
+             | fija la foto que verán todas las demás. Dos notas sobre el mismo CCF se ponen en
+             | fila en el paso 3; si la segunda leyera algo antes de esperar ahí, al entrar
+             | sumaría el saldo del CCF con una foto anterior a la primera y las dos pasarían.
+             | Por eso hasta el paso 3 solo hay lecturas CON candado, que no fijan la foto:
+             | la contingencia activa se busca antes de abrir la transacción y acá adentro solo
+             | se bloquea y se vuelve a mirar.
+             */
             // Lo primero, con la fila bloqueada: otro pedido pudo generar este mismo
             // documento después de que este lo cargó. Sin esto, el segundo tomaba otro
             // número de control y pisaba el código de generación del primero.
@@ -65,7 +90,7 @@ class DteGeneracionService
                     ->withProperties(['orden_compra' => $dte->numero_orden_compra, 'avisos' => array_values($avisosOcConfirmados)])
                     ->log('Generó el CCF confirmando los avisos de la orden de compra');
             }
-            if ($contingencia = app(ContingenciaService::class)->activa()) {
+            if ($contingencia !== null) {
                 $contingencia = $contingencia->newQuery()->whereKey($contingencia->id)->lockForUpdate()->first();
                 if ($contingencia?->estado === 'activa') {
                     $dte->tipo_modelo = 2;
