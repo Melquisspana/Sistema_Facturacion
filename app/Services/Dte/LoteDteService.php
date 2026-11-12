@@ -21,6 +21,13 @@ use Illuminate\Validation\ValidationException;
 
 class LoteDteService
 {
+    /**
+     * Espera mínima para VOLVER a consultar un lote ya cerrado. Cada consulta le pega a
+     * Hacienda y deja un archivo de respuesta, y un rechazado no pasa a aceptado de un
+     * minuto para el otro. No aplica a un lote abierto: ahí pregunta la tarea programada.
+     */
+    private const ESPERA_RECONSULTA_SEGUNDOS = 120;
+
     public function __construct(
         private readonly ContingenciaTransporte $transporte,
         private readonly ContingenciaEventoService $eventos,
@@ -182,6 +189,19 @@ class LoteDteService
         });
     }
 
+    /** Segundos que faltan para poder volver a consultar un lote cerrado; 0 si ya se puede. */
+    private function esperaParaReconsultar(LoteDte $lote): int
+    {
+        if ($lote->ultima_consulta_en === null) {
+            return 0;
+        }
+
+        // Se guardó con la hora del negocio: se compara reloj contra reloj en esa zona.
+        $ultima = Carbon::parse($lote->ultima_consulta_en->format('Y-m-d H:i:s'), HoraNegocio::zona());
+
+        return max(0, self::ESPERA_RECONSULTA_SEGUNDOS - (int) $ultima->diffInSeconds(HoraNegocio::ahora(), false));
+    }
+
     private function cliente(): PendingRequest
     {
         return Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
@@ -206,6 +226,13 @@ class LoteDteService
                 && $lote->dtes()->where('estado', EstadoDte::Rechazado->value)->exists();
             if (($lote->estado !== 'recibido' && ! $cerradoConRechazos) || blank($lote->codigo_lote)) {
                 return ['resultado' => $lote->estado];
+            }
+            // Antes de hablar con Hacienda y de escribir nada.
+            if ($cerradoConRechazos && ($faltan = $this->esperaParaReconsultar($lote)) > 0) {
+                $minutos = (int) ceil($faltan / 60);
+
+                return ['resultado' => 'Este lote ya se consultó hace un momento. Probá de nuevo en '
+                    .$minutos.($minutos === 1 ? ' minuto.' : ' minutos.')];
             }
             $ambiente = $lote->dtes()->firstOrFail()->ambiente;
             $url = EndpointsHacienda::consultaLote($ambiente, $lote->codigo_lote);
