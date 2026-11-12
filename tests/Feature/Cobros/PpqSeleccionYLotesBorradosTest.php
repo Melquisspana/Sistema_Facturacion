@@ -188,7 +188,8 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $anterior = PpqLote::forceCreate(['id' => 12, 'referencia' => 'Anterior', 'fecha' => today(), 'estado' => 'enviado',
             'cliente_id' => $this->cliente->id, 'observaciones' => 'Caso 123 de Calleja.']);
         $actual = $this->crear([$doc]);
-        $this->assertSame(13, $actual->id);
+        // En MySQL el autoincremento no vuelve atrás entre pruebas: el id no es 13 fijo.
+        $this->assertGreaterThan($anterior->id, $actual->id);
         $actual->update(['observaciones' => 'Caso 12 de Calleja.']);
         $this->travel(1)->seconds();
         $doc->refresh()->update(['presentacion_estado' => 'sin_presentar']);
