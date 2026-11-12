@@ -27,9 +27,13 @@ use Illuminate\Support\Str;
  *    sala se cuenta aparte, sin darla por atrasada.
  *  · Última entrega: {@see EntregasCcf::ultimaVisitaPorSala()}, la de las entregas de Rutas,
  *    hasta el último día del tramo. Así, en un mes pasado todo se cuenta al cierre del mes.
- *  · Rutas que pasan: la cobertura de las rutas activas ({@see RutaCobertura}) y la ruta de
- *    las salas del lugar (`cliente_sucursales.ruta_id`). Como en {@see PropuestaRutas::para()},
- *    la cobertura de un distrito le gana a la de su departamento.
+ *  · Rutas que pasan: la cobertura de las rutas activas ({@see RutaCobertura}) y la zona de
+ *    las salas del lugar. Como en {@see PropuestaRutas::para()}, la cobertura de un distrito
+ *    le gana a la de su departamento.
+ *  · La zona de cada sala: la misma de Ventas y del tablero ({@see PropuestaRutas::zonaDe()}),
+ *    su ruta si está activa y, si no tiene una fija, la que cubre su lugar. Con una ruta
+ *    elegida entran las salas de esa zona, también las que le tocan por cobertura: así el
+ *    mapa cuenta las mismas salas a las que {@see VentasRutas::porSala()} les sumó la venta.
  *
  * El mes en curso va del 1 a hoy y se compara con el mismo tramo del mes anterior; un mes
  * pasado se compara con el mes anterior completo. Una sala cuenta en el mes si ya existía
@@ -53,6 +57,7 @@ class MapaVentas
         private readonly VentasRutas $ventas,
         private readonly EntregasCcf $entregas,
         private readonly RitmoPedidos $ritmo,
+        private readonly PropuestaRutas $propuesta,
     ) {}
 
     /**
@@ -99,7 +104,7 @@ class MapaVentas
             ? $anteriorDesde->copy()->day(min($hoy->day, $anteriorDesde->daysInMonth))
             : $anteriorDesde->copy()->endOfMonth()->startOfDay();
 
-        $rutas = Ruta::activas()->orderBy('nombre')->get(['id', 'nombre']);
+        $rutas = $this->propuesta->activas();
         $activas = array_flip($rutas->pluck('id')->all());
 
         // Lo vendido a cada sala (una consulta) y las salas: las activas y las que vendieron,
@@ -116,7 +121,7 @@ class MapaVentas
                 ->orWhereIn('cliente_sucursales.id', array_keys($ventas)))
             ->orderBy('cliente_sucursales.nombre')
             ->toBase()
-            ->get(['cliente_sucursales.id', 'cliente_sucursales.nombre', 'cliente_sucursales.activo', 'cliente_sucursales.deleted_at', 'cliente_sucursales.created_at', 'cliente_sucursales.ruta_id', 'distritos.codigo as distrito', 'departamentos.codigo as departamento']);
+            ->get(['cliente_sucursales.id', 'cliente_sucursales.nombre', 'cliente_sucursales.activo', 'cliente_sucursales.deleted_at', 'cliente_sucursales.created_at', 'cliente_sucursales.ruta_id', 'cliente_sucursales.distrito_id', 'cliente_sucursales.departamento_id', 'distritos.codigo as distrito', 'departamentos.codigo as departamento']);
         $ids = $salas->pluck('id')->all();
 
         // El último CCF y la última entrega de cada sala, los dos hasta el fin del tramo.
@@ -197,6 +202,7 @@ class MapaVentas
         // no estaba. Cuándo se desactivó una sala no queda guardado: para eso vale cómo está hoy.
         $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'faltan' => 0, 'atrasadas' => 0];
         $sinUbicacion = ['salas' => 0, 'ventas' => 0.0];
+        $entero = fn ($id) => $id === null ? null : (int) $id;
         foreach ($salas as $sala) {
             $venta = $ventas[$sala->id] ?? ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
             // La última visita: el último pedido o CCF del ritmo, el último CCF o la última entrega.
@@ -214,15 +220,18 @@ class MapaVentas
             $dis = self::clave($sala->departamento, $sala->distrito);
             $ubicada = $dis !== null && isset($zonasDis[$dis]);
 
-            // De todas las rutas: la ruta de la sala pasa por su zona y la zona tiene salas.
-            if ($ubicada && $abierta && $sala->ruta_id !== null) {
-                $pasan($dis, $sala->departamento, (int) $sala->ruta_id);
+            // Su zona, como en Ventas: su ruta o, sin una fija, la que cubre su lugar.
+            $zona = $this->propuesta->zonaDe($entero($sala->ruta_id), $entero($sala->distrito_id), $entero($sala->departamento_id))?->id;
+
+            // De todas las rutas: la zona de la sala pasa por su lugar y el lugar tiene salas.
+            if ($ubicada && $abierta && $zona !== null) {
+                $pasan($dis, $sala->departamento, $zona);
             }
             if ($ubicada && $cuenta) {
                 $zonasDis[$dis]['todas']++;
                 $zonasDep[$sala->departamento]['todas']++;
             }
-            if ($rutaId !== null && (int) $sala->ruta_id !== $rutaId) {
+            if ($rutaId !== null && $zona !== $rutaId) {
                 continue;
             }
 

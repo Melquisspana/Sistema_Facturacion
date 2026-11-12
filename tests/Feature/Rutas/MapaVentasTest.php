@@ -19,6 +19,7 @@ use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\MapaVentas;
+use App\Services\Rutas\PropuestaRutas;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\VentasRutas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -447,6 +448,52 @@ class MapaVentasTest extends TestCase
             ->assertSee('"fuera":false', false);
         $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa', ['ruta' => $this->oriente->id]))->assertOk()
             ->assertSee('"fuera":true', false);
+    }
+
+    /**
+     * La zona de una sala es la de Ventas y el tablero ({@see PropuestaRutas::zonaDe()}):
+     * su ruta o, si no tiene una fija, la que cubre su lugar. Al filtrar por esa zona la sala
+     * entra con sus ventas y su estado; al filtrar por otra, no.
+     */
+    public function test_al_filtrar_por_zona_entran_las_salas_que_la_zona_cubre_sin_ruta_fija(): void
+    {
+        // Costa cubre San Miguel entero. Dos salas de ahí sin ruta fija: son de Costa por cobertura.
+        $distrito = Distrito::where('nombre', 'Distrito Oriente')->first();
+        $suelta = fn (string $nombre) => Cliente::factory()->create()->sucursales()->create([
+            'nombre' => $nombre, 'ruta_id' => null, 'departamento_id' => $distrito->departamento_id, 'distrito_id' => $distrito->id, 'activo' => true,
+        ]);
+        $this->documento($suelta('Sala de prueba suelta'), '2026-11-03', 70);
+        // Compra cada 10 días y la última vez fue el 01/10: atrasada.
+        $atrasada = $suelta('Sala de prueba suelta atrasada');
+        foreach (['2026-09-11', '2026-09-21', '2026-10-01'] as $fecha) {
+            $this->documento($atrasada, $fecha, 10);
+        }
+        $servicio = app(MapaVentas::class);
+
+        $costa = $this->mapa(ruta: $this->costa->id);
+        $lugar = $costa['distritos']['12-01'];
+        $this->assertSame([70.0, 2, 1, 1, false], [$lugar['ventas'], $lugar['salas'], $lugar['compraron'], $lugar['atrasadas'], $lugar['fuera']]);
+        $this->assertSame(['Sala de prueba suelta atrasada'], array_column($lugar['porVisitar'], 'nombre'));
+        $this->assertSame([70.0, 2, 1], [$costa['departamentos']['12']['ventas'], $costa['departamentos']['12']['salas'], $costa['departamentos']['12']['atrasadas']]);
+        // Con Sur y la sala sin lugar, que son de Costa por su ruta.
+        $this->assertSame([70.0, 4, 1, 1], [$costa['totales']['ventas'], $costa['totales']['salas'], $costa['totales']['compraron'], $costa['totales']['atrasadas']]);
+        $listas = $servicio->listas($costa);
+        $this->assertSame([['12'], ['12']], [$listas['pais']['ventas']['con'], $listas['pais']['ir']['con']]);
+        $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa', ['ruta' => $this->costa->id]))->assertOk()
+            ->assertSeeInOrder(['Quién vendió más', 'San Miguel', '$70.00', '2 salas · compró 1'])
+            ->assertSeeInOrder(['A dónde ir primero', 'San Miguel', '1 sala atrasada']);
+
+        // Con Oriente no entran: ni las salas, ni la venta, ni la atrasada.
+        $oriente = $this->mapa(ruta: $this->oriente->id);
+        $lugar = $oriente['distritos']['12-01'];
+        $this->assertSame([0.0, 0, 0, true], [$lugar['ventas'], $lugar['salas'], $lugar['atrasadas'], $lugar['fuera']]);
+        $this->assertSame([0.0, 1, 0], [$oriente['totales']['ventas'], $oriente['totales']['salas'], $oriente['totales']['atrasadas']]);
+        $listas = $servicio->listas($oriente);
+        $this->assertSame([[], []], [$listas['pais']['ventas']['con'], $listas['pais']['ir']['con']]);
+
+        // Sin filtro están, y su zona pasa por el lugar.
+        $todas = $this->mapa();
+        $this->assertSame([70.0, 2, [$this->costa->id]], [$todas['distritos']['12-01']['ventas'], $todas['distritos']['12-01']['salas'], $todas['distritos']['12-01']['rutas']]);
     }
 
     /**
