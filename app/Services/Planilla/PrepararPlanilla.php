@@ -237,20 +237,30 @@ final class PrepararPlanilla
      * mientras se tomaban los candados ({@see PersonasCambiaron}). Dentro de otra
      * transacción no reintenta: soltar candados solo lo puede hacer la de afuera.
      *
+     * `$personas`, si viene, dice a quiénes bloquear y se vuelve a llamar ANTES de cada
+     * intento, fuera de la transacción: si cambiaron las personas, el intento siguiente
+     * tiene que bloquear el conjunto nuevo, no repetir el viejo. Lo que devuelve le llega a
+     * `$trabajo` como argumento.
+     *
      * @template T
      *
-     * @param  \Closure(): T  $trabajo
+     * @param  \Closure(mixed): T  $trabajo
+     * @param  (\Closure(): list<int>)|null  $personas
      * @return T
      */
-    public function conCandados(\Closure $trabajo): mixed
+    public function conCandados(\Closure $trabajo, ?\Closure $personas = null): mixed
     {
         if (DB::transactionLevel() > 0) {
-            return DB::transaction($trabajo);
+            $conjunto = $personas ? $personas() : null;
+
+            return DB::transaction(fn () => $trabajo($conjunto));
         }
 
         for ($intento = 1; ; $intento++) {
+            $conjunto = $personas ? $personas() : null;
+
             try {
-                return DB::transaction($trabajo, 3);
+                return DB::transaction(fn () => $trabajo($conjunto), 3);
             } catch (PersonasCambiaron $e) {
                 if ($intento >= 3) {
                     throw ValidationException::withMessages(['planilla' => 'Cambiaron las personas de la planilla mientras se guardaba. Intentá de nuevo.']);
@@ -756,14 +766,14 @@ final class PrepararPlanilla
             $lineas = array_map(fn (array $l) => array_merge($l, ['periodo_desde' => null, 'periodo_hasta' => null]), $lineas);
         }
 
-        // Las personas que quedan y las que se van, leídas antes de la transacción: adentro,
-        // lo primero tienen que ser sus candados.
-        $personas = array_merge(
+        // Las personas que quedan y las que se van, leídas antes de la transacción (y otra vez
+        // antes de cada reintento): adentro, lo primero tienen que ser sus candados.
+        $quienes = fn (): array => array_merge(
             array_map('intval', array_column($lineas, 'planilla_empleado_id')),
             PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->map(fn ($id) => (int) $id)->all(),
         );
 
-        return $this->conCandados(function () use ($usuario, $planilla, $lineas, $personas) {
+        return $this->conCandados(function (array $personas) use ($usuario, $planilla, $lineas) {
             // Primero las fichas y después la planilla, el mismo orden que al generarla y al
             // confirmarla ({@see bloquearFichas()}). Escribir cada línea espera la ficha de su
             // persona; con la planilla tomada antes, guardar y confirmar a la vez podían
@@ -857,7 +867,7 @@ final class PrepararPlanilla
             $planilla->touch();
 
             return $planilla->fresh();
-        });
+        }, $quienes);
     }
 
     /**

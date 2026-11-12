@@ -73,12 +73,12 @@ final class ConfirmarPlanilla
         abort_unless($usuario->activo && $usuario->can('planilla.gestionar'), 403);
         abort_unless($usuario->can('planilla.salarios'), 403);
 
-        // Quiénes están en la planilla, leído antes de abrir la transacción: adentro, lo
-        // primero tiene que ser el candado.
-        $personas = PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->all();
+        // Quiénes están en la planilla, leído antes de abrir la transacción (y otra vez antes
+        // de cada reintento, por si cambiaron): adentro, lo primero tiene que ser el candado.
+        $quienes = fn (): array => PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->map(fn ($id) => (int) $id)->all();
 
         try {
-            return $this->preparar->conCandados(function () use ($usuario, $planilla, $personas) {
+            return $this->preparar->conCandados(function (array $personas) use ($usuario, $planilla) {
                 // Un aguinaldo se confirma con las fichas bloqueadas, y antes de leer nada:
                 // así la revisión de «ya cobró el aguinaldo del año» ve el que otra pantalla
                 // acaba de confirmar. Primero las fichas y después la planilla, el mismo
@@ -160,7 +160,7 @@ final class ConfirmarPlanilla
                 ]);
 
                 return $planilla->fresh();
-            });
+            }, $quienes);
         } catch (QueryException $e) {
             // La transacción ya se deshizo. Si fue porque otro proceso confirmó esta misma
             // planilla mientras tanto, se devuelve lo que quedó. Cualquier otro error de

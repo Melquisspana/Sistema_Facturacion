@@ -194,4 +194,33 @@ class OrdenDeCandadosPlanillaTest extends TestCase
         $this->assertFichasAntesQueLaPlanilla($consultas, [$this->ana->id]);
         $this->assertSame('borrador', $planilla->fresh()->estado);
     }
+
+    /**
+     * Si cambiaron las personas, el reintento vuelve a leer a quiénes bloquear: con el
+     * conjunto viejo agotaría los tres intentos aunque nadie más tocara la planilla. Las
+     * pruebas corren dentro de una transacción (y ahí no se reintenta), así que la
+     * transacción de afuera se simula: solo se mira el bucle de reintentos.
+     */
+    public function test_el_reintento_vuelve_a_leer_las_personas(): void
+    {
+        DB::shouldReceive('transactionLevel')->andReturn(0);
+        DB::shouldReceive('transaction')->andReturnUsing(fn (\Closure $trabajo) => $trabajo());
+
+        $lecturas = [[1], [1, 2]];
+        $recibidos = [];
+
+        $resultado = app(PrepararPlanilla::class)->conCandados(function (array $personas) use (&$recibidos) {
+            $recibidos[] = $personas;
+            if ($personas === [1]) {
+                throw new PersonasCambiaron; // apareció la persona 2 con la planilla tomada
+            }
+
+            return 'listo';
+        }, function () use (&$lecturas) {
+            return array_shift($lecturas);
+        });
+
+        $this->assertSame('listo', $resultado);
+        $this->assertSame([[1], [1, 2]], $recibidos);
+    }
 }
