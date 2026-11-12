@@ -147,7 +147,8 @@ return [
     'ingresos_fuera_de_base' => ['Viáticos', 'Bono', 'Aguinaldo'],
 
     // Pagos que llevan otro procedimiento de renta (Decreto 10, Art. 1 lit. g). No se
-    // calculan: se avisa.
-    'ingresos_extraordinarios' => ['Bono', 'Aguinaldo'],
+    // calculan: se avisa. El bono no está: no lleva renta y ya va fuera de la base de
+    // arriba (Melqui, 12/11/2026).
+    'ingresos_extraordinarios' => ['Aguinaldo'],
 
 ];

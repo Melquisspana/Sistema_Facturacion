@@ -133,6 +133,17 @@ class DescuentosLeyTest extends TestCase
         ]);
 
         $this->assertSame(25000, $base['base']);
+        // El bono no lleva renta (Melqui, 12/11/2026): no hay nada que revisar con la contadora.
+        $this->assertSame([], $base['avisos']);
+    }
+
+    public function test_el_aguinaldo_en_una_linea_sigue_avisando(): void
+    {
+        $base = app(DescuentosLey::class)->baseDeLinea(20000, [
+            ['tipo' => 'ingreso', 'concepto' => 'Aguinaldo', 'importe' => '100.00'],
+        ]);
+
+        $this->assertSame(20000, $base['base']);
         $this->assertStringContainsString('extraordinarios', $base['avisos'][0]);
     }
 }
