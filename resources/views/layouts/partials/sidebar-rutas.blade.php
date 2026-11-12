@@ -6,19 +6,11 @@
      Ocultar no autoriza: cada grupo de rutas lleva su propio middleware. --}}
 <nav class="space-y-6 px-3 py-5">
 
-    {{-- Menú corto del flujo único (10/11/2026), cada título en una línea. Primero lo del
-         vendedor, para quien también sale a vender (el jefe): Inicio, Sacar pedido y Por
-         entregar. Después lo de la oficina: el Tablero (Resumen, Viajes, Mapa y Vendedores
-         son sus pestañas), Pedidos, Ventas, Todos los viajes y Zonas. Ya no
-         hay «armar salida» ni «asignar salas». --}}
+    {{-- Menú de la oficina (11/11/2026), cada título en una línea: el Tablero primero (Resumen,
+         Viajes, Mapa y Vendedores son sus pestañas), Pedidos, Ventas, Todos los viajes y Zonas.
+         Al final, UNA sola entrada al celular del vendedor: adentro están sus pestañas (Inicio,
+         Sacar pedido y Por entregar). Ya no hay «armar salida» ni «asignar salas». --}}
     <x-sidebar-group titulo="Rutas" icono="rutas">
-        @can('rutas.entregas.registrar')
-            <x-sidebar-link :href="route('rutas.mi-salida.index')" :active="request()->routeIs('rutas.mi-salida.*')">Inicio</x-sidebar-link>
-        @endcan
-        @can('rutas.pedidos.registrar')
-            <x-sidebar-link :href="route('rutas.sacar-pedido.index')" :active="request()->routeIs('rutas.sacar-pedido.*')">Sacar pedido</x-sidebar-link>
-        @endcan
-        <x-sidebar-link :href="route('rutas.por-entregar.index')" :active="request()->routeIs('rutas.por-entregar.*')">Por entregar</x-sidebar-link>
         <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard', 'rutas.viajes', 'rutas.mapa')">Tablero</x-sidebar-link>
         @can('rutas.pedidos.ver')
             <x-sidebar-link :href="route('rutas.pedidos.index')" :active="request()->routeIs('rutas.pedidos.*')">Pedidos</x-sidebar-link>
@@ -33,6 +25,20 @@
             @unless (\App\Models\PersonalRuta::seGestionaEnPersonal(auth()->user()))
                 <x-sidebar-link :href="route('rutas.personal.index')" :active="request()->routeIs('rutas.personal.*')">Personal</x-sidebar-link>
             @endunless
+        @endif
+        {{-- Abre la primera de las tres pantallas del celular que el usuario puede abrir: el
+             Inicio para quien entrega; para la oficina, que solo mira, «Por entregar». Solo
+             permisos: sin consultas (este menú se dibuja en toda el área). --}}
+        @php
+            $menuVendedor = match (true) {
+                auth()->user()->can('rutas.entregas.registrar') => 'rutas.mi-salida.index',
+                auth()->user()->can('rutas.ver') => 'rutas.por-entregar.index',
+                auth()->user()->can('rutas.pedidos.registrar') => 'rutas.sacar-pedido.index',
+                default => null,
+            };
+        @endphp
+        @if ($menuVendedor)
+            <x-sidebar-link :href="route($menuVendedor)" :active="request()->routeIs('rutas.mi-salida.*', 'rutas.sacar-pedido.*', 'rutas.por-entregar.*')">Menú del vendedor</x-sidebar-link>
         @endif
     </x-sidebar-group>
 

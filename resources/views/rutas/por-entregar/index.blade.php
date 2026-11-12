@@ -23,8 +23,9 @@
         <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">El efectivo de hoy se entrega a la oficina con el PDF del día («Terminar el día»).</p>
     @endif
 
-    @if (! $persona && auth()->user()->can('rutas.entregas.registrar'))
-        <p class="mt-4 rounded-2xl bg-white p-5 dark:bg-ink-800">Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.</p>
+    {{-- Quien no tiene ficha de vendedor (la oficina, Jefatura) mira la lista y no marca. --}}
+    @if (! $persona)
+        <p class="mt-4 rounded-2xl bg-white p-5 dark:bg-ink-800">Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.</p>
     @endif
 
     {{-- Con su viaje en curso: «Este viaje», «Toda la zona» y «Todas» (?ver=, no guarda nada). --}}
@@ -116,7 +117,7 @@
                     </div>
 
                     @if ($planificada)
-                        <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}, que todavía no empezó: se marca cuando empiece.</p>
+                        <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}, que quedó programada y ya no sale: pedile a la oficina que la cancele.</p>
                     @elseif ($trabados->has($dte->id))
                         {{-- Día cerrado, o una salida formal donde no va: los botones siempre fallarían. --}}
                         <p class="mt-3 text-sm text-amber-800 dark:text-amber-300">{{ $trabados->get($dte->id) }}</p>

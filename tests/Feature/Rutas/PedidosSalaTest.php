@@ -19,12 +19,12 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -89,7 +89,7 @@ class PedidosSalaTest extends TestCase
     private function salidaCon(PropositoSalida $proposito, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-05', 'estado' => $estado, 'proposito' => $proposito]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->persona->id, $this->otraPersona->id], null);
+        SalidaDePrueba::participantes($salida, [$this->persona->id, $this->otraPersona->id], null);
 
         return $salida;
     }
@@ -148,9 +148,7 @@ class PedidosSalaTest extends TestCase
         $this->assertSame(PropositoSalida::Entregar, $vieja->proposito);
         $this->assertSame(PropositoSalida::Entregar, SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-05', 'estado' => EstadoSalidaRuta::EnCurso])->proposito);
 
-        app(ParticipantesSalida::class)->sincronizar($vieja, [$this->persona->id], null);
-        // La salida de antes conserva su hoja mientras siga en camino; el propósito ya no se muestra.
-        $this->get(route('rutas.mi-salida.show', $vieja))->assertOk()->assertDontSee('Para entregar');
+        SalidaDePrueba::participantes($vieja, [$this->persona->id], null);
         // El pedido ya no va a una salida armada: se suma al viaje del vendedor.
         $this->sacar()->assertSessionHasNoErrors();
         $this->assertSame(0, $vieja->pedidos()->count());
@@ -162,7 +160,7 @@ class PedidosSalaTest extends TestCase
 
     public function test_mi_salida_muestra_sacar_pedido_y_el_formulario_del_sugerido(): void
     {
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()
+        $this->get(route('rutas.mi-salida.index'))->assertOk()
             ->assertDontSee('Para entregar y sacar pedido')
             // Sacar pedido ya no lista las salas de la ruta: lleva al buscador de cualquier sala.
             ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false);
@@ -320,7 +318,6 @@ class PedidosSalaTest extends TestCase
         // Anulado ya no se corrige ni se vuelve a anular, pero la sala se puede sacar de nuevo.
         $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
         $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertForbidden();
-        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertDontSee('Pedido sacado');
         $this->sacar()->assertSessionHasNoErrors();
         $this->assertSame(2, PedidoSala::count());
         $this->assertSame($this->viaje()->id, PedidoSala::latest('id')->first()->salida_ruta_id, 'Vuelve al mismo viaje.');

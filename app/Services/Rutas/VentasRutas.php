@@ -22,6 +22,8 @@ class VentasRutas
 {
     public const BAJA_ALERTA = 0.30;
 
+    public function __construct(private readonly PropuestaRutas $propuesta) {}
+
     public function consultar(array $entrada = []): array
     {
         $canal = Validator::make($entrada, ['canal' => ['sometimes', Rule::in(['nacional', 'exportacion'])]])->validate()['canal'] ?? 'nacional';
@@ -235,9 +237,10 @@ class VentasRutas
         $numero = $recientes->count();
         $sala = ClienteSucursal::withTrashed()->findOrFail($id);
         $oportunidades = [];
-        if ($sala->ruta_id) {
-            $salas = ClienteSucursal::where('ruta_id', $sala->ruta_id)->where('activo', true)->pluck('id');
-            $recientes = $this->lineas($hoy->copy()->subDays(90), $hoy, ['ruta' => $sala->ruta_id])->whereIn('tipo', ['03', '01'])->filter(fn ($l) => $l->monto > 0);
+        // Las demás salas de su zona (la misma del tablero), para ver qué compran ellas y esta no.
+        if ($zona = $this->propuesta->zonaDe($sala->ruta_id, $sala->distrito_id, $sala->departamento_id)) {
+            $recientes = $this->lineas($hoy->copy()->subDays(90), $hoy, ['ruta' => $zona->id])->whereIn('tipo', ['03', '01'])->filter(fn ($l) => $l->monto > 0);
+            $salas = ClienteSucursal::whereIn('id', $recientes->pluck('sala_id')->unique()->all())->where('activo', true)->pluck('id');
             $activas = $recientes->whereIn('sala_id', $salas)->pluck('sala_id')->unique()->count();
             $propios = $recientes->where('sala_id', $id)->pluck('producto_id')->all();
             foreach ($recientes->whereIn('sala_id', $salas)->filter(fn ($l) => $l->producto_id && ! in_array($l->producto_id, $propios))->groupBy('producto_id') as $productoId => $filas) {
@@ -266,7 +269,6 @@ class VentasRutas
             ->join('dtes as referencia', fn ($join) => $join->on('referencia.id', '=', DB::raw($referencia)))
             ->leftJoin('cliente_sucursales as sala', 'sala.id', '=', 'referencia.cliente_sucursal_id')
             ->leftJoin('clientes as cliente', 'cliente.id', '=', 'referencia.cliente_id')
-            ->leftJoin('rutas as ruta', 'ruta.id', '=', 'sala.ruta_id')
             ->leftJoin('productos as producto', function ($join) {
                 $join->on('producto.id', '=', DB::raw("CASE WHEN dtes.tipo_dte = '05' THEN COALESCE(original.producto_id, linea.producto_id) ELSE linea.producto_id END"));
             })
@@ -278,15 +280,11 @@ class VentasRutas
                 }
             })
             ->whereBetween('referencia.fecha_emision', [$desde->toDateString(), $hasta->toDateString()])
-            ->selectRaw('linea.id as linea_id, linea.numero_linea, linea.codigo, linea.descripcion, original.codigo as original_codigo, original.descripcion as original_descripcion, dtes.iva, referencia.tipo_dte as tipo_referencia, referencia.cliente_id, linea.venta_exportacion, dtes.tipo_nota_credito, dtes.id as documento_id, dtes.tipo_dte as tipo, dtes.subtotal as base, dtes.total_descuento as descuento, linea.cantidad, linea.venta_gravada, linea.venta_exenta, linea.venta_no_sujeta, referencia.fecha_emision as fecha, sala.id as sala_id, sala.nombre as sala_nombre, cliente.nombre as cliente_nombre, ruta.id as ruta_id, ruta.nombre as ruta_nombre, producto.id as producto_id, producto.nombre as producto_nombre');
+            ->selectRaw('linea.id as linea_id, linea.numero_linea, linea.codigo, linea.descripcion, original.codigo as original_codigo, original.descripcion as original_descripcion, dtes.iva, referencia.tipo_dte as tipo_referencia, referencia.cliente_id, linea.venta_exportacion, dtes.tipo_nota_credito, dtes.id as documento_id, dtes.tipo_dte as tipo, dtes.subtotal as base, dtes.total_descuento as descuento, linea.cantidad, linea.venta_gravada, linea.venta_exenta, linea.venta_no_sujeta, referencia.fecha_emision as fecha, sala.id as sala_id, sala.nombre as sala_nombre, sala.ruta_id as sala_ruta_id, sala.distrito_id as sala_distrito_id, sala.departamento_id as sala_departamento_id, cliente.nombre as cliente_nombre, producto.id as producto_id, producto.nombre as producto_nombre');
 
-        foreach (['ruta' => 'sala.ruta_id', 'sala' => 'referencia.cliente_sucursal_id', 'cliente' => 'referencia.cliente_id'] as $filtro => $columna) {
+        foreach (['sala' => 'referencia.cliente_sucursal_id', 'cliente' => 'referencia.cliente_id'] as $filtro => $columna) {
             if (isset($filtros[$filtro])) {
-                if ($filtro === 'ruta' && (int) $filtros[$filtro] === 0) {
-                    $query->whereNull($columna);
-                } else {
-                    $query->where($columna, $filtros[$filtro]);
-                }
+                $query->where($columna, $filtros[$filtro]);
             }
         }
         $bases = DB::table('dte_lineas')->selectRaw('dte_id, SUM(venta_gravada + venta_exenta + venta_no_sujeta) as suma')->groupBy('dte_id');
@@ -295,6 +293,10 @@ class VentasRutas
         $acumulados = [];
 
         return $query->orderBy('dtes.id')->orderBy('linea.numero_linea')->toBase()->get()->map(function ($linea) use (&$acumulados) {
+            // La zona de la sala con el criterio del tablero: su ruta, la que cubre su lugar o ninguna («Sin zona»).
+            $zona = $linea->sala_id ? $this->propuesta->zonaDe($linea->sala_ruta_id, $linea->sala_distrito_id, $linea->sala_departamento_id) : null;
+            $linea->ruta_id = $zona?->id;
+            $linea->ruta_nombre = $zona?->nombre;
             $nc = $linea->tipo === '05';
             $factor = ! $nc && (float) $linea->base != 0 ? 1 - (float) $linea->descuento / (float) $linea->base : 1;
             // Las FEX de listas de empaque no tienen producto_id ni código: la descripción
@@ -327,7 +329,9 @@ class VentasRutas
             $linea->cliente = $linea->cliente_nombre;
 
             return $linea;
-        })->filter(fn ($linea) => ! isset($filtros['producto']) || ($linea->producto_id ?? 0) == $filtros['producto'])->values();
+        })->filter(fn ($linea) => (! isset($filtros['producto']) || ($linea->producto_id ?? 0) == $filtros['producto'])
+            // La zona se filtra acá y no en SQL: sale de la cobertura, no de una columna. 0 es «Sin zona».
+            && (! isset($filtros['ruta']) || (int) ($linea->ruta_id ?? 0) === (int) $filtros['ruta']))->values();
     }
 
     private function vacio(): array

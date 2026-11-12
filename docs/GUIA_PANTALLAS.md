@@ -80,7 +80,7 @@ Tomado de Gastos y Planilla (botones de 44 px, que se tocan bien con el dedo). L
 | **Principal** | La acción que se viene a hacer. **Una sola por pantalla o formulario.** | Índigo: `inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700` |
 | **Secundario** | Cancelar, Volver, Filtrar, Imprimir, Descargar. | Blanco con borde: `inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50` |
 | **Peligro** | Eliminar, Anular, Invalidar, Revertir. | Rojo: igual que el principal con `bg-red-600 hover:bg-red-700` |
-| **Terminar** | Solo para cerrar algo que salió bien en Rutas: «Entregado», «Terminar día», «Terminar ruta». Quién lo entregó se elige en la misma tarjeta del CCF con pastillas, una por persona que va en la salida. | Verde: igual que el principal con `bg-green-600 hover:bg-green-700` |
+| **Terminar** | Solo para cerrar algo que salió bien en Rutas: «Entregado» (el cierre de día y «Terminar ruta» de las salidas de antes se retiraron el 11/11/2026). Quién lo entregó se elige en la misma tarjeta del CCF con pastillas, una por persona que va en la salida. | Verde: igual que el principal con `bg-green-600 hover:bg-green-700` |
 
 - Sin mayúsculas sostenidas: «Guardar insumo», no «GUARDAR INSUMO».
 - El ámbar, el celeste y el rosa son para avisos y etiquetas, **nunca** para botones.
@@ -159,7 +159,8 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 
 - Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
 - Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
-- En la barra lateral de la oficina, los mismos títulos van primero y solo para quien tiene el permiso de vendedor. Después: Tablero, Pedidos, Ventas, Todos los viajes y Zonas.
+- En la barra lateral de la oficina el orden es Tablero, Pedidos, Ventas, Todos los viajes y Zonas, y al final **una sola** entrada, «Menú del vendedor», que abre el Inicio del celular (a quien solo puede mirar, «Por entregar»). Las tres pantallas no se repiten en la barra. *Pedido de Melqui, 11/11/2026.*
+- Quien entra sin ficha de vendedor no queda en una pantalla vacía: se le dice «Tu usuario no es vendedor» y se le ofrece «Por entregar».
 
 ### Las palabras de Rutas
 

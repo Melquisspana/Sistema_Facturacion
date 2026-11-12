@@ -18,11 +18,11 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Support\CcfDeLaRuta;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -99,7 +99,7 @@ class EntregasSalidaTest extends TestCase
             'fecha_inicio' => now()->toDateString(),
             'estado' => $estado,
         ]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id], $this->carlos->id);
+        SalidaDePrueba::participantes($salida, [$this->carlos->id], $this->carlos->id);
 
         return $salida->load('ruta');
     }
@@ -300,7 +300,7 @@ class EntregasSalidaTest extends TestCase
         $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
         $segunda = $this->salida(EstadoSalidaRuta::Planificada);
         $this->cargarCcfDeLaRuta($segunda);
-        $segunda->iniciar();
+        $segunda->update(['estado' => EstadoSalidaRuta::EnCurso]);
         $this->entregar($segunda->entregas()->sole());
         $this->servicio()->deshacer($entrega);
         $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$primera, $entrega]), [
@@ -332,7 +332,7 @@ class EntregasSalidaTest extends TestCase
         $this->assertSame(0, $segunda->entregas()->count());
     }
 
-    public function test_la_hoja_marca_invalidado_y_la_sala_no_lo_entrega(): void
+    public function test_la_hoja_marca_invalidado_y_no_ofrece_entregarlo(): void
     {
         $dte = $this->ccf();
         $this->ccf();
@@ -348,7 +348,8 @@ class EntregasSalidaTest extends TestCase
         $xpath = new \DOMXPath($dom);
         $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
         $this->assertSame(0, $xpath->query('//form[@action="'.$url.'"]//input[@name="resultado"]')->length);
-        $this->assertSame(2, $this->servicio()->registrarSala($salida, $this->sala->id, $this->carlos->id, null, OrigenRegistroEntrega::Oficina));
+        // Los otros dos sí se pueden marcar.
+        $this->assertSame(2, $xpath->query('//form[contains(@action, "/entregas/")]//input[@name="resultado" and @value="entregado"]')->length);
         $this->assertTrue($entrega->refresh()->estaPendiente());
     }
 
@@ -429,20 +430,6 @@ class EntregasSalidaTest extends TestCase
         $this->assertSame(0, $salida->entregas()->count());
     }
 
-    public function test_toda_la_sala_entregada(): void
-    {
-        $this->ccf();
-        $this->ccf();
-        $salida = $this->salida();
-        $this->cargarCcfDeLaRuta($salida);
-
-        $this->actingAs($this->admin())
-            ->post(route('rutas.salidas.entregas.sala', [$salida, $this->sala]), ['entregado_por_id' => $this->carlos->id])
-            ->assertSessionHas('status');
-
-        $this->assertSame(2, $salida->entregas()->entregadas()->count());
-    }
-
     public function test_agregar_por_numero_de_control_tolera_el_numero_sin_guiones(): void
     {
         $dte = $this->ccf(['fecha_emision' => '2026-09-01']); // antes del corte: solo entra a mano
@@ -517,7 +504,7 @@ class EntregasSalidaTest extends TestCase
         $sinRegistrar = $this->ccf();
         $salida = $this->salida();
         $ana = PersonalRuta::create(['nombre' => 'Ana']);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
+        SalidaDePrueba::participantes($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
         $this->cargarCcfDeLaRuta($salida);
         $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
         PpqAlbaran::create([

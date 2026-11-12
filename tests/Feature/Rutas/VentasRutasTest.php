@@ -4,12 +4,14 @@ namespace Tests\Feature\Rutas;
 
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Departamento;
 use App\Models\Dte;
 use App\Models\DteLinea;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\Ruta;
+use App\Models\RutaCobertura;
 use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\VentasRutas;
@@ -119,7 +121,7 @@ class VentasRutasTest extends TestCase
             foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', 'vendedor'] as $rol) {
                 $this->actingAs(User::factory()->create()->assignRole($rol));
                 foreach (['index', 'excel', 'pdf'] as $accion) {
-                    $this->get(route('rutas.ventas.'.$accion, ['canal' => $canal]))->assertStatus(in_array($rol, ['administrador', 'jefatura', 'facturacion']) ? 200 : 403);
+                    $this->get(route('rutas.ventas.'.$accion, ['canal' => $canal]))->assertStatus(in_array($rol, ['administrador', 'jefatura']) ? 200 : 403);
                 }
             }
         }
@@ -286,7 +288,7 @@ class VentasRutasTest extends TestCase
         $this->get(route('rutas.ventas.pdf'))->assertRedirect(route('login'));
         foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', 'vendedor'] as $rol) {
             $respuesta = $this->actingAs(User::factory()->create()->assignRole($rol))->get(route('rutas.ventas.pdf'));
-            if (in_array($rol, ['administrador', 'jefatura', 'facturacion'])) {
+            if (in_array($rol, ['administrador', 'jefatura'])) {
                 $respuesta->assertOk()->assertHeader('content-type', 'application/pdf');
                 $this->assertStringStartsWith('%PDF', $respuesta->getContent());
             } else {
@@ -357,13 +359,14 @@ class VentasRutasTest extends TestCase
 
     public function test_permisos_en_ambos_endpoints(): void
     {
-        foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', null] as $rol) {
+        // Ventas es solo de Administrador y Jefatura (Melqui, 11/11/2026): ni Facturación ni el jefe de vendedores.
+        foreach (['administrador', 'jefatura', 'facturacion', 'jefe_vendedores', 'contabilidad', 'produccion', null] as $rol) {
             $user = User::factory()->create();
             if ($rol) {
                 $user->assignRole($rol);
             }
             foreach (['index', 'excel'] as $accion) {
-                $this->actingAs($user)->get(route('rutas.ventas.'.$accion))->assertStatus(in_array($rol, ['administrador', 'jefatura', 'facturacion']) ? 200 : 403);
+                $this->actingAs($user)->get(route('rutas.ventas.'.$accion))->assertStatus(in_array($rol, ['administrador', 'jefatura']) ? 200 : 403);
             }
         }
     }
@@ -485,6 +488,34 @@ class VentasRutasTest extends TestCase
         $this->assertSame('Occidente', $this->ventas()['rutas'][0]['nombre']);
     }
 
+    /**
+     * Ventas por zona usa el criterio del tablero: la ruta de la sala o, si no tiene, la zona
+     * que cubre su lugar. Antes la sala sin ruta fija caía siempre en «Sin zona».
+     */
+    public function test_ventas_por_zona_cuenta_la_sala_sin_ruta_fija_en_la_zona_que_cubre_su_lugar(): void
+    {
+        $dep = Departamento::updateOrCreate(['codigo' => '12'], ['nombre' => 'San Miguel', 'activo' => true]);
+        $oriente = Ruta::create(['nombre' => 'Oriente']);
+        RutaCobertura::create(['ruta_id' => $oriente->id, 'departamento_id' => $dep->id]);
+        $this->sala->update(['departamento_id' => $dep->id]);
+        $lejana = $this->sala->cliente->sucursales()->create(['nombre' => 'Sala Lejana', 'codigo' => '002']);
+        // De una ruta desactivada y sin cobertura: sin zona, como en el tablero.
+        $vieja = $this->sala->cliente->sucursales()->create(['nombre' => 'Sala Vieja', 'codigo' => '003', 'ruta_id' => Ruta::create(['nombre' => 'Retirada', 'activa' => false])->id]);
+        $this->documento(100);
+        $this->documento(30, ['cliente_sucursal_id' => $lejana->id]);
+        $this->documento(5, ['cliente_sucursal_id' => $vieja->id]);
+
+        $zonas = collect($this->ventas()['rutas'])->keyBy('nombre');
+        $this->assertSame(100.0, $zonas['Oriente']['actual']);
+        $this->assertSame($oriente->id, $zonas['Oriente']['id']);
+        $this->assertSame(35.0, $zonas['Sin zona']['actual']);
+        $this->assertCount(2, $zonas);
+        // El filtro por zona usa el mismo criterio, y la suma sigue siendo el total.
+        $this->assertSame(100.0, $this->ventas(['ruta' => $oriente->id])['totales']['actual']);
+        $this->assertSame(35.0, $this->ventas(['ruta' => 0])['totales']['actual']);
+        $this->assertSame(135.0, $this->ventas()['totales']['actual']);
+    }
+
     public function test_periodos_calendario_y_rango_validado(): void
     {
         $p = $this->ventas()['periodo'];
@@ -544,7 +575,8 @@ class VentasRutasTest extends TestCase
             DB::flushQueryLog();
             $this->ventas();
             $this->assertSame($consultas, count(DB::getQueryLog()));
-            $this->assertSame(1, $consultas);
+            // Las líneas, y el catálogo de zonas para saber la de cada sala (rutas activas y su cobertura).
+            $this->assertSame(3, $consultas);
         } finally {
             DB::disableQueryLog();
         }

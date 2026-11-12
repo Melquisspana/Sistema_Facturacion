@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -131,19 +130,6 @@ class SalidaRuta extends Model
             ->withTimestamps();
     }
 
-    /**
-     * Quién quedó a cargo de este viaje, si alguien lo hizo.
-     *
-     * Es `hasOne` y no un campo de la salida porque el rol vive en el participante: la misma
-     * persona es responsable de un viaje y acompañante del siguiente. Que NO haya
-     * responsable es válido —una salida de una sola persona no lo necesita—.
-     */
-    public function responsable(): HasOne
-    {
-        return $this->hasOne(SalidaRutaParticipante::class, 'salida_ruta_id')
-            ->where('rol', RolEnSalida::Responsable->value);
-    }
-
     /** Los CCF que lleva esta salida y qué pasó con cada uno. */
     public function entregas(): HasMany
     {
@@ -165,17 +151,6 @@ class SalidaRuta extends Model
     public function gastos(): HasMany
     {
         return $this->hasMany(SalidaRutaGasto::class, 'salida_ruta_id');
-    }
-
-    /** Quién entregó el dinero de toda la salida, al terminar la ruta. */
-    public function entregaDinero(): BelongsTo
-    {
-        return $this->belongsTo(PersonalRuta::class, 'entrega_dinero_personal_id');
-    }
-
-    public function liquidadaPor(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'liquidada_por');
     }
 
     /**
@@ -224,7 +199,7 @@ class SalidaRuta extends Model
         return $this->esViaje() ? $this->nombreViaje() : $this->ruta->nombre;
     }
 
-    /** Ruta terminada y liquidada: ya no se tocan sus días, entregas ni gastos. */
+    /** Una salida de antes, ya liquidada (hasta el 11/11/2026): no se tocan sus días, entregas ni gastos. */
     public function estaLiquidada(): bool
     {
         return $this->liquidada_en !== null;
@@ -266,12 +241,6 @@ class SalidaRuta extends Model
 
     // ------------------------------------------------------------ transiciones
 
-    /** Arranca la salida. Solo desde `planificada`. */
-    public function iniciar(): bool
-    {
-        return $this->transicionar(EstadoSalidaRuta::EnCurso);
-    }
-
     /**
      * Cierra la salida y deja constancia del regreso REAL. Solo desde `en_curso`.
      * Si no se indica fecha se usa hoy, que es el caso normal (se cierra al volver).
@@ -308,17 +277,15 @@ class SalidaRuta extends Model
     /**
      * Quiénes van, para leer: «Ana Ficticia (encabeza), Beto Ejemplo y Carla Inventada».
      * Quien encabeza va primero y marcado (solo si van varios y no es un viaje); los demás, por nombre.
-     * Con `$sin` se deja afuera a una persona: en «Mi salida», «Vas con …» no se nombra a
-     * quien mira. Usa `personal` (con el rol en el pivote): cargarlo antes en listas.
+     * Usa `personal` (con el rol en el pivote): cargarlo antes en listas.
      */
-    public function quienesVan(?int $sin = null): string
+    public function quienesVan(): string
     {
         $encabeza = fn (PersonalRuta $p) => $p->pivot?->rol === RolEnSalida::Responsable->value;
         // En el viaje nadie encabeza: es de quien lo abrió y los demás solo entregaron algo suyo.
         $marcar = ! $this->esViaje() && $this->personal->count() > 1;
 
         return $this->personal
-            ->reject(fn (PersonalRuta $p) => $p->id === $sin)
             ->sortBy(fn (PersonalRuta $p) => ($encabeza($p) ? '0' : '1').mb_strtolower($p->nombre))
             ->map(fn (PersonalRuta $p) => $p->nombre.($marcar && $encabeza($p) ? ' (encabeza)' : ''))
             ->join(', ', ' y ');

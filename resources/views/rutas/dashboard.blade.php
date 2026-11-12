@@ -16,7 +16,6 @@
             $R::PRONTO => ['Le toca', 'bg-amber-100 text-amber-800'],
             $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700'],
             $R::EN_RUTA => ['Viaje abierto', 'bg-sky-100 text-sky-700'],
-            $R::PROGRAMADA => ['Programada', 'bg-indigo-100 text-indigo-700'],
             $R::SIN_RITMO => ['Sin ritmo', 'bg-gray-100 text-gray-600'],
             $R::SIN_SALIDAS => ['Sin viajes', 'bg-gray-100 text-gray-600'],
         ];
@@ -80,34 +79,22 @@
                 @endif
             </section>
 
-            {{-- ===================== En camino y programadas =====================
-                 «Viajes abiertos» son los viajes (y las salidas de antes) en curso, igual que el número
-                 del resumen. «Programadas» solo aparece si quedó alguna salida armada a mano
-                 antes del 10/11/2026 sin empezar: ya no se arman. --}}
-            @foreach ([
-                ['id' => 'en-camino', 'titulo' => 'Viajes abiertos', 'lista' => $enCamino],
-                ['id' => 'programadas', 'titulo' => 'Programadas', 'lista' => $programadas],
-            ] as $grupo)
-                @continue($grupo['lista']->isEmpty())
-                <section id="{{ $grupo['id'] }}" aria-labelledby="{{ $grupo['id'] }}-titulo">
-                    <h2 id="{{ $grupo['id'] }}-titulo" class="{{ $titulo }}">{{ $grupo['titulo'] }}</h2>
+            {{-- ===================== Viajes abiertos =====================
+                 Los viajes (y las salidas de antes) en curso, igual que el número del resumen. --}}
+            @if ($enCamino->isNotEmpty())
+                <section id="en-camino" aria-labelledby="en-camino-titulo">
+                    <h2 id="en-camino-titulo" class="{{ $titulo }}">Viajes abiertos</h2>
                     <ul class="mt-3 space-y-3">
-                        @foreach ($grupo['lista'] as ['salida' => $salida, 'resumen' => $avance])
-                            @php $enCurso = $salida->estado === \App\Enums\EstadoSalidaRuta::EnCurso; @endphp
-                            <li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 {{ $enCurso ? 'border-sky-200 bg-sky-50' : 'border-gray-200 bg-white' }}">
+                        @foreach ($enCamino as ['salida' => $salida, 'resumen' => $avance])
+                            <li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
                                 <div class="min-w-0">
-                                    <p class="font-semibold {{ $enCurso ? 'text-sky-900' : 'text-gray-800' }}">
+                                    <p class="font-semibold text-sky-900">
                                         {{ $salida->titulo() }} · {{ $salida->quienesVan() ?: 'Sin vendedores' }}
                                     </p>
-                                    <p class="text-sm {{ $enCurso ? 'text-sky-800' : 'text-gray-600' }}">
-                                        @if ($enCurso)
-                                            {{ $salida->estadoLegible() }} {{ $salida->fecha_inicio->isToday() ? 'desde hoy' : 'desde el '.$salida->fecha_inicio->format('d/m/Y') }}
-                                            · {{ $avance['total'] === 0 ? 'todavía sin facturas' : $avance['entregados'].' de '.$avance['total'].' entregados' }}
-                                            @if ($avance['no_entregados'] > 0) · {{ $avance['no_entregados'] }} no entregado{{ $avance['no_entregados'] === 1 ? '' : 's' }} @endif
-                                        @else
-                                            Sale {{ $salida->fecha_inicio->isToday() ? 'hoy' : 'el '.$salida->fecha_inicio->format('d/m/Y') }}
-                                            · lleva {{ $avance['total'] }} CCF
-                                        @endif
+                                    <p class="text-sm text-sky-800">
+                                        {{ $salida->estadoLegible() }} {{ $salida->fecha_inicio->isToday() ? 'desde hoy' : 'desde el '.$salida->fecha_inicio->format('d/m/Y') }}
+                                        · {{ $avance['total'] === 0 ? 'todavía sin facturas' : $avance['entregados'].' de '.$avance['total'].' entregados' }}
+                                        @if ($avance['no_entregados'] > 0) · {{ $avance['no_entregados'] }} no entregado{{ $avance['no_entregados'] === 1 ? '' : 's' }} @endif
                                     </p>
                                 </div>
                                 <a href="{{ route('rutas.salidas.show', $salida) }}" class="{{ $secundario }}">{{ $salida->esViaje() ? 'Ver viaje' : 'Ver salida' }}</a>
@@ -115,7 +102,7 @@
                         @endforeach
                     </ul>
                 </section>
-            @endforeach
+            @endif
 
             {{-- ===================== Rutas, las más urgentes primero ===================== --}}
             <section id="rutas" aria-labelledby="rutas-titulo">
@@ -154,12 +141,6 @@
                                 </div>
 
                                 <div class="mt-2 space-y-0.5 text-sm text-gray-700">
-                                    {{-- Solo para una salida de antes que quedó programada. --}}
-                                    @if (! $fila['enCurso'] && $fila['proxima'])
-                                        <p class="font-medium text-indigo-700">
-                                            Ya tiene salida armada para {{ $fila['proxima']->fecha_inicio->isToday() ? 'hoy' : 'el '.$fila['proxima']->fecha_inicio->format('d/m/Y') }}
-                                        </p>
-                                    @endif
                                     <p>
                                         @if ($fila['enCurso'])
                                             Viaje abierto desde {{ $fila['enCurso']->fecha_inicio->isToday() ? 'hoy' : 'el '.$fila['enCurso']->fecha_inicio->format('d/m/Y') }}
@@ -195,8 +176,8 @@
 
                                 <div class="mt-auto flex flex-wrap gap-2 pt-4">
                                     <a href="{{ route('rutas.dashboard', ['ruta' => $ruta->id]) }}#salas" class="{{ $secundario }}">Ver salas</a>
-                                    @if ($fila['enCurso'] ?? $fila['proxima'])
-                                        <a href="{{ route('rutas.salidas.show', $fila['enCurso'] ?? $fila['proxima']) }}" class="{{ $secundario }}">{{ ($fila['enCurso'] ?? $fila['proxima'])->esViaje() ? 'Ver viaje' : 'Ver salida' }}</a>
+                                    @if ($fila['enCurso'])
+                                        <a href="{{ route('rutas.salidas.show', $fila['enCurso']) }}" class="{{ $secundario }}">{{ $fila['enCurso']->esViaje() ? 'Ver viaje' : 'Ver salida' }}</a>
                                     @endif
                                 </div>
                             </article>
@@ -366,7 +347,13 @@
             @if ($salasSinZona > 0)
                 <a href="{{ route('rutas.rutas.index') }}"
                    class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
-                    <span><strong>{{ $salasSinZona }} {{ $salasSinZona === 1 ? 'sala activa' : 'salas activas' }} sin zona.</strong> Ninguna zona cubre su distrito ni su departamento.</span>
+                    <span>
+                        <strong>{{ $salasSinZona }} {{ $salasSinZona === 1 ? 'sala activa' : 'salas activas' }} sin zona.</strong> Ninguna zona cubre su distrito ni su departamento.
+                        {{-- Sus CCF no son de ninguna tarjeta de zona: se cuentan acá (clave 0). --}}
+                        @if (($pendientes[0]['cantidad'] ?? 0) > 0)
+                            {{ $pendientes[0]['cantidad'] }} CCF por entregar · ${{ number_format($pendientes[0]['monto'], 2) }}.
+                        @endif
+                    </span>
                     <span class="shrink-0 font-medium">Ver zonas</span>
                 </a>
             @endif

@@ -2,28 +2,19 @@
      La regla (qué se puede hacer y cuándo) vive en EntregasCcf; acá solo se dibuja lo
      que el estado permite.
 
-     Cada tarjeta pregunta quién lo entregó, entre los que van en la salida (en «Mi
-     salida» viene elegido el vendedor). Lo que trae albarán de Calleja ya consta
-     entregado: la tarjeta solo pide quién. Arriba, «Faltan / Entregados / Todos» filtra
-     la lista (?ver=), sin JavaScript. --}}
+     Solo lo dibuja el detalle de la oficina: el vendedor marca desde «Por entregar».
+     Cada tarjeta pregunta quién lo entregó, entre los que van en la salida. Lo que trae
+     albarán de Calleja ya consta entregado: la tarjeta solo pide quién. Arriba, «Faltan /
+     Entregados / Todos» filtra la lista (?ver=), sin JavaScript. --}}
 @php
-    $modoVendedor = $modoVendedor ?? false;
-    $fechaHoy = \App\Support\HoraNegocio::fechaHoy();
-    $cierreHoy = $salida->cierreDelDia($fechaHoy);
-    $diaCerrado = $cierreHoy?->estaCerrado() ?? false;
-    $registrable = $registrable && ! $diaCerrado;
-    $prefijoCierre = $modoVendedor ? 'rutas.mi-salida.' : 'rutas.salidas.';
+    // Un día que una salida de antes dejó cerrado no recibe más entregas.
+    $registrable = $registrable && ! $salida->diaCerrado();
     $saldosAnteriores = app(\App\Services\Rutas\CierreDia::class)->saldosAnteriores($salida, $porSala->keys()->all());
-    $prefijoEntregas = $modoVendedor ? 'rutas.mi-salida.' : 'rutas.salidas.entregas.';
+    $prefijoEntregas = 'rutas.salidas.entregas.';
     $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
-    $puedeMarcar = ($modoVendedor || $puedeGestionar) && $registrable && $participantes->isNotEmpty();
-    // «Terminar día» en la hoja de la oficina: también el jefe de vendedores, aunque no haya ido.
-    $puedeTerminarDia = ! $modoVendedor && auth()->user()->canAny(['rutas.gestionar', 'rutas.salidas.terminar']);
-    // El viaje y la automática no cierran días ni se liquidan: su control es el PDF del día.
-    $cierraDias = ! $salida->esAutomatica();
-    // Quién viene elegido en cada tarjeta: en «Mi salida», el vendedor; en la oficina, el
-    // responsable o, si va una sola persona, ella.
-    $quien = $modoVendedor ? $persona?->id : ($preseleccion ?? $participantes->first()?->rutas_personal_id);
+    $puedeMarcar = $puedeGestionar && $registrable && $participantes->isNotEmpty();
+    // Quién viene elegido en cada tarjeta: el responsable o, si va una sola persona, ella.
+    $quien = $preseleccion ?? $participantes->first()?->rutas_personal_id;
     // Pastillas con el nombre corto (nombre y primer apellido) para que entren varias por renglón en el celular; el completo, en el title.
     $pastilla = 'inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 dark:text-paper-100 dark:ring-ink-500';
 
@@ -46,10 +37,6 @@
     </nav>
 @endif
 
-@if ($salida->estado === \App\Enums\EstadoSalidaRuta::Planificada && $resumen['total'] > 0 && ! ($futura ?? false))
-    <p class="mt-4 text-sm text-gray-500 dark:text-paper-300">Tocá «Salir ahora» para empezar a marcar entregas.</p>
-@endif
-
 @if ($ver !== 'todos' && ! $porSala->collapse()->contains($seVe))
     <div class="{{ $caja }} mt-4 px-5 py-8 text-center">
         <p class="text-base font-medium text-gray-800 dark:text-paper-100">{{ $ver === 'faltan' ? 'No falta marcar ningún CCF.' : 'Todavía no hay CCF entregados.' }}</p>
@@ -68,7 +55,7 @@
             $resolucion = $resoluciones[$entrega->dte_id] ?? null;
             $albaran = $resolucion?->estaVinculado() ? $resolucion->albaran : null;
             // Tocar la sala o el número descarga el PDF del CCF al celular.
-            $verCcf = $entrega->dte ? route($modoVendedor ? 'rutas.mi-salida.ccf' : 'rutas.salidas.ccf', [$salida, $entrega]) : null;
+            $verCcf = $entrega->dte ? route('rutas.salidas.ccf', [$salida, $entrega]) : null;
         @endphp
         <div class="{{ $caja }} mt-3 px-4 py-3">
             @if ($verCcf)
@@ -112,7 +99,7 @@
                         @endif
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">
-                            {{ $entrega->entregadoPor?->nombreCorto() }} · {{ $entrega->fecha_resultado?->format($modoVendedor ? 'H:i' : 'd/m/Y') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
+                            {{ $entrega->entregadoPor?->nombreCorto() }} · {{ $entrega->fecha_resultado?->format('d/m/Y') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
                         </p>
                     @elseif ($entrega->resultado === \App\Enums\ResultadoEntrega::NoEntregado)
                         <p class="text-sm font-medium text-red-700 dark:text-red-400">✗ No entregado</p>
@@ -121,7 +108,7 @@
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}{{ $puedeMarcar ? ' · falta quién lo entregó' : '' }}</p>
                     @endif
-                    @if (($modoVendedor ? auth()->user()->can('deshacer', [$salida, $entrega]) : ($puedeGestionar && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString())))) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
+                    @if ($puedeGestionar && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString())) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
                         <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}" class="mt-1">
                             @csrf @method('PATCH')
                             <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>
@@ -188,31 +175,8 @@
     @endif
 @endforelse
 
-@if ($modoVendedor || $puedeTerminarDia)
-    @include('rutas.salidas._gastos')
-    @if ($diaCerrado)
-        @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])
-    @elseif ($cierraDias && ($registrable || (! $modoVendedor && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada)) && ($salida->entregas()->entregadas()->sinFacturadosDespues()->whereDate('fecha_resultado', $fechaHoy)->exists() || $salida->gastos()->whereDate('fecha', $fechaHoy)->exists()))
-        <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Terminar día</a>
-    @endif
-    @if ($modoVendedor)
-        {{-- Al volver: lo que sobró lleva su motivo y el dinero de todos los días se entrega junto.
-             Plegado y con pregunta, para que no se confunda con marcar entregas o terminar el día. --}}
-        <details class="mt-3">
-            <summary class="flex min-h-11 w-full cursor-pointer list-none items-center justify-center rounded-xl bg-white px-5 py-3 font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500">Terminar ruta</summary>
-            <div class="{{ $caja }} mt-2 space-y-3 px-5 py-4">
-                <p class="font-semibold text-gray-800 dark:text-paper-100">¿Ya terminaron toda la ruta?</p>
-                <p class="text-sm text-gray-600 dark:text-paper-300">Para cerrar solo hoy, usá «Terminar día». Al terminar la ruta se anota por qué sobró cada CCF y se entrega el dinero.</p>
-                <a href="{{ route('rutas.mi-salida.terminar', $salida) }}" class="flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-3 font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Sí, terminar ruta</a>
-            </div>
-        </details>
-    @endif
-    @if (! $modoVendedor)
-        @foreach ($salida->cierres()->whereDate('fecha', '!=', $fechaHoy)->orderByDesc('fecha')->get() as $cierreAnterior)
-            <a href="{{ route($prefijoCierre.'cierre', ['salida' => $salida, 'fecha' => $cierreAnterior->fecha->toDateString()]) }}" class="mt-3 flex min-h-11 items-center text-sm underline">Día {{ $cierreAnterior->fecha->format('d/m/Y') }}{{ $cierreAnterior->estaCerrado() ? '' : ' · Reabierta' }}</a>
-        @endforeach
-    @endif
-@endif
+{{-- Los gastos de hoy: los ve quien abre el detalle; los anota y los borra la oficina (rutas.gestionar). --}}
+@include('rutas.salidas._gastos', ['modoVendedor' => false])
 
 {{-- ¿Falta algo? Lo poco frecuente va plegado. --}}
 @if ($puedeGestionar && $abierta)

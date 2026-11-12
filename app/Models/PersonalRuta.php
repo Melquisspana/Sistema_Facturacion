@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -109,13 +108,6 @@ class PersonalRuta extends Model
         return $this->hasMany(SalidaRutaParticipante::class, 'rutas_personal_id');
     }
 
-    public function salidas(): BelongsToMany
-    {
-        return $this->belongsToMany(SalidaRuta::class, 'salida_ruta_participantes', 'rutas_personal_id', 'salida_ruta_id')
-            ->withPivot(['rol'])
-            ->withTimestamps();
-    }
-
     // ---------------------------------------------------------------- lectura
 
     /** @return Collection<int, FuncionPersonalRuta> */
@@ -130,18 +122,6 @@ class PersonalRuta extends Model
     public function tieneFuncion(FuncionPersonalRuta $funcion): bool
     {
         return $this->funcionesEnum()->contains($funcion);
-    }
-
-    /**
-     * ¿Puede quedar a cargo de una salida?
-     *
-     * Es una SUGERENCIA para la pantalla, no un candado: la operación real designa a quien
-     * está disponible, y bloquear el formulario porque a alguien no le marcaron una casilla
-     * haría que se declare cualquier cosa con tal de seguir.
-     */
-    public function puedeSerResponsable(): bool
-    {
-        return $this->tieneFuncion(FuncionPersonalRuta::ResponsableSalida);
     }
 
     /** Primer nombre + primer apellido, que es como se llama a la gente en voz alta. */

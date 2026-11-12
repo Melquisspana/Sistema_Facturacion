@@ -12,9 +12,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * Ruta comercial de visita/cobro. Ver la migración para el detalle del alcance.
  *
- * SIN SoftDeletes a propósito: una ruta no se elimina, se DESACTIVA. Desactivarla
- * la saca de los formularios de salida nueva pero conserva las salas asignadas y
- * el historial de salidas ya hechas, que es lo que se querría consultar.
+ * SIN SoftDeletes a propósito: una ruta no se elimina, se DESACTIVA. Desactivada deja
+ * de ser zona (no nombra viajes ni agrupa el tablero), pero conserva las salas que la
+ * tenían puesta y el historial de salidas ya hechas, que es lo que se querría consultar.
  *
  * Auditoría: alta/edición/activación con spatie/activitylog.
  */
@@ -58,11 +58,6 @@ class Ruta extends Model
     public function sucursales(): HasMany
     {
         return $this->hasMany(ClienteSucursal::class, 'ruta_id');
-    }
-
-    public function salidas(): HasMany
-    {
-        return $this->hasMany(SalidaRuta::class, 'ruta_id');
     }
 
     /** Departamentos completos y distritos que atiende. Alimenta la propuesta de salas. */

@@ -27,6 +27,28 @@ class PropuestaRutas
     /** @var array{distritos: array<int, Ruta>, departamentos: array<int, Ruta>}|null */
     private ?array $indice = null;
 
+    /** @var Collection<int, Ruta>|null */
+    private ?Collection $activas = null;
+
+    /** Las rutas activas (las zonas), por nombre. Una sola consulta por instancia. */
+    public function activas(): Collection
+    {
+        return $this->activas ??= Ruta::activas()->orderBy('nombre')->get();
+    }
+
+    /**
+     * La zona de una sala, como la cuenta el tablero: su ruta, si está activa; si no, la que
+     * cubre su distrito o su departamento; si ninguna, `null` («Sin zona»). Recibe los tres
+     * ids sueltos para servir también a las consultas que no cargan el modelo de la sala.
+     */
+    public function zonaDe(?int $rutaId, ?int $distritoId, ?int $departamentoId): ?Ruta
+    {
+        $indice = $this->indice();
+
+        return ($rutaId !== null ? $this->activas()->find($rutaId) : null)
+            ?? $indice['distritos'][$distritoId] ?? $indice['departamentos'][$departamentoId] ?? null;
+    }
+
     /** La ruta que la cobertura le propone a la sala, o `null` si ninguna la cubre. */
     public function para(ClienteSucursal $sala): ?Ruta
     {
@@ -102,14 +124,14 @@ class PropuestaRutas
             return $this->indice;
         }
 
-        $coberturas = RutaCobertura::query()
-            ->whereHas('ruta', fn ($q) => $q->where('activa', true))
-            ->with('ruta:id,nombre')
-            ->get();
+        // Solo la cobertura de las rutas activas, con la ruta tomada de {@see activas()}: dos
+        // consultas en total (las rutas y las coberturas), haya las zonas que haya.
+        $activas = $this->activas()->getDictionary();
+        $coberturas = RutaCobertura::query()->whereIn('ruta_id', array_keys($activas))->get(['ruta_id', 'distrito_id', 'departamento_id']);
 
         return $this->indice = [
-            'distritos' => $coberturas->whereNotNull('distrito_id')->mapWithKeys(fn ($c) => [$c->distrito_id => $c->ruta])->all(),
-            'departamentos' => $coberturas->whereNotNull('departamento_id')->mapWithKeys(fn ($c) => [$c->departamento_id => $c->ruta])->all(),
+            'distritos' => $coberturas->whereNotNull('distrito_id')->mapWithKeys(fn ($c) => [$c->distrito_id => $activas[$c->ruta_id]])->all(),
+            'departamentos' => $coberturas->whereNotNull('departamento_id')->mapWithKeys(fn ($c) => [$c->departamento_id => $activas[$c->ruta_id]])->all(),
         ];
     }
 }

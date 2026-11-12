@@ -7,10 +7,10 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -61,7 +61,7 @@ class SalidaRutaTest extends TestCase
             'estado' => now()->toDateString() < '2026-08-14' ? EstadoSalidaRuta::Planificada : EstadoSalidaRuta::EnCurso,
             'created_by' => $admin->id,
         ] + $extra);
-        app(ParticipantesSalida::class)->sincronizar($salida, $personal, null);
+        SalidaDePrueba::participantes($salida, $personal, null);
 
         return $salida;
     }
@@ -95,61 +95,34 @@ class SalidaRutaTest extends TestCase
 
     // ------------------------------------------------------------ transiciones
 
-    public function test_ciclo_completo_planificada_en_curso_finalizada(): void
+    /** El modelo cierra el viaje (lo usa el cierre solo): es lo único que escribe el regreso real. */
+    public function test_finalizar_escribe_el_regreso_real_y_solo_desde_en_curso(): void
     {
-        $this->travelTo('2026-08-13 18:00:00');
-
         $admin = $this->admin();
-        // Armada la víspera: queda planificada hasta el 14/08.
         $salida = $this->crearSalida($admin, $this->ruta(), [$this->vendedor('Carlos')->id]);
-        $this->assertSame(EstadoSalidaRuta::Planificada, $salida->estado);
-
-        // Sale el 14/08, no antes: ese día se inicia.
-        $this->travelTo('2026-08-14 07:00:00');
-        $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida))->assertRedirect();
-        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->estado);
 
         Carbon::setTestNow('2026-08-16 18:00:00');
-        $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida))->assertRedirect();
+        $this->assertTrue($salida->finalizar());
         $salida->refresh();
         $this->assertSame(EstadoSalidaRuta::Finalizada, $salida->estado);
-        // Finalizar es lo único que escribe la fecha real de regreso.
         $this->assertSame('2026-08-16', $salida->fecha_fin_real->toDateString());
-
         Carbon::setTestNow();
-    }
 
-    public function test_no_se_puede_finalizar_una_salida_que_nunca_inicio(): void
-    {
-        $admin = $this->admin();
-        // Las planificadas ya no se crean desde la pantalla, pero las viejas existen.
-        $salida = SalidaRuta::create(['ruta_id' => $this->ruta()->id, 'fecha_inicio' => '2026-08-14', 'estado' => EstadoSalidaRuta::Planificada]);
-
-        $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida))
-            ->assertRedirect()
-            ->assertSessionHas('error');
-
-        $salida->refresh();
-        $this->assertSame(EstadoSalidaRuta::Planificada, $salida->estado);
-        $this->assertNull($salida->fecha_fin_real);
-    }
-
-    public function test_una_salida_finalizada_no_vuelve_atras_ni_se_edita(): void
-    {
-        $admin = $this->admin();
-        $salida = $this->crearSalida($admin, $this->ruta(), [$this->vendedor('Carlos')->id]);
-        $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida));
-        $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida));
-
-        $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida))->assertSessionHas('error');
+        // Cerrada, no vuelve atrás.
+        $this->assertFalse($salida->cancelar());
         $this->actingAs($admin)->patch(route('rutas.salidas.cancelar', $salida))->assertSessionHas('error');
-        // La pantalla de editar se retiró: el enlace viejo lleva a la hoja.
-        $this->actingAs($admin)->get('/rutas/salidas/'.$salida->id.'/editar')->assertRedirect(route('rutas.salidas.show', $salida));
-
         $this->assertSame(EstadoSalidaRuta::Finalizada, $salida->refresh()->estado);
+
+        // La que nunca salió no se finaliza.
+        $planificada = SalidaRuta::create(['ruta_id' => $this->ruta('Oriente')->id, 'fecha_inicio' => '2026-08-14', 'estado' => EstadoSalidaRuta::Planificada]);
+        $this->assertFalse($planificada->finalizar());
+        $this->assertSame(EstadoSalidaRuta::Planificada, $planificada->refresh()->estado);
+        $this->assertNull($planificada->fecha_fin_real);
     }
 
-    public function test_se_puede_cancelar_desde_planificada_y_desde_en_curso(): void
+    /** Ya nadie arma ni empieza salidas (11/11/2026): la que hubiera quedado programada solo se cancela. */
+    public function test_la_que_quedo_programada_ya_no_sale_y_la_oficina_la_cancela(): void
     {
         $admin = $this->admin();
         $ruta = $this->ruta();
@@ -158,15 +131,21 @@ class SalidaRutaTest extends TestCase
         $this->travelTo('2026-08-13 18:00:00');
         $planificada = $this->crearSalida($admin, $ruta, [$carlos->id]);
         $this->assertSame(EstadoSalidaRuta::Planificada, $planificada->estado);
-        $this->actingAs($admin)->patch(route('rutas.salidas.cancelar', $planificada));
+        $this->travelTo('2026-08-14 07:00:00');
+        $this->actingAs($admin)->get(route('rutas.salidas.show', $planificada))->assertOk()
+            ->assertDontSee('Salir ahora')->assertSee('Quedó programada y ya no sale')->assertSee('>Cancelar</button>', false);
+        $this->patch('/rutas/salidas/'.$planificada->id.'/iniciar')->assertNotFound();
+        $this->assertSame(EstadoSalidaRuta::Planificada, $planificada->refresh()->estado);
+
+        $this->patch(route('rutas.salidas.cancelar', $planificada))->assertSessionHas('status');
         $this->assertSame(EstadoSalidaRuta::Cancelada, $planificada->refresh()->estado);
 
+        // La que está en camino también se cancela, y cancelar nunca inventa un regreso.
         $enCurso = $this->crearSalida($admin, $ruta, [$carlos->id]);
-        $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $enCurso));
-        $this->actingAs($admin)->patch(route('rutas.salidas.cancelar', $enCurso));
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $enCurso->estado);
+        $this->patch(route('rutas.salidas.cancelar', $enCurso));
         $enCurso->refresh();
         $this->assertSame(EstadoSalidaRuta::Cancelada, $enCurso->estado);
-        // Cancelar nunca inventa un regreso: la salida no terminó, se anuló.
         $this->assertNull($enCurso->fecha_fin_real);
     }
 
@@ -181,15 +160,16 @@ class SalidaRutaTest extends TestCase
         $jose = $this->vendedor('José');
         $salida = $this->crearSalida($admin, $this->ruta(), [$carlos->id, $jose->id]);
 
-        $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida));
+        $this->actingAs($admin)->patch(route('rutas.salidas.cancelar', $salida));
 
         $descripciones = Activity::where('log_name', 'salida_ruta')->pluck('description');
 
-        $this->assertContains('finalizó la salida', $descripciones);
+        $this->assertContains('canceló la salida', $descripciones);
 
-        $fin = Activity::where('description', 'finalizó la salida')->sole();
+        $fin = Activity::where('description', 'canceló la salida')->sole();
+        $this->assertSame($admin->id, $fin->causer_id);
         $this->assertSame('en_curso', $fin->properties['estado_anterior']);
-        $this->assertSame('finalizada', $fin->properties['estado_nuevo']);
+        $this->assertSame('cancelada', $fin->properties['estado_nuevo']);
     }
 
     // ------------------------------------------------------------------ pantallas
@@ -198,12 +178,11 @@ class SalidaRutaTest extends TestCase
     {
         $admin = $this->admin();
         $salida = $this->crearSalida($admin, $this->ruta('SAN MIGUEL'), [$this->vendedor('Carlos')->id, $this->vendedor('José')->id]);
-        $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida));
 
         $this->actingAs($admin)->get(route('rutas.salidas.show', $salida))
             ->assertOk()
             ->assertSee('SAN MIGUEL')
-            ->assertSee('En curso')
+            ->assertSee('Abierta')
             ->assertSee('Carlos')
             ->assertSee('José')
             // La custodia del papel se retiró (26/09/2026).

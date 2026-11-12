@@ -307,8 +307,8 @@ Schedule::command('alertas:revisar')
 /*
 | Rutas: las salidas que se armaron solas en «Por entregar» los días anteriores se
 | finalizan temprano, antes de que salgan los vendedores. Sin esto quedaban en curso para
-| siempre (la ruta figuraba «en ruta» en el tablero y «Mi salida» abría la vieja). No las
-| liquida: siguen pendientes para la oficina. «Por entregar» hace lo mismo con la ruta que
+| siempre (la zona figuraba con viaje abierto en el tablero). No se liquidan: el dinero se
+| entrega con el PDF del día. «Por entregar» hace lo mismo con la zona que
 | marca, por si el planificador no corrió. Los viajes de varios días NO se cierran por
 | fecha: dejan de sumar tras un día sin pedidos y se cierran cuando todo está entregado
 | (App\Services\Rutas\Viajes::cerrarTerminados).

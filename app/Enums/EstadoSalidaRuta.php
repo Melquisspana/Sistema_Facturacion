@@ -34,12 +34,6 @@ enum EstadoSalidaRuta: string
         };
     }
 
-    /** ¿Se pueden editar todavía ruta, fechas y vendedores? */
-    public function esEditable(): bool
-    {
-        return $this === self::Planificada || $this === self::EnCurso;
-    }
-
     /** ¿La salida ya terminó (de una forma u otra)? */
     public function esTerminal(): bool
     {
@@ -70,11 +64,5 @@ enum EstadoSalidaRuta: string
             self::Finalizada => 'green',
             self::Cancelada => 'red',
         };
-    }
-
-    /** @return array<int, array{value: string, label: string}> */
-    public static function opciones(): array
-    {
-        return array_map(fn (self $e) => ['value' => $e->value, 'label' => $e->label()], self::cases());
     }
 }

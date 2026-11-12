@@ -18,6 +18,7 @@ use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\FacturarPedido;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
@@ -57,6 +58,7 @@ class PorEntregarController extends Controller
 
     public function index(Request $request): View
     {
+        app(FichaVendedor::class)->asegurar($request->user());
         $persona = $this->persona($request);
         $puedeMarcar = $persona !== null && $request->user()->can(PermisoSistema::RutasEntregasRegistrar->value);
 
@@ -145,7 +147,7 @@ class PorEntregarController extends Controller
     {
         $persona = $this->persona($request);
         if ($persona === null) {
-            return back()->with('error', 'Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.');
+            return back()->with('error', 'Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.');
         }
         abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);
 

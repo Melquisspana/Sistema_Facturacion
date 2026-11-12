@@ -15,10 +15,10 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -79,7 +79,7 @@ class RutasEnElCelularTest extends TestCase
     private function salida(Ruta $ruta, string $fecha, EstadoSalidaRuta $estado, array $van, ?PersonalRuta $encabeza = null): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => $fecha, 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, array_map(fn (PersonalRuta $p) => $p->id, $van), $encabeza?->id);
+        SalidaDePrueba::participantes($salida, array_map(fn (PersonalRuta $p) => $p->id, $van), $encabeza?->id);
 
         return $salida;
     }
@@ -94,42 +94,28 @@ class RutasEnElCelularTest extends TestCase
         ]);
     }
 
-    public function test_en_camino_son_solo_las_en_curso_y_las_programadas_van_aparte(): void
+    /** «Programadas» se retiró (11/11/2026): una salida de antes que quedó sin empezar ya no sale en el tablero. */
+    public function test_viajes_abiertos_son_solo_los_en_curso_y_ya_no_hay_programadas(): void
     {
         [$jefe, $fichaJefe] = $this->usuario('Ernesto Ficticio', RolSistema::JefeVendedores);
         $mario = PersonalRuta::create(['nombre' => 'Mario Inventado']);
         $costa = Ruta::create(['nombre' => 'Ruta Costa']);
-        $norte = Ruta::create(['nombre' => 'Ruta Norte']);
+        $norte = Ruta::create(['nombre' => 'Ruta Norte', 'frecuencia_objetivo_dias' => 7]);
         $this->salida($costa, '2026-11-02', EstadoSalidaRuta::EnCurso, [$mario]);
-        $this->salida($norte, '2026-11-05', EstadoSalidaRuta::Planificada, [$fichaJefe]);
+        // Norte se visitó hace 25 días con ritmo de 7 y tiene una salida que quedó programada.
+        SalidaRuta::create(['ruta_id' => $norte->id, 'fecha_inicio' => '2026-10-09', 'fecha_fin_real' => '2026-10-09', 'estado' => EstadoSalidaRuta::Finalizada]);
+        $programada = $this->salida($norte, '2026-11-05', EstadoSalidaRuta::Planificada, [$fichaJefe]);
 
         $this->actingAs($jefe)->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSeeInOrder(['1', 'viaje abierto'])
-            // «Viajes abiertos» lleva la en curso; la del jueves va en «Programadas», después.
-            ->assertSeeInOrder(['Viajes abiertos', 'Ruta Costa · Mario Inventado', 'Abierta desde el 02/11/2026', 'Programadas', 'Ruta Norte · Ernesto Ficticio', 'Sale el 05/11/2026'])
-            ->assertDontSee('Programada desde');
-    }
-
-    public function test_la_ruta_con_salida_armada_no_sale_como_atrasada(): void
-    {
-        [$jefe, $fichaJefe] = $this->usuario('Ernesto Ficticio', RolSistema::JefeVendedores);
-        $ruta = Ruta::create(['nombre' => 'Ruta Paracentral', 'frecuencia_objetivo_dias' => 7]);
-        // Se fue hace 25 días con ritmo de 7: 18 días tarde... pero ya tiene salida para el jueves.
-        SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => '2026-10-09', 'fecha_fin_real' => '2026-10-09', 'estado' => EstadoSalidaRuta::Finalizada]);
-        $programada = $this->salida($ruta, '2026-11-05', EstadoSalidaRuta::Planificada, [$fichaJefe]);
-
-        $respuesta = $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertOk();
-
-        $respuesta->assertSee('Ya tiene salida armada para el 05/11/2026')
-            ->assertSee(route('rutas.salidas.show', $programada))
-            ->assertDontSee('días tarde')
-            ->assertDontSee('Atrasada 18 días')
-            ->assertSeeInOrder(['0', 'zonas atrasadas']);
-
-        // Sin la salida armada, la misma ruta sí está atrasada.
-        $programada->cancelar();
-        $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('Atrasada 18 días');
+            ->assertSeeInOrder(['Viajes abiertos', 'Ruta Costa · Mario Inventado', 'Abierta desde el 02/11/2026'])
+            ->assertDontSee('Programadas')->assertDontSee('Programada')->assertDontSee('Ya tiene salida armada')
+            ->assertDontSee(route('rutas.salidas.show', $programada))
+            // La programada no «resuelve» la zona: se avisa su atraso real.
+            ->assertSee('Atrasada 18 días');
+        // Sigue en «Todos los viajes», de donde la oficina la cancela.
+        $this->get(route('rutas.salidas.index'))->assertOk()->assertSee(route('rutas.salidas.show', $programada));
     }
 
     public function test_los_nombres_van_con_comas_y_y_y_primero_quien_encabeza(): void
@@ -141,8 +127,6 @@ class RutasEnElCelularTest extends TestCase
         $salida = $this->salida($ruta, '2026-11-02', EstadoSalidaRuta::EnCurso, [$mario, $kevin, $fichaJefe], $mario);
 
         $this->assertSame('Mario Inventado (encabeza), Ernesto Ficticio y Kevin Ejemplo', $salida->quienesVan());
-        // En «Mi salida» no se nombra a quien mira; quien encabeza sigue marcado.
-        $this->assertSame('Mario Inventado (encabeza) y Kevin Ejemplo', $salida->quienesVan($fichaJefe->id));
         // Sin nadie que encabece, por nombre y sin marca.
         $sinCabeza = $this->salida(Ruta::create(['nombre' => 'Ruta Norte']), '2026-11-02', EstadoSalidaRuta::EnCurso, [$mario, $kevin]);
         $this->assertSame('Kevin Ejemplo y Mario Inventado', $sinCabeza->quienesVan());
@@ -150,7 +134,6 @@ class RutasEnElCelularTest extends TestCase
         $nombres = 'Mario Inventado (encabeza), Ernesto Ficticio y Kevin Ejemplo';
         $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('Ruta Costa · '.$nombres);
         $this->actingAs($jefe)->get(route('rutas.salidas.show', $salida))->assertSee($nombres)->assertDontSee('Inventado y Kevin Ejemplo y');
-        $this->actingAs($jefe)->get(route('rutas.mi-salida.show', $salida))->assertSee('Vas con Mario Inventado (encabeza) y Kevin Ejemplo');
     }
 
     public function test_un_no_entregado_va_en_singular_en_el_tablero_y_en_la_hoja(): void
@@ -176,11 +159,11 @@ class RutasEnElCelularTest extends TestCase
         $salida = $this->salida(Ruta::create(['nombre' => 'Ruta Costa']), '2026-11-03', EstadoSalidaRuta::EnCurso, [$fichaJefe, $fichaVendedor]);
 
         $this->assertTrue($jefe->can('rutas.ver'));
-        $this->actingAs($jefe)->get(route('rutas.mi-salida.show', $salida))
+        $this->actingAs($jefe)->get(route('rutas.mi-salida.index'))
             ->assertOk()->assertSee('Volver al tablero')->assertSee('href="'.route('rutas.dashboard').'"', false);
 
         $this->assertFalse($vendedor->can('rutas.ver'));
-        $this->actingAs($vendedor)->get(route('rutas.mi-salida.show', $salida))
+        $this->actingAs($vendedor)->get(route('rutas.mi-salida.index'))
             ->assertOk()->assertDontSee('Volver al tablero');
     }
 

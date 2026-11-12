@@ -8,10 +8,10 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
-use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -55,7 +55,7 @@ class PersonalRutaTest extends TestCase
         // Las funciones son combinables y van normalizadas: se pueden consultar.
         $this->assertCount(2, $persona->funcionesEnum());
         $this->assertTrue($persona->tieneFuncion(FuncionPersonalRuta::Vendedor));
-        $this->assertFalse($persona->puedeSerResponsable());
+        $this->assertFalse($persona->tieneFuncion(FuncionPersonalRuta::ResponsableSalida));
         // Sin login: es lo normal en el personal de campo.
         $this->assertNull($persona->user_id);
     }
@@ -74,10 +74,10 @@ class PersonalRutaTest extends TestCase
 
         foreach ([$sanMiguel, $sonsonate] as $ruta) {
             $salida = SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => now()->toDateString(), 'estado' => EstadoSalidaRuta::Planificada]);
-            app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id], null);
+            SalidaDePrueba::participantes($salida, [$persona->id], null);
         }
 
-        $this->assertSame(2, $persona->salidas()->count());
+        $this->assertSame(2, $persona->participaciones()->count());
     }
 
     public function test_una_persona_no_se_borra_se_desactiva(): void
@@ -109,7 +109,7 @@ class PersonalRutaTest extends TestCase
         $persona->funciones()->create(['funcion' => FuncionPersonalRuta::Vendedor->value]);
         $persona->funciones()->create(['funcion' => FuncionPersonalRuta::ResponsableSalida->value]);
 
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id], $persona->id);
+        SalidaDePrueba::participantes($salida, [$persona->id], $persona->id);
 
         $this->actingAs($this->admin())
             ->get(route('rutas.personal.show', $persona))

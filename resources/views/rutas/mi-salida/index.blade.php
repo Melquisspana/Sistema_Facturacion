@@ -1,8 +1,7 @@
 {{-- Inicio del vendedor (maqueta aprobada por Melqui el 10/11/2026): su viaje, que se arma
      solo con el primer pedido, los dos botones grandes (con lo que falta entregar) y lo de hoy:
      pedidos, entregas y cobrado. «Terminar el día» abre el resumen, los gastos, el PDF y la
-     pregunta de si mañana sigue en la misma zona. Ya nadie arma salidas: abajo quedan solo las
-     armadas a mano de antes que sigan en camino, hasta que se terminen. --}}
+     pregunta de si mañana sigue en la misma zona. Ya nadie arma salidas. --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Inicio')
@@ -18,7 +17,12 @@
     <p class="mt-1 {{ $gris }}">{{ ucfirst(\App\Support\HoraNegocio::hoy()->locale('es')->dayName) }} {{ \App\Support\HoraNegocio::hoy()->format('d/m/Y') }}</p>
 
     @if (! $persona)
-        <p class="mt-6 {{ $caja }}">Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.</p>
+        {{-- Sin ficha de vendedor no hay viaje ni pedidos propios: se dice y se ofrece lo que sí puede mirar. --}}
+        <div class="mt-6 {{ $caja }}">
+            <p class="font-semibold">Tu usuario no es vendedor</p>
+            <p class="{{ $gris }}">Acá no tenés viaje ni pedidos. Podés mirar lo que falta entregar. Si salís a vender, pedile a la oficina que revise tu ficha en Personal.</p>
+            <a href="{{ route('rutas.por-entregar.index') }}" class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Ver «Por entregar»</a>
+        </div>
     @else
         @if ($viaje)
             <div class="mt-5 rounded-2xl bg-indigo-50 p-5 text-indigo-800 ring-1 ring-indigo-200 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-600">
@@ -58,20 +62,5 @@
             </dl>
             <a href="{{ route('rutas.mi-salida.dia') }}" class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Terminar el día</a>
         </div>
-
-        @if ($salidas->isNotEmpty())
-            <h2 class="mt-6 text-xl font-semibold">Salidas de antes en camino</h2>
-            <p class="mt-1 {{ $gris }}">Se armaron a mano antes del viaje. Terminalas desde su hoja.</p>
-            <ul class="mt-3 space-y-3">
-                @foreach ($salidas as $salida)
-                    <li>
-                        <a href="{{ route('rutas.mi-salida.show', $salida) }}" class="block min-h-11 {{ $caja }}">
-                            <span class="block text-xl font-semibold">{{ $salida->titulo() }}</span>
-                            <span class="{{ $gris }}">{{ $salida->periodoLegible() }}</span>
-                        </a>
-                    </li>
-                @endforeach
-            </ul>
-        @endif
     @endif
 @endsection

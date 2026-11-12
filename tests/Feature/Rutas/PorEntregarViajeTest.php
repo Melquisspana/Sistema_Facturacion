@@ -309,11 +309,11 @@ class PorEntregarViajeTest extends TestCase
         $otra = app(EntregasCcf::class)->meterCcf($viaje, $this->ccf($this->salas['San Miguel'], '20.00')->id);
         $falta = ['forma_cobro' => 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.'];
 
-        // La hoja de antes («Mi salida») también llega al viaje escribiendo la dirección.
-        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $entrega]), ['resultado' => 'entregado'])
-            ->assertSessionHasErrors($falta);
-        $this->actingAs($this->ana)->post(route('rutas.mi-salida.sala', [$viaje, $this->salas['San Miguel']]))
-            ->assertSessionHasErrors($falta);
+        // La hoja de antes («Mi salida») ya no existe: no llega al viaje ni escribiendo la dirección.
+        $this->actingAs($this->ana)->patch('/rutas/mi-salida/'.$viaje->id.'/entregas/'.$entrega->id, ['resultado' => 'entregado'])
+            ->assertNotFound();
+        $this->actingAs($this->ana)->post('/rutas/mi-salida/'.$viaje->id.'/sala/'.$this->salas['San Miguel']->id)
+            ->assertNotFound();
         $this->assertSame(0, SalidaRutaEntrega::whereNotNull('resultado')->count());
 
         // La regla vive en el servicio: el vendedor, en el viaje, dice cómo le pagaron.
@@ -324,13 +324,12 @@ class PorEntregarViajeTest extends TestCase
             $this->assertSame($falta['forma_cobro'], $e->errors()['forma_cobro'][0]);
         }
 
-        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $entrega]), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
-            ->assertSessionHasNoErrors();
+        app(EntregasCcf::class)->registrar($entrega, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->personaAna->id], $this->ana, OrigenRegistroEntrega::Vendedor);
         $this->assertSame(FormaCobroEntrega::Efectivo, $entrega->refresh()->forma_cobro);
         $this->assertSame('80.00', $entrega->monto_cobrado);
         // «No se pudo» no mueve dinero: no pide forma de pago.
-        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $otra]), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])
-            ->assertSessionHasNoErrors();
+        app(EntregasCcf::class)->registrar($otra, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'], $this->ana, OrigenRegistroEntrega::Vendedor);
+        $this->assertSame(ResultadoEntrega::NoEntregado, $otra->refresh()->resultado);
     }
 
     public function test_la_oficina_registra_en_el_viaje_con_la_forma_habitual_del_cliente(): void
@@ -354,8 +353,7 @@ class PorEntregarViajeTest extends TestCase
         $entrega = app(EntregasCcf::class)->meterCcf($viaje, $this->ccf($salaSuper, '310.80', $super)->id);
 
         // Sin forma de pago, o con una: en el supermercado del portal nunca se cobra al entregar.
-        $this->actingAs($this->ana)->patch(route('rutas.mi-salida.update', [$viaje, $entrega]), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
-            ->assertSessionHasNoErrors();
+        app(EntregasCcf::class)->registrar($entrega, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->personaAna->id], $this->ana, OrigenRegistroEntrega::Vendedor);
         $this->assertSame(ResultadoEntrega::Entregado, $entrega->refresh()->resultado);
         $this->assertNull($entrega->forma_cobro);
         $this->assertNull($entrega->monto_cobrado);

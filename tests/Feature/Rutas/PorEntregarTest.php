@@ -15,9 +15,9 @@ use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
+use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\RitmoRutas;
 use Carbon\CarbonImmutable;
@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Tests\Support\CcfDeLaRuta;
+use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
 /**
@@ -85,7 +86,7 @@ class PorEntregarTest extends TestCase
     private function salidaFormal(string $ruta, PersonalRuta $persona, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso, string $fecha = '2026-11-06', array $acompanantes = []): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->rutas[$ruta]->id, 'fecha_inicio' => $fecha, 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id, ...array_map(fn (PersonalRuta $p) => $p->id, $acompanantes)], $persona->id);
+        SalidaDePrueba::participantes($salida, [$persona->id, ...array_map(fn (PersonalRuta $p) => $p->id, $acompanantes)], $persona->id);
 
         return $salida;
     }
@@ -183,8 +184,8 @@ class PorEntregarTest extends TestCase
         $this->assertSame(1, SalidaRuta::count());
         $this->assertSame([$primero->id, $segundo->id], $salida->entregas()->orderBy('id')->pluck('dte_id')->all());
 
-        // La automática no tiene hoja: el enlace viejo lleva al inicio, y nada carga el resto de la zona.
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.show', $salida))->assertRedirect(route('rutas.mi-salida.index'));
+        // La automática no tiene hoja, y nada carga el resto de la zona.
+        $this->actingAs($this->vendedor)->get('/rutas/mi-salida/'.$salida->id)->assertNotFound();
         $this->assertSame(2, $salida->entregas()->count());
 
         // Lo marcado hoy queda abajo con «Deshacer»; el entregado ya no está por entregar.
@@ -232,7 +233,7 @@ class PorEntregarTest extends TestCase
         $this->assertSame([$facturadoDespues->id], $auto->entregas()->pluck('dte_id')->all());
 
         $this->assertSame([$ana->id], $deAna->participantes()->pluck('rutas_personal_id')->all());
-        $this->assertSame($ana->id, $formal->responsable->rutas_personal_id);
+        $this->assertSame($ana->id, $formal->participantes()->where('rol', RolEnSalida::Responsable->value)->sole()->rutas_personal_id);
         $this->assertFalse(Activity::whereIn('subject_id', [$formal->id, $deAna->id])->where('subject_type', SalidaRuta::class)
             ->where('description', 'cambió los participantes de la salida')->where('properties->desde', 'por_entregar')->exists());
     }
@@ -322,7 +323,7 @@ class PorEntregarTest extends TestCase
         $deHoy->finalizar('2026-11-06');
         $viaje->finalizar('2026-11-06');
         $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()
-            ->assertDontSee(route('rutas.mi-salida.show', $proxima))->assertDontSee('Próximas salidas');
+            ->assertDontSee('/rutas/mi-salida/'.$proxima->id)->assertDontSee('Próximas salidas');
 
         // Temprano cada día y sin pisarse.
         $evento = collect(app(Schedule::class)->events())->first(fn ($e) => str_contains((string) $e->command, 'rutas:finalizar-automaticas'));
@@ -407,7 +408,7 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
 
-        $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.show', $auto))->followingRedirects()
+        $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.index'))->followingRedirects()
             ->patch(route('rutas.mi-salida.deshacer', [$auto, $auto->entregas()->sole()]))
             ->assertOk()->assertSee('Se deshizo: el CCF vuelve a Por entregar.')->assertSee($dte->numero_control);
         $this->assertSame(EstadoSalidaRuta::Cancelada, $auto->refresh()->estado);
@@ -562,16 +563,21 @@ class PorEntregarTest extends TestCase
             ->assertSessionHasNoErrors();
     }
 
-    public function test_lo_que_va_en_una_salida_planificada_espera_a_que_empiece(): void
+    public function test_lo_que_va_en_una_salida_que_quedo_programada_no_se_marca_hasta_que_la_oficina_la_cancela(): void
     {
         $dte = $this->ccf('Antiguo');
         $planificada = $this->salidaFormal('Antiguo', PersonalRuta::create(['nombre' => 'Ana Inventada']), EstadoSalidaRuta::Planificada, '2026-11-07');
         $this->cargarCcfDeLaRuta($planificada);
 
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
-            ->assertSee('que todavía no empezó')->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
+            ->assertSee('que quedó programada y ya no sale: pedile a la oficina que la cancele')->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasErrors('entrega');
         $this->assertSame(1, SalidaRuta::count());
+
+        // Cancelada, el CCF queda libre y se entrega como cualquiera.
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'))->patch(route('rutas.salidas.cancelar', $planificada))->assertSessionHas('status');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->assertSame(1, SalidaRutaEntrega::where('dte_id', $dte->id)->entregadas()->count());
     }
 
     public function test_permisos(): void
@@ -594,7 +600,7 @@ class PorEntregarTest extends TestCase
         // Vendedor sin persona de Rutas: ve la lista pero no marca.
         $this->persona->update(['user_id' => null]);
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
-            ->assertSee('Tu usuario no está enlazado')->assertDontSee('action="'.$marcar.'"', false);
+            ->assertSee('Tu usuario no es vendedor')->assertDontSee('action="'.$marcar.'"', false);
         $this->actingAs($this->vendedor)->post($marcar, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHas('error');
         $this->assertSame(0, SalidaRuta::count());
 

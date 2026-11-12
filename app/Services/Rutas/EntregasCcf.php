@@ -65,7 +65,7 @@ class EntregasCcf
     /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
     public const DIAS_POR_ENTREGAR = 45;
 
-    public function __construct(private readonly AlbaranLocalizador $albaranes) {}
+    public function __construct(private readonly AlbaranLocalizador $albaranes, private readonly PropuestaRutas $propuesta) {}
 
     // ================================================================ pendientes
 
@@ -120,22 +120,27 @@ class EntregasCcf
     }
 
     /**
-     * Cuántos CCF pendientes y por cuánto, por ruta activa. Para el tablero. Las mismas
-     * consultas con 2 rutas que con 20: se buscan todos juntos y se reparten por ruta.
+     * Cuántos CCF pendientes y por cuánto, por zona. Para el tablero y el aviso del Panel.
+     * Cuentan TODAS las salas activas, cada una en su zona con el criterio del tablero
+     * ({@see PropuestaRutas::zonaDe()}): su ruta, la que cubre su lugar o, en la clave 0, «Sin
+     * zona». Las mismas consultas con 2 zonas que con 20: se buscan todos juntos y se reparten.
      *
-     * @return array<int, array{cantidad: int, monto: float}>
+     * @return array<int, array{cantidad: int, monto: float}> ruta_id (0: sin zona) => pendientes
      */
     public function pendientesPorRuta(): array
     {
-        $rutas = Ruta::activas()->pluck('id');
-        $rutaDeSala = ClienteSucursal::where('activo', true)->whereIn('ruta_id', $rutas)->pluck('ruta_id', 'id');
-        $porRuta = $this->pendientesDeSalas($rutaDeSala->keys()->all())
-            ->groupBy(fn (Dte $dte) => $rutaDeSala[$dte->cliente_sucursal_id]);
+        $zonaDeSala = [];
+        foreach (ClienteSucursal::where('activo', true)->get(['id', 'ruta_id', 'distrito_id', 'departamento_id']) as $sala) {
+            $zonaDeSala[$sala->id] = $this->propuesta->zonaDe($sala->ruta_id, $sala->distrito_id, $sala->departamento_id)?->id ?? 0;
+        }
+        $porZona = $this->pendientesDeSalas(null)
+            ->filter(fn (Dte $dte) => isset($zonaDeSala[$dte->cliente_sucursal_id]))
+            ->groupBy(fn (Dte $dte) => $zonaDeSala[$dte->cliente_sucursal_id]);
 
         $resumen = [];
 
-        foreach ($rutas as $id) {
-            $pendientes = $porRuta->get($id, collect());
+        foreach ([...$this->propuesta->activas()->modelKeys(), 0] as $id) {
+            $pendientes = $porZona->get($id, collect());
             $resumen[$id] = [
                 'cantidad' => $pendientes->count(),
                 'monto' => round((float) $pendientes->sum('total_pagar'), 2),
@@ -181,27 +186,6 @@ class EntregasCcf
                 'dte_id' => $dte->id,
                 'cliente_sucursal_id' => $dte->cliente_sucursal_id,
             ]);
-        });
-    }
-
-    // ================================================================ facturado después
-
-    /*
-     * Desde el 04/11/2026 ya no se anotan: el producto nunca se entrega sin CCF (Melqui). Los
-     * registros que quedaron siguen fuera del dinero ({@see SalidaRutaEntrega::scopeSinFacturadosDespues()})
-     * y la oficina los puede deshacer.
-     */
-
-    /** Quita el registro: el CCF vuelve a quedar sin entregar. Como no movió dinero, no lo mueve. */
-    public function deshacerFacturadoDespues(SalidaRutaEntrega $entrega): void
-    {
-        DB::transaction(function () use ($entrega) {
-            SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
-            $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
-            if (! $entrega->esFacturadoDespues()) {
-                throw ValidationException::withMessages(['entrega' => 'Ese CCF no se anotó como facturado después de entregar.']);
-            }
-            $entrega->delete();
         });
     }
 
@@ -369,30 +353,6 @@ class EntregasCcf
         return ['quedan_numero' => $validos['quedan_numero'], 'quedan_fecha_pago' => $validos['quedan_fecha_pago']];
     }
 
-    /** Toda la sala entregada, por la misma persona. Devuelve cuántos marcó. */
-    public function registrarSala(SalidaRuta $salida, int $salaId, int $entregadoPorId, ?User $usuario, OrigenRegistroEntrega $origen): int
-    {
-        return DB::transaction(function () use ($salida, $salaId, $entregadoPorId, $usuario, $origen) {
-            $pendientes = $salida->entregas()->pendientes()->with('dte:id,estado')->where('cliente_sucursal_id', $salaId)->get();
-            $noVigentes = $this->noVigentes($pendientes);
-            $marcados = 0;
-
-            foreach ($pendientes as $entrega) {
-                if (isset($noVigentes[$entrega->dte_id])) {
-                    continue;
-                }
-                $entrega->setRelation('salida', $salida);
-                $this->registrar($entrega, [
-                    'resultado' => ResultadoEntrega::Entregado->value,
-                    'entregado_por_id' => $entregadoPorId,
-                ], $usuario, $origen);
-                $marcados++;
-            }
-
-            return $marcados;
-        });
-    }
-
     /** Vuelve a «sin registrar»: corrige un registro equivocado. */
     public function deshacer(SalidaRutaEntrega $entrega): void
     {
@@ -401,7 +361,7 @@ class EntregasCcf
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
             $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
             if ($entrega->esFacturadoDespues()) {
-                throw ValidationException::withMessages(['entrega' => 'Ese CCF se anotó como facturado después de entregar: deshacelo desde su bloque, en la hoja de la salida.']);
+                throw ValidationException::withMessages(['entrega' => 'Ese CCF se anotó como facturado después de entregar (un registro de antes): no se deshace.']);
             }
             Dte::whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
             CierreDia::exigirSinLiquidar($salida);
@@ -724,7 +684,7 @@ class EntregasCcf
         if ($salida->estado !== EstadoSalidaRuta::EnCurso) {
             throw ValidationException::withMessages([
                 'salida' => $salida->estado === EstadoSalidaRuta::Planificada
-                    ? 'La salida todavía no inició: iniciala para registrar entregas.'
+                    ? 'La salida quedó programada y ya no sale: no se registran entregas en ella.'
                     : ($salida->estado === EstadoSalidaRuta::Finalizada
                         ? 'La salida ya está finalizada: no se registran entregas en ella.'
                         : 'La salida está cancelada: no se registran entregas en ella.'),
@@ -734,8 +694,8 @@ class EntregasCcf
 
     private function exigirDiaAbierto(SalidaRuta $salida, string $fecha): void
     {
-        // Lectura bloqueante: registrarSala pudo abrir antes una foto de REPEATABLE READ.
+        // Lectura bloqueante: la transacción pudo abrir antes una foto de REPEATABLE READ.
         $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->first();
-        abort_if($cierre?->estaCerrado(), 403, 'El día está cerrado. La oficina debe reabrirlo antes de modificar entregas.');
+        abort_if($cierre?->estaCerrado(), 403, 'Ese día de la salida ya está cerrado: sus entregas no se cambian.');
     }
 }

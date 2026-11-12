@@ -23,8 +23,31 @@ Melqui aprobó el 10/11/2026 un solo flujo, de sacar pedido a entregar. La decis
 - **Las rutas son zonas:** nombre y cobertura. Los «días objetivo» de la sección 2 ya no se cargan ni se editan; el ritmo sale de los pedidos reales. Lo que una zona ya tuviera cargado queda de respaldo mientras no tenga ritmo.
 - **El celular del vendedor:** Inicio, Sacar pedido y Por entregar. «Terminar el día» da el PDF del día, con los gastos y «Entregó / Recibió» para firmar. Con ese PDF se entrega el dinero; en el sistema no se liquida nada nuevo.
 - **La oficina y el jefe:** Tablero (Resumen, Viajes, Mapa, Vendedores), Pedidos, Ventas, Viajes anteriores y Zonas. La pestaña Viajes dice en qué paso va cada pedido, lo trabado, las facturas que no se pudieron entregar dos veces y los quedan por cobrar.
-- **Permisos:** `rutas.salidas.armar` ya no se usa. `rutas.salidas.terminar` sigue solo para terminar las salidas viejas que quedaron abiertas. Facturación da de alta el cliente y la sala de la tienda nueva de un pedido, al facturar, con el permiso `clientes.alta`: vale solo con ese pedido y no deja editar, borrar ni tocar el perfil documental (eso sigue en `clientes.gestionar`, del administrador). **Al desplegar:** crear el permiso `clientes.alta`, dárselo al rol Facturación y quitarle `clientes.gestionar` si lo tuviera.
-- **Lo viejo:** las salidas armadas a mano quedan en «Viajes anteriores» como historial. No se borró ninguna tabla ni dato.
+- **Permisos:** `rutas.salidas.armar` ya no se usa. `rutas.salidas.terminar` se retiró el 11/11/2026 (ver «Lo que se quitó»). Facturación da de alta el cliente y la sala de la tienda nueva de un pedido, al facturar, con el permiso `clientes.alta`: vale solo con ese pedido y no deja editar, borrar ni tocar el perfil documental (eso sigue en `clientes.gestionar`, del administrador). **Al desplegar:** crear el permiso `clientes.alta`, dárselo al rol Facturación y quitarle `clientes.gestionar` si lo tuviera.
+- **Lo viejo:** las salidas armadas a mano quedan en «Todos los viajes» como historial, solo para leer. No se borró ninguna tabla ni dato.
+
+---
+
+## Menú, Ventas y números por zona (11/11/2026)
+
+Decidido por Melqui el 11/11/2026. Donde este plan diga otra cosa, vale esto:
+
+- **Menú de la oficina y del jefe:** Tablero primero, después Pedidos, Ventas (solo quien la ve), Todos los viajes y Zonas. Al final, una sola entrada, **«Menú del vendedor»**, que abre el Inicio del celular; Inicio, Sacar pedido y Por entregar son sus pestañas. A quien solo puede mirar (Jefatura y Facturación) le abre «Por entregar».
+- **El administrador hace todo lo del vendedor** desde «Menú del vendedor»: sacar pedido, marcar entregas y terminar el día. Tiene ficha de Rutas como el vendedor y el jefe (`FichaVendedor::ROLES`), con las mismas reglas: usa la de Personal si existe y no duplica personas. A los administradores que ya existían se les arma sola la primera vez que entran (`FichaVendedor::asegurar()`), sin migración. Jefatura y Facturación no tienen ficha: miran «Por entregar» y ven el aviso «Tu usuario no es vendedor».
+- **Ventas es solo de Administrador y Jefatura.** Sigue siendo su apartado, con Nacional y Exportación. Facturación y el jefe de vendedores ven lo suyo en el Resumen y el Mapa del tablero, que son solo nacionales.
+- **Los números por zona cuentan todas las salas.** «CCF por entregar» de cada zona, el aviso del Panel principal y Ventas por zona usan el criterio del tablero (`PropuestaRutas::zonaDe()`): la ruta de la sala si está activa, la zona que cubre su distrito o su departamento o, si ninguna, «Sin zona».
+- **Al desplegar (permisos):** quitarle `rutas.ventas.ver` al rol `facturacion`. Correr `php artisan db:seed --class=RolesSeeder` lo deja igual que `PermisoSistema::paraRol` y limpia la caché de permisos. El administrador ya tiene `rutas.pedidos.registrar` y `rutas.entregas.registrar` (tiene todos): no hay que darle nada.
+
+
+## Lo que se quitó del flujo viejo (11/11/2026)
+
+Con el viaje ya nadie arma salidas, y en producción no quedaba ninguna salida de antes abierta. Se quitó lo que solo servía a esas salidas. La decisión está en [la decisión 0010](decisiones/0010-el-viaje-reemplaza-a-la-ruta-fija.md), «Revisión del 11/11/2026». Las secciones 3 y 5 de abajo describen cómo era; donde digan otra cosa, vale esto:
+
+- **Se quitó:** «Salir ahora» de una salida programada y el bloque «Programadas» del tablero (la zona ya no figura como «Programada»); el cierre de día viejo («Terminar día»), «Reabrir día» y su PDF; «Terminar ruta», la liquidación y su PDF; la hoja vieja del vendedor («Salidas de antes en camino», «Mi salida» de una salida); el bloque «Facturados después de entregar»; «toda la sala entregada»; y las redirecciones de `/rutas-cobros`, `/rutas/salidas/crear`, `/rutas/salidas/{id}/editar`, `/rutas/rutas/crear`, `/rutas/rutas/asignacion`, `/rutas/rutas/{id}` y `/rutas/rutas/{id}/editar` (un enlace guardado da «no encontrado»).
+- **Se quedó:** el flujo del viaje entero; desde el detalle, la oficina anota o deshace una entrega, suma o quita un CCF («¿Falta un CCF?»), corrige un gasto y cancela un viaje abierto por error; las salidas de antes se ven en «Todos los viajes» y en su detalle, solo para leer.
+- **El jefe de vendedores** ya no termina días ni rutas: mira los viajes y, cuando sale a vender, usa «Menú del vendedor».
+- **Sin migraciones.** `salida_ruta_cierres` y las columnas de la liquidación conservan sus datos; el sistema los lee para no tocar un día cerrado ni una salida liquidada.
+- **Al desplegar (permisos):** el permiso `rutas.salidas.terminar` ya no existe en el código. `RolesSeeder` se lo quita al rol `jefe_vendedores`; la fila que queda suelta en `permissions` (igual que `rutas.salidas.armar`) no hace nada y se puede borrar a mano.
 
 ---
 

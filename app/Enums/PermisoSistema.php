@@ -138,16 +138,12 @@ enum PermisoSistema: string
     case RutasGestionar = 'rutas.gestionar';
     // Vendedor: registrar sus entregas, sin acceso a la gestión de oficina.
     case RutasEntregasRegistrar = 'rutas.entregas.registrar';
-    // `rutas.salidas.armar` se retiró el 10/11/2026: ya no se arman salidas.
-    //
-    // «Terminar día» y «Terminar ruta» de una salida armada a mano de antes, desde la hoja de
-    // la oficina, aunque no haya ido. Sigue mientras quede alguna abierta; el viaje no se
-    // liquida. No da reabrir días, gastos ajenos ni cancelar salidas, y no lo hace recibir
-    // el dinero: lo recibe la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 7).
-    case RutasSalidasTerminar = 'rutas.salidas.terminar';
+    // `rutas.salidas.armar` se retiró el 10/11/2026: ya no se arman salidas. Y
+    // `rutas.salidas.terminar`, el 11/11/2026: ya no se cierran días ni se liquidan salidas
+    // (el dinero se entrega con el PDF del día).
     // Pedidos de sala (docs/PLAN_TABLERO_RUTAS.md, etapa 3). `registrar`: sacar el pedido
-    // en la sala desde «Mi salida», solo en las salidas donde va. `ver`: la lista y el
-    // detalle de la oficina. Lo que manda la fábrica va con su propio permiso, abajo.
+    // de cualquier sala desde «Sacar pedido». `ver`: la lista y el detalle de la oficina.
+    // Lo que manda la fábrica va con su propio permiso, abajo.
     case RutasPedidosRegistrar = 'rutas.pedidos.registrar';
     case RutasPedidosVer = 'rutas.pedidos.ver';
     // La fábrica marca qué manda de cada pedido (/fabrica/pedidos): mandar todo o una
@@ -155,7 +151,8 @@ enum PermisoSistema: string
     // depende del módulo Producción (que en el servidor está apagado) ni muestra insumos.
     // Lo tienen el rol Fábrica, Producción y el administrador.
     case FabricaPedidosMandar = 'fabrica.pedidos.mandar';
-    // Ventas netas y su Excel: consulta comercial de solo lectura.
+    // Ventas netas (nacional y exportación) y su Excel: consulta comercial de solo lectura.
+    // Solo Administrador y Jefatura (Melqui, 11/11/2026).
     case RutasVentasVer = 'rutas.ventas.ver';
     // El mapa de ventas por zona del tablero (09/11/2026): lo vendido en el mes por
     // departamento y distrito, dónde falta y por dónde pasan las rutas. Lleva montos y el
@@ -263,8 +260,6 @@ enum PermisoSistema: string
             RolSistema::JefeVendedores => self::valores([
                 self::RutasVer,
                 self::RutasEntregasRegistrar,
-                // Solo para terminar las salidas armadas a mano de antes que sigan abiertas.
-                self::RutasSalidasTerminar,
                 self::RutasPedidosRegistrar,
                 self::RutasPedidosVer,
                 // El mapa del tablero, con montos (09/11/2026). Ventas sigue cerrada.
@@ -324,8 +319,8 @@ enum PermisoSistema: string
                 // entregas. Las fichas de los empleados son solo de la administración (04/11/2026).
                 self::RutasVer,
                 self::RutasGestionar,
-                // Y consulta las ventas por producto y sala (decisión del usuario, 28/10/2026).
-                self::RutasVentasVer,
+                // Ventas ya no: es solo de Administrador y Jefatura (Melqui, 11/11/2026). Lo suyo
+                // sale en el Resumen y el Mapa del tablero, que son solo nacionales.
                 // Los pedidos de sala que va a facturar.
                 self::RutasPedidosVer,
                 // El mapa de ventas por zona del tablero (09/11/2026).

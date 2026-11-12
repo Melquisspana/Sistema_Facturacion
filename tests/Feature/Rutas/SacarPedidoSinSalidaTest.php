@@ -201,9 +201,9 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->get(route('rutas.mi-salida.index'))->assertOk()
             ->assertSee('Tu viaje')->assertSee('Lunes · San Miguel')->assertSee('Día 2 · 2 salas con pedido')
             // El viaje no tiene hoja propia: lo suyo está en «Sacar pedido» y «Por entregar».
-            ->assertDontSee('href="'.route('rutas.mi-salida.show', $viaje).'"', false)
+            ->assertDontSee('href="'.url('/rutas/mi-salida/'.$viaje->id).'"', false)
             ->assertSee('href="'.route('rutas.mi-salida.dia').'"', false);
-        $this->get(route('rutas.mi-salida.show', $viaje))->assertRedirect(route('rutas.mi-salida.index'));
+        $this->get('/rutas/mi-salida/'.$viaje->id)->assertNotFound();
         // La pregunta está en «Terminar el día», con el resumen y el PDF.
         $this->get(route('rutas.mi-salida.dia'))->assertOk()
             ->assertSee('¿Mañana seguís en la misma zona?')
@@ -299,7 +299,7 @@ class SacarPedidoSinSalidaTest extends TestCase
         // Vendedor sin ficha de Rutas: se le dice qué hacer y no saca.
         $suelto = User::factory()->create(['activo' => true])->assignRole('vendedor');
         $this->actingAs($suelto);
-        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tu usuario no está enlazado a una persona de Rutas.');
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('Tu usuario no es vendedor')->assertSee('Ver «Por entregar»');
         $this->sacar($this->sala)->assertForbidden();
 
         // Terminar el día del viaje de otro: no.

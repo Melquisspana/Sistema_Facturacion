@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\RolEnSalida;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -62,10 +61,5 @@ class SalidaRutaParticipante extends Model
     public function esResponsable(): bool
     {
         return $this->rol === RolEnSalida::Responsable;
-    }
-
-    public function scopeResponsable(Builder $q): Builder
-    {
-        return $q->where('rol', RolEnSalida::Responsable->value);
     }
 }

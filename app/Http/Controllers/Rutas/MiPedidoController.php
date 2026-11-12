@@ -8,6 +8,7 @@ use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Rutas\HistoriaSala;
 use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\RitmoRutas;
@@ -34,6 +35,7 @@ class MiPedidoController extends Controller
     public function index(Request $request): View
     {
         $texto = trim((string) ($request->validate(['q' => ['nullable', 'string', 'max:100']])['q'] ?? ''));
+        app(FichaVendedor::class)->asegurar($request->user());
         $persona = PedidosSala::persona($request->user());
         $salas = $persona && mb_strlen($texto) >= 2
             ? ClienteSucursal::query()->buscarTexto($texto)->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(20)->get()
