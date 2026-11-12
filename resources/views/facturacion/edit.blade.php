@@ -38,7 +38,7 @@
                 </div>
             @endif
 
-            <x-dte.aviso-copia-de-aceptado :dte="$dte" :original="$originalAceptado" />
+            <x-dte.aviso-copia-de-aceptado :dte="$dte" :original="$originalAceptado" :sin-determinar="$copiaSinDeterminar" />
 
             {{-- Mensajes en vivo del editor AJAX (éxito/error sin recargar). Vacío por defecto. --}}
             <div id="ccf-flash" role="status" aria-live="polite" class="hidden rounded-md border p-3 text-sm"></div>

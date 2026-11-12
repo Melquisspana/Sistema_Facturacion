@@ -479,7 +479,9 @@ Si Hacienda acepta un documento que acá figuraba **rechazado** (mismo código d
 con sello), el sello manda: el documento pasa a aceptado y su ficha lo avisa. Si mientras
 tanto ese rechazado se «corrigió» duplicándolo, la copia queda **frenada** —no se genera, no
 se firma, no se transmite ni se duplica— hasta que alguien con permiso de emitir diga, con
-un motivo, que es otra venta (`App\Services\Dte\CopiaDeAceptadoTardio`).
+un motivo, que es otra venta (`App\Services\Dte\CopiaDeAceptadoTardio`). Vale para la copia
+de la copia, sin tope de niveles; y si de una copia no se puede llegar a su original, queda
+frenada igual hasta que alguien la revise.
 
 **Una respuesta definitiva solo se guarda si se puede comprobar que es del documento.**
 Aceptación o rechazo, tiene que traer el mismo código de generación (el del pedido y, si la

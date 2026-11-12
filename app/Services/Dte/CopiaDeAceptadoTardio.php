@@ -46,8 +46,8 @@ class CopiaDeAceptadoTardio
 
     public const RESUELTO = 'Es otra venta: se emite igual.';
 
-    /** Hasta cuántas copias encadenadas se sube buscando el original. De sobra, y sin lazos. */
-    private const NIVELES = 10;
+    /** La cadena de copias no lleva a un original. Nunca autoriza: frena y pide revisión. */
+    private const SIN_DETERMINAR = 'No se pudo determinar de qué documento es copia este documento: sus anotaciones de copia no llevan a un original.';
 
     /** Deja escrito de qué documento es copia, y cómo estaba ese documento al copiarlo. */
     public function anotarCopia(Dte $copia, Dte $original, ?User $usuario = null): void
@@ -65,49 +65,60 @@ class CopiaDeAceptadoTardio
     }
 
     /**
-     * El original que frena a este documento, o null si no hay conflicto: es copia —o
-     * copia de una copia— de un documento que al copiarlo figuraba RECHAZADO, que hoy está
-     * aceptado por una aceptación tardía, y nadie dijo todavía que es otra venta.
+     * Qué frena a este documento, si algo lo frena.
      *
-     * Sube por los padres: A rechazado → B lo corrige → C copia a B. Si después Hacienda
-     * acepta A, C es la misma venta que B. La subida se corta donde deja de ser la misma
-     * venta: en una copia que alguien ya resolvió como «otra venta», o en una copia sacada
-     * de un documento que ya estaba aceptado (duplicar un aceptado es repetir una venta, no
-     * corregirla).
+     *   · `original`: es copia —o copia de una copia— de un documento que al copiarlo
+     *     figuraba RECHAZADO, que hoy está aceptado por una aceptación tardía, y nadie dijo
+     *     todavía que es otra venta;
+     *   · `sin_determinar`: es copia, pero sus anotaciones no llevan a un original (falta
+     *     el documento del que se copió, o la cadena vuelve sobre sí misma). No saber no
+     *     autoriza: se frena igual y lo libera la misma decisión de una persona.
+     *
+     * Sube por los padres HASTA LA RAÍZ, sin tope de niveles: A rechazado → B lo corrige →
+     * C copia a B → … Si después Hacienda acepta A, todas son la misma venta. Termina
+     * siempre, porque un documento ya visitado corta la subida. Y se corta donde deja de
+     * ser la misma venta: en una copia que alguien ya resolvió como «otra venta», o en
+     * una copia sacada de un documento que ya estaba aceptado (duplicar un aceptado es
+     * repetir una venta, no corregirla).
+     *
+     * @return array{original: ?Dte, sin_determinar: bool}
      */
-    public function originalEnConflicto(Dte $dte): ?Dte
+    public function freno(Dte $dte): array
     {
+        $libre = ['original' => null, 'sin_determinar' => false];
+
         // Solo el CCF tiene duplicador.
         if (! $dte->exists || $dte->tipo_dte !== TipoDte::CreditoFiscal) {
-            return null;
+            return $libre;
         }
 
         $nodo = $dte;
+        $visitados = [];
 
-        for ($nivel = 0; $nivel < self::NIVELES; $nivel++) {
+        while (true) {
+            $visitados[$nodo->id] = true;
             $anotaciones = $this->anotaciones($nodo);
             $copiado = $anotaciones->firstWhere('description', self::COPIADO);
             $estadoAlCopiar = $copiado?->properties['original_estado'] ?? null;
 
             if ($copiado === null || $anotaciones->contains('description', self::RESUELTO)
                 || $estadoAlCopiar === EstadoDte::Aceptado->value) {
-                return null;
+                return $libre;
             }
 
-            $padre = Dte::whereKey((int) ($copiado->properties['original_id'] ?? 0))->first();
+            // Un borrador eliminado sigue siendo un eslabón: se lee igual.
+            $padre = Dte::withTrashed()->whereKey((int) ($copiado->properties['original_id'] ?? 0))->first();
 
-            if ($padre === null) {
-                return null;
+            if ($padre === null || isset($visitados[$padre->id])) {
+                return ['original' => null, 'sin_determinar' => true];
             }
 
             if ($estadoAlCopiar === EstadoDte::Rechazado->value && $this->aceptadoTarde($padre)) {
-                return $padre;
+                return ['original' => $padre, 'sin_determinar' => false];
             }
 
             $nodo = $padre;
         }
-
-        return null;
     }
 
     /**
@@ -116,7 +127,11 @@ class CopiaDeAceptadoTardio
      */
     public function motivoParaNoDuplicar(Dte $dte): ?string
     {
-        $original = $this->originalEnConflicto($dte);
+        ['original' => $original, 'sin_determinar' => $sinDeterminar] = $this->freno($dte);
+
+        if ($sinDeterminar) {
+            return self::SIN_DETERMINAR.' Resolvé ese aviso en su ficha antes de duplicarlo.';
+        }
 
         if ($original === null) {
             return null;
@@ -133,7 +148,12 @@ class CopiaDeAceptadoTardio
      */
     public function motivoParaNoEmitir(Dte $dte): ?string
     {
-        $original = $this->originalEnConflicto($dte);
+        ['original' => $original, 'sin_determinar' => $sinDeterminar] = $this->freno($dte);
+
+        if ($sinDeterminar) {
+            return self::SIN_DETERMINAR.' Por las dudas no se puede emitir: podría ser una venta que ya está facturada. '
+                .'Si es otra venta, confirmalo con un motivo en la ficha de este documento.';
+        }
 
         if ($original === null) {
             return null;
@@ -166,11 +186,14 @@ class CopiaDeAceptadoTardio
         return $ids->isEmpty() ? collect() : Dte::whereKey($ids->all())->orderBy('id')->get();
     }
 
-    /** Quien puede emitir dice que la copia es otra venta. Queda en la bitácora, con el motivo. */
-    public function resolver(Dte $copia, Dte $original, User $usuario, string $motivo): void
+    /**
+     * Quien puede emitir dice que la copia es otra venta. Queda en la bitácora, con el motivo.
+     * `$original` es null cuando lo que se resuelve es una cadena de copias sin determinar.
+     */
+    public function resolver(Dte $copia, ?Dte $original, User $usuario, string $motivo): void
     {
         activity(self::BITACORA)->performedOn($copia)->causedBy($usuario)->withProperties([
-            'original_id' => $original->id,
+            'original_id' => $original?->id,
             'motivo' => $motivo,
         ])->log(self::RESUELTO);
     }

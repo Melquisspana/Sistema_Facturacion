@@ -1,13 +1,22 @@
-@props(['dte', 'original' => null])
+@props(['dte', 'original' => null, 'sinDeterminar' => false])
 
 {{-- La copia de un CCF rechazado que Hacienda después aceptó. El original vale; esta copia
      no se puede generar, firmar ni transmitir (lo frena el servidor) hasta que quien puede
      emitir diga, con un motivo, que es otra venta. Va en la ficha y en el editor de la
-     copia. `$original` lo calcula el controlador: si es null, no hay nada que avisar.
+     copia. `$original` lo calcula el controlador. Si es null, no hay nada que avisar,
+     salvo que venga `$sinDeterminar`: es copia y no se pudo llegar a su original, así que
+     queda frenada igual y se resuelve con la misma decisión.
      No es `x-avisos`: no es un mensaje de una acción, es un estado del documento con su
      propia decisión. --}}
-@if ($original)
+@if ($original || $sinDeterminar)
     <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800" role="alert">
+        @if (! $original)
+        <p><strong>No se pudo determinar de qué documento es copia este.</strong></p>
+        <p class="mt-1">
+            Figura como copia de otro documento, pero sus anotaciones no llevan a un original.
+            Por las dudas no se puede generar, firmar ni transmitir: podría ser una venta que ya está facturada.
+        </p>
+        @else
         <p><strong>Esta es la copia de un documento que Hacienda aceptó después.</strong></p>
         <p class="mt-1">
             Se hizo para corregir el {{ $original->tipo_dte->label() }}
@@ -25,6 +34,7 @@
             <p class="mt-1">
                 El pedido de la sala quedó enlazado a esta copia y no al original. Acá no se cambió nada: revisalo con quien lleva los pedidos.
             </p>
+        @endif
         @endif
 
         @can('resolverCopiaDeAceptado', $dte)

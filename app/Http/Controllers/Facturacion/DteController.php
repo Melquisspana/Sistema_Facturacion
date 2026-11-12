@@ -952,10 +952,10 @@ class DteController extends Controller
         // La copia de un rechazado que Hacienda después aceptó: el aviso va en la ficha de
         // la copia (con el original) y en la del original (con sus copias).
         $copias = app(CopiaDeAceptadoTardio::class);
-        $originalAceptado = $copias->originalEnConflicto($dte);
+        ['original' => $originalAceptado, 'sin_determinar' => $copiaSinDeterminar] = $copias->freno($dte);
         $copiasDelAceptado = $copias->copiasDe($dte);
 
-        return view('facturacion.show', compact('originalAceptado', 'copiasDelAceptado', 'dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
+        return view('facturacion.show', compact('originalAceptado', 'copiaSinDeterminar', 'copiasDelAceptado', 'dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
     }
 
     /**
@@ -1416,9 +1416,9 @@ class DteController extends Controller
 
     /**
      * «Es otra venta: se emite igual». La copia de un CCF rechazado que Hacienda después
-     * aceptó queda frenada ({@see CopiaDeAceptadoTardio}); esto la libera, a pedido de
-     * quien puede emitir y con un motivo que queda en la bitácora. No invalida nada ni
-     * mueve pedidos.
+     * aceptó queda frenada ({@see CopiaDeAceptadoTardio}), y también la copia de la que no
+     * se pudo determinar el original; esto la libera, a pedido de quien puede emitir y con
+     * un motivo que queda en la bitácora. No invalida nada ni mueve pedidos.
      */
     public function resolverCopiaDeAceptado(Request $request, Dte $dte, CopiaDeAceptadoTardio $copias): RedirectResponse
     {
@@ -1431,8 +1431,8 @@ class DteController extends Controller
             'motivo.min' => 'El motivo tiene que decir algo: después nadie sabrá por qué se emitió.',
         ]);
 
-        $original = $copias->originalEnConflicto($dte);
-        if ($original === null) {
+        ['original' => $original, 'sin_determinar' => $sinDeterminar] = $copias->freno($dte);
+        if ($original === null && ! $sinDeterminar) {
             return back()->withErrors(['motivo' => 'Este documento no tiene nada pendiente de revisar.']);
         }
 
@@ -1886,9 +1886,9 @@ class DteController extends Controller
         $avisosPedido = app(FacturarPedido::class)->avisosDelCcf($dte);
 
         // La copia de un rechazado que Hacienda después aceptó: no se emite sin revisarla.
-        $originalAceptado = app(CopiaDeAceptadoTardio::class)->originalEnConflicto($dte);
+        ['original' => $originalAceptado, 'sin_determinar' => $copiaSinDeterminar] = app(CopiaDeAceptadoTardio::class)->freno($dte);
 
-        return view('facturacion.edit', compact('originalAceptado', 'dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
+        return view('facturacion.edit', compact('originalAceptado', 'copiaSinDeterminar', 'dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
     }
 
     /**

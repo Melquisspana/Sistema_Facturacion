@@ -422,4 +422,56 @@ class CopiaDeAceptadoTardioTest extends TestCase
 
         $this->assertNull(app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($c->fresh()));
     }
+
+    // ─────────── Cadenas largas y cadenas rotas: ante la duda, se frena ───────────
+
+    public function test_una_cadena_de_once_copias_tambien_queda_frenada(): void
+    {
+        $a = $this->rechazado();
+        $ultima = $a;
+        for ($i = 0; $i < 11; $i++) {
+            $ultima = $this->copiaDe($ultima);
+        }
+        $this->haciendaAceptaTarde($a);
+
+        $motivo = app(CopiaDeAceptadoTardio::class)->motivoParaNoEmitir($ultima);
+        $this->assertNotNull($motivo, 'La undécima copia es la misma venta que el original.');
+        $this->assertStringContainsString($a->numero_control, $motivo);
+        try {
+            app(DteGeneracionService::class)->generar($ultima);
+            $this->fail('La undécima copia no se genera sin revisarla.');
+        } catch (GeneracionException $e) {
+            $this->assertStringContainsString('es copia del', $e->getMessage());
+        }
+    }
+
+    public function test_una_cadena_de_copias_que_se_muerde_la_cola_frena_y_pide_revision(): void
+    {
+        // Solo puede pasar con la bitácora tocada a mano: X copia de Y, e Y copia de X.
+        $x = $this->borrador();
+        $y = $this->borrador();
+        $copias = app(CopiaDeAceptadoTardio::class);
+        $copias->anotarCopia($x, $y, $this->emisor);
+        $copias->anotarCopia($y, $x, $this->emisor);
+
+        $motivo = $copias->motivoParaNoEmitir($x);
+        $this->assertNotNull($motivo, 'Sin poder llegar al original, no se autoriza: se frena.');
+        $this->assertStringContainsString('No se pudo determinar', $motivo);
+        try {
+            app(DteGeneracionService::class)->generar($x);
+            $this->fail('Con la cadena de copias rota, el documento no se genera sin revisarlo.');
+        } catch (GeneracionException $e) {
+            $this->assertStringContainsString('No se pudo determinar', $e->getMessage());
+        }
+        $this->assertNotNull($copias->motivoParaNoDuplicar($x));
+
+        // La ficha lo dice y deja resolverlo, igual que el otro aviso.
+        $this->actingAs($this->emisor)->get(route('facturacion.edit', $x))
+            ->assertOk()->assertSee('No se pudo determinar de qué documento es copia')->assertSee('Es otra venta: emitir igual');
+        $this->resolver($x, 'Se revisó: es un documento nuevo.');
+
+        $this->assertNull($copias->motivoParaNoEmitir($x->fresh()));
+        app(DteGeneracionService::class)->generar($x->fresh());
+        $this->assertSame(EstadoDte::Generado, $x->fresh()->estado);
+    }
 }

@@ -41,7 +41,7 @@
                 </div>
             @endif
 
-            <x-dte.aviso-copia-de-aceptado :dte="$dte" :original="$originalAceptado" />
+            <x-dte.aviso-copia-de-aceptado :dte="$dte" :original="$originalAceptado" :sin-determinar="$copiaSinDeterminar" />
 
             {{-- El aviso GRANDE de modo DTE ya no va en la ficha. El mismo dato —modo activo y
                  si una emisión real a producción es posible— lo da el indicador COMPACTO del
