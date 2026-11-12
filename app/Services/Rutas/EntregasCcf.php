@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Support\HoraNegocio;
 use App\Support\IdentidadPpq;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -504,13 +505,13 @@ class EntregasCcf
      * entregó: ya constan entregadas y salieron de «Por entregar»; solo falta el nombre, que se
      * anota desde «Marcados hoy». Con `$dteId`, solo ese CCF (vacío si no está en la lista).
      *
-     * @return Collection<int, Dte>
+     * @return EloquentCollection<int, Dte>
      */
-    public function conAlbaranSinQuien(?int $dteId = null): Collection
+    public function conAlbaranSinQuien(?int $dteId = null): EloquentCollection
     {
         $portal = DiaVendedor::clientePortal();
         if ($portal === null) {
-            return collect();
+            return new EloquentCollection;
         }
         $hoy = Carbon::parse(HoraNegocio::fechaHoy());
         $candidatos = $this->baseCcf()->where('cliente_id', $portal)->whereNotNull('cliente_sucursal_id')
