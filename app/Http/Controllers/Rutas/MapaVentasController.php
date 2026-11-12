@@ -10,9 +10,9 @@ use Illuminate\View\View;
 
 /**
  * La pestaña «Mapa» del tablero de Rutas ({@see MapaVentas}). Solo lectura. La ruta exige
- * `rutas.ver` y `rutas.mapa.ver`; el mes y la ruta llegan por GET y se validan acá. Los
- * modos (ventas, dónde falta, rutas) y el nivel (departamentos o distritos) cambian en el
- * navegador, sin volver a pedir la página.
+ * `rutas.ver` y `rutas.mapa.ver`; el mes y la zona llegan por GET y se validan acá. La vista
+ * (ventas o a dónde ir) y el departamento abierto cambian en el navegador, sin volver a
+ * pedir la página.
  */
 class MapaVentasController extends Controller
 {
@@ -32,11 +32,13 @@ class MapaVentasController extends Controller
         // Archivos estáticos con su fecha: al desplegar uno nuevo, el navegador no usa el viejo.
         $version = fn (string $archivo) => asset($archivo).'?v='.(is_file(public_path($archivo)) ? filemtime(public_path($archivo)) : '1');
 
+        $datos = $mapa->calcular($mes, $ruta);
+
         return view('rutas.mapa', [
-            'datos' => $mapa->calcular($mes, $ruta) + [
-                'ruta' => $ruta,
+            'datos' => $datos + [
                 'geo' => ['departamentos' => $version('geo/departamentos.json'), 'distritos' => $version('geo/distritos.json')],
             ],
+            'listas' => $mapa->listas($datos),
             'meses' => $meses,
             'filtro' => ['mes' => $mes, 'ruta' => $ruta],
             'hayFiltro' => $mes !== array_key_first($meses) || $ruta !== null,

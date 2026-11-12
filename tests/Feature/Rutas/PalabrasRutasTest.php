@@ -211,14 +211,18 @@ class PalabrasRutasTest extends TestCase
     public function test_el_mapa_y_las_ventas_dicen_zona(): void
     {
         $this->actingAs($this->jefe)->get(route('rutas.mapa'))->assertOk()
-            ->assertSeeInOrder(['Mes', 'Zona', 'Todas las zonas', 'Ver en el mapa', 'Zonas', 'Ver por', 'Departamentos', 'Distritos'])
-            ->assertSee('Tocá un lugar del mapa o de la tabla para ver su ficha.')
+            // Dos vistas y los filtros de siempre; al departamento se entra tocándolo, sin «Ver por».
+            ->assertSeeInOrder(['Qué querés ver', 'Ventas', 'A dónde ir', 'Mes', 'Zona', 'Todas las zonas', 'Filtrar'])
+            ->assertSee('Tocá un departamento para ver sus distritos.')
+            ->assertDontSee('Ver por')->assertDontSee('Dónde falta')->assertDontSee('les toca')
             ->assertDontSee('Todas las rutas')->assertDontSee('>Ruta<', false)->assertDontSee('>Rutas</button>', false);
         $js = (string) file_get_contents(public_path('js/rutas-mapa.js'));
-        foreach (["'Ninguna ruta pasa", "'<br>Ruta: '", "'Otras rutas'", 'Tocá una zona', 'de otras rutas'] as $viejo) {
+        foreach (["'Ninguna ruta pasa", "'<br>Ruta: '", "'Otras rutas'", 'Tocá una zona', 'de otras rutas', 'Dónde falta', 'les toca', 'Le toca'] as $viejo) {
             $this->assertStringNotContainsString($viejo, $js);
         }
-        $this->assertStringContainsString("'<br>Zona: '", $js);
+        foreach (["'Ninguna zona pasa por acá.'", 'de otras zonas', "'Fuera de la zona '", ' por visitar', "'A dónde ir'"] as $nuevo) {
+            $this->assertStringContainsString($nuevo, $js);
+        }
 
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('jefatura'))->get(route('rutas.ventas.index'))->assertOk()
             ->assertSeeInOrder(['Productos', 'Salas', 'Zonas', 'Devoluciones']);

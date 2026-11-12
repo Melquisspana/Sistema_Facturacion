@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
@@ -80,7 +81,7 @@ class RutasDashboardController extends Controller
         $lista = $this->filtrar($salas, $ver, $rutaId, $buscar);
         $pagina = $this->paginar($lista, $request);
 
-        $vendedores = PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre', 'telefono']);
+        $vendedores = PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre', 'telefono', 'user_id']);
         $facturado = $this->facturadoPorZona($entregas, $hoy, $salas);
 
         return view('rutas.dashboard', [
@@ -164,6 +165,9 @@ class RutasDashboardController extends Controller
      * Planilla. Los demás, como el jefe, no ven fichas de empleados (decisión de Melqui,
      * 04/11/2026): para ellos ni se consulta Planilla.
      *
+     * El Administrador tiene ficha de Rutas para entrar al menú del vendedor, pero no es
+     * vendedor: sale acá solo si en esos 90 días fue en un viaje o entregó.
+     *
      * @param  Collection<int, PersonalRuta>  $personas
      * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, ultimaEntrega: ?CarbonImmutable, rutas: array<int, string>, ficha: ?string}>
      */
@@ -196,6 +200,19 @@ class RutasDashboardController extends Controller
 
         // Las fichas de los empleados son solo de la administración (04/11/2026).
         $verFichas = $usuario->can('planilla.ver') && $usuario->can('rutas.personal.ver');
+
+        // Quien tiene usuario y no fue en ningún viaje ni entregó en esos 90 días: si es
+        // Administrador, no sale. Solo por ellos se consultan los roles, de una vez.
+        $quietos = $personas->filter(fn (PersonalRuta $persona) => $persona->user_id !== null
+            && ! $participaciones->has($persona->id)
+            && (! isset($entregas[$persona->id]) || substr((string) $entregas[$persona->id], 0, 10) < $desde));
+        if ($quietos->isNotEmpty()) {
+            $administradores = User::whereIn('id', $quietos->pluck('user_id'))
+                ->whereHas('roles', fn ($q) => $q->where('name', RolSistema::Administrador->value))
+                ->pluck('id')
+                ->flip();
+            $personas = $personas->reject(fn (PersonalRuta $persona) => $quietos->contains($persona) && isset($administradores[$persona->user_id]))->values();
+        }
 
         return $personas->map(function (PersonalRuta $persona) use ($participaciones, $entregas, $enPersonal, $verFichas) {
             $salidas = $participaciones->get($persona->id, collect())->pluck('salida')->sortByDesc(fn (SalidaRuta $s) => [$s->fecha_inicio, $s->id]);

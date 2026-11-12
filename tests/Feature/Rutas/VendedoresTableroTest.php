@@ -3,7 +3,12 @@
 namespace Tests\Feature\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\ResultadoEntrega;
 use App\Enums\RolSistema;
+use App\Models\Cliente;
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Ruta;
@@ -11,6 +16,7 @@ use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
@@ -101,6 +107,74 @@ class VendedoresTableroTest extends TestCase
             ->assertSeeInOrder(['Zoe Ejemplo', 'Sin teléfono', 'Sin viajes en los últimos 90 días'], false)
             ->assertDontSee(route('rutas.personal.show', $sinNada))
             ->assertDontSee('Ver ficha');
+    }
+
+    /** Una entrega hecha por la persona, en un viaje en el que no figura como participante. */
+    private function entregaDe(PersonalRuta $persona, string $cuando): void
+    {
+        $empresa = Empresa::create(['razon_social' => 'Dulces Inventados', 'ambiente' => '01', 'activo' => true]);
+        $establecimiento = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        $sala = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de prueba', 'activo' => true]);
+        $dte = Dte::withoutEvents(fn () => Dte::create([
+            'establecimiento_id' => $establecimiento->id, 'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01',
+            'sello_recepcion' => Str::uuid()->toString(), 'fecha_procesamiento_mh' => now(),
+            'cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id, 'numero_control' => 'DTE-03-M001P001-000000000000001',
+            'fecha_emision' => substr($cuando, 0, 10), 'hora_emision' => '10:00:00', 'subtotal' => 10, 'total_descuento' => 0, 'total_pagar' => 10,
+        ]));
+        $salida = SalidaRuta::create(['ruta_id' => $this->norte->id, 'fecha_inicio' => substr($cuando, 0, 10), 'fecha_fin_real' => substr($cuando, 0, 10), 'estado' => EstadoSalidaRuta::Finalizada]);
+        $salida->entregas()->create([
+            'dte_id' => $dte->id, 'cliente_sucursal_id' => $sala->id, 'resultado' => ResultadoEntrega::Entregado,
+            'entregado_por_id' => $persona->id, 'fecha_resultado' => $cuando,
+        ]);
+    }
+
+    /** Un Administrador con ficha de Rutas, como la que se le crea para entrar al menú del vendedor. */
+    private function administradorConFicha(): PersonalRuta
+    {
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+
+        return PersonalRuta::create(['nombre' => 'Admin Inventado', 'user_id' => $admin->id]);
+    }
+
+    public function test_el_administrador_sin_viajes_ni_entregas_no_sale_entre_los_vendedores(): void
+    {
+        $ficha = $this->administradorConFicha();
+        // Lo de hace más de 90 días no cuenta.
+        $this->salida($this->norte, $ficha, '2026-07-01', EstadoSalidaRuta::Finalizada, '2026-07-02');
+        $this->entregaDe($ficha, '2026-07-01 11:00:00');
+
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Vendedores', 'Jefe Inventado', 'Luis Inventado', 'Rosa Ficticia'])
+            ->assertDontSee('Admin Inventado');
+    }
+
+    public function test_el_administrador_que_tuvo_un_viaje_sale_como_cualquiera(): void
+    {
+        $this->salida($this->costa, $this->administradorConFicha(), '2026-10-20', EstadoSalidaRuta::Finalizada, '2026-10-21');
+
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Vendedores', 'Admin Inventado', 'Última: Ruta Costa, 21/10/2026', 'Sus zonas: Ruta Costa']);
+    }
+
+    public function test_el_administrador_que_entrego_sale_como_cualquiera(): void
+    {
+        $this->entregaDe($this->administradorConFicha(), '2026-10-30 11:00:00');
+
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Vendedores', 'Admin Inventado', 'Sin viajes en los últimos 90 días', 'Última entrega']);
+    }
+
+    public function test_quien_no_es_administrador_sale_aunque_no_tenga_viajes(): void
+    {
+        $vendedor = User::factory()->create(['activo' => true])->assignRole('vendedor');
+        PersonalRuta::create(['nombre' => 'Zoe Ejemplo', 'user_id' => $vendedor->id]);
+
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Zoe Ejemplo', 'Sin viajes en los últimos 90 días']);
     }
 
     public function test_el_jefe_no_abre_fichas_de_empleados(): void
