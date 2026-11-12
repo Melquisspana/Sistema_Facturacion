@@ -57,9 +57,11 @@ class JefeVendedoresTest extends TestCase
     {
         $this->assertSame('Jefe de vendedores', RolSistema::JefeVendedores->label());
         // El mapa del tablero lleva montos (09/11/2026), pero `rutas.ventas.ver` sigue afuera.
-        // `rutas.salidas.armar` se retiró el 10/11/2026: ya no se arman salidas.
-        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.salidas.terminar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver', 'rutas.mapa.ver'], RolSistema::JefeVendedores->permisos());
+        // `rutas.salidas.armar` se retiró el 10/11/2026 (ya no se arman salidas) y
+        // `rutas.salidas.terminar`, el 11/11/2026 (ya no se cierran días ni se liquidan).
+        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver', 'rutas.mapa.ver'], RolSistema::JefeVendedores->permisos());
         $this->assertNotContains('rutas.salidas.armar', PermisoSistema::todos());
+        $this->assertNotContains('rutas.salidas.terminar', PermisoSistema::todos());
 
         foreach (['rutas.gestionar', 'rutas.personal.ver', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
             $this->assertFalse($this->jefe->can($permiso), "El jefe no debería tener {$permiso}.");

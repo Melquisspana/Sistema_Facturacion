@@ -613,8 +613,8 @@ class FlujoUnicoRutasTest extends TestCase
         $this->assertNotContains('clientes.gestionar', RolSistema::Jefatura->permisos());
         foreach (RolSistema::cases() as $rol) {
             $this->assertNotContains('rutas.salidas.armar', $rol->permisos(), $rol->value);
+            // Ni las termina: ya no se cierran días ni se liquidan salidas (11/11/2026).
+            $this->assertNotContains('rutas.salidas.terminar', $rol->permisos(), $rol->value);
         }
-        // Terminar salidas viejas sigue siendo del jefe.
-        $this->assertContains('rutas.salidas.terminar', RolSistema::JefeVendedores->permisos());
     }
 }
