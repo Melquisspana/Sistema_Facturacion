@@ -572,10 +572,26 @@ class DashboardTest extends TestCase
         // El caso real reportado: solo "Atención inmediata" sin decir POR QUÉ obligaba a
         // adivinar cuál de los 10 checks disparó la alerta. Sin backup de hoy, el badge
         // debe nombrar el check crítico.
-        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+        $respuesta = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Atención inmediata')
             ->assertSee('1 problema crítico: Backup del día');
+
+        $this->assertSame(1, substr_count($respuesta->getContent(), 'Atención inmediata'));
+    }
+
+    public function test_jerarquia_mensual_y_accesos_moviles_usan_clases_de_produccion(): void
+    {
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('/<p class="[^"]*text-3xl[^"]*">\$[\d,.]+<\/p>/', $html);
+        preg_match('/<nav aria-labelledby="titulo-accesos">(.*?)<\/nav>/s', $html, $accesos);
+        $this->assertStringContainsString('grid grid-cols-2 gap-2 sm:grid-cols-4', $accesos[1]);
+        preg_match_all('/<a[^>]*class="([^"]*)"/', $accesos[1], $botones);
+        $this->assertNotEmpty($botones[1]);
+        foreach ($botones[1] as $clases) {
+            $this->assertStringContainsString('min-h-11', $clases);
+        }
     }
 
     public function test_varios_criticos_se_enumeran_en_el_motivo(): void

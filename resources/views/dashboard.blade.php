@@ -1,6 +1,6 @@
 @php
     // Inicio (rediseño del 13/11/2026, pedido del dueño: «más bonito, también para el
-    // teléfono»). Arriba lo del día en números grandes; después los accesos que el
+    // teléfono»). Arriba las ventas del mes en números grandes; después los accesos que el
     // permiso deja; luego los últimos documentos y las rutas. Lo técnico va al final,
     // plegado y solo para Administrador; a Facturación solo le llega un aviso cuando
     // algo es crítico. Mismos datos, rutas y permisos que antes.
@@ -42,7 +42,7 @@
                 <h1 class="break-words text-xl font-semibold leading-tight text-gray-800">{{ $saludo }}, {{ $usuarioActual->name }}</h1>
                 <p class="mt-1 text-sm text-gray-500">Resumen operativo de {{ \App\Support\NombreEmpresa::actual() }} &middot; {{ \Illuminate\Support\Str::ucfirst(now()->locale('es')->translatedFormat('l d \d\e F \d\e Y')) }}</p>
             </div>
-            @if ($esAdmin)
+            @if ($esAdmin && $estadoGeneral !== 'critico')
                 {{-- Chiquito y solo para quien administra: el detalle está plegado al final. --}}
                 <a href="#estado-sistema"
                    class="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {{ $colorEstado[$estadoGeneral] }}">
@@ -69,21 +69,21 @@
                 </div>
             @endif
 
-            {{-- Lo del día, en grande. --}}
+            {{-- El mes es la cifra principal; hoy y los DTE son secundarios. --}}
             @if ($veFacturacion || $veOperativos)
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
                     @if ($veFacturacion)
                         <section aria-labelledby="titulo-ventas" class="rounded-xl bg-indigo-600 p-5 text-white shadow-sm sm:p-6 lg:col-span-2">
                             <h2 id="titulo-ventas" class="text-sm font-medium opacity-80">Ventas del mes</h2>
-                            <p class="mt-1 break-words text-4xl font-bold tabular-nums tracking-tight sm:text-5xl">${{ number_format($stats['ventas_mes'], 2) }}</p>
+                            <p class="mt-1 break-words text-3xl font-bold tabular-nums tracking-tight">${{ number_format($stats['ventas_mes'], 2) }}</p>
                             <dl class="mt-5 grid grid-cols-2 gap-4 border-t border-indigo-400 pt-4">
                                 <div>
                                     <dt class="text-xs opacity-80">Vendido hoy</dt>
-                                    <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums sm:text-2xl">${{ number_format($stats['ventas_hoy'] ?? 0, 2) }}</dd>
+                                    <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums">${{ number_format($stats['ventas_hoy'] ?? 0, 2) }}</dd>
                                 </div>
                                 <div>
-                                <dt class="text-xs opacity-80">DTE aceptados (mes)</dt>
-                                    <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums sm:text-2xl">{{ number_format($stats['dte_aceptados_mes']) }}</dd>
+                                    <dt class="text-xs opacity-80">DTE aceptados (mes)</dt>
+                                    <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums">{{ number_format($stats['dte_aceptados_mes']) }}</dd>
                                 </div>
                             </dl>
                         </section>
@@ -94,14 +94,14 @@
                             <a href="{{ route('documentos-recibidos.index', ['vista' => 'pendientes', 'rango' => 'todos']) }}"
                                class="{{ $caja }} block p-4 hover:border-indigo-300">
                                 <span class="block text-sm text-gray-500">Compras pendientes</span>
-                                <span class="mt-1 block text-3xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['documentos_pendientes']) }}</span>
+                                <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['documentos_pendientes']) }}</span>
                                 <span class="mt-1 block text-sm font-medium text-indigo-600">Ver compras</span>
                             </a>
                             @if ($veFacturacion && $usuarioActual->can('exportaciones.ver'))
                                 <a href="{{ route('facturacion.listas.index') }}"
                                    class="{{ $caja }} block p-4 hover:border-indigo-300">
                                     <span class="block text-sm text-gray-500">Listas de empaque (mes)</span>
-                                    <span class="mt-1 block text-3xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['listas_recientes']) }}</span>
+                                    <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['listas_recientes']) }}</span>
                                     <span class="mt-1 block text-sm font-medium text-indigo-600">Ver listas</span>
                                 </a>
                             @endif
@@ -287,7 +287,8 @@
                                     Estado del sistema
                                     <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {{ $colorEstado[$estadoGeneral] }}">
                                         <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>
-                                        {{ $textoEstadoGeneral }}
+                                        {{-- Con un problema crítico el aviso grande ya dice «Atención inmediata»: acá no se repite. --}}
+                                        {{ $estadoGeneral === 'critico' ? 'Con problemas' : $textoEstadoGeneral }}
                                     </span>
                                 </summary>
                                 <div class="space-y-4 border-t border-gray-100 px-4 py-3 text-sm">
