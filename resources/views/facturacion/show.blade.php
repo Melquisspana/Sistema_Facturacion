@@ -345,14 +345,18 @@
                                                 <tr class="grid grid-cols-2 py-2 md:table-row">
                                                     <td class="col-span-2 py-1.5 pr-3 whitespace-nowrap text-gray-600"><span class="md:hidden block text-xs text-gray-500">Fecha</span>{{ $e->created_at->format('d/m/Y H:i') }}</td>
                                                     <td class="col-span-2 py-1.5 pr-3 break-all text-gray-600"><span class="md:hidden block text-xs text-gray-500">Destinatarios</span>{{ $e->destinatariosTexto() }}</td>
-                                                    <td class="py-1.5 pr-3 whitespace-nowrap">
+                                                    <td @class(['py-1.5 pr-3 whitespace-nowrap', 'col-span-2' => filled($e->error)])>
                                                         <span class="md:hidden block text-xs text-gray-500">Estado</span>
                                                         @php
                                                             $clase = ['enviado' => 'bg-green-100 text-green-700', 'simulado' => 'bg-violet-100 text-violet-700', 'pendiente' => 'bg-amber-100 text-amber-700', 'error' => 'bg-rose-100 text-rose-700'][$e->estado] ?? 'bg-gray-100 text-gray-600';
                                                             $etiqueta = ['enviado' => 'Enviado', 'simulado' => 'Simulado', 'pendiente' => 'Pendiente', 'error' => 'Fallido'][$e->estado] ?? ucfirst($e->estado);
                                                         @endphp
                                                         <span class="inline-block rounded px-2 py-0.5 text-xs {{ $clase }}">{{ $etiqueta }}</span>
-                                                        @if ($e->error)<span class="ml-1 cursor-help {{ $e->estado === 'simulado' ? 'text-violet-500' : 'text-rose-500' }}" title="{{ $e->error }}">ⓘ</span>@endif
+                                                        @if ($e->error)
+                                                            <span class="ml-1 cursor-help {{ $e->estado === 'simulado' ? 'text-violet-500' : 'text-rose-500' }}" title="{{ $e->error }}">ⓘ</span>
+                                                            {{-- En el celular el title no se puede tocar: el error va escrito debajo. --}}
+                                                            <span class="md:hidden block mt-1 whitespace-normal break-words text-xs {{ $e->estado === 'simulado' ? 'text-violet-600' : 'text-rose-600' }}">{{ $e->error }}</span>
+                                                        @endif
                                                     </td>
                                                     <td class="py-1.5 pr-3 text-gray-500"><span class="md:hidden block text-xs">Adjuntos</span>{{ $e->adjuntos ?? '—' }}</td>
                                                     <td class="py-1.5 pr-3 text-gray-500"><span class="md:hidden block text-xs">Por</span>{{ $e->usuario?->name ?? 'Automático' }}</td>
