@@ -12,6 +12,7 @@ use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Enums\ModuloSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -105,7 +106,7 @@ class OpcionesModuloController extends Controller
                 ],
                 [
                     'titulo' => 'Pedidos',
-                    'claves' => ['pedidos.fabrica_desde', 'pedidos.correo_resumen_diario'],
+                    'claves' => ['pedidos.fabrica_desde', 'pedidos.correo_resumen_diario', 'pedidos.salas_sin_pedidos'],
                 ],
             ],
         ],
@@ -243,11 +244,13 @@ class OpcionesModuloController extends Controller
 
         $grupos = [];
         $conCliente = false;
+        $conSalas = false;
         foreach ($this->gruposVisibles($pagina) as $grupo) {
             $campos = [];
             foreach ($grupo['claves'] as $clave) {
                 $definicion = $catalogo->definicion($clave);
                 $conCliente = $conCliente || $definicion->tipo === TipoAjuste::Cliente;
+                $conSalas = $conSalas || in_array('salas', $definicion->reglas, true);
                 $campos[self::campo($clave)] = [
                     'definicion' => $definicion,
                     'estado' => $ajustes->estadoParaPantalla($clave),
@@ -263,6 +266,10 @@ class OpcionesModuloController extends Controller
             'grupos' => $grupos,
             // La lista de clientes, igual que en el filtro de lotes, solo si la página la usa.
             'clientes' => $conCliente ? Cliente::query()->orderBy('nombre')->get(['id', 'nombre']) : collect(),
+            // Las salas activas, por nombre, solo si la página elige salas.
+            'salas' => $conSalas
+                ? ClienteSucursal::query()->where('activo', true)->with('cliente:id,nombre')->orderBy('nombre')->get(['id', 'nombre', 'codigo', 'cliente_id'])
+                : collect(),
         ]);
     }
 
@@ -292,6 +299,15 @@ class OpcionesModuloController extends Controller
             // Vacío = «no lo toques», nunca «bórralo»: volver al .env es otra acción.
             if ($valor === null || (is_string($valor) && trim($valor) === '')) {
                 continue;
+            }
+            // Una lista de casillas trae siempre la oculta vacía: así desmarcarlas todas
+            // la vacía. Sin ninguna marcada y nada guardado, no hay nada que cambiar.
+            // (llega como null: los textos vacíos se vuelven null antes del controlador).
+            if (is_array($valor)) {
+                $valor = array_values(array_filter($valor, static fn ($v) => $v !== null && $v !== ''));
+                if ($valor === [] && $ajustes->lista($definicion->clave) === []) {
+                    continue;
+                }
             }
 
             // La validación del catálogo (formato de hora, de fecha, lista de correos)
@@ -413,6 +429,8 @@ class OpcionesModuloController extends Controller
             TipoAjuste::Decimal => 'numeric',
             TipoAjuste::Email => 'email',
             TipoAjuste::Enumerado => Rule::in($definicion->opciones),
+            // Cada elemento lo valida el catálogo (ConversorValor), con su mensaje.
+            TipoAjuste::Lista => 'array',
             default => 'string',
         };
 
@@ -440,7 +458,7 @@ class OpcionesModuloController extends Controller
     /**
      * @param  array<string, DefinicionAjuste>  $definiciones
      * @param  array<string, mixed>  $propuestos
-     * @return array<string, string>
+     * @return array<string, string|list<string>>
      */
     private function valoresParaReenviar(array $definiciones, array $propuestos): array
     {
@@ -449,9 +467,12 @@ class OpcionesModuloController extends Controller
         foreach ($definiciones as $campo => $definicion) {
             $valor = $propuestos[$definicion->clave] ?? null;
 
-            $valores[$campo] = $definicion->tipo === TipoAjuste::Booleano
-                ? ($valor ? '1' : '0')
-                : (string) ($valor ?? '');
+            $valores[$campo] = match ($definicion->tipo) {
+                TipoAjuste::Booleano => $valor ? '1' : '0',
+                // Una lista viaja como lista (`campo[]`); sin propuesta, vacía: no se toca.
+                TipoAjuste::Lista => $valor === null ? [] : array_values(array_map('strval', (array) $valor)),
+                default => (string) ($valor ?? ''),
+            };
         }
 
         return $valores;

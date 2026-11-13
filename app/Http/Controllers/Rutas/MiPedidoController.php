@@ -42,7 +42,7 @@ class MiPedidoController extends Controller
         app(FichaVendedor::class)->asegurar($request->user());
         $persona = PedidosSala::persona($request->user());
         $salas = $persona && mb_strlen($texto) >= 2
-            ? ClienteSucursal::query()->buscarTexto($texto)->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(20)->get()
+            ? ClienteSucursal::query()->buscarTexto($texto)->whereKeyNot(PedidosSala::salasSinPedidos())->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(20)->get()
             : null;
         $pedidosHoy = $persona
             ? PedidoSala::query()->where('sacado_por_id', $persona->id)->whereDate('fecha', HoraNegocio::fechaHoy())->vigentes()
@@ -72,7 +72,7 @@ class MiPedidoController extends Controller
     {
         $texto = $request->validate(['q' => ['required', 'string', 'min:2', 'max:100']])['q'];
 
-        $salas = ClienteSucursal::query()->buscarTexto(trim($texto))
+        $salas = ClienteSucursal::query()->buscarTexto(trim($texto))->whereKeyNot(PedidosSala::salasSinPedidos())
             ->with(['cliente:id,nombre', 'distrito:id,nombre'])
             ->orderBy('nombre')->limit(self::TOPE_LISTA)
             ->get(['id', 'nombre', 'codigo', 'cliente_id', 'distrito_id']);
@@ -87,7 +87,8 @@ class MiPedidoController extends Controller
     public function create(Request $request, ClienteSucursal $sucursal): View|RedirectResponse
     {
         Gate::authorize('create', PedidoSala::class);
-        abort_unless($sucursal->activo, 404);
+        // Inactiva, o una sala donde no se sacan pedidos: como si no existiera.
+        abort_unless($sucursal->activo && ! in_array($sucursal->id, PedidosSala::salasSinPedidos(), true), 404);
 
         // Ya sacado: no se saca otro. Quien lo sacó lo corrige (si la fábrica no empezó); los
         // demás vuelven a la búsqueda con el aviso.
@@ -139,7 +140,7 @@ class MiPedidoController extends Controller
             return collect();
         }
 
-        return ClienteSucursal::query()->where('activo', true)
+        return ClienteSucursal::query()->where('activo', true)->whereKeyNot(PedidosSala::salasSinPedidos())
             ->where(fn ($q) => $palabras->each(fn (string $p) => $q->orWhere(fn ($o) => $o->buscarTexto($p))))
             ->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(8)->get();
     }

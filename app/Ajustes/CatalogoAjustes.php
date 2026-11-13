@@ -1336,6 +1336,22 @@ class CatalogoAjustes
                 // Son correos de personas: la auditoría guarda solo que cambió.
                 datoPersonal: true,
             ),
+            // Ids de `cliente_sucursales`, activas al guardarse (regla `salas`). Solo
+            // «Sacar pedido» las esconde y las rechaza; facturar, NC y PPQ no cambian.
+            DefinicionAjuste::hacer(
+                clave: 'pedidos.salas_sin_pedidos',
+                seccion: 'rutas',
+                tipo: TipoAjuste::Lista,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Salas donde no se sacan pedidos',
+                descripcion: 'No aparecen en «Sacar pedido» y no se puede sacar un pedido en ellas. Se siguen facturando y siguen en notas de crédito, pronto pago y seguimiento. Sin ninguna marcada, se sacan pedidos en todas.',
+                claveConfig: 'pedidos.salas_sin_pedidos',
+                reglas: ['salas'],
+            ),
 
             // ---------------------------------------------------------- Gastos
             DefinicionAjuste::hacer(

@@ -113,6 +113,8 @@ Tomado de `x-configuracion.campo`, que ya junta etiqueta, ayuda y error en un so
 
 **Buscar mientras se escribe.** Tomado de Sacar pedido (12/11/2026). Es un formulario `GET` común con su botón «Buscar», que anda sin JavaScript; encima, Alpine escrito en la vista (sin bundle nuevo) muestra la lista debajo del campo desde 2 letras, con una espera corta entre teclas. La lista sale de una ruta JSON con el mismo permiso de la pantalla, `throttle`, un tope de resultados y solo los campos que se muestran. Las filas son enlaces de 44 px; la flecha abajo entra en la lista, las flechas se mueven y Escape vuelve al campo; un `role="status"` dice cuántas hay. Si no hay ninguna, se dice y se ofrece lo que la pantalla ofrece para ese caso. Si la consulta falla, se avisa que se toque «Buscar».
 
+**Elegir varios registros.** Tomado de Configuración › Rutas, «Salas donde no se sacan pedidos» (12/11/2026). Un `fieldset` con su `legend` y casillas de 44 px con el nombre (y el código y el cliente en gris), dentro de una caja con borde y scroll (`max-h-64 overflow-y-auto`); arriba, un campo «Buscar sala» que filtra con Alpine escrito en la vista. Va una casilla oculta vacía con el mismo nombre para que desmarcarlas todas llegue como «ninguna». El servidor vuelve a exigir que cada registro exista y esté activo; la confirmación muestra los nombres, no los números.
+
 ### Confirmaciones
 
 Tres niveles, según lo que se pierde si uno se equivoca:

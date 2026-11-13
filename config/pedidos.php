@@ -30,4 +30,18 @@ return [
 
     'correo_resumen_diario' => env('PEDIDOS_CORREO_RESUMEN_DIARIO'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Salas donde no se sacan pedidos
+    |--------------------------------------------------------------------------
+    |
+    | Ids de salas (cliente_sucursales) que no aparecen en «Sacar pedido» y en las
+    | que no se puede sacar un pedido; por ejemplo, la bodega central de un
+    | cliente que solo recibe notas de crédito. Son ids de cada base, así que no
+    | van en el .env: se eligen en Configuración › Rutas. Vacío = todas.
+    |
+    */
+
+    'salas_sin_pedidos' => [],
+
 ];

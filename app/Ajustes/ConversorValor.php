@@ -6,6 +6,7 @@ use App\Ajustes\Definicion\DefinicionAjuste;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Support\Dinero;
 
 /**
@@ -390,7 +391,42 @@ class ConversorValor
             sort($lista);
         }
 
+        if (in_array('salas', $definicion->reglas, true)) {
+            $lista = $this->validarSalas($definicion, $lista);
+        }
+
         return $this->codificarLista($lista);
+    }
+
+    /**
+     * Lista de salas (`cliente_sucursales`): cada id bien formado, sin repetir y, al GUARDAR,
+     * de una sala que existe y está activa. Los vacíos (la casilla oculta del formulario, que
+     * permite desmarcarlas todas) no cuentan. Se guardan en orden.
+     *
+     * @param  array<int|string, mixed>  $lista
+     * @return list<string>
+     */
+    private function validarSalas(DefinicionAjuste $definicion, array $lista): array
+    {
+        $ids = array_values(array_filter(array_map(static fn ($v) => trim((string) $v), $lista), static fn (string $v) => $v !== ''));
+
+        foreach ($ids as $id) {
+            if (preg_match('/^[1-9]\d*$/D', $id) !== 1) {
+                throw ValorAjusteInvalidoException::con($definicion->clave, "«{$definicion->etiqueta}» debe ser una sala de la lista (recibido: «{$id}»).");
+            }
+        }
+
+        if (count($ids) !== count(array_unique($ids))) {
+            throw ValorAjusteInvalidoException::con($definicion->clave, "«{$definicion->etiqueta}» tiene salas repetidas.");
+        }
+
+        if (ClienteSucursal::query()->whereKey($ids)->where('activo', true)->count() !== count($ids)) {
+            throw ValorAjusteInvalidoException::con($definicion->clave, "«{$definicion->etiqueta}»: una de las salas elegidas no existe o no está activa.");
+        }
+
+        sort($ids, SORT_NUMERIC);
+
+        return $ids;
     }
 
     /** @param  array<int|string, mixed>  $lista */

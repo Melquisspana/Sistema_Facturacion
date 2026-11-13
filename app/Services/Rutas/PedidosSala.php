@@ -3,6 +3,7 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoPedidoSala;
+use App\Facades\Ajustes;
 use App\Http\Requests\Rutas\PedidoSalaRequest;
 use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
@@ -73,8 +74,10 @@ class PedidosSala
     {
         Gate::forUser($usuario)->authorize('create', PedidoSala::class);
         $personaId = self::persona($usuario)?->id ?? abort(403);
+        // Antes de la transacción: adentro, lo primero son los candados.
+        $sinPedidos = self::salasSinPedidos();
 
-        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido, $personaId) {
+        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido, $personaId, $sinPedidos) {
             $persona = PersonalRuta::whereKey($personaId)->where('user_id', $usuario->id)->where('activo', true)->lockForUpdate()->first() ?? abort(403);
             if ($sala !== null) {
                 $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
@@ -98,6 +101,9 @@ class PedidosSala
                 $pedido->update($campos);
                 $pedido->lineas()->delete();
             } else {
+                if ($sala !== null && in_array($sala->id, $sinPedidos, true)) {
+                    throw ValidationException::withMessages(['lineas' => self::SALA_SIN_PEDIDOS]);
+                }
                 $sala !== null ? $this->exigirSinSacar($sala, $usuario) : $this->exigirTiendaSinSacar($persona, $campos['sala_nueva_nombre']);
                 $viaje = $this->viajes->paraPedido($persona, $sala, $usuario);
                 $pedido = $viaje->pedidos()->create($campos + [
@@ -120,6 +126,21 @@ class PedidosSala
 
             return $pedido;
         });
+    }
+
+    public const SALA_SIN_PEDIDOS = 'En esta sala no se sacan pedidos.';
+
+    /**
+     * Las salas donde no se sacan pedidos (Configuración › Rutas; por ejemplo, la bodega
+     * central de un cliente que solo recibe notas de crédito). No salen en «Sacar pedido» y
+     * {@see guardar()} no saca uno nuevo en ellas. Un pedido que ya tenían se sigue
+     * corrigiendo y facturando. Vacío = todas.
+     *
+     * @return list<int>
+     */
+    public static function salasSinPedidos(): array
+    {
+        return array_map('intval', Ajustes::lista('pedidos.salas_sin_pedidos'));
     }
 
     public const AUDITORIA_ENLACE = 'enlazó la tienda nueva a su sala';
