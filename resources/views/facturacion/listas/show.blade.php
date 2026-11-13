@@ -235,10 +235,12 @@
                         Sin facturas vinculadas todavía. La lista se puede finalizar solo cuando tenga al menos una.
                     </p>
                 @else
+                    {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada dato
+                     encima del valor. Desde md, la tabla de siempre. --}}
                     <div class="overflow-x-auto">
-                        <table class="min-w-full text-sm">
+                        <table class="block md:table min-w-full text-sm">
                             <caption class="sr-only">Facturas de exportación vinculadas a la lista #{{ $lista->id }}</caption>
-                            <thead>
+                            <thead class="hidden md:table-header-group">
                                 <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                                     <th scope="col" class="py-3 px-4">Número</th>
                                     <th scope="col" class="py-3 px-4">Estado</th>
@@ -249,23 +251,23 @@
                                     @endif
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100">
+                            <tbody class="block md:table-row-group divide-y divide-gray-100">
                                 @foreach ($facturas as $factura)
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="py-3 px-4">
+                                    <tr class="grid grid-cols-2 py-2 md:table-row hover:bg-gray-50">
+                                        <td class="col-span-2 py-3 px-4 break-all md:break-normal">
                                             <a href="{{ route('facturacion.show', $factura) }}" class="font-mono text-indigo-600 hover:underline">
                                                 {{ $factura->numero_control ?: 'Borrador #'.$factura->id }}
                                             </a>
                                         </td>
                                         <td class="py-3 px-4"><x-estado-dte-badge :estado="$factura->estado" /></td>
                                         <td class="py-3 px-4 tabular-nums text-gray-600">{{ $factura->fecha_emision?->format('d/m/Y') ?? '—' }}</td>
-                                        <td class="py-3 px-4 text-right tabular-nums text-gray-800">${{ number_format((float) $factura->total_pagar, 2) }}</td>
+                                        <td class="col-span-2 py-3 px-4 text-right tabular-nums text-gray-800">${{ number_format((float) $factura->total_pagar, 2) }}</td>
                                         @if ($puedeGestionar && $editable)
-                                            <td class="py-3 px-4 text-right">
+                                            <td class="col-span-2 py-3 px-4 text-right">
                                                 <form method="POST" action="{{ route('facturacion.listas.facturas.desvincular', [$lista, $factura]) }}"
                                                       onsubmit="return confirm('¿Quitar el vínculo con esta factura? El documento fiscal NO se borra ni se modifica.');">
                                                     @csrf @method('DELETE')
-                                                    <button class="text-xs text-red-600 hover:underline">Desvincular</button>
+                                                    <button class="inline-flex min-h-11 sm:min-h-0 items-center text-xs text-red-600 hover:underline">Desvincular</button>
                                                 </form>
                                             </td>
                                         @endif
@@ -297,10 +299,12 @@
 
             {{-- Productos --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
+                {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada dato
+                     encima del valor. Desde md, la tabla de siempre. --}}
                 <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
+                    <table class="block md:table min-w-full text-sm">
                         <caption class="sr-only">Productos de la lista de empaque #{{ $lista->id }}</caption>
-                        <thead>
+                        <thead class="hidden md:table-header-group">
                             <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                                 <th scope="col" class="py-3 px-4 text-right">Cajas</th>
                                 <th scope="col" class="py-3 px-4">Descripción</th>
@@ -315,27 +319,27 @@
                                 <th scope="col" class="py-3 px-4 text-right">Bruto lb</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
+                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                             @forelse ($lista->items as $item)
-                                <tr class="hover:bg-gray-50">
-                                    <td class="py-3 px-4 text-right font-medium tabular-nums text-gray-800">{{ $item->cantidad_cajas }}</td>
-                                    <td class="py-3 px-4">
+                                <tr class="grid grid-cols-2 py-2 md:table-row hover:bg-gray-50">
+                                    <td class="py-3 px-4 md:text-right font-medium tabular-nums text-gray-800"><span class="md:hidden block text-xs text-gray-500">Cajas</span>{{ $item->cantidad_cajas }}</td>
+                                    <td class="col-span-2 py-3 px-4">
                                         <div class="font-medium text-gray-800">{{ $item->nombre_es }}</div>
                                         <div class="text-xs text-gray-500">{{ $item->nombre_en }}</div>
                                     </td>
-                                    <td class="py-3 px-4 text-gray-600">{{ $item->unidad ?? '—' }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ $item->unidades_por_caja }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ number_format($item->totalUnidades()) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">${{ number_format((float) $item->precio_caja, 2) }}</td>
-                                    <td class="py-3 px-4 text-right font-medium tabular-nums text-gray-800">${{ number_format($item->valorTotal(), 2) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ number_format($item->pesoNetoTotalKg(), 1) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ number_format($item->pesoBrutoTotalKg(), 1) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ number_format($item->pesoNetoTotalLb(), 1) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ number_format($item->pesoBrutoTotalLb(), 1) }}</td>
+                                    <td class="py-3 px-4 text-gray-600"><span class="md:hidden block text-xs text-gray-500">Empaque</span>{{ $item->unidad ?? '—' }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Unid./caja</span>{{ $item->unidades_por_caja }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Total unid.</span>{{ number_format($item->totalUnidades()) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Precio caja</span>${{ number_format((float) $item->precio_caja, 2) }}</td>
+                                    <td class="py-3 px-4 md:text-right font-medium tabular-nums text-gray-800"><span class="md:hidden block text-xs text-gray-500">Valor total</span>${{ number_format($item->valorTotal(), 2) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Neto kg</span>{{ number_format($item->pesoNetoTotalKg(), 1) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Bruto kg</span>{{ number_format($item->pesoBrutoTotalKg(), 1) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Neto lb</span>{{ number_format($item->pesoNetoTotalLb(), 1) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600"><span class="md:hidden block text-xs text-gray-500">Bruto lb</span>{{ number_format($item->pesoBrutoTotalLb(), 1) }}</td>
                                 </tr>
                             @empty
-                                <tr>
-                                    <td colspan="11" class="py-10 text-center text-gray-400">
+                                <tr class="block md:table-row">
+                                    <td colspan="11" class="block md:table-cell py-10 text-center text-gray-400">
                                         Sin productos.
                                         @if ($puedeGestionar && $editable)
                                             <a href="{{ route('facturacion.listas.edit', $lista) }}" class="text-indigo-600 hover:underline">Agregalos editando la lista</a>.
@@ -345,17 +349,19 @@
                             @endforelse
                         </tbody>
                         @if ($lista->items->isNotEmpty())
-                            <tfoot>
-                                <tr class="border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
-                                    <td class="py-3 px-4 text-right tabular-nums">{{ $lista->totalCajas() }}</td>
-                                    <td class="py-3 px-4" colspan="3">Totales</td>
-                                    <td class="py-3 px-4 text-right tabular-nums">{{ number_format($lista->totalUnidades()) }}</td>
-                                    <td class="py-3 px-4"></td>
-                                    <td class="py-3 px-4 text-right tabular-nums">${{ number_format($lista->valorTotal(), 2) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums">{{ number_format($lista->pesoNetoTotalKg(), 1) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums">{{ number_format($lista->pesoBrutoTotalKg(), 1) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums">{{ number_format($lista->pesoNetoTotalLb(), 1) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums">{{ number_format($lista->pesoBrutoTotalLb(), 1) }}</td>
+                            {{-- md:table-row-group y no table-footer-group (no está en el CSS de producción):
+                                 el pie ya va último, así que en escritorio se ve igual. --}}
+                            <tfoot class="block md:table-row-group">
+                                <tr class="grid grid-cols-2 py-2 md:table-row border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Total de cajas</span>{{ $lista->totalCajas() }}</td>
+                                    <td class="hidden md:table-cell py-3 px-4" colspan="3">Totales</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Total unid.</span>{{ number_format($lista->totalUnidades()) }}</td>
+                                    <td class="hidden md:table-cell py-3 px-4"></td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Valor total</span>${{ number_format($lista->valorTotal(), 2) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Neto kg</span>{{ number_format($lista->pesoNetoTotalKg(), 1) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Bruto kg</span>{{ number_format($lista->pesoBrutoTotalKg(), 1) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Neto lb</span>{{ number_format($lista->pesoNetoTotalLb(), 1) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums"><span class="md:hidden block text-xs text-gray-500">Bruto lb</span>{{ number_format($lista->pesoBrutoTotalLb(), 1) }}</td>
                                 </tr>
                             </tfoot>
                         @endif

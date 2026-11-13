@@ -333,8 +333,8 @@
                         </div>
                     @else
                     <div class="flex items-center gap-3">
-                        <x-primary-button>Crear CCF</x-primary-button>
-                        <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
+                        <x-primary-button class="min-h-11 sm:min-h-0 justify-center">Crear CCF</x-primary-button>
+                        <a href="{{ route('facturacion.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-gray-500 hover:underline">Cancelar</a>
                     </div>
                     @endif
                 </form>

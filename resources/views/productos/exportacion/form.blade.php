@@ -35,8 +35,8 @@
                 </section>
 
                 <div class="flex items-center gap-3 p-6">
-                    <x-primary-button>Agregar al catálogo</x-primary-button>
-                    <a href="{{ route('productos.exportacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
+                    <x-primary-button class="min-h-11 sm:min-h-0 justify-center">Agregar al catálogo</x-primary-button>
+                    <a href="{{ route('productos.exportacion.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-gray-500 hover:underline">Cancelar</a>
                 </div>
             </form>
         </div>

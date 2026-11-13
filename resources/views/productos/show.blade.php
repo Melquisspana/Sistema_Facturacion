@@ -52,9 +52,11 @@
                     El precio aplicado se congela en el documento.
                 </p>
 
+                {{-- Celular (debajo de md): cada precio se apila como tarjeta y sus acciones pasan
+                     a botones de 44 px. Desde md, la tabla de siempre. --}}
                 <div class="overflow-x-auto mb-4">
-                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead>
+                    <table class="block md:table min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="hidden md:table-header-group">
                             <tr class="text-left text-gray-500">
                                 <th class="px-3 py-2">Cliente</th>
                                 <th class="px-3 py-2">Sala / sucursal</th>
@@ -63,19 +65,31 @@
                                 <th class="px-3 py-2 text-right">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
+                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                             @forelse ($producto->preciosCliente as $precio)
-                                <tr>
-                                    <td class="px-3 py-2">{{ $precio->cliente?->nombre ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ $precio->clienteSucursal?->nombre ?? 'Todas' }}</td>
+                                <tr class="grid grid-cols-2 py-2 md:table-row">
+                                    <td class="col-span-2 px-3 py-2">{{ $precio->cliente?->nombre ?? '—' }}</td>
+                                    <td class="px-3 py-2"><span class="md:hidden text-gray-500">Sala:</span> {{ $precio->clienteSucursal?->nombre ?? 'Todas' }}</td>
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($precio->precio, 2) }}</td>
                                     <td class="px-3 py-2">
                                         <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $precio->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">
                                             {{ $precio->activo ? 'Activo' : 'Inactivo' }}
                                         </span>
                                     </td>
-                                    <td class="px-3 py-2 text-right whitespace-nowrap">
+                                    <td class="col-span-2 px-3 py-2 text-right whitespace-nowrap">
                                         @can('update', $producto)
+                                            <div class="md:hidden grid grid-cols-2 gap-2">
+                                                <form method="POST" action="{{ route('productos.precios.toggle-activo', [$producto, $precio]) }}">
+                                                    @csrf @method('PATCH')
+                                                    <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-2 text-sm font-medium text-amber-700">{{ $precio->activo ? 'Inactivar' : 'Activar' }}</button>
+                                                </form>
+                                                <form method="POST" action="{{ route('productos.precios.destroy', [$producto, $precio]) }}"
+                                                      onsubmit="return confirm('¿Eliminar este precio?');">
+                                                    @csrf @method('DELETE')
+                                                    <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-2 text-sm font-medium text-red-700">Eliminar</button>
+                                                </form>
+                                            </div>
+                                            <div class="hidden md:block">
                                             <form method="POST" action="{{ route('productos.precios.toggle-activo', [$producto, $precio]) }}" class="inline">
                                                 @csrf @method('PATCH')
                                                 <button class="text-amber-600 hover:underline">{{ $precio->activo ? 'Inactivar' : 'Activar' }}</button>
@@ -85,11 +99,12 @@
                                                 @csrf @method('DELETE')
                                                 <button class="text-red-600 hover:underline ml-2">Eliminar</button>
                                             </form>
+                                            </div>
                                         @endcan
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400">Sin precios especiales. Se usa el precio general.</td></tr>
+                                <tr class="block md:table-row"><td colspan="5" class="block md:table-cell px-3 py-6 text-center text-gray-400">Sin precios especiales. Se usa el precio general.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

@@ -92,15 +92,15 @@
                                        step="{{ $porMonto ? '1' : '0.0001' }}" min="0.0001" inputmode="decimal"
                                        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                        title="Se guarda solo al cambiar la cantidad"
-                                       class="block w-20 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
+                                       class="block min-h-11 sm:min-h-0 w-20 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
                                 {{-- Fallback discreto: con JS se guarda solo; sin JS este botón sigue funcionando. --}}
-                                <button class="text-gray-400 hover:text-gray-600 hover:underline text-xs"
+                                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-2 sm:px-0 text-gray-400 hover:text-gray-600 hover:underline text-xs"
                                         title="También se guarda solo al cambiar la cantidad">Actualizar</button>
                             </form>
                             <form method="POST" action="{{ route('facturacion.lineas.destroy', [$dte, $linea]) }}"
                                   data-ajax="destroy" onsubmit="return confirm('¿Quitar esta línea de la nota de crédito?');">
                                 @csrf @method('DELETE')
-                                <button class="text-red-600 hover:underline text-xs">Quitar</button>
+                                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-2 sm:px-0 text-red-600 hover:underline text-xs">Quitar</button>
                             </form>
                         </div>
                     @endcan
