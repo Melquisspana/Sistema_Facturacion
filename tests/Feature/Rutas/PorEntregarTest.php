@@ -6,6 +6,7 @@ use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
+use App\Http\Controllers\Rutas\PorEntregarController;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Cobros\CobroDocumento;
@@ -650,6 +651,25 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $otro), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(ResultadoEntrega::Entregado, $anterior->refresh()->resultado);
         $this->assertSame(1, $viaje->entregas()->count());
+    }
+
+    public function test_el_doble_toque_en_no_se_pudo_no_anota_otro_intento(): void
+    {
+        // Doble toque o reintento con mala señal: el mismo vendedor manda dos veces lo mismo.
+        $dte = $this->ccf('Antiguo');
+        $this->actingAs($this->vendedor);
+        $datos = QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']);
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), $datos)->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), $datos)
+            ->assertSessionHasNoErrors()->assertSessionHas('status', PorEntregarController::YA_ANOTADA);
+
+        $this->assertSame([$dte->id => 1], app(EntregasCcf::class)->fallas([$dte->id]), 'Una sola falla: el jefe no ve «dos veces».');
+        $this->assertFalse(Activity::where('description', EntregasCcf::REINTENTO)->exists());
+
+        // Un «Entregado» repetido sobre su propio «No se pudo» de hoy tampoco lo pisa: se deshace primero.
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
+            ->assertSessionHas('status', PorEntregarController::YA_ANOTADA);
+        $this->assertSame(ResultadoEntrega::NoEntregado, SalidaRuta::sole()->entregas()->sole()->resultado);
     }
 
     public function test_sumarse_con_un_participante_inactivo_no_rompe_el_registro(): void
