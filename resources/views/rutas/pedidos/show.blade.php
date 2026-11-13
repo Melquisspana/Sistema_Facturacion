@@ -6,7 +6,8 @@
      regresa] (FacturarPedido::regresa): la columna «Regresa» sale solo si ya se facturó algo.
      «Facturar» (solo quien factura) abre el formulario del CCF con lo que sigue sin facturar;
      con un borrador abierto no sale y se dice por qué: lo nuevo va en ese mismo CCF. El enlace
-     lleva `desde=pedido` para que «Cancelar» vuelva a esta ficha. --}}
+     lleva `desde=pedido` para que «Cancelar» vuelva a esta ficha. «Corregir» y «Anular» (13/11/2026)
+     solo para quien puede (`corregirEnOficina`) y mientras no se haya facturado. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -25,6 +26,9 @@
         $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);
         $puedeFacturar = $pedido->estaVigente() && $facturacion['por_facturar']->isNotEmpty() && ! $facturacion['borrador'];
         $llegoDespues = $pedido->estaVigente() && $facturacion['por_facturar']->isNotEmpty() && $facturacion['borrador'] !== null;
+        // La oficina corrige o anula (13/11/2026): no si ya se facturó; anular, solo sin envíos vigentes.
+        $noSeCorrige = \App\Services\Rutas\PedidosOficina::porQueNoSeCorrige($pedido);
+        $conEnvio = $pedido->envios->whereNull('anulado_en')->isNotEmpty();
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -53,8 +57,23 @@
                                    class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
                             @endcan
                         @endif
+                        @can('corregirEnOficina', $pedido)
+                            @if ($noSeCorrige === null)
+                                <a href="{{ route('rutas.pedidos.corregir', $pedido) }}"
+                                   class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Corregir</a>
+                                @unless ($conEnvio)
+                                    <a href="{{ route('rutas.pedidos.anular', $pedido) }}"
+                                       class="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Anular</a>
+                                @endunless
+                            @endif
+                        @endcan
                     </div>
                 </div>
+                @can('corregirEnOficina', $pedido)
+                    @if ($noSeCorrige !== null)
+                        <p class="mt-3 text-sm text-gray-600">{{ $noSeCorrige }}</p>
+                    @endif
+                @endcan
                 @if ($llegoDespues)
                     <p class="mt-3 text-sm text-amber-800">{{ \App\Services\Rutas\FacturarPedido::LLEGO_DESPUES_DEL_BORRADOR }}</p>
                 @endif

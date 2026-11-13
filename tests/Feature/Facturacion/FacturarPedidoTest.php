@@ -315,7 +315,7 @@ class FacturarPedidoTest extends TestCase
         $pedido->update(['estado' => EstadoPedidoSala::Anulado]);
 
         $this->post(route('facturacion.pedidos.facturar', $pedido))
-            ->assertSessionHasErrors(['pedido' => 'El vendedor anuló este pedido.']);
+            ->assertSessionHasErrors(['pedido' => 'Este pedido está anulado.']);
         $this->assertSame(0, Dte::withTrashed()->count());
     }
 

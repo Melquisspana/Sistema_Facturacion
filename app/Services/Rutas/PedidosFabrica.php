@@ -41,7 +41,7 @@ class PedidosFabrica
 
     public const CAMBIO = 'Este pedido cambió mientras lo mirabas. Revisalo de nuevo.';
 
-    public const ANULADO = 'El vendedor anuló este pedido.';
+    public const ANULADO = 'Este pedido está anulado.';
 
     public const CERRADO = 'Este pedido ya está cerrado.';
 
