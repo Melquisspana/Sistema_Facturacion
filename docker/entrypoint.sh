@@ -6,7 +6,8 @@
 #    como www-data; después Apache arranca y atiende con www-data.
 #  - Como www-data (worker, programador, comandos a mano): corre lo de abajo directo.
 #
-# Cachea la configuración, porque el .env se monta al arrancar y no existe al construir.
+# Cachea la configuración, porque el .env se monta al arrancar y no existe al construir, y
+# también las rutas y los eventos.
 # NUNCA corre migrate: las migraciones se corren a mano y con respaldo.
 set -eu
 
@@ -42,6 +43,17 @@ if [ ! -f .env ] || ! como_www_data test -r .env; then
 fi
 
 como_www_data php artisan config:cache --no-ansi
+
+# Rutas y eventos armados una vez al arrancar, no en cada pedido. Es solo velocidad: si
+# fallaran, se limpian y la aplicación arranca igual (resuelve las rutas en cada pedido).
+como_www_data php artisan route:cache --no-ansi || {
+    echo "facturacion-entrypoint: route:cache falló; sigue sin caché de rutas" >&2
+    como_www_data php artisan route:clear --no-ansi || true
+}
+como_www_data php artisan event:cache --no-ansi || {
+    echo "facturacion-entrypoint: event:cache falló; sigue sin caché de eventos" >&2
+    como_www_data php artisan event:clear --no-ansi || true
+}
 
 if [ ! -e public/storage ]; then
     como_www_data php artisan storage:link --no-ansi
