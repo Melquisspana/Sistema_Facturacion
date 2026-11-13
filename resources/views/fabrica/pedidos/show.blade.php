@@ -5,14 +5,14 @@
      sola. Pantalla táctil de fábrica (docs/GUIA_PANTALLAS.md, «Pantalla táctil»):
      botones de min-h-12 con py-4/py-5 y letra text-xl/2xl; funciona igual con el mouse.
 
-     El motivo es opcional y nunca `required`: lo que decide es el servidor. --}}
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
-        </div>
-    </x-slot>
+     El motivo es opcional y nunca `required`: lo que decide es el servidor.
 
+     A pantalla completa (12/11/2026): arriba, «Todos» (vuelve a la lista) y los otros
+     pedidos por mandar, los que se están armando primero. Tocar uno cambia de pedido sin
+     perder nada: como «Dejar para después», primero termina de guardar (salir()). Después
+     los datos de la sala y, abajo, los productos. «Imprimir y mandar» registra el envío y
+     abre su hoja para imprimir. --}}
+<x-app-layout :pantalla-completa="true">
     @php
         $faltan = $pedido->lineas->filter->tienePendiente();
         $conBorrador = $pedido->armando_desde !== null || $pedido->lineas->whereNotNull('va_borrador')->isNotEmpty();
@@ -25,62 +25,104 @@
     <div class="py-6 sm:py-8">
         <div class="max-w-3xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
              x-data="{
-                 enviando: false, estado: '', error: false, espera: null, enCurso: null,
-                 {{-- Un solo retardo corto desde el último cambio. --}}
+                 enviando: false, saliendo: false, sucio: false, cola: Promise.resolve(),
+                 estado: '', error: false, aviso: false, espera: null,
+                 {{-- Un solo retardo corto desde el último cambio. `sucio`: hay algo sin guardar. --}}
                  guardar() {
                      if (this.enviando) return;
+                     this.sucio = true;
                      clearTimeout(this.espera);
-                     this.espera = setTimeout(() => this.enviarBorrador(), 500);
+                     if (! this.saliendo) this.espera = setTimeout(() => this.enviarBorrador(), 500);
                  },
-                 {{-- keepalive: el guardado llega aunque se esté saliendo de la hoja. --}}
+                 {{-- Los guardados van EN FILA, nunca dos a la vez: cada uno sale cuando terminó
+                      el anterior y lleva lo que hay en ese momento en la hoja. Así uno viejo no
+                      llega después y pisa lo último. --}}
                  enviarBorrador() {
-                     this.espera = null;
-                     if (this.enviando) return Promise.resolve();
+                     clearTimeout(this.espera); this.espera = null;
+                     const p = this.cola.then(() => this.guardarAhora());
+                     this.cola = p;
+                     return p;
+                 },
+                 {{-- keepalive: el guardado llega aunque se esté saliendo de la hoja. Si falla,
+                      lo marcado sigue `sucio`. Nunca rechaza: la fila no se corta. --}}
+                 guardarAhora() {
+                     if (this.enviando || ! this.sucio) return Promise.resolve();
+                     this.sucio = false;
                      this.estado = 'Guardando…'; this.error = false;
                      const datos = new FormData(this.$refs.form);
                      datos.set('_method', 'PATCH');
-                     const p = fetch(@js(route('fabrica.pedidos.borrador', $pedido)), {
+                     return fetch(@js(route('fabrica.pedidos.borrador', $pedido)), {
                          method: 'POST', body: datos, keepalive: true,
                          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                      }).then(async (r) => {
-                         if (r.ok) { this.estado = 'Guardado'; return; }
-                         this.error = true;
+                         if (r.ok) { this.estado = 'Guardado'; this.aviso = false; return; }
+                         this.error = true; this.sucio = true;
                          if (r.status === 401 || r.status === 419) { this.estado = 'Se cerró la sesión. Volvé a entrar.'; return; }
                          const j = await r.json().catch(() => ({}));
                          this.estado = Object.values(j.errors || {}).flat()[0] || 'No se pudo guardar. Volvé a abrir el pedido.';
-                     }).catch(() => { this.error = true; this.estado = 'No se pudo guardar. Revisá la conexión.'; });
-                     this.enCurso = p;
-                     p.then(() => { if (this.enCurso === p) this.enCurso = null; });
-                     return p;
+                     }).catch(() => { this.error = true; this.sucio = true; this.estado = 'No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.'; });
                  },
-                 {{-- Lo que falta guardar sale antes de irse (menú, otra pestaña, cerrar). --}}
+                 {{-- Lo que falta guardar sale antes de irse (la barra de arriba, otra pestaña, cerrar). --}}
                  alSalir() {
-                     if (! this.enviando && this.espera !== null) { clearTimeout(this.espera); this.enviarBorrador(); }
+                     if (! this.enviando && ! this.saliendo && this.sucio) this.enviarBorrador();
                  },
-                 {{-- «Dejar para después»: espera a que se guarde y recién ahí vuelve a la lista. --}}
+                 {{-- «Dejar para después», «Todos» y los otros pedidos: espera la fila entera y se
+                      va solo cuando no queda nada sin guardar. Si un guardado falla, NO se va:
+                      queda todo como está y avisa arriba. Mientras se manda, no se sale. --}}
                  async salir(destino) {
-                     if (this.espera !== null) { clearTimeout(this.espera); await this.enviarBorrador(); }
-                     else if (this.enCurso) { await this.enCurso; }
+                     if (this.enviando || this.saliendo) return;
+                     this.saliendo = true;
+                     await this.enviarBorrador();
+                     while (this.sucio && ! this.error) await this.enviarBorrador();
+                     if (this.error) { this.aviso = true; this.saliendo = false; return; }
                      location.href = destino;
                  },
-                 {{-- Mandar o borrar lo marcado: ningún guardado pendiente puede llegar después. --}}
+                 {{-- Mandar o borrar lo marcado: espera los guardados en vuelo y ninguno sale
+                      después. Mientras se sale, no se manda. --}}
                  async enviar(form) {
-                     if (this.enviando) return;
+                     if (this.enviando || this.saliendo) return;
                      clearTimeout(this.espera); this.espera = null; this.enviando = true;
-                     if (this.enCurso) await this.enCurso;
+                     await this.cola;
                      form.submit();
                  },
              }"
              @pagehide.window="alSalir()">
+            <nav aria-label="Otros pedidos" class="flex flex-wrap gap-3">
+                <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
+                   class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
+                @foreach ($otros as $otro)
+                    <a href="{{ route('fabrica.pedidos.show', $otro) }}" @click.prevent="salir($el.href)"
+                       class="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 {{ $otro->armando_desde ? 'border-indigo-300 bg-indigo-50' : 'border-gray-300 bg-white' }}">
+                        {{ $otro->nombreSala() }}
+                        @if ($otro->armando_desde)
+                            <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
+                        @endif
+                    </a>
+                @endforeach
+            </nav>
+
+            <p x-show="aviso" x-cloak role="alert"
+               class="rounded-md border border-red-200 bg-red-50 p-3 text-base text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                Te quedaste en este pedido porque no se guardó lo marcado. <span x-text="estado"></span>
+            </p>
+
             <x-rutas.avisos />
 
-            <p class="text-sm text-gray-600">
-                Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}
-                {{ $pedido->numero_orden_compra ? ' · OC '.$pedido->numero_orden_compra : '' }}
-            </p>
-            @if ($pedido->notas)
-                <p class="whitespace-pre-line text-sm text-gray-700">{{ $pedido->notas }}</p>
-            @endif
+            <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
+                <h1 id="titulo-pedido" class="text-2xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
+                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2">
+                    @if ($pedido->direccionSala())
+                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Dirección</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
+                    @endif
+                    <div><dt class="text-sm text-gray-500">Zona</dt><dd class="text-gray-800">{{ $pedido->zonaNombre() }}</dd></div>
+                    <div><dt class="text-sm text-gray-500">Orden de compra</dt><dd class="font-mono text-gray-800">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
+                    <div><dt class="text-sm text-gray-500">Lo sacó</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
+                    <div><dt class="text-sm text-gray-500">Fecha y hora</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
+                    @if ($pedido->notas)
+                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
+                    @endif
+                </dl>
+            </section>
 
             <form method="POST" action="{{ route('fabrica.pedidos.mandar', $pedido) }}" x-ref="form"
                   @input="guardar()"
@@ -143,23 +185,36 @@
 
                 <p class="mt-3 text-sm" role="status" aria-live="polite" x-text="estado" :class="error ? 'text-red-600' : 'text-gray-500'"></p>
 
-                {{-- «Dejar para después» primero y «Mandar» después; en el celular, uno arriba del otro. --}}
+                {{-- «Dejar para después» primero e «Imprimir y mandar» después; en el celular, uno arriba del otro. --}}
                 <div class="sticky bottom-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-between">
                     <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
                        class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
-                    <button :disabled="enviando"
-                            class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">Mandar</button>
+                    <button :disabled="enviando || saliendo"
+                            class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">Imprimir y mandar</button>
                 </div>
             </form>
 
-            @if ($conBorrador)
-                <form method="POST" action="{{ route('fabrica.pedidos.borrador.borrar', $pedido) }}"
-                      @submit.prevent="if (confirm('¿Borrar lo marcado? Vuelve a quedar cargado todo lo que falta.')) enviar($el)">
+            {{-- «No se trae» del pedido entero (o lo que falta): un toque, sin confirmación, y
+                 en la lista sale el aviso con «Deshacer», como antes en la tarjeta. --}}
+            <div class="flex flex-wrap gap-3">
+                <form method="POST" action="{{ route('fabrica.pedidos.cerrar', $pedido) }}" @submit.prevent="enviar($el)">
                     @csrf @method('PATCH')
-                    <button :disabled="enviando"
-                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">Borrar lo marcado</button>
+                    <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
+                    <button :disabled="enviando || saliendo"
+                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
+                        {{ $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial ? 'Lo que falta no se trae' : 'No se trae' }}
+                    </button>
                 </form>
-            @endif
+
+                @if ($conBorrador)
+                    <form method="POST" action="{{ route('fabrica.pedidos.borrador.borrar', $pedido) }}"
+                          @submit.prevent="if (confirm('¿Borrar lo marcado? Vuelve a quedar cargado todo lo que falta.')) enviar($el)">
+                        @csrf @method('PATCH')
+                        <button :disabled="enviando || saliendo"
+                                class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">Borrar lo marcado</button>
+                    </form>
+                @endif
+            </div>
         </div>
     </div>
 </x-app-layout>

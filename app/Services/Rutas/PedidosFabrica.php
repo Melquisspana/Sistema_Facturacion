@@ -80,15 +80,65 @@ class PedidosFabrica
      *
      * @return array<int|string, mixed>
      */
-    public function relaciones(): array
+    public function relaciones(bool $conSala = false): array
     {
-        return [
-            'sala:id,nombre', 'ruta:id,nombre', 'sacadoPor:id,nombre', 'armandoPor:id,name',
+        // `$conSala`: el pedido abierto y la hoja de un envío suman la dirección de la sala (o
+        // la del cliente) y el código de cada producto. Va en el mismo renglón y no repetido:
+        // dos `select` de la misma relación se combinan y gana el último.
+        return array_merge([
+            $conSala ? 'sala:id,cliente_id,nombre,direccion' : 'sala:id,nombre',
+            // `salida.ruta`: la zona del viaje, que se muestra si el pedido no tiene la suya
+            // (la tienda nueva, {@see PedidoSala::zonaNombre()}).
+            'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'armandoPor:id,name',
             'lineas' => fn ($q) => $q->orderBy('id'),
-            'lineas.producto:id,nombre',
+            $conSala ? 'lineas.producto:id,nombre,codigo' : 'lineas.producto:id,nombre',
             'lineas.envioLineasVigentes',
             'envios' => fn ($q) => $q->select('id', 'pedido_sala_id', 'numero', 'anulado_en')->orderBy('id'),
-        ];
+        ], $conSala ? ['sala.cliente:id,direccion'] : []);
+    }
+
+    /**
+     * Lo que NO fue en un envío, tal como salió: por línea, lo pedido menos lo que llevaron
+     * ese envío y los vigentes anteriores (por número). Los envíos que salieron después no
+     * cuentan: reimpreso, el envío 1 sigue diciendo lo que le faltó. `ultimo` dice si después
+     * de este no hubo NINGÚN envío, ni siquiera uno ya deshecho (que pudo dejar su motivo):
+     * solo entonces el estado y los motivos actuales del pedido son los de este envío (los
+     * motivos se guardan por línea, no por envío).
+     *
+     * @param  PedidoSala  $pedido  con `lineas.producto`
+     * @return array{faltan: \Illuminate\Support\Collection<int, array{linea: PedidoSalaLinea, cantidad: string}>, ultimo: bool}
+     */
+    public function faltanteAlEnvio(PedidoSala $pedido, PedidoSalaEnvio $envio): array
+    {
+        $envios = $pedido->envios()->with('lineas')->get();
+        $mandado = [];
+        foreach ($envios->whereNull('anulado_en')->where('numero', '<=', $envio->numero) as $anterior) {
+            foreach ($anterior->lineas as $l) {
+                $mandado[$l->pedido_sala_linea_id] = bcadd($mandado[$l->pedido_sala_linea_id] ?? '0', (string) $l->cantidad, 4);
+            }
+        }
+
+        $faltan = $pedido->lineas
+            ->map(fn (PedidoSalaLinea $linea) => ['linea' => $linea, 'cantidad' => bcsub((string) $linea->cantidad, $mandado[$linea->id] ?? '0', 4)])
+            ->filter(fn (array $f) => bccomp($f['cantidad'], '0', 4) === 1)
+            ->values();
+
+        return ['faltan' => $faltan, 'ultimo' => $envios->where('numero', '>', $envio->numero)->isEmpty()];
+    }
+
+    /**
+     * Los demás pedidos por mandar, para la fila de arriba del pedido abierto: primero los
+     * que se están armando y después el resto, cada grupo del más viejo al más nuevo. Solo
+     * el nombre: sin líneas.
+     *
+     * @return Collection<int, PedidoSala>
+     */
+    public function otrosPorMandar(PedidoSala $pedido): Collection
+    {
+        return $this->porMandar()->withOnly(['sala:id,nombre'])->whereKeyNot($pedido->id)
+            ->get(['id', 'cliente_sucursal_id', 'sala_nueva_nombre', 'armando_desde', 'fecha'])
+            ->sortBy(fn (PedidoSala $p) => $p->armando_desde === null ? 1 : 0)
+            ->values();
     }
 
     /**
@@ -112,7 +162,7 @@ class PedidosFabrica
         $cerrados = PedidoSala::query()
             ->whereIn('estado', [EstadoPedidoSala::NoSeTrae->value, EstadoPedidoSala::Enviado->value])
             ->whereDate('fecha', '>=', Carbon::parse($hoy)->subDays(self::DIAS_CERRADOS)->toDateString())
-            ->with(['sala:id,nombre', 'ruta:id,nombre', 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
+            ->with(['sala:id,nombre', 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->get()

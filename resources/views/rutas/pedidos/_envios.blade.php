@@ -6,11 +6,13 @@
      $conSala, pedido.sala; con $conFacturacion o $conDeshacer, también dte); $conSala (bool);
      $conDeshacer (bool, solo la fábrica; si ya se facturó, en vez del botón dice que avise a
      la oficina); $conFacturacion (bool, solo la oficina: «Por facturar»,
-     «Borrador abierto» o «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto). --}}
+     «Borrador abierto» o «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto);
+     $conImprimir (bool, solo la fábrica: «Imprimir de nuevo» la hoja de cada envío vigente). --}}
 @php
     $conSala ??= false;
     $conDeshacer ??= false;
     $conFacturacion ??= false;
+    $conImprimir ??= false;
 @endphp
 <ul class="space-y-3">
     @foreach ($envios as $envio)
@@ -38,6 +40,10 @@
                     <li><span class="font-semibold tabular-nums">{{ $linea->cantidadLegible() }}</span> × {{ $linea->linea?->producto?->nombre }}</li>
                 @endforeach
             </ul>
+            @if ($conImprimir && ! $anulado)
+                <a href="{{ route('fabrica.pedidos.imprimir', [$envio->pedido_sala_id, $envio]) }}"
+                   class="mt-3 inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Imprimir de nuevo</a>
+            @endif
             @if ($conDeshacer)
                 @can('anular', $envio)
                     <form method="POST" action="{{ route('fabrica.pedidos.anular-envio', [$envio->pedido_sala_id, $envio]) }}" class="mt-3"

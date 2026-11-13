@@ -226,8 +226,9 @@ Tomado de las fichas de Gastos y Rutas.
 
 Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el dedo o con el mouse de una laptop. Agregado el 09/11/2026.
 
-- **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Se manda todo», «Mandar»).
-- **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («Faltan cosas», «No se trae», «Deshacer»).
+- **Pantalla completa** (12/11/2026): sin la barra lateral ni el menú del sistema (`<x-app-layout :pantalla-completa="true">`). Arriba solo la empresa, la persona y «Salir»; quien ve más que Fábrica tiene además «Volver al sistema». La lista es de nombres en botones grandes; al tocar uno se abre el pedido, con una fila arriba para pasar a otro pedido o volver a «Todos».
+- **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Imprimir y mandar»).
+- **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («No se trae», «Dejar para después», «Deshacer», «Imprimir de nuevo»).
 - **Cantidad:** `text-2xl font-bold tabular-nums`, alineada a la derecha.
 - Sin texto con prefijo de pantalla: el botón dice lo que hace.
 - Lo que se puede deshacer no se confirma: sale el aviso con un botón «Deshacer».
@@ -237,7 +238,7 @@ Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el 
 
 ### Páginas para imprimir
 
-Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`) y la hoja de lo que salió de la fábrica (`rutas/pedidos/hoja`). Agregado el 09/11/2026.
+Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`), la hoja de lo que salió de la fábrica (`rutas/pedidos/hoja`) y la hoja de cada envío que imprime la fábrica (`fabrica/pedidos/imprimir`, que se imprime sola al abrir). Agregado el 09/11/2026.
 
 - Documento aparte: su propio `<html>`, sus estilos en un `<style>` y sin el bundle de la aplicación ni la barra. No lleva modo oscuro.
 - Color de acento con los mismos colores del sistema: índigo para el encabezado y la tabla, verde, ámbar y rojo con el significado de las etiquetas de estado. Se imprime tal cual (`-webkit-print-color-adjust: exact; print-color-adjust: exact;`). **Regla:** la hoja se tiene que leer igual en una impresora en blanco y negro: nada se dice solo con color, los textos de color son tonos oscuros (`700`/`800`) y las cajas claras llevan borde. Entra en hoja carta vertical (`@page { size: letter portrait; }`).
