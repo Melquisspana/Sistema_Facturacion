@@ -1315,8 +1315,8 @@ class CatalogoAjustes
                 nivel: NivelConfirmacion::N2,
                 editabilidad: Editabilidad::Editable,
                 persistencia: Persistencia::Nueva,
-                etiqueta: 'La fábrica ve los pedidos desde',
-                descripcion: 'Los pedidos de sala con fecha anterior no aparecen en «Por mandar» de la fábrica. Sin fecha, aparecen todos.',
+                etiqueta: '«Por mandar» muestra los pedidos desde',
+                descripcion: 'Los pedidos de sala con fecha anterior no aparecen en «Por mandar» de la PC de pedidos. Sin fecha, aparecen todos.',
                 claveConfig: 'pedidos.fabrica_desde',
                 reglas: ['fecha'],
             ),
@@ -1330,11 +1330,27 @@ class CatalogoAjustes
                 editabilidad: Editabilidad::Editable,
                 persistencia: Persistencia::Nueva,
                 etiqueta: 'A quién va el resumen de las 6 de la tarde',
-                descripcion: 'Uno o varios correos separados por coma. Cada día a las 6 de la tarde reciben qué salió de la fábrica, qué faltó y qué sigue por mandar, y también las ventas y los cobros del día: lo vendido y el PDF del día de cada vendedor. Agregá solo a quien pueda ver ese dinero. Vacío, no se manda.',
+                descripcion: 'Uno o varios correos separados por coma. Cada día a las 6 de la tarde reciben qué se despachó, qué faltó y qué sigue por mandar, y también las ventas y los cobros del día: lo vendido y el PDF del día de cada vendedor. Agregá solo a quien pueda ver ese dinero. Vacío, no se manda.',
                 claveConfig: 'pedidos.correo_resumen_diario',
                 reglas: ['correos', 'maxlen:500'],
                 // Son correos de personas: la auditoría guarda solo que cambió.
                 datoPersonal: true,
+            ),
+            // Ids de `cliente_sucursales`, activas al guardarse (regla `salas`). Solo
+            // «Sacar pedido» las esconde y las rechaza; facturar, NC y PPQ no cambian.
+            DefinicionAjuste::hacer(
+                clave: 'pedidos.salas_sin_pedidos',
+                seccion: 'rutas',
+                tipo: TipoAjuste::Lista,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Salas donde no se sacan pedidos',
+                descripcion: 'No aparecen en «Sacar pedido» y no se puede sacar un pedido en ellas. Se siguen facturando y siguen en notas de crédito, pronto pago y seguimiento. Sin ninguna marcada, se sacan pedidos en todas.',
+                claveConfig: 'pedidos.salas_sin_pedidos',
+                reglas: ['salas'],
             ),
 
             // ---------------------------------------------------------- Gastos

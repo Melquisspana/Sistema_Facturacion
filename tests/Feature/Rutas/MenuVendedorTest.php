@@ -19,6 +19,7 @@ use App\Models\UnidadMedida;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\QuienEntrega;
 use Tests\TestCase;
 
 /**
@@ -90,7 +91,7 @@ class MenuVendedorTest extends TestCase
         // Marca una entrega.
         $this->get(route('rutas.por-entregar.index', ['ver' => 'todas']))->assertOk()
             ->assertSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
-        $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHasNoErrors()->assertSessionMissing('error');
         $entrega = SalidaRutaEntrega::sole();
         $this->assertSame([ResultadoEntrega::Entregado, $ficha->id, $this->admin->id], [$entrega->resultado, $entrega->entregado_por_id, $entrega->registrado_por]);
@@ -165,7 +166,7 @@ class MenuVendedorTest extends TestCase
                 ->assertSee('Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.')
                 ->assertSee($dte->numero_control)
                 ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
-            $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertForbidden();
+            $this->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertForbidden();
             // Sin permisos nuevos: ni el Inicio del celular ni «Sacar pedido».
             $this->get(route('rutas.mi-salida.index'))->assertForbidden();
             $this->get(route('rutas.sacar-pedido.index'))->assertForbidden();

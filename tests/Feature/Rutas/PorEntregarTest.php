@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Tests\Support\CcfDeLaRuta;
+use Tests\Support\QuienEntrega;
 use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
@@ -267,7 +268,7 @@ class PorEntregarTest extends TestCase
         $deOtraRuta = $this->ccf('San Marcos');
 
         $this->actingAs($this->vendedor)->from(route('rutas.por-entregar.index'))
-            ->post(route('rutas.por-entregar.marcar', $primero), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'trae_nota_averia' => '1'])
+            ->post(route('rutas.por-entregar.marcar', $primero), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'trae_nota_averia' => '1']))
             ->assertRedirect(route('rutas.por-entregar.index'))->assertSessionHasNoErrors()->assertSessionHas('status');
 
         $salida = SalidaRuta::sole();
@@ -289,10 +290,10 @@ class PorEntregarTest extends TestCase
         $this->assertTrue(Activity::where('subject_id', $salida->id)->where('description', 'se armó sola la salida al marcar una entrega')->exists());
 
         // La segunda marca de la misma ruta usa la misma salida; «no se pudo» pide el motivo.
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), ['resultado' => 'no_entregado'])
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), QuienEntrega::yo(['resultado' => 'no_entregado']))
             ->assertSessionHasErrors('motivo_no_entrega');
         $this->assertSame(1, $salida->entregas()->count(), 'Sin motivo no queda nada anotado.');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']))
             ->assertSessionHasNoErrors();
         $this->assertSame(1, SalidaRuta::count());
         $this->assertSame([$primero->id, $segundo->id], $salida->entregas()->orderBy('id')->pluck('dte_id')->all());
@@ -331,16 +332,16 @@ class PorEntregarTest extends TestCase
             ->assertSee(PorEntregar::noVa($deAna))
             ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $ajeno).'"', false)
             ->assertSee('action="'.route('rutas.por-entregar.marcar', $cargado).'"', false);
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $cargado), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $cargado), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(ResultadoEntrega::Entregado, $formal->entregas()->sole()->resultado);
 
         // En la formal donde no va no se marca ni se lo suma: ir en ella le daría el cierre y la liquidación.
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $ajeno), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $ajeno), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHasErrors(['entrega' => PorEntregar::noVa($deAna)]);
         $this->assertNull($deAna->entregas()->where('dte_id', $ajeno->id)->sole()->resultado);
 
         // Lo que no va en ella lo lleva su automática de hoy, no la formal de Ana.
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $facturadoDespues), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $facturadoDespues), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $auto = SalidaRuta::whereKeyNot([$formal->id, $deAna->id])->sole();
         $this->assertTrue($auto->esAutomatica());
         $this->assertSame([$facturadoDespues->id], $auto->entregas()->pluck('dte_id')->all());
@@ -357,7 +358,7 @@ class PorEntregarTest extends TestCase
         $ana = PersonalRuta::create(['nombre' => 'Ana Inventada']);
         $viaje = $this->salidaFormal('San Marcos', $ana, fecha: '2026-11-05', acompanantes: [$this->persona]);
         $nuevo = $this->ccf('San Marcos');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $nuevo), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $nuevo), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(1, SalidaRuta::count());
         $this->assertSame(ResultadoEntrega::Entregado, $viaje->entregas()->sole()->resultado);
 
@@ -365,7 +366,7 @@ class PorEntregarTest extends TestCase
         $ayer = SalidaRuta::create(['ruta_id' => $this->rutas['Antiguo']->id, 'fecha_inicio' => '2026-11-05', 'estado' => EstadoSalidaRuta::EnCurso,
             'observaciones' => SalidaRuta::OBSERVACION_AUTOMATICA, 'created_by' => $this->vendedor->id]);
         $primero = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $primero), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $primero), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $hoy = SalidaRuta::whereKeyNot([$viaje->id, $ayer->id])->sole();
         $this->assertTrue($hoy->esAutomatica());
         $this->assertSame('2026-11-06', $hoy->fecha_inicio->toDateString());
@@ -375,7 +376,7 @@ class PorEntregarTest extends TestCase
         // Con el día de hoy cerrado, la de hoy ya no recibe: se arma otra.
         $hoy->cierres()->create(['fecha' => '2026-11-06', 'cerrado_por' => User::factory()->create()->id, 'cerrado_en' => now()]);
         $segundo = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(4, SalidaRuta::count());
         $this->assertSame(1, $hoy->entregas()->count());
 
@@ -386,7 +387,7 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
             ->assertSee(PorEntregar::diaCerrado($hoy))
             ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $tercero).'"', false);
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $tercero), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $tercero), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHasErrors(['entrega' => PorEntregar::diaCerrado($hoy)]);
         $this->assertNull($hoy->entregas()->where('dte_id', $tercero->id)->sole()->resultado);
     }
@@ -449,7 +450,7 @@ class PorEntregarTest extends TestCase
     {
         // Deshacer lo único que llevaba: se cancela en el acto.
         $dte = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
         $this->actingAs($this->vendedor)->patch(route('rutas.mi-salida.deshacer', [$auto, $auto->entregas()->sole()]))->assertSessionHasNoErrors();
         $this->assertSame(EstadoSalidaRuta::Cancelada, $auto->refresh()->estado);
@@ -458,8 +459,8 @@ class PorEntregarTest extends TestCase
         // Con dos, deshacer una no la cancela.
         $uno = $this->ccf('Antiguo');
         $dos = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $uno), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dos), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $uno), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dos), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $otra = SalidaRuta::whereKeyNot($auto->id)->sole();
         $this->actingAs($this->vendedor)->patch(route('rutas.mi-salida.deshacer', [$otra, $otra->entregas()->where('dte_id', $uno->id)->sole()]))->assertSessionHasNoErrors();
         $this->assertSame(EstadoSalidaRuta::EnCurso, $otra->refresh()->estado);
@@ -486,7 +487,7 @@ class PorEntregarTest extends TestCase
         $cierre = $viaje->cierres()->create(['fecha' => '2026-11-05', 'cerrado_por' => User::factory()->create()->id, 'cerrado_en' => '2026-11-05 18:00:00']);
         $antesDelCierre = $cierre->refresh()->only(['efectivo_cobrado', 'cheques_cobrado', 'transferencias_cobrado', 'gastos_total', 'a_entregar']);
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
 
         // En el viaje, la misma fila con fecha de hoy; sin automática y con el intento anterior en la bitácora.
         $this->assertSame(1, SalidaRuta::count(), 'No se arma una automática: el cobro queda en el viaje.');
@@ -505,20 +506,20 @@ class PorEntregarTest extends TestCase
     {
         $aviso = 'El efectivo de hoy se entrega a la oficina con el PDF del día';
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO]))->assertSessionHasNoErrors();
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
         // Con transferencia no hay efectivo que rendir.
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => 'transferencia'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'transferencia']))->assertSessionHasNoErrors();
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($aviso);
     }
 
     public function test_deshacer_la_unica_entrega_desde_mi_salida_vuelve_a_por_entregar(): void
     {
         $dte = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
 
         $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.index'))->followingRedirects()
@@ -531,7 +532,7 @@ class PorEntregarTest extends TestCase
     {
         $this->travelTo('2026-11-05 10:00:00');
         $dte = $this->ccf('Antiguo', '2026-11-05');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
         $this->travelTo('2026-11-06 05:00:00');
         $this->artisan('rutas:finalizar-automaticas')->assertSuccessful();
@@ -556,11 +557,11 @@ class PorEntregarTest extends TestCase
         // Beto no lo pudo entregar en su automática de San Marcos; después la sala pasó a Antiguo.
         [$beto, $personaBeto] = $this->vendedorMas('Beto Inventado');
         $dte = $this->ccf('San Marcos');
-        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])->assertSessionHasNoErrors();
+        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']))->assertSessionHasNoErrors();
         $deBeto = SalidaRuta::sole();
         $this->salas['San Marcos']->update(['ruta_id' => $this->rutas['Antiguo']->id]);
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte->fresh()), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte->fresh()), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
 
         $this->assertSame([$personaBeto->id], $deBeto->participantes()->pluck('rutas_personal_id')->all(), 'Carlos no entra a la de Beto.');
         $this->assertSame(ResultadoEntrega::NoEntregado, $deBeto->entregas()->sole()->resultado);
@@ -574,7 +575,7 @@ class PorEntregarTest extends TestCase
     {
         // Carlos no lo pudo entregar en su automática; la oficina lo cargó en la salida de Ana.
         $dte = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']))->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
         $deAna = $this->salidaFormal('Antiguo', PersonalRuta::create(['nombre' => 'Ana Inventada']));
         $this->assertSame(1, $this->cargarCcfDeLaRuta($deAna));
@@ -593,7 +594,7 @@ class PorEntregarTest extends TestCase
             'resultado' => ResultadoEntrega::Entregado, 'fecha_resultado' => '2026-11-05 11:00:00', 'entregado_por_id' => $this->persona->id]);
         $otraRuta = $this->automatica('San Marcos', '2026-11-05', $this->persona);
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
 
         $this->assertSame(EstadoSalidaRuta::Finalizada, $ayer->refresh()->estado);
         $this->assertSame(EstadoSalidaRuta::EnCurso, $otraRuta->refresh()->estado, 'Solo la ruta que se marca; el resto, el planificador.');
@@ -602,7 +603,7 @@ class PorEntregarTest extends TestCase
     public function test_deshacer_en_la_automatica_quita_la_fila_y_la_formal_lo_puede_llevar(): void
     {
         $dte = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $auto = SalidaRuta::sole();
         $entrega = $auto->entregas()->sole();
 
@@ -622,17 +623,17 @@ class PorEntregarTest extends TestCase
         // Hoy: Beto no lo pudo entregar; después Carlos sí.
         [$beto, $personaBeto] = $this->vendedorMas('Beto Inventado');
         $dte = $this->ccf('Antiguo');
-        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])->assertSessionHasNoErrors();
+        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']))->assertSessionHasNoErrors();
         $fila = SalidaRuta::sole()->entregas()->sole();
 
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
             ->assertSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
         // Sin motivo el reintento no pasa y lo anotado queda como estaba.
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado'])->assertSessionHasErrors('motivo_no_entrega');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado']))->assertSessionHasErrors('motivo_no_entrega');
         $this->assertSame(ResultadoEntrega::NoEntregado, $fila->refresh()->resultado);
         $this->assertSame($beto->id, $fila->registrado_por);
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $fila->refresh();
         $this->assertSame(1, SalidaRuta::sole()->entregas()->count(), 'La misma fila, no otra.');
         $this->assertSame(ResultadoEntrega::Entregado, $fila->resultado);
@@ -646,7 +647,7 @@ class PorEntregarTest extends TestCase
         $otro = $this->ccf('San Marcos', '2026-11-05');
         $anterior = $viaje->entregas()->create(['dte_id' => $otro->id, 'cliente_sucursal_id' => $otro->cliente_sucursal_id,
             'resultado' => ResultadoEntrega::NoEntregado, 'motivo_no_entrega' => 'sala_cerrada', 'fecha_resultado' => '2026-11-05 16:00:00', 'registrado_por' => $this->vendedor->id]);
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $otro), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $otro), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(ResultadoEntrega::Entregado, $anterior->refresh()->resultado);
         $this->assertSame(1, $viaje->entregas()->count());
     }
@@ -654,10 +655,10 @@ class PorEntregarTest extends TestCase
     public function test_sumarse_con_un_participante_inactivo_no_rompe_el_registro(): void
     {
         [$beto, $personaBeto] = $this->vendedorMas('Beto Inventado');
-        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $personaBeto->update(['activo' => false]);
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
 
         $auto = SalidaRuta::sole();
         $this->assertSame(2, $auto->entregas()->entregadas()->count());
@@ -668,11 +669,11 @@ class PorEntregarTest extends TestCase
     public function test_la_nota_tiene_un_limite_de_300_en_el_servidor(): void
     {
         $dte = $this->ccf('Antiguo');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => str_repeat('a', 301)])
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => str_repeat('a', 301)]))
             ->assertSessionHasErrors('nota');
         $this->assertSame(0, SalidaRuta::count());
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => str_repeat('a', 300)])
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => str_repeat('a', 300)]))
             ->assertSessionHasNoErrors();
     }
 
@@ -684,12 +685,12 @@ class PorEntregarTest extends TestCase
 
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
             ->assertSee('que quedó programada y ya no sale: pedile a la oficina que la cancele')->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasErrors('entrega');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasErrors('entrega');
         $this->assertSame(1, SalidaRuta::count());
 
         // Cancelada, el CCF queda libre y se entrega como cualquiera.
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'))->patch(route('rutas.salidas.cancelar', $planificada))->assertSessionHas('status');
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(1, SalidaRutaEntrega::where('dte_id', $dte->id)->entregadas()->count());
     }
 
@@ -733,9 +734,9 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.pdf', $factura))->assertNotFound();
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.pdf', $invalidado))->assertNotFound();
         $this->actingAs($this->vendedor)->get('/rutas/por-entregar/999999/pdf')->assertNotFound();
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $factura), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertNotFound();
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $factura), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertNotFound();
 
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo']);
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']));
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.pdf', $dte))->assertNotFound();
     }
 

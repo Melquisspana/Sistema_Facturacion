@@ -30,6 +30,6 @@ class FacturarPedidoController extends Controller
 
         return redirect()
             ->route('facturacion.edit', $dte)
-            ->with('status', 'Borrador CCF creado con lo que llegó de la fábrica. Revisalo con la OC y bajá lo que no pide.');
+            ->with('status', 'Borrador CCF creado con lo que llegó de pedidos. Revisalo con la OC y bajá lo que no pide.');
     }
 }

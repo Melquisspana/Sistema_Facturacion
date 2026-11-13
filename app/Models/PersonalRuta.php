@@ -125,14 +125,34 @@ class PersonalRuta extends Model
         return $this->funcionesEnum()->contains($funcion);
     }
 
-    /** Primer nombre + primer apellido, que es como se llama a la gente en voz alta. */
+    /**
+     * Primer nombre + primer apellido, que es como se llama a la gente en voz alta. Con cuatro
+     * palabras o más son dos nombres y dos apellidos: «Ana María López Díaz» es «Ana López».
+     */
     public function nombreCorto(): string
     {
         $partes = Str::of($this->nombre)->trim()->explode(' ')->filter()->values();
 
-        return $partes->count() <= 2
-            ? $this->nombre
-            : trim($partes->first().' '.$partes->get(1));
+        return match (true) {
+            $partes->count() <= 2 => $this->nombre,
+            $partes->count() === 3 => $partes->first().' '.$partes->get(1),
+            default => $partes->first().' '.$partes->get(2),
+        };
+    }
+
+    /**
+     * El nombre corto de cada uno, por id, para los botones de «¿Quién lo entregó?». Si dos
+     * quedan iguales, esos van con el nombre completo para no confundirlos.
+     *
+     * @param  Collection<int, self>  $personas
+     * @return Collection<int, string>
+     */
+    public static function nombresCortos(Collection $personas): Collection
+    {
+        $cortos = $personas->mapWithKeys(fn (self $p) => [$p->id => $p->nombreCorto()]);
+        $repetidos = $cortos->countBy()->filter(fn (int $veces) => $veces > 1);
+
+        return $personas->mapWithKeys(fn (self $p) => [$p->id => $repetidos->has($cortos[$p->id]) ? $p->nombre : $cortos[$p->id]]);
     }
 
     /** El teléfono para un enlace `tel:`: solo dígitos y «+». Vacío si no tiene. */

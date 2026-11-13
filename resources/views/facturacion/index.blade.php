@@ -123,7 +123,7 @@
                     {{-- Lo que mandó la fábrica hoy, con su hoja: de ahí sale el CCF. Secundario (blanco). --}}
                     <a href="{{ route('facturacion.llego-de-fabrica') }}"
                        class="inline-flex items-center justify-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
-                        Llegó de la fábrica
+                        Llegó de pedidos
                     </a>
                     @can('create', App\Models\Dte::class)
                         <a href="{{ route('facturacion.create-nota-credito') }}"

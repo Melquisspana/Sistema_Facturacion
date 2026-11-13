@@ -72,7 +72,16 @@
             @method($metodo)
 
             @foreach ($campos as $nombre => $valor)
-                <input type="hidden" name="{{ $nombre }}" value="{{ $valor }}">
+                @if (is_array($valor))
+                    {{-- Una lista (las casillas de salas): la vacía va siempre, para que
+                         una lista sin elementos llegue como «ninguna» y no como «no tocar». --}}
+                    <input type="hidden" name="{{ $nombre }}[]" value="">
+                    @foreach ($valor as $elemento)
+                        <input type="hidden" name="{{ $nombre }}[]" value="{{ $elemento }}">
+                    @endforeach
+                @else
+                    <input type="hidden" name="{{ $nombre }}" value="{{ $valor }}">
+                @endif
             @endforeach
 
             {{-- La marca que distingue "quiero cambiar esto" de "ya lo confirmé".

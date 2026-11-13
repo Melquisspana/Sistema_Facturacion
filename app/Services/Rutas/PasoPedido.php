@@ -57,7 +57,7 @@ class PasoPedido
         $sacado = CarbonImmutable::parse($pedido->fecha->toDateString());
 
         return match (true) {
-            $pedido->estado === EstadoPedidoSala::NoSeTrae => [self::NO_SE_TRAE, 'La fábrica no lo trae', $sacado],
+            $pedido->estado === EstadoPedidoSala::NoSeTrae => [self::NO_SE_TRAE, 'No se trae', $sacado],
             $pedido->estaRegistrado() && $pedido->armando_desde === null => [self::SACADO, null, $sacado],
             $pedido->estaPorMandar() => [self::EN_FABRICA, $pedido->estaRegistrado() ? 'En armado' : 'Mandado en parte', $sacado],
             default => $this->despuesDeLaFabrica($pedido, $entregados, $sacado),
@@ -81,7 +81,7 @@ class PasoPedido
     {
         $envios = $pedido->envios;
         if ($envios->isEmpty() || $envios->contains(fn (PedidoSalaEnvio $e) => ! $e->estaFacturado())) {
-            return [self::EN_FABRICA, 'Llegó de la fábrica; falta facturar', $sacado];
+            return [self::EN_FABRICA, 'Despachado; falta facturar', $sacado];
         }
 
         $dtes = $envios->pluck('dte')->unique('id');

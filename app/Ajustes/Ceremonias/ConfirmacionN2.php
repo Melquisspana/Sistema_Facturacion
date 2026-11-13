@@ -9,6 +9,7 @@ use App\Ajustes\Definicion\NivelConfirmacion;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 
 /**
  * Confirmación de nivel N2: "esto es lo que vas a cambiar, ¿seguro?".
@@ -81,12 +82,25 @@ class ConfirmacionN2
                 if ($definicion->tipo === TipoAjuste::Cliente) {
                     [$actual, $nuevo] = [$this->nombreCliente($actual), $this->nombreCliente($nuevo)];
                 }
+                // Lo mismo una lista de salas: por nombre, no «4, 9 → 4».
+                if (in_array('salas', $definicion->reglas, true)) {
+                    [$actual, $nuevo] = [$this->nombresSalas($actual), $this->nombresSalas($nuevo)];
+                }
 
                 $cambios[] = CambioPropuesto::deValor($definicion, $actual, $nuevo);
             }
         }
 
         return $cambios;
+    }
+
+    /** @return list<string> */
+    private function nombresSalas(mixed $ids): array
+    {
+        $ids = array_values((array) ($ids ?? []));
+        $nombres = ClienteSucursal::query()->whereKey($ids)->pluck('nombre', 'id');
+
+        return array_map(static fn ($id) => $nombres[(int) $id] ?? "sala {$id} (no existe)", $ids);
     }
 
     private function nombreCliente(mixed $id): ?string

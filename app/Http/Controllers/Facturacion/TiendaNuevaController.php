@@ -35,7 +35,7 @@ class TiendaNuevaController extends Controller
             : collect();
 
         return view('facturacion.tienda-nueva', [
-            'pedido' => $pedido->loadMissing(['sacadoPor:id,nombre', 'ruta:id,nombre']),
+            'pedido' => $pedido->loadMissing(['sacadoPor:id,nombre', 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre']),
             'texto' => $texto,
             'salas' => $salas,
             'puedeDarDeAlta' => $request->user()->can('create', [Cliente::class, $pedido]),

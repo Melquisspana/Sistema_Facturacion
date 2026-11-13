@@ -144,7 +144,7 @@ class HojaPedidoTest extends TestCase
     {
         foreach ([
             [EstadoPedidoSala::Anulado, 'Anulado', 'Este pedido está anulado: no se factura.'],
-            [EstadoPedidoSala::Registrado, 'Pendiente', 'La fábrica todavía no mandó nada de este pedido.'],
+            [EstadoPedidoSala::Registrado, 'Pendiente', 'Todavía no se despachó nada de este pedido.'],
         ] as [$estado, $etiqueta, $aviso]) {
             $this->pedido->update(['estado' => $estado]);
 

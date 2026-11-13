@@ -99,8 +99,8 @@
 </div>
 
 <main class="hoja">
-    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Fábrica · lo que sale para la sala"
-        etiqueta="Documento interno de la fábrica" titulo="HOJA DE DESPACHO">
+    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Pedidos · lo que sale para la sala"
+        etiqueta="Documento interno de pedidos" titulo="HOJA DE DESPACHO">
         <tr class="key"><td class="k">Fecha y hora</td><td class="v">{{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</td></tr>
         <tr><td class="k">Vendedor</td><td class="v">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td></tr>
         @if (filled($pedido->numero_orden_compra))
@@ -159,7 +159,7 @@
         <p class="nota">Después de este salieron otros envíos.</p>
     @endif
 
-    <x-documento.firmas :quienes="['Entrega (fábrica)', 'Recibe']" />
+    <x-documento.firmas :quienes="['Entrega (pedidos)', 'Recibe']" />
 
     <p class="pie">Hoja interna de despacho de {{ $empresa }}. No es factura ni documento tributario.</p>
 </main>

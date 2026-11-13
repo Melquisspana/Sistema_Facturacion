@@ -122,7 +122,7 @@ class LlegoDeFabricaTest extends TestCase
 
         $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk();
 
-        $respuesta->assertSee('Llegó de la fábrica')
+        $respuesta->assertSee('Llegó de pedidos')
             ->assertSee('Sala de prueba Norte')
             ->assertSee('9001')
             ->assertSee('Ruta de prueba')
@@ -161,7 +161,7 @@ class LlegoDeFabricaTest extends TestCase
 
         $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
             ->assertDontSee('Sala de prueba Norte')
-            ->assertSee('No llegó nada de la fábrica este día.');
+            ->assertSee('No llegó nada de pedidos este día.');
     }
 
     public function test_insignia_de_la_oc_por_sala(): void
@@ -222,7 +222,7 @@ class LlegoDeFabricaTest extends TestCase
     public function test_facturacion_tiene_el_enlace_junto_a_nuevo_ccf(): void
     {
         $this->get(route('facturacion.index'))->assertOk()
-            ->assertSeeInOrder(['Nuevo CCF', 'Llegó de la fábrica'])
+            ->assertSeeInOrder(['Nuevo CCF', 'Llegó de pedidos'])
             ->assertSee(route('facturacion.llego-de-fabrica'), false);
     }
 

@@ -36,7 +36,7 @@
                             };
                             $actual = $estado->valor;
                             // Para el selector de cliente: lo que se eligió o el que manda hoy.
-                            $elegido = (string) old($campo, $actual);
+                            $elegido = $tipo === \App\Ajustes\Definicion\TipoAjuste::Lista ? '' : (string) old($campo, $actual);
                         @endphp
 
                         @if ($tipo === \App\Ajustes\Definicion\TipoAjuste::Booleano)
@@ -67,6 +67,44 @@
                                     <p class="mt-1 text-xs text-amber-800">{{ $estado->invalido }}</p>
                                 @endif
                             </div>
+                        @elseif (in_array('salas', $definicion->reglas, true))
+                            {{-- Lista de salas: casillas con el nombre, a todo el ancho, con un
+                                 filtro para no recorrerlas todas. La casilla oculta vacía va
+                                 siempre: desmarcarlas todas vacía la lista (acá un vacío no es
+                                 «no tocar»). Solo salas activas; el servidor lo vuelve a exigir. --}}
+                            @php($marcadas = array_map('strval', (array) old($campo, $actual ?? [])))
+                            <fieldset class="sm:col-span-2" x-data="{ filtro: '' }">
+                                <legend class="block text-sm font-medium text-gray-700">{{ $definicion->etiqueta }}</legend>
+                                <input type="hidden" name="{{ $campo }}[]" value="">
+                                <label for="{{ $campo }}-filtro" class="sr-only">Buscar sala</label>
+                                <input type="search" id="{{ $campo }}-filtro" x-model="filtro" placeholder="Buscar sala" autocomplete="off"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                                <ul class="mt-2 max-h-64 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200">
+                                    @forelse ($salas as $sala)
+                                        @php($texto = $sala->nombre.($sala->codigo ? ' · '.$sala->codigo : '').' · '.$sala->cliente?->nombre)
+                                        <li x-show="@js(mb_strtolower($texto)).includes(filtro.toLowerCase())">
+                                            <label class="flex min-h-11 items-center gap-3 px-3 text-sm text-gray-800">
+                                                <input type="checkbox" name="{{ $campo }}[]" value="{{ $sala->id }}" @checked(in_array((string) $sala->id, $marcadas, true))
+                                                       class="h-5 w-5 rounded border-gray-300 text-indigo-600">
+                                                <span>{{ $sala->nombre }} <span class="text-gray-500">· {{ $sala->codigo ? $sala->codigo.' · ' : '' }}{{ $sala->cliente?->nombre }}</span></span>
+                                            </label>
+                                        </li>
+                                    @empty
+                                        <li class="px-3 py-2 text-sm text-gray-500">No hay salas activas.</li>
+                                    @endforelse
+                                </ul>
+                                <p class="mt-1 text-xs text-gray-500">{{ $definicion->descripcion }}</p>
+                                @error($campo)
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
+                                @if ($estado->invalido)
+                                    <p class="mt-1 text-xs text-amber-800">{{ $estado->invalido }}</p>
+                                @endif
+                                <p class="mt-1 text-xs text-gray-400">
+                                    Fuente: {{ $estado->fuente->etiqueta() }}
+                                    <x-configuracion.usar-valor-servidor :estado="$estado" />
+                                </p>
+                            </fieldset>
                         @else
                             <x-configuracion.campo :nombre="$campo" :etiqueta="$definicion->etiqueta" :estado="$estado"
                                                    :ayuda="$definicion->descripcion">

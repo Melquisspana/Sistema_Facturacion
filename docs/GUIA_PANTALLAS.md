@@ -113,6 +113,8 @@ Tomado de `x-configuracion.campo`, que ya junta etiqueta, ayuda y error en un so
 
 **Buscar mientras se escribe.** Tomado de Sacar pedido (12/11/2026). Es un formulario `GET` común con su botón «Buscar», que anda sin JavaScript; encima, Alpine escrito en la vista (sin bundle nuevo) muestra la lista debajo del campo desde 2 letras, con una espera corta entre teclas. La lista sale de una ruta JSON con el mismo permiso de la pantalla, `throttle`, un tope de resultados y solo los campos que se muestran. Las filas son enlaces de 44 px; la flecha abajo entra en la lista, las flechas se mueven y Escape vuelve al campo; un `role="status"` dice cuántas hay. Si no hay ninguna, se dice y se ofrece lo que la pantalla ofrece para ese caso. Si la consulta falla, se avisa que se toque «Buscar».
 
+**Elegir varios registros.** Tomado de Configuración › Rutas, «Salas donde no se sacan pedidos» (12/11/2026). Un `fieldset` con su `legend` y casillas de 44 px con el nombre (y el código y el cliente en gris), dentro de una caja con borde y scroll (`max-h-64 overflow-y-auto`); arriba, un campo «Buscar sala» que filtra con Alpine escrito en la vista. Va una casilla oculta vacía con el mismo nombre para que desmarcarlas todas llegue como «ninguna». El servidor vuelve a exigir que cada registro exista y esté activo; la confirmación muestra los nombres, no los números.
+
 ### Confirmaciones
 
 Tres niveles, según lo que se pierde si uno se equivoca:
@@ -166,7 +168,7 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 
 ### Las palabras de Rutas
 
-De la revisión del 11/11/2026. En todo Rutas, y en Fábrica y Facturación cuando nombran lo mismo:
+De la revisión del 11/11/2026. En todo Rutas, y en Pedidos y Facturación cuando nombran lo mismo:
 
 - **Zona** es lo que antes se llamaba ruta (el catálogo). Sin zona se dice «Sin zona». En el mapa, el departamento o distrito es el **lugar**. No hay selector de nivel: tocar un departamento entra a sus distritos y «‹ Todo el país» vuelve.
 - Una sala está **atrasada** (ya pasó su fecha de visita) o **por visitar** (le toca en estos días). No se dice «le toca» ni «dónde falta»: la vista se llama «A dónde ir».
@@ -222,36 +224,38 @@ Tomado de las fichas de Gastos y Rutas.
 - `x-planta.toggle-activo` se reemplaza por `x-asistencia.estado`, que ya hace lo mismo y además recibe el permiso; pasa a llamarse `x-estado-activo`.
 - Colores con significado: verde = listo/activo, ámbar = falta algo, rojo = rechazado/error, gris = inactivo/borrador, índigo/azul = en proceso.
 
-### Pantalla táctil (Fábrica)
+### Pantalla táctil (Pedidos)
 
-Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el dedo o con el mouse de una laptop. Agregado el 09/11/2026.
+Para la pantalla de la PC de pedidos (`/fabrica/pedidos`), que se usa de pie, con el dedo o con el mouse de una laptop. Agregado el 09/11/2026.
 
-- **Pantalla completa** (12/11/2026): sin la barra lateral ni el menú del sistema (`<x-app-layout :pantalla-completa="true">`). Arriba solo la empresa, la persona y «Salir»; quien ve más que Fábrica tiene además «Volver al sistema». La lista es de nombres en botones grandes; al tocar uno se abre el pedido, con una fila arriba para pasar a otro pedido o volver a «Todos».
-- **Monitor** (12/11/2026): la fábrica la usa en un monitor de escritorio. Desde `lg` la pantalla usa el ancho: la lista va a `max-w-full` con cuatro columnas de nombres (`lg:grid-cols-4`); el pedido abierto, a `max-w-7xl`, con los datos de la sala en una franja (`lg:grid-cols-6`) y **un producto por renglón** en una grilla (`lg:grid lg:grid-cols-12`: nombre y código | «Pidió» | «Va», «Todo», «Nada»), con «Por qué no va» abajo solo si hace falta; «Hechos hoy» en dos columnas. Debajo de `lg`, uno abajo del otro, como en la tableta. Los botones siguen de 48 px. En el CSS de producción no hay `xl:grid-cols-4`, `lg:max-w-*` ni `lg:py-*`: se usa lo que sí está.
+- **Nombre** (12/11/2026): en todo lo que se ve, esa PC se llama «Pedidos» (el rol, el área, el menú, la hoja impresa y «Llegó de pedidos» en Facturación). La producción de verdad vendrá después con su propio rol. Las claves internas no cambian: el rol y el área `fabrica`, el permiso `fabrica.pedidos.mandar` y las rutas `/fabrica/...`.
+
+- **Pantalla completa** (12/11/2026): sin la barra lateral ni el menú del sistema (`<x-app-layout :pantalla-completa="true">`). Arriba solo la empresa, la persona y «Salir»; quien ve más que Pedidos tiene además «Volver al sistema». La lista es de nombres en botones grandes; al tocar uno se abre el pedido, con una fila arriba para pasar a otro pedido o volver a «Todos».
+- **Monitor** (12/11/2026): se usa en un monitor de escritorio. Desde `lg` la pantalla usa el ancho: la lista va a `max-w-full` con cuatro columnas de nombres (`lg:grid-cols-4`); el pedido abierto, a `max-w-7xl`, con los datos de la sala en una franja (`lg:grid-cols-6`) y **un producto por renglón** en una grilla (`lg:grid lg:grid-cols-12`: nombre y código | «Pidió» | «Va», «Todo», «Nada»), con «Por qué no va» abajo solo si hace falta; «Hechos hoy» en dos columnas. Debajo de `lg`, uno abajo del otro, como en la tableta. Los botones siguen de 48 px. En el CSS de producción no hay `xl:grid-cols-4`, `lg:max-w-*` ni `lg:py-*`: se usa lo que sí está.
 - **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Imprimir y mandar»).
 - **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («No se trae», «Dejar para después», «Deshacer», «Corregir», «Imprimir de nuevo»).
 - **Cantidad:** `text-2xl font-bold tabular-nums`, alineada a la derecha.
 - Sin texto con prefijo de pantalla: el botón dice lo que hace.
 - Lo que se puede deshacer no se confirma: sale el aviso con un botón «Deshacer».
 - `confirm()` solo para «Deshacer» o «Corregir» un envío y para «Borrar lo marcado». «Corregir» (12/11/2026) anula el envío del día y abre el pedido con lo que llevaba ya marcado; la hoja del envío nuevo dice arriba «Corrige al envío N.º X».
-- La lista se recarga sola cuando nadie la usa (dedo, mouse, rueda o teclado); la hoja que se está llenando, nunca (guarda sola). Cada recarga renueva la sesión: para quien ve más que Fábrica, deja de recargarse antes de que la sesión venza por inactividad.
+- La lista se recarga sola cuando nadie la usa (dedo, mouse, rueda o teclado); la hoja que se está llenando, nunca (guarda sola). Cada recarga renueva la sesión: para quien ve más que Pedidos, deja de recargarse antes de que la sesión venza por inactividad.
 - La hoja guarda con un solo retardo corto y, al salir (también con «Salir» de la barra de arriba), primero termina de guardar; si el guardado falla, se queda y avisa. Cerrar o recargar la pestaña con algo sin guardar o en vuelo pide confirmación del navegador. Los errores del guardado se muestran con texto propio en castellano (por ejemplo, «Se cerró la sesión. Volvé a entrar.»), nunca el mensaje en inglés del sistema.
 
 ### Páginas para imprimir
 
-Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`), la hoja de lo que salió de la fábrica (`rutas/pedidos/hoja`) y la hoja de cada envío que imprime la fábrica (`fabrica/pedidos/imprimir`, que se imprime sola al abrir). Agregado el 09/11/2026.
+Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`), la hoja de lo que se despachó (`rutas/pedidos/hoja`) y la hoja de cada envío que imprime la PC de pedidos (`fabrica/pedidos/imprimir`, que se imprime sola al abrir). Agregado el 09/11/2026.
 
 - Documento aparte: su propio `<html>`, sus estilos en un `<style>` y sin el bundle de la aplicación ni la barra. No lleva modo oscuro.
 - Color de acento con los mismos colores del sistema: índigo para el encabezado y la tabla, verde, ámbar y rojo con el significado de las etiquetas de estado. Se imprime tal cual (`-webkit-print-color-adjust: exact; print-color-adjust: exact;`). **Regla:** la hoja se tiene que leer igual en una impresora en blanco y negro: nada se dice solo con color, los textos de color son tonos oscuros (`700`/`800`) y las cajas claras llevan borde. Entra en hoja carta vertical (`@page { size: letter portrait; }`).
 - La lista de empaque (`facturacion/listas/imprimir`) todavía sale en blanco y negro; se pasa a color cuando se toque esa pantalla.
-- La hoja de despacho de la fábrica (`fabrica/pedidos/imprimir`, 12/11/2026) es la excepción a la franja índigo: copia la forma del PDF del CCF (`facturacion/pdf`: línea de color arriba, logo y empresa a la izquierda, recuadro del documento a la derecha, sala de entrega, tabla con encabezado oscuro, firmas y pie; bordes finos y grises del CCF) sin montos ni datos tributarios, y para que no se confunda con una factura usa el verde de esa paleta (`#235C42`/`#2F6B4E`) en vez del vino, con «HOJA DE DESPACHO» y «No es factura · Sin valor tributario» en el recuadro. Sin número de envío; la orden de compra solo si el pedido la tiene; una corrección dice «Corrige la hoja de las HH:MM».
+- La hoja de despacho de pedidos (`fabrica/pedidos/imprimir`, 12/11/2026) es la excepción a la franja índigo: copia la forma del PDF del CCF (`facturacion/pdf`: línea de color arriba, logo y empresa a la izquierda, recuadro del documento a la derecha, sala de entrega, tabla con encabezado oscuro, firmas y pie; bordes finos y grises del CCF) sin montos ni datos tributarios, y para que no se confunda con una factura usa el verde de esa paleta (`#235C42`/`#2F6B4E`) en vez del vino, con «HOJA DE DESPACHO», «Documento interno de pedidos» y «No es factura · Sin valor tributario» en el recuadro; firma «Entrega (pedidos)». Sin número de envío; la orden de compra solo si el pedido la tiene; una corrección dice «Corrige la hoja de las HH:MM».
 - Arriba, una barra que no se imprime (`.no-print`) con «Volver a <lugar>» y el botón «Imprimir», de 44 px de alto.
-- Encabezado en una franja índigo: el nombre de la empresa (`config('app.name')`, nunca escrito a mano), el título con lo que es («Lo que salió de la fábrica») y el número a la derecha.
+- Encabezado en una franja índigo: el nombre de la empresa (`config('app.name')`, nunca escrito a mano), el título con lo que es («Lo que se despachó») y el número a la derecha.
 - Los datos en cajitas suaves etiqueta/valor; el estado como insignia del color que da el enum. Después la tabla con encabezado índigo y texto blanco, filas alternadas suaves, números grandes a la derecha y el encabezado que se repite en cada hoja (`thead { display: table-header-group; }`).
 - Fechas `d/m/Y` y con hora `d/m/Y H:i`, como en el resto.
-- Lo que hay que ver de un vistazo va marcado con una letra en un recuadro, que el color solo refuerza: la «F» de lo que faltó, como la que ponía a mano la fábrica, en rojo sobre fondo rojo claro y con `aria-label="Faltó"`; al lado, en rojo, cuánto faltó. Lo que todavía va en otro envío, en ámbar.
+- Lo que hay que ver de un vistazo va marcado con una letra en un recuadro, que el color solo refuerza: la «F» de lo que faltó, como la que se ponía a mano, en rojo sobre fondo rojo claro y con `aria-label="Faltó"`; al lado, en rojo, cuánto faltó. Lo que todavía va en otro envío, en ámbar.
 - Al pie, el espacio para las firmas.
-- Lo que el papel no necesita no va: la hoja de la fábrica no lleva precios.
+- Lo que el papel no necesita no va: la hoja de pedidos no lleva precios.
 
 ### Documentos impresos
 
@@ -266,7 +270,7 @@ Desde el 12/11/2026 (lo pidió el dueño): la mayoría de los documentos que se 
 | Documento | Acento | Nombre en el recuadro |
 |---|---|---|
 | CCF y demás DTE (`facturacion/pdf`) | Vino `#6E2142` | El tipo de DTE (sin leyenda) |
-| Hoja de despacho de la fábrica (`fabrica/pedidos/imprimir`) | Verde `#235C42` / `#2F6B4E` | HOJA DE DESPACHO |
+| Hoja de despacho de pedidos (`fabrica/pedidos/imprimir`) | Verde `#235C42` / `#2F6B4E` | HOJA DE DESPACHO |
 | PDF del día del vendedor (`rutas/mi-salida/dia-pdf`) y correo del resumen diario | Azul pizarra `#2B4A6F` / `#3B5F8A` | RESUMEN DEL DÍA · Resumen diario |
 | Hoja del pedido de la oficina y de «Por entregar» (`rutas/pedidos/hoja`), la que firma el gerente | Ocre `#7A5212` / `#9A6B1F` | HOJA DE PEDIDO |
 | PDF de Ventas por zona (`rutas/ventas/pdf`), solo Administrador y Jefatura | Grafito `#33373D` / `#4A4F58` | REPORTE DE VENTAS, con la leyenda «Documento interno · No es factura» |
