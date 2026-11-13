@@ -90,7 +90,7 @@
                     @endif
 
                     @if ($veOperativos)
-                        <div class="grid grid-cols-2 gap-4 {{ $veFacturacion ? 'lg:grid-cols-1' : 'lg:col-span-3 lg:grid-cols-2' }}">
+                        <div class="grid grid-cols-2 gap-4 {{ $veFacturacion ? '' : 'lg:col-span-3 lg:grid-cols-2' }}">
                             <a href="{{ route('documentos-recibidos.index', ['vista' => 'pendientes', 'rango' => 'todos']) }}"
                                class="{{ $caja }} block p-4 hover:border-indigo-300">
                                 <span class="block text-sm text-gray-500">Compras pendientes</span>
