@@ -181,7 +181,7 @@
             <div class="flex flex-wrap items-center gap-2">
                 @foreach ($rangos as $clave => $titulo)
                     <a href="{{ route('documentos-recibidos.index', array_merge(request()->except(['rango', 'fecha_desde', 'fecha_hasta', 'page']), ['rango' => $clave])) }}"
-                       class="rounded-full px-3 py-1 text-xs font-medium {{ $filtros['rango'] === $clave ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200' }}">
+                       class="inline-flex min-h-11 sm:min-h-0 items-center rounded-full px-3 py-1 text-xs font-medium {{ $filtros['rango'] === $clave ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200' }}">
                         {{ $titulo }}
                     </a>
                 @endforeach
@@ -190,7 +190,10 @@
                 @endif
             </div>
 
-            {{-- Filtros detallados --}}
+            {{-- Filtros detallados. En el celular se pliegan detrás de «Filtros»; en escritorio,
+                 como siempre. Cuenta solo los filtros del formulario (el rango tiene sus pastillas). --}}
+            @php $filtrosPuestos = collect(['fecha_desde', 'fecha_hasta', 'emisor', 'tipo_documento', 'numero_control', 'codigo_generacion', 'monto_min', 'monto_max'])->filter(fn ($k) => filled($filtros[$k] ?? null))->count(); @endphp
+            <x-filtros-celular :activos="$filtrosPuestos" id="filtros-compras" class="px-4 sm:px-0">
             <form method="GET" class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-4">
                 <input type="hidden" name="vista" value="{{ $filtros['vista'] }}">
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -234,7 +237,7 @@
                     </div>
                 </div>
                 <div class="mt-3 flex flex-wrap items-center gap-3">
-                    <button class="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">Aplicar filtros</button>
+                    <button class="min-h-11 sm:min-h-0 rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">Aplicar filtros</button>
                     <a href="{{ route('documentos-recibidos.index', ['vista' => $filtros['vista']]) }}" class="text-sm text-gray-500 hover:underline">Limpiar</a>
                     <label class="ms-auto flex items-center gap-2 text-xs text-gray-500">
                         Por página
@@ -246,6 +249,7 @@
                     </label>
                 </div>
             </form>
+            </x-filtros-celular>
 
             {{-- Resumen del filtro actual --}}
             <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -273,9 +277,11 @@
 
             {{-- Listado --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
+                {{-- Celular (debajo de md): cada compra se apila como tarjeta (emisor arriba; fechas,
+                     total y estado debajo; las acciones al pie). Desde md, la tabla de siempre. --}}
                 <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead>
+                    <table class="block md:table min-w-full text-sm">
+                        <thead class="hidden md:table-header-group">
                             <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
                                 <th class="py-3 px-3">Fecha correo</th>
                                 <th class="py-3 px-3">Fecha DTE</th>
@@ -287,7 +293,7 @@
                                 <th class="py-3 px-3 text-right">Contabilidad y acciones</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
+                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                             @php
                                 // «Pendiente» en gris, no en ámbar: es lo normal hasta que sale el paquete
                                 // mensual, no algo que haya que atender compra por compra.
@@ -312,10 +318,10 @@
                                 $puedeEnviarContabilidad = auth()->user()?->can('contabilidad.enviar');
                             @endphp
                             @forelse ($documentos as $doc)
-                                <tr class="hover:bg-gray-50 {{ $doc->estado === 'ignorado' ? 'opacity-60' : '' }}">
-                                    <td class="py-2 px-3 text-gray-600">{{ optional($doc->fecha_correo)->format('d/m/Y') ?? '—' }}</td>
-                                    <td class="py-2 px-3 text-gray-600">{{ optional($doc->fecha_dte)->format('d/m/Y') ?? '—' }}</td>
-                                    <td class="py-2 px-3">
+                                <tr class="grid grid-cols-2 py-2 md:table-row hover:bg-gray-50 {{ $doc->estado === 'ignorado' ? 'opacity-60' : '' }}">
+                                    <td class="py-2 px-3 text-gray-600"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Fecha correo</span>{{ optional($doc->fecha_correo)->format('d/m/Y') ?? '—' }}</td>
+                                    <td class="py-2 px-3 text-gray-600"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Fecha DTE</span>{{ optional($doc->fecha_dte)->format('d/m/Y') ?? '—' }}</td>
+                                    <td class="col-span-2 py-2 px-3">
                                         <div class="font-medium text-gray-800">{{ $doc->emisor_nombre ?? $doc->remitente ?? '—' }}</div>
                                         <div class="text-xs text-gray-500">{{ $doc->emisor_nit ? 'NIT '.$doc->emisor_nit : '' }}{{ $doc->emisor_nrc ? ' · NRC '.$doc->emisor_nrc : '' }}</div>
                                     </td>
@@ -331,8 +337,9 @@
                                             </div>
                                         @endif
                                     </td>
-                                    <td class="py-2 px-3 font-mono text-xs text-gray-600">{{ $doc->numero_control ?? '—' }}</td>
-                                    <td class="py-2 px-3 text-right text-gray-700">
+                                    <td class="py-2 px-3 font-mono text-xs text-gray-600 break-all md:break-normal"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Número de control</span>{{ $doc->numero_control ?? '—' }}</td>
+                                    <td class="py-2 px-3 md:text-right text-gray-700">
+                                        <span class="md:hidden block text-xs font-sans font-normal text-gray-500">Total</span>
                                         @if ($doc->total !== null)
                                             <span title="{{ $doc->totalLabel() }}">${{ number_format((float) $doc->total, 2) }}</span>
                                             @if ($doc->tipo_documento === '07')
@@ -343,6 +350,7 @@
                                         @endif
                                     </td>
                                     <td class="py-2 px-3 text-center">
+                                        <span class="md:hidden text-xs text-gray-500">Estado</span>
                                         <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badge[$doc->estado] ?? 'bg-gray-100 text-gray-600' }}">{{ ucfirst($doc->estado) }}</span>
                                     </td>
                                     {{-- Contabilidad y acciones: envío real (contabilidad.enviar), badge del
@@ -352,11 +360,11 @@
                                         $envio = $envioBadge[(string) ($doc->envio_estado ?? '')] ?? null;
                                         $envioExitoso = $doc->envio_estado === 'enviado';
                                     @endphp
-                                    <td class="py-2 px-3 align-top">
+                                    <td class="col-span-2 py-2 px-3 align-top">
                                         <div class="flex items-start justify-end gap-3">
                                             {{-- Acción principal: la factura armada desde su JSON. --}}
                                             <a href="{{ route('documentos-recibidos.ver', $doc) }}"
-                                               class="py-1.5 text-sm font-medium text-indigo-600 hover:underline">Ver</a>
+                                               class="inline-flex min-h-11 sm:min-h-0 items-center py-1.5 text-sm font-medium text-indigo-600 hover:underline">Ver</a>
                                             <div class="flex flex-col items-end gap-1">
                                                 @if ($puedeEnviarContabilidad)
                                                     @php($accion = $envioExitoso ? 'Reenviar a contabilidad' : 'Enviar a contabilidad')
@@ -365,7 +373,7 @@
                                                         @csrf
                                                         <button type="submit" aria-label="{{ $accion }}"
                                                                 title="{{ $accion }}: adjunta los archivos originales ya guardados (PDF/JSON)."
-                                                                class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700">
+                                                                class="min-h-11 sm:min-h-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700">
                                                             {{ $envioExitoso ? 'Reenviar' : 'Enviar' }}
                                                         </button>
                                                     </form>
@@ -383,7 +391,7 @@
 
                                             <details class="text-left">
                                                 <summary title="Más acciones" aria-label="Más acciones"
-                                                         class="cursor-pointer list-none rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 [&::-webkit-details-marker]:hidden">⋮</summary>
+                                                         class="inline-flex min-h-11 sm:min-h-0 items-center cursor-pointer list-none rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 [&::-webkit-details-marker]:hidden">⋮</summary>
                                                 <div class="mt-1 flex flex-col gap-1 whitespace-nowrap rounded-md bg-gray-50 p-2 ring-1 ring-gray-200">
                                                     @if ($doc->tiene_pdf)
                                                         <a href="{{ route('documentos-recibidos.archivo', [$doc, 'pdf']) }}" target="_blank" rel="noopener"
@@ -419,7 +427,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="8" class="py-10 text-center text-gray-400">
+                                <tr class="block md:table-row"><td colspan="8" class="block md:table-cell py-10 text-center text-gray-400">
                                     No hay documentos para este filtro.
                                     @if ($fuenteDisponible) Usá "Revisar ahora" para adelantar la revisión, o cambiá el rango a "Todos". @endif
                                 </td></tr>
