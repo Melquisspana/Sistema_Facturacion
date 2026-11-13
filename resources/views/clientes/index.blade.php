@@ -79,6 +79,10 @@
                 </div>
             @endif
 
+            {{-- En el celular el buscador y los dos grupos de filtros se pliegan detrás de
+                 «Filtros»; en escritorio se ven como siempre. --}}
+            <x-filtros-celular :activos="count($activos)" id="filtros-clientes">
+            <div class="space-y-4">
             {{-- Buscador. Una sola caja: el operador no debería tener que saber en qué
                  campo está guardado lo que recuerda del cliente. --}}
             <form method="GET" class="flex flex-wrap items-end gap-3">
@@ -101,7 +105,7 @@
                 {{-- Los dos grupos viajan con el formulario para no perderse al buscar. --}}
                 <input type="hidden" name="estado" value="{{ $filtros['estado'] }}">
                 <input type="hidden" name="salas" value="{{ $filtros['salas'] }}">
-                <x-primary-button>Buscar</x-primary-button>
+                <x-primary-button class="min-h-11 sm:min-h-0">Buscar</x-primary-button>
             </form>
 
             {{-- Filtros: dos grupos, combinables. Cada pastilla cambia solo su grupo. --}}
@@ -113,7 +117,7 @@
                             @php $activa = $filtros[$clave] === $valor; @endphp
                             <a href="{{ $enlace([$clave => $valor]) }}"
                                @if ($activa) aria-current="true" @endif
-                               class="rounded-full border px-3 py-1 text-sm {{ $activa
+                               class="inline-flex min-h-11 sm:min-h-0 items-center rounded-full border px-3 py-1 text-sm {{ $activa
                                     ? 'border-gray-800 bg-gray-800 text-white dark:border-ink-500 dark:bg-ink-900'
                                     : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-300 dark:hover:bg-ink-700' }}">
                                 {{ $label }}
@@ -122,6 +126,8 @@
                     </div>
                 @endforeach
             </div>
+            </div>
+            </x-filtros-celular>
 
             {{-- Qué está filtrando ahora mismo, en palabras. --}}
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500 dark:text-paper-300">
@@ -144,7 +150,7 @@
                  Acciones, y lo demás se apila dentro de la primera celda—, así que
                  tampoco hay scroll horizontal. --}}
             <div class="bg-white dark:bg-ink-800 shadow-sm ring-1 ring-gray-200 dark:ring-ink-600 sm:rounded-xl">
-                <table class="min-w-full text-sm">
+                <table class="hidden md:table min-w-full text-sm">
                     <thead>
                         <tr class="border-b border-gray-200 dark:border-ink-600 bg-gray-50 dark:bg-ink-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Cliente</th>
@@ -325,6 +331,84 @@
                         @endforelse
                     </tbody>
                 </table>
+
+                {{-- Celular (debajo de md): una tarjeta por cliente, con las acciones a la vista
+                     como botones de 44 px en lugar del menú «…». Desde md, la tabla de arriba. --}}
+                <ul class="md:hidden divide-y divide-gray-100 dark:divide-ink-600">
+                    @forelse ($clientes as $cliente)
+                        @php
+                            $salasCoincidentes = $cliente->relationLoaded('sucursales') ? $cliente->sucursales : collect();
+                        @endphp
+                        <li class="px-4 py-4 {{ $cliente->activo ? '' : 'opacity-60' }}">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <a href="{{ route('clientes.show', $cliente) }}"
+                                       class="break-words font-medium text-gray-800 dark:text-paper-100 hover:underline">{{ $cliente->nombre }}</a>
+                                    <div class="text-xs text-gray-500 dark:text-paper-300">
+                                        {{ $cliente->tipo_cliente?->label() }}
+                                        @if (filled($cliente->codigo))
+                                            · <span class="font-mono">{{ $cliente->codigo }}</span>
+                                        @endif
+                                    </div>
+                                    <div class="text-xs text-gray-500 dark:text-paper-300 font-mono">{{ $cliente->num_documento ?? '—' }}</div>
+                                </div>
+                                <span class="shrink-0 inline-flex px-2 py-0.5 rounded-full text-xs {{ $cliente->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">
+                                    {{ $cliente->activo ? 'Activo' : 'Inactivo' }}
+                                </span>
+                            </div>
+                            <div class="mt-1 text-sm">
+                                @if ((int) $cliente->salas_total === 0)
+                                    <span class="text-amber-700">Sin salas</span>
+                                @else
+                                    <x-clientes.resumen-salas class="text-gray-600 dark:text-paper-300"
+                                                              :total="$cliente->salas_total"
+                                                              :activas="$cliente->salas_activas" />
+                                @endif
+                            </div>
+                            @if ($salasCoincidentes->isNotEmpty())
+                                <div class="mt-1 text-xs text-gray-600 dark:text-paper-300">
+                                    Coincide en {{ $salasCoincidentes->count() === 1 ? 'la sala' : 'las salas' }}:
+                                    {{ $salasCoincidentes->take(3)->map(fn ($sala) => $sala->nombre.(filled($sala->codigo) ? ' ('.$sala->codigo.')' : ''))->implode(', ') }}@if ($salasCoincidentes->count() > 3) y {{ $salasCoincidentes->count() - 3 }} más @endif
+                                </div>
+                            @endif
+                            @canany(['update', 'delete'], $cliente)
+                                <div class="mt-3 grid grid-cols-2 gap-2">
+                                    @can('update', $cliente)
+                                        <a href="{{ route('clientes.sucursales.create', $cliente) }}"
+                                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-3 text-sm font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700">Agregar sala</a>
+                                        <a href="{{ route('clientes.edit', $cliente) }}"
+                                           class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-3 text-sm font-medium text-indigo-700 hover:bg-gray-50 dark:hover:bg-ink-700">Editar</a>
+                                        <form method="POST" action="{{ route('clientes.toggle-activo', $cliente) }}">
+                                            @csrf @method('PATCH')
+                                            <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-3 text-sm font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700">
+                                                {{ $cliente->activo ? 'Inactivar' : 'Activar' }}
+                                            </button>
+                                        </form>
+                                    @endcan
+                                    @can('delete', $cliente)
+                                        <form method="POST" action="{{ route('clientes.destroy', $cliente) }}"
+                                              onsubmit="return confirm('¿Eliminar este cliente?');">
+                                            @csrf @method('DELETE')
+                                            <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-3 text-sm font-medium text-red-600 hover:bg-gray-50 dark:hover:bg-ink-700">Eliminar</button>
+                                        </form>
+                                    @endcan
+                                </div>
+                            @endcanany
+                        </li>
+                    @empty
+                        <li class="px-4 py-10 text-center text-gray-400 dark:text-paper-500">
+                            @if (! $porDefecto)
+                                Ningún cliente coincide con la búsqueda o los filtros.
+                                <a href="{{ route('clientes.index') }}" class="text-indigo-600 hover:underline">Ver todos los activos</a>.
+                            @else
+                                Todavía no hay clientes activos.
+                                @can('create', App\Models\Cliente::class)
+                                    <a href="{{ route('clientes.create') }}" class="text-indigo-600 hover:underline">Dá de alta el primero</a>.
+                                @endcan
+                            @endif
+                        </li>
+                    @endforelse
+                </ul>
 
                 @if ($clientes->hasPages())
                     <div class="border-t border-gray-100 dark:border-ink-600 px-4 py-3">{{ $clientes->links() }}</div>

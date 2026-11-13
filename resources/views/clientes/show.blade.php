@@ -144,9 +144,12 @@
                         @endcan
                     </div>
                 @else
+                    {{-- Celular (debajo de md): cada sala se apila como tarjeta (mismas filas, así el
+                         buscador de salas sigue filtrándolas); las acciones pasan a botones de 44 px.
+                         Desde md, la tabla de siempre. --}}
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600 text-sm">
-                            <thead>
+                        <table class="block md:table min-w-full divide-y divide-gray-200 dark:divide-ink-600 text-sm">
+                            <thead class="hidden md:table-header-group">
                                 <tr class="text-left text-gray-500 dark:text-paper-300">
                                     <th class="px-3 py-2">Código</th>
                                     <th class="px-3 py-2">Sala / nombre comercial</th>
@@ -156,23 +159,27 @@
                                     <th class="px-3 py-2 text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
+                            <tbody class="block md:table-row-group divide-y divide-gray-100 dark:divide-ink-600">
                                 @foreach ($salas as $sucursal)
                                     <tr data-busca="{{ $indice($sucursal) }}"
                                         data-estado="{{ $sucursal->activo ? 'activas' : 'inactivas' }}"
                                         @if ($muchasSalas)
                                             x-show="(q === '' || $el.dataset.busca.includes(q.toLowerCase())) && (estado === 'todas' || $el.dataset.estado === estado)"
                                         @endif
-                                        class="{{ (string) $salaDestacada === (string) $sucursal->id ? 'bg-green-50' : '' }}">
-                                        <td class="px-3 py-2 font-mono">{{ $sucursal->codigo ?? '—' }}</td>
-                                        <td class="px-3 py-2 font-medium">
+                                        class="grid grid-cols-2 py-2 md:table-row {{ (string) $salaDestacada === (string) $sucursal->id ? 'bg-green-50' : '' }}">
+                                        <td class="hidden md:table-cell px-3 py-2 font-mono">{{ $sucursal->codigo ?? '—' }}</td>
+                                        <td class="col-span-2 px-3 py-2 font-medium">
+                                            @if ($sucursal->codigo)
+                                                <span class="md:hidden font-mono font-normal text-gray-500">{{ $sucursal->codigo }} ·</span>
+                                            @endif
                                             {{ $sucursal->nombre }}
                                             @if ((string) $salaDestacada === (string) $sucursal->id)
                                                 <span class="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">Recién creada</span>
                                             @endif
                                         </td>
-                                        <td class="px-3 py-2">{{ $sucursal->direccion ?? '—' }}</td>
+                                        <td class="col-span-2 px-3 py-2">{{ $sucursal->direccion ?? '—' }}</td>
                                         <td class="px-3 py-2">
+                                            <span class="md:hidden text-gray-500 dark:text-paper-300">Orden de compra:</span>
                                             @if (is_null($sucursal->requiere_orden_compra))
                                                 <span class="text-gray-400 dark:text-paper-500">Hereda del cliente</span>
                                             @elseif ($sucursal->requiere_orden_compra)
@@ -186,8 +193,22 @@
                                                 {{ $sucursal->activo ? 'Activa' : 'Inactiva' }}
                                             </span>
                                         </td>
-                                        <td class="px-3 py-2 text-right whitespace-nowrap">
+                                        <td class="col-span-2 px-3 py-2 text-right whitespace-nowrap">
                                             @can('update', $cliente)
+                                                <div class="md:hidden grid grid-cols-3 gap-2 whitespace-normal">
+                                                    <a href="{{ route('clientes.sucursales.edit', [$cliente, $sucursal]) }}"
+                                                       class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-2 text-sm font-medium text-indigo-700">Editar</a>
+                                                    <form method="POST" action="{{ route('clientes.sucursales.toggle-activo', [$cliente, $sucursal]) }}">
+                                                        @csrf @method('PATCH')
+                                                        <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-2 text-sm font-medium text-amber-700">{{ $sucursal->activo ? 'Inactivar' : 'Activar' }}</button>
+                                                    </form>
+                                                    <form method="POST" action="{{ route('clientes.sucursales.destroy', [$cliente, $sucursal]) }}"
+                                                          onsubmit="return confirm('¿Eliminar esta sala?');">
+                                                        @csrf @method('DELETE')
+                                                        <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 dark:border-ink-500 bg-white dark:bg-ink-800 px-2 text-sm font-medium text-red-600">Eliminar</button>
+                                                    </form>
+                                                </div>
+                                                <div class="hidden md:block">
                                                 <a href="{{ route('clientes.sucursales.edit', [$cliente, $sucursal]) }}" class="text-indigo-600 hover:underline">Editar</a>
                                                 <form method="POST" action="{{ route('clientes.sucursales.toggle-activo', [$cliente, $sucursal]) }}" class="inline">
                                                     @csrf @method('PATCH')
@@ -198,6 +219,7 @@
                                                     @csrf @method('DELETE')
                                                     <button class="text-red-600 hover:underline ml-2">Eliminar</button>
                                                 </form>
+                                                </div>
                                             @endcan
                                         </td>
                                     </tr>
