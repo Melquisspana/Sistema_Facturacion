@@ -745,10 +745,15 @@ class PorEntregarViajeTest extends TestCase
 
     public function test_no_vino_en_por_entregar_y_la_hoja_con_observaciones_para_firmar(): void
     {
-        [$pedido, $dte] = $this->pedidoConFaltante();
+        [$pedido, $dte, $galleta] = $this->pedidoConFaltante();
+        // Con la unidad de medida del producto, no «cajas» para todo (12/11/2026).
         $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()
-            ->assertSee('No vino: 4 cajas de Galleta de prueba')
+            ->assertSee('No vino: 4 u de Galleta de prueba')->assertDontSee('cajas de Galleta')
             ->assertSee('href="'.route('rutas.por-entregar.hoja', $dte).'"', false);
+        // Sin abreviatura en su unidad: solo el número.
+        $galleta->unidadMedida->update(['abreviatura' => null]);
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('No vino: 4 de Galleta de prueba');
 
         $this->actingAs($this->beto)->get(route('rutas.por-entregar.hoja', $dte))->assertOk()
             ->assertSee('Observaciones')

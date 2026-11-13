@@ -89,9 +89,10 @@
                     @endif
                     @foreach ($noVino as $linea)
                         @php
-                            $cajas = \App\Models\PedidoSalaLinea::legible($linea->pendiente());
+                            // Con la unidad del producto («12 u»); sin abreviatura, solo el número.
+                            $unidad = $linea->producto?->unidadMedida?->abreviatura;
                         @endphp
-                        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">No vino: {{ $cajas }} {{ $cajas === '1' ? 'caja' : 'cajas' }} de {{ $linea->producto?->nombre }}</p>
+                        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">No vino: {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}{{ $unidad ? ' '.$unidad : '' }} de {{ $linea->producto?->nombre }}</p>
                     @endforeach
                     @if (($fallas[$dte->id] ?? 0) >= \App\Services\Rutas\EntregasCcf::FALLAS_AVISO)
                         <p class="mt-1 text-sm font-medium text-red-700 dark:text-red-300">No se pudo entregar {{ $fallas[$dte->id] }} veces. El jefe ya lo ve en su tablero.</p>
@@ -210,8 +211,10 @@
                     @if ($entrega->entregadoPor)
                         @php
                             $albaranDe = $albaranMarcados[$entrega->dte_id] ?? null;
+                            // «No se pudo» no entregó nada: no espera albarán; solo dice quién fue.
+                            $entregado = $entrega->resultado === \App\Enums\ResultadoEntrega::Entregado;
                         @endphp
-                        <p class="mt-1 text-sm text-gray-700 dark:text-paper-100">{{ $entrega->resultado === \App\Enums\ResultadoEntrega::Entregado ? 'Entregó' : 'Fue' }}: {{ $entrega->entregadoPor->nombre }}{{ $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
+                        <p class="mt-1 text-sm text-gray-700 dark:text-paper-100">{{ $entregado ? 'Entregó' : 'Fue' }}: {{ $entrega->entregadoPor->nombre }}{{ ! $entregado || $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
                     @endif
                 </div>
             @endforeach

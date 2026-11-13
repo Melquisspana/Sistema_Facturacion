@@ -149,6 +149,18 @@ class QuienLoEntregoTest extends TestCase
         $this->assertSame(1, SalidaRutaEntrega::count());
     }
 
+    public function test_no_se_pudo_en_la_sala_con_albaran_dice_quien_fue_sin_esperar_albaran(): void
+    {
+        // No se entregó nada: no espera albarán (12/11/2026). Solo quién fue y el motivo.
+        $dte = $this->ccf($this->salaSuper, '310.80');
+        $this->marcar($this->ana, $dte, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada', 'entregado_por_id' => $this->personaBeto->id])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSeeInOrder(['Marcados hoy', 'Súper de prueba Centro', 'No se pudo entregar', 'Fue: Beto Ficticio'])
+            ->assertDontSee('esperando albarán')->assertDontSee('llegó el albarán');
+    }
+
     public function test_si_cae_el_albaran_sin_anotar_queda_entregada_y_se_anota_quien_despues(): void
     {
         $dte = $this->ccf($this->salaSuper, '310.80');

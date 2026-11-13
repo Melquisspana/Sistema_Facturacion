@@ -80,7 +80,7 @@ class PorEntregarController extends Controller
             ->load(['clienteSucursal:id,nombre,ruta_id,distrito_id,departamento_id', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
         // El pedido de cada CCF: quién lo sacó («lo sacó otro vendedor») y lo que no vino.
         $pedidos = PedidoSalaEnvio::vigentes()->whereIn('dte_id', $todos->modelKeys())
-            ->with(['pedido.sacadoPor:id,nombre', 'pedido.lineas.producto:id,nombre', 'pedido.lineas.envioLineasVigentes'])
+            ->with(['pedido.sacadoPor:id,nombre', 'pedido.lineas.producto:id,nombre,unidad_medida_id', 'pedido.lineas.producto.unidadMedida:id,abreviatura', 'pedido.lineas.envioLineasVigentes'])
             ->orderBy('id')->get()->mapWithKeys(fn (PedidoSalaEnvio $e) => [$e->dte_id => $e->pedido]);
 
         // Con su viaje en curso: «Este viaje» y «Toda la zona»; si no, todo, como antes.
