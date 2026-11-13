@@ -28,15 +28,18 @@ final class NombreEmpresa
 
     public static function actual(): string
     {
-        try {
-            $nombre = Cache::remember(
-                self::CLAVE,
-                self::SEGUNDOS,
-                fn (): string => app(IdentidadNegocio::class)->negocio(),
-            );
-        } catch (Throwable) {
-            $nombre = '';
-        }
+        // Una sola lectura de caché por pedido: el nombre sale en el logo, el título y el menú.
+        $nombre = MemoDePedido::actual()->recordar(self::CLAVE, function (): string {
+            try {
+                return (string) Cache::remember(
+                    self::CLAVE,
+                    self::SEGUNDOS,
+                    fn (): string => app(IdentidadNegocio::class)->negocio(),
+                );
+            } catch (Throwable) {
+                return '';
+            }
+        });
 
         return filled($nombre) ? trim((string) $nombre) : (string) config('app.name');
     }
@@ -44,6 +47,8 @@ final class NombreEmpresa
     /** Lo llama {@see Empresa} al guardarse: el cambio se ve en la pantalla siguiente. */
     public static function olvidar(): void
     {
+        MemoDePedido::actual()->olvidar(self::CLAVE);
+
         try {
             Cache::forget(self::CLAVE);
         } catch (Throwable) {
