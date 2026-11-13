@@ -39,6 +39,7 @@ class WorkerHeartbeat
 
         self::$ultimoPulsoProceso = $ahora;
         Cache::put(self::CACHE_KEY, $ahora, now()->addDay());
+        MemoDePedido::actual()->olvidar(self::CACHE_KEY);
     }
 
     /**
@@ -49,7 +50,7 @@ class WorkerHeartbeat
      */
     public static function estado(): array
     {
-        $ts = Cache::get(self::CACHE_KEY);
+        $ts = MemoDePedido::actual()->recordar(self::CACHE_KEY, fn () => Cache::get(self::CACHE_KEY));
 
         if (! $ts) {
             return ['estado' => 'sin_datos', 'ultimo' => null, 'hace' => null, 'umbral_seg' => self::UMBRAL_ACTIVO_SEG];
@@ -70,6 +71,7 @@ class WorkerHeartbeat
     public static function olvidar(): void
     {
         self::$ultimoPulsoProceso = null;
+        MemoDePedido::actual()->olvidar(self::CACHE_KEY);
         Cache::forget(self::CACHE_KEY);
     }
 

@@ -50,6 +50,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Lecturas de caché que se hacen una sola vez por pedido o por trabajo de la cola.
+        $this->app->scoped(\App\Support\MemoDePedido::class);
+
         // Centro de Configuración. Singleton porque el resolver memoriza el mapa de
         // overrides mientras la huella de caché no cambie: compartir la instancia
         // dentro de la petición evita releer la tabla una vez por consumidor.

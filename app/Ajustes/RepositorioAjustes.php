@@ -5,6 +5,7 @@ namespace App\Ajustes;
 use App\Ajustes\Excepciones\AlmacenAjustesNoDisponibleException;
 use App\Models\AjusteSistema;
 use App\Models\Configuracion;
+use App\Support\MemoDePedido;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
@@ -146,6 +147,7 @@ class RepositorioAjustes
 
         $this->huellaMemo = null;
         $this->mapaMemo = null;
+        MemoDePedido::actual()->olvidar(self::CLAVE_HUELLA);
     }
 
     /**
@@ -249,13 +251,19 @@ class RepositorioAjustes
 
     private function huella(): string
     {
-        $huella = $this->cache->get(self::CLAVE_HUELLA);
+        // Una lectura de caché por pedido (o por trabajo de la cola), no una por cada ajuste:
+        // con el store `database` cada una era una consulta. Un cambio hecho por otro
+        // proceso se ve en el pedido o trabajo siguiente; los de este proceso, al instante
+        // (invalidar() descarta el memo).
+        return MemoDePedido::actual()->recordar(self::CLAVE_HUELLA, function (): string {
+            $huella = $this->cache->get(self::CLAVE_HUELLA);
 
-        if (! is_string($huella) || $huella === '') {
-            $huella = (string) Str::uuid();
-            $this->cache->forever(self::CLAVE_HUELLA, $huella);
-        }
+            if (! is_string($huella) || $huella === '') {
+                $huella = (string) Str::uuid();
+                $this->cache->forever(self::CLAVE_HUELLA, $huella);
+            }
 
-        return $huella;
+            return $huella;
+        });
     }
 }

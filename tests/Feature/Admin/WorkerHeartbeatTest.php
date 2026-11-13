@@ -63,6 +63,7 @@ class WorkerHeartbeatTest extends TestCase
         $this->assertSame('activo', WorkerHeartbeat::estado()['estado']);
 
         Cache::put(self::KEY, now()->subSeconds(121)->getTimestamp(), now()->addDay());
+        app()->forgetScopedInstances(); // otro pedido: el estado se lee una vez por pedido
         $this->assertSame('inactivo', WorkerHeartbeat::estado()['estado']);
     }
 
