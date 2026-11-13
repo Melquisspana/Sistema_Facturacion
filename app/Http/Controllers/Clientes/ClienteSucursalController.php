@@ -38,7 +38,7 @@ class ClienteSucursalController extends Controller
         return view('clientes.sucursales.form', $this->datosFormulario(
             $cliente,
             new ClienteSucursal(['activo' => true, 'telefono' => self::TELEFONO_POR_DEFECTO, 'nombre' => $pedidoSala?->sala_nueva_nombre])
-        ) + ['pedidoSala' => $pedidoSala]);
+        ) + ['pedidoSala' => $pedidoSala, 'mismaTienda' => $pedidoSala ? PedidosSala::mismaTiendaNueva($pedidoSala)->count() : 0]);
     }
 
     public function store(ClienteSucursalRequest $request, Cliente $cliente, PedidosSala $pedidos): RedirectResponse
@@ -54,10 +54,11 @@ class ClienteSucursalController extends Controller
 
         if ($pedidoSala !== null) {
             try {
-                $pedidoSala = $pedidos->enlazarSala($pedidoSala, $sucursal->id, $request->user());
+                // Con la tienda se enlazan también los otros pedidos que la anotaron igual.
+                $enlace = $pedidos->enlazarTiendaNueva($pedidoSala, $sucursal->id, $request->user());
 
-                return redirect()->route('facturacion.create-ccf', ['pedido' => $pedidoSala->id])
-                    ->with('status', TiendaNuevaController::listo($pedidoSala));
+                return redirect()->route('facturacion.create-ccf', ['pedido' => $enlace['pedido']->id])
+                    ->with('status', TiendaNuevaController::listo($enlace));
             } catch (ValidationException $e) {
                 return redirect()->route('clientes.show', $cliente)
                     ->with('error', 'Sala «'.$sucursal->nombre.'» creada, pero no se enlazó al pedido: '.collect($e->errors())->flatten()->implode(' '))

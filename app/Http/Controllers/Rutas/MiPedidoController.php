@@ -8,6 +8,7 @@ use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
+use App\Models\User;
 use App\Services\Rutas\FichaVendedor;
 use App\Services\Rutas\HistoriaSala;
 use App\Services\Rutas\PedidosSala;
@@ -121,28 +122,75 @@ class MiPedidoController extends Controller
         Gate::authorize('create', PedidoSala::class);
         $nombre = preg_replace('/\s+/u', ' ', trim((string) ($request->validate(['nombre' => ['nullable', 'string', 'max:100']])['nombre'] ?? '')));
 
-        return $this->formulario($request, null, null, $nombre)->with('parecidas', $this->parecidas($nombre));
+        return $this->formulario($request, null, null, $nombre)
+            ->with('parecidas', $this->parecidas($nombre))
+            ->with('tiendasDeHoy', $this->tiendasDeHoy($nombre, $request->user()));
+    }
+
+    /** Las palabras del nombre que dicen algo (sin «tienda», «sala», «súper»…) y el nombre entero. */
+    private function palabras(string $nombre): Collection
+    {
+        $comunes = ['tienda', 'sala', 'super', 'súper', 'minisuper', 'minisúper', 'despensa', 'abarrotes', 'comercial'];
+
+        return collect(preg_split('/\s+/u', mb_strtolower($nombre)))
+            ->filter(fn (string $p) => mb_strlen($p) >= 4 && ! in_array($p, $comunes, true))->push($nombre)->unique()->values();
     }
 
     /**
      * «¿Es alguna de estas?»: las salas que ya existen con un nombre parecido al que escribió,
      * para no cargar dos veces la misma tienda. Busca el texto entero y cada palabra que dice
-     * algo (sin «tienda», «sala», «súper»…).
+     * algo ({@see palabras()}).
      *
      * @return Collection<int, ClienteSucursal>
      */
     private function parecidas(string $nombre): Collection
     {
-        $comunes = ['tienda', 'sala', 'super', 'súper', 'minisuper', 'minisúper', 'despensa', 'abarrotes', 'comercial'];
-        $palabras = collect(preg_split('/\s+/u', mb_strtolower($nombre)))
-            ->filter(fn (string $p) => mb_strlen($p) >= 4 && ! in_array($p, $comunes, true))->push($nombre)->unique()->values();
         if (mb_strlen($nombre) < 3) {
             return collect();
         }
+        $palabras = $this->palabras($nombre);
 
         return ClienteSucursal::query()->where('activo', true)->whereKeyNot(PedidosSala::salasSinPedidos())
             ->where(fn ($q) => $palabras->each(fn (string $p) => $q->orWhere(fn ($o) => $o->buscarTexto($p))))
             ->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(8)->get();
+    }
+
+    /**
+     * También en «¿Es alguna de estas?» (Melqui, 13/11/2026): las tiendas nuevas que anotaron
+     * HOY otros vendedores (o él) y que la oficina todavía no enlazó, con la misma búsqueda
+     * (mayúsculas y tildes las iguala la collation). Una por nombre
+     * ({@see PedidosSala::nombreTienda()}). Del otro vendedor se ve solo el nombre de la tienda
+     * y quién la anotó. Si es una de esas, su pedido va con el mismo nombre (la oficina las ve
+     * juntas y el alta las enlaza todas); si es la suya, va a corregirla. La que ya se llama
+     * igual que lo escrito no se ofrece de otro: ya va con ese nombre.
+     *
+     * @return Collection<int, array{nombre: string, quien: string, url: string, suya: bool}>
+     */
+    private function tiendasDeHoy(string $nombre, User $usuario): Collection
+    {
+        if (mb_strlen($nombre) < 3) {
+            return collect();
+        }
+        $palabras = $this->palabras($nombre);
+        $personaId = PedidosSala::persona($usuario)?->id;
+
+        return PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->whereDate('fecha', HoraNegocio::fechaHoy())
+            ->where(fn ($q) => $palabras->each(fn (string $p) => $q->orWhere('sala_nueva_nombre', 'like', '%'.addcslashes($p, '%_\\').'%')))
+            ->with('sacadoPor:id,nombre')->orderBy('id')->limit(30)->get()
+            ->groupBy(fn (PedidoSala $p) => PedidosSala::nombreTienda($p->sala_nueva_nombre))
+            ->map(function (Collection $mismos) use ($personaId) {
+                $suyo = $personaId === null ? null : $mismos->firstWhere('sacado_por_id', $personaId);
+
+                return [
+                    'nombre' => $mismos->first()->sala_nueva_nombre,
+                    'quien' => $mismos->map(fn (PedidoSala $p) => $p->sacado_por_id === $personaId ? 'vos' : ($p->sacadoPor?->nombre ?? 'otro vendedor'))
+                        ->unique()->join(', ', ' y '),
+                    'url' => $suyo ? route('rutas.sacar-pedido.edit', $suyo) : route('rutas.sacar-pedido.tienda-nueva.create', ['nombre' => $mismos->first()->sala_nueva_nombre]),
+                    'suya' => $suyo !== null,
+                ];
+            })
+            ->reject(fn (array $t, int|string $clave) => ! $t['suya'] && (string) $clave === PedidosSala::nombreTienda($nombre))
+            ->take(8)->values();
     }
 
     /** Tienda nueva: solo el nombre. La oficina la da de alta y la enlaza al facturar. */

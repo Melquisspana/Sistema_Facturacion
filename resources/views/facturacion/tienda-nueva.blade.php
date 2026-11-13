@@ -3,8 +3,9 @@
      alta con el formulario de Clientes, que vuelve enlazando. Sin sala no se factura.
 
      Variables: $pedido (sacadoPor, ruta), $texto (lo buscado; al entrar, el nombre que escribió
-     el vendedor), $salas (las que coinciden, con cliente y distrito) y $puedeDarDeAlta
-     (clientes.gestionar, o clientes.alta para esta tienda nueva). --}}
+     el vendedor), $salas (las que coinciden, con cliente y distrito), $puedeDarDeAlta
+     (clientes.gestionar, o clientes.alta para esta tienda nueva) y $mismaTienda (los otros
+     pedidos de esa tienda nueva, que se enlazan con este: PedidosSala::mismaTiendaNueva). --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -34,6 +35,18 @@
                     <div><dt class="{{ $dt }}">Lo sacó</dt><dd class="{{ $dd }}">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
                     <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->zonaNombre() }}</dd></div>
                 </dl>
+                {{-- La misma tienda nueva en otros pedidos (13/11/2026): el enlace las lleva todas. --}}
+                @if ($mismaTienda->isNotEmpty())
+                    <div class="mt-4 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
+                        <p class="font-semibold">Hay {{ $mismaTienda->count() === 1 ? '1 pedido más' : $mismaTienda->count().' pedidos más' }} de «{{ $pedido->sala_nueva_nombre }}» sin enlazar.</p>
+                        <p class="mt-1">Al enlazar la sala, se enlazan todos:</p>
+                        <ul class="mt-1 list-disc pl-5">
+                            @foreach ($mismaTienda as $otro)
+                                <li>N.º {{ $otro->id }} · {{ $otro->fecha->format('d/m/Y') }} · {{ $otro->sacadoPor?->nombre ?? '—' }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
             </section>
 
             {{-- 1. Si no está en Clientes: el alta con el formulario de siempre, que vuelve enlazando. --}}

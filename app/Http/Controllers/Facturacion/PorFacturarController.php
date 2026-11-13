@@ -7,6 +7,7 @@ use App\Models\Dte;
 use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
 use App\Services\Rutas\FacturarPedido;
+use App\Services\Rutas\PedidosSala;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\HoraNegocio;
 use App\Support\OrdenCompra;
@@ -120,6 +121,8 @@ class PorFacturarController extends Controller
             'esHoy' => $fecha === HoraNegocio::fechaHoy(),
             'sinFacturar' => $sinFacturar,
             'facturacion' => $facturacion,
+            // Cuántos pedidos más hay de cada tienda nueva con el mismo nombre (13/11/2026).
+            'mismaTienda' => PedidosSala::cuantosMasDeLaTienda($pedidos->getCollection()),
             // Pedidos sin facturar que no salen en el día elegido: para el aviso de arriba.
             'otrosDiasSinFacturar' => $sinFacturar ? 0 : PedidoSala::query()->vigentes()
                 ->whereHas('envios', $porFacturar)
