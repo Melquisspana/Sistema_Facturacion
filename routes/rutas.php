@@ -212,6 +212,12 @@ Route::middleware(['auth', 'permission:rutas.ver'])
             // La OC llega después por EDI: la agrega o corrige la oficina.
             Route::patch('{pedido}/orden-compra', [PedidoSalaController::class, 'ordenCompra'])->name('orden-compra')
                 ->middleware('permission:rutas.gestionar');
+            // La oficina corrige (sala y lo que falta mandar) o anula el pedido, con motivo
+            // (13/11/2026). Quién, lo dice la policy (`corregirEnOficina`). Formularios sin copia.
+            Route::get('{pedido}/corregir', [PedidoSalaController::class, 'corregir'])->middleware($sinCopia)->name('corregir');
+            Route::put('{pedido}/corregir', [PedidoSalaController::class, 'guardarCorreccion'])->name('corregir.guardar');
+            Route::get('{pedido}/anular', [PedidoSalaController::class, 'confirmarAnular'])->middleware($sinCopia)->name('anular');
+            Route::patch('{pedido}/anular', [PedidoSalaController::class, 'anular'])->name('anular.guardar');
         });
 
         /*

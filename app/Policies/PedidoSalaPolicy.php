@@ -7,6 +7,7 @@ use App\Enums\PermisoSistema;
 use App\Models\PedidoSala;
 use App\Models\User;
 use App\Services\Rutas\PedidosFabrica;
+use App\Services\Rutas\PedidosOficina;
 use App\Services\Rutas\PedidosSala;
 
 /**
@@ -40,6 +41,21 @@ class PedidoSalaPolicy
             && $this->create($usuario)
             && PedidosSala::loSaco($usuario, $pedido)
             && ! PedidosSala::sacoElSiguiente($pedido);
+    }
+
+    /**
+     * La oficina corrige (la sala y lo que falta mandar) o anula el pedido, con motivo
+     * (Melqui, 13/11/2026): Facturación (`dte.gestionar`), el jefe de vendedores (el único que
+     * además de ver todos los pedidos los saca: `rutas.pedidos.registrar`) y el administrador.
+     * No Jefatura (solo `rutas.gestionar`), ni el vendedor (no ve los pedidos de la oficina),
+     * ni la PC de pedidos. Que no esté facturado, lo ya mandado y la sala nueva los revisa
+     * {@see PedidosOficina}, con mensaje claro en vez de un 403.
+     */
+    public function corregirEnOficina(User $usuario, PedidoSala $pedido): bool
+    {
+        return $this->view($usuario, $pedido)
+            && ($usuario->can(PermisoSistema::DteGestionar->value) || $usuario->can(PermisoSistema::RutasPedidosRegistrar->value))
+            && $pedido->estaVigente();
     }
 
     /**

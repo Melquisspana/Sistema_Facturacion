@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Rutas;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Rutas\CorregirPedidoOficinaRequest;
+use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
 use App\Models\Ruta;
 use App\Services\Rutas\FacturarPedido;
+use App\Services\Rutas\PedidosFabrica;
+use App\Services\Rutas\PedidosOficina;
 use App\Services\Rutas\PedidosSala;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -15,7 +19,8 @@ use Illuminate\View\View;
 
 /**
  * «Pedidos» de la oficina: la lista con filtros por fecha, ruta y sala, y el detalle, donde
- * se agrega la OC y se ve lo que mandó la fábrica (sus envíos, vigentes y anulados).
+ * se agrega la OC y se ve lo que mandó la fábrica (sus envíos, vigentes y anulados). Desde
+ * el 13/11/2026 la oficina también lo corrige o lo anula ({@see PedidosOficina}).
  */
 class PedidoSalaController extends Controller
 {
@@ -116,5 +121,65 @@ class PedidoSalaController extends Controller
             ($pedido->numero_orden_compra ? 'Orden de compra guardada.' : 'Orden de compra quitada.')
             .($avisos ? ' Revisala: '.implode(' ', $avisos) : '')
         ));
+    }
+
+    /**
+     * «Corregir»: la sala (con un buscador `?q=` que recarga, como en la tienda nueva) y las
+     * cantidades de lo que falta mandar. Lo que se puede, lo dice {@see PedidosOficina}.
+     */
+    public function corregir(Request $request, PedidoSala $pedido, PedidosFabrica $fabrica): View
+    {
+        Gate::authorize('corregirEnOficina', $pedido);
+        $texto = trim((string) ($request->validate(['q' => ['nullable', 'string', 'max:100']])['q'] ?? ''));
+        $salas = mb_strlen($texto) >= 2 && ! $pedido->esTiendaNueva()
+            ? ClienteSucursal::query()->buscarTexto($texto)->where('activo', true)
+                ->whereKeyNot([...PedidosSala::salasSinPedidos(), $pedido->cliente_sucursal_id])
+                ->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(20)->get()
+            : collect();
+
+        return view('rutas.pedidos.corregir', [
+            'pedido' => $this->paraFormulario($pedido, $fabrica),
+            'texto' => $texto,
+            'salas' => $salas,
+        ]);
+    }
+
+    public function guardarCorreccion(CorregirPedidoOficinaRequest $request, PedidoSala $pedido, PedidosOficina $oficina, PedidosSala $pedidos): RedirectResponse
+    {
+        $pedido = $oficina->corregir($pedido, $request->validated(), $request->user());
+        $avisos = $pedidos->avisosCantidad($pedido);
+
+        return redirect()->route('rutas.pedidos.show', $pedido)
+            ->with('status', trim('Pedido corregido: «'.$pedido->nombreSala().'».'.($avisos ? ' '.implode(' ', $avisos) : '')));
+    }
+
+    /** «Anular»: el motivo y la confirmación. */
+    public function confirmarAnular(PedidoSala $pedido, PedidosFabrica $fabrica): View
+    {
+        Gate::authorize('corregirEnOficina', $pedido);
+
+        return view('rutas.pedidos.anular', ['pedido' => $this->paraFormulario($pedido, $fabrica)]);
+    }
+
+    public function anular(Request $request, PedidoSala $pedido, PedidosOficina $oficina): RedirectResponse
+    {
+        Gate::authorize('corregirEnOficina', $pedido);
+        $datos = $request->validate([
+            'version' => ['required', 'string', 'size:64'],
+            'motivo' => ['required', 'string', 'max:500'],
+        ], [
+            'version.*' => 'Volvé a abrir el pedido y anulalo de nuevo.',
+            'motivo.required' => 'Escribí por qué se anula.',
+            'motivo.max' => 'El motivo puede tener hasta 500 caracteres.',
+        ]);
+        $oficina->anular($pedido, $datos['version'], $datos['motivo'], $request->user());
+
+        return redirect()->route('rutas.pedidos.show', $pedido)->with('status', 'Pedido de «'.$pedido->nombreSala().'» anulado.');
+    }
+
+    /** Con lo que piden los formularios: las líneas con lo mandado, los envíos con su CCF y la versión. */
+    private function paraFormulario(PedidoSala $pedido, PedidosFabrica $fabrica): PedidoSala
+    {
+        return $pedido->load($fabrica->relaciones())->load(['sala:id,nombre,codigo', 'lineas.producto:id,nombre,codigo', 'envios.dte']);
     }
 }

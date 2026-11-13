@@ -10,7 +10,7 @@
     </div>
     <div class="space-y-3 p-4 text-sm">
         @if (! $pedido->estaVigente())
-            <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">El vendedor anuló este pedido: no se factura.</p>
+            <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">Este pedido está anulado: no se factura.</p>
         @elseif ($propuesta['borrador'])
             <p role="alert" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-800">
                 {{ $sinNada ? 'Todo lo que llegó ya está en un borrador abierto.' : \App\Services\Rutas\FacturarPedido::BORRADOR_ABIERTO }}
