@@ -361,6 +361,19 @@ class VentasRutasTest extends TestCase
             ->assertDownload('ventas-nacionales-2026-10.pdf');
     }
 
+    /** «N salas más» nombra la pantalla del reporte, no el último título de «Subieron/Bajaron». */
+    public function test_pdf_las_salas_de_mas_remiten_a_la_pantalla_del_reporte(): void
+    {
+        for ($i = 0; $i < 6; $i++) {
+            $sala = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala baja '.$i, 'codigo' => (string) (50 + $i)]);
+            $this->documento(100, ['fecha_emision' => '2026-09-05', 'cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id]);
+        }
+        $html = view('rutas.ventas.pdf', $this->ventas() + ['empresa' => Empresa::first()])->render();
+
+        $this->assertStringContainsString('1 salas más en la pantalla de Ventas nacionales.', $html);
+        $this->assertStringNotContainsString('en la pantalla de Bajaron', $html);
+    }
+
     public function test_permisos_en_ambos_endpoints(): void
     {
         // Ventas es solo de Administrador y Jefatura (Melqui, 11/11/2026): ni Facturación ni el jefe de vendedores.

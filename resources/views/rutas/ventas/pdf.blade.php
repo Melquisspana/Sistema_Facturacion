@@ -77,8 +77,8 @@
         @empty <tr><td>Sin ventas en este período.</td></tr> @endforelse
     </table>
     <table class="columns"><tr>
-        @foreach (['suben' => 'Subieron', 'bajan' => 'Bajaron'] as $clave => $titulo)
-            <td><h2>{{ $titulo }}</h2><table class="resumen">
+        @foreach (['suben' => 'Subieron', 'bajan' => 'Bajaron'] as $clave => $columna)
+            <td><h2>{{ $columna }}</h2><table class="resumen">
                 @forelse ($resumen[$clave] as $fila)
                     <tr><td>{{ mb_strimwidth($fila['nombre'], 0, 28, '…') }}</td><td class="money">{{ $fila['diferencia'] > 0 ? '+' : '' }}{{ $dinero($fila['diferencia']) }}</td></tr>
                 @empty <tr><td>Ninguno.</td></tr> @endforelse
