@@ -311,7 +311,7 @@
                                     <textarea id="destinatarios" name="destinatarios" rows="2" required
                                               placeholder="cliente@correo.com, contabilidad@empresa.com"
                                               class="flex-1 rounded-md border-gray-300 text-sm">{{ old('destinatarios', $correoDefault) }}</textarea>
-                                    <button type="submit" class="shrink-0 self-start sm:self-stretch inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                                    <button type="submit" class="shrink-0 self-start sm:self-stretch inline-flex min-h-11 sm:min-h-0 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                                         {{ $yaEnviado ? 'Reenviar y abrir PDF' : 'Enviar correo y abrir PDF' }}
                                     </button>
                                 </div>
@@ -322,13 +322,15 @@
 
                         {{-- Historial compacto y plegable (visible aunque no esté aceptado, es solo lectura) --}}
                         @if ($envios->isNotEmpty())
+                            {{-- En el celular cada envío se apila (fecha y destinatarios a lo ancho,
+                                 los demás de a dos) y el resumen y «Reenviar» son de 44 px. --}}
                             <details class="group">
-                                <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600 select-none">
+                                <summary class="min-h-11 sm:min-h-0 py-3 sm:py-0 cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600 select-none">
                                     Historial de envíos ({{ $envios->count() }})
                                 </summary>
                                 <div class="mt-2 overflow-x-auto">
-                                    <table class="min-w-full text-sm">
-                                        <thead>
+                                    <table class="block md:table min-w-full text-sm">
+                                        <thead class="hidden md:table-header-group">
                                             <tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-100">
                                                 <th class="py-1.5 pr-3">Fecha</th>
                                                 <th class="py-1.5 pr-3">Destinatarios</th>
@@ -338,12 +340,13 @@
                                                 <th class="py-1.5 pr-3"></th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-gray-50">
+                                        <tbody class="block md:table-row-group divide-y divide-gray-50">
                                             @foreach ($envios as $e)
-                                                <tr>
-                                                    <td class="py-1.5 pr-3 whitespace-nowrap text-gray-600">{{ $e->created_at->format('d/m/Y H:i') }}</td>
-                                                    <td class="py-1.5 pr-3 break-all text-gray-600">{{ $e->destinatariosTexto() }}</td>
+                                                <tr class="grid grid-cols-2 py-2 md:table-row">
+                                                    <td class="col-span-2 py-1.5 pr-3 whitespace-nowrap text-gray-600"><span class="md:hidden block text-xs text-gray-500">Fecha</span>{{ $e->created_at->format('d/m/Y H:i') }}</td>
+                                                    <td class="col-span-2 py-1.5 pr-3 break-all text-gray-600"><span class="md:hidden block text-xs text-gray-500">Destinatarios</span>{{ $e->destinatariosTexto() }}</td>
                                                     <td class="py-1.5 pr-3 whitespace-nowrap">
+                                                        <span class="md:hidden block text-xs text-gray-500">Estado</span>
                                                         @php
                                                             $clase = ['enviado' => 'bg-green-100 text-green-700', 'simulado' => 'bg-violet-100 text-violet-700', 'pendiente' => 'bg-amber-100 text-amber-700', 'error' => 'bg-rose-100 text-rose-700'][$e->estado] ?? 'bg-gray-100 text-gray-600';
                                                             $etiqueta = ['enviado' => 'Enviado', 'simulado' => 'Simulado', 'pendiente' => 'Pendiente', 'error' => 'Fallido'][$e->estado] ?? ucfirst($e->estado);
@@ -351,13 +354,13 @@
                                                         <span class="inline-block rounded px-2 py-0.5 text-xs {{ $clase }}">{{ $etiqueta }}</span>
                                                         @if ($e->error)<span class="ml-1 cursor-help {{ $e->estado === 'simulado' ? 'text-violet-500' : 'text-rose-500' }}" title="{{ $e->error }}">ⓘ</span>@endif
                                                     </td>
-                                                    <td class="py-1.5 pr-3 text-gray-500">{{ $e->adjuntos ?? '—' }}</td>
-                                                    <td class="py-1.5 pr-3 text-gray-500">{{ $e->usuario?->name ?? 'Automático' }}</td>
-                                                    <td class="py-1.5 pr-3 text-right">
+                                                    <td class="py-1.5 pr-3 text-gray-500"><span class="md:hidden block text-xs">Adjuntos</span>{{ $e->adjuntos ?? '—' }}</td>
+                                                    <td class="py-1.5 pr-3 text-gray-500"><span class="md:hidden block text-xs">Por</span>{{ $e->usuario?->name ?? 'Automático' }}</td>
+                                                    <td @class(['py-1.5 pr-3 md:text-right', 'col-span-2' => $dteAceptado, 'hidden md:table-cell' => ! $dteAceptado])>
                                                         @if ($dteAceptado)
                                                             <form method="POST" action="{{ route('facturacion.correo.reenviar', [$dte, $e]) }}">
                                                                 @csrf
-                                                                <button class="text-indigo-600 hover:underline text-xs">Reenviar</button>
+                                                                <button class="inline-flex min-h-11 sm:min-h-0 items-center text-indigo-600 hover:underline text-xs">Reenviar</button>
                                                             </form>
                                                         @endif
                                                     </td>
@@ -719,7 +722,8 @@
                             </dl>
 
                             <h3 class="font-semibold text-gray-700 mt-6 mb-3">Preflight de transmisión</h3>
-                            <dl class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                            {{-- break-all: los nombres de las variables no tienen dónde cortarse y a 375 px corrían la página de lado. --}}
+                            <dl class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm break-all">
                                 <div><dt class="text-gray-500">DTE_TRANSMISION_ENABLED</dt><dd>{{ $f['enabled'] ? 'habilitado' : 'bloqueado' }}</dd></div>
                                 <div><dt class="text-gray-500">DTE_TRANSMISION_DRY_RUN</dt><dd>{{ $f['dry_run'] ? 'activo' : 'inactivo' }}</dd></div>
                                 <div><dt class="text-gray-500">DTE_TRANSMISION_REAL_CONFIRMATION</dt><dd>{{ $f['real_confirmation'] ? 'sí' : 'no' }}</dd></div>
