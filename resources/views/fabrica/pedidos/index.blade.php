@@ -27,18 +27,21 @@
                  this.ultimo = ahora;
                  try { sessionStorage.setItem('fabrica.ultimo', String(ahora)); } catch (e) {}
              },
+             {{-- En init() y no en x-init: Alpine evalúa x-init como expresión y un «try» al
+                  comienzo daba error de sintaxis, así que la lista nunca se recargaba sola. --}}
+             init() {
+                 try {
+                     const antes = Number(sessionStorage.getItem('fabrica.ultimo'));
+                     if (antes) this.ultimo = antes; else sessionStorage.setItem('fabrica.ultimo', String(this.ultimo));
+                     this.recuerda = true;
+                 } catch (e) {}
+                 setInterval(() => {
+                     const quieto = Date.now() - this.ultimo;
+                     if (! this.enviando && quieto > 20000 && (this.limite === null || (this.recuerda && quieto < this.limite))) location.reload();
+                 }, 30000);
+             },
          }"
-         @pointerdown.window="uso()" @pointermove.window="if ($event.movementX || $event.movementY) uso()" @wheel.window="uso()" @keydown.window="uso()"
-         x-init="
-             try {
-                 const antes = Number(sessionStorage.getItem('fabrica.ultimo'));
-                 if (antes) ultimo = antes; else sessionStorage.setItem('fabrica.ultimo', String(ultimo));
-                 recuerda = true;
-             } catch (e) {}
-             setInterval(() => {
-                 const quieto = Date.now() - ultimo;
-                 if (! enviando && quieto > 20000 && (limite === null || (recuerda && quieto < limite))) location.reload();
-             }, 30000)">
+         @pointerdown.window="uso()" @pointermove.window="if ($event.movementX || $event.movementY) uso()" @wheel.window="uso()" @keydown.window="uso()">
         {{-- En monitor usa todo el ancho (max-w-full): cuatro columnas de nombres desde lg. --}}
         <div class="max-w-full mx-auto space-y-4 px-4 sm:px-6 lg:px-8">
             <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedidos</h1>

@@ -143,6 +143,16 @@ class PantallaFabricaTest extends TestCase
 
     // ══════════════════════════════ 2. la lista
 
+    public function test_la_recarga_sola_de_la_lista_va_en_init_y_no_en_un_x_init_con_try(): void
+    {
+        // Alpine evalúa x-init como expresión: un «try» al comienzo es error de sintaxis y la
+        // lista nunca se recargaba sola (visto en el navegador el 12/11/2026).
+        $html = $this->get(route('fabrica.pedidos.index'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('init() {', $html);
+        $this->assertDoesNotMatchRegularExpression('/x-init="\s*try/', $html);
+    }
+
     public function test_la_lista_muestra_solo_los_nombres_como_botones(): void
     {
         $viejo = $this->pedido([$this->canilla->id => '6'], $this->otraSala, '2026-11-06');
