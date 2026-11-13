@@ -260,7 +260,7 @@ class QuienLoEntregoTest extends TestCase
         $this->actingAs($this->beto)->get(route('rutas.mi-salida.dia.pdf'))->assertOk();
         $html = view('rutas.mi-salida.dia-pdf', ['resumen' => $dia->resumen($this->personaBeto, $this->beto, '2026-11-10'),
             'persona' => $this->personaBeto, 'empresa' => 'Empresa de prueba', 'generado' => now()])->render();
-        $this->assertStringContainsString('Anotó: '.$this->ana->name, $html);
+        $this->assertStringContainsString('Anotó: '.e($this->ana->name), $html);
     }
 
     public function test_sin_elegir_quien_no_se_guarda_nada(): void
