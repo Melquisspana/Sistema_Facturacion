@@ -51,6 +51,7 @@ use App\Http\Controllers\Productos\ProductoController;
 use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SinInternetController;
+use App\Http\Middleware\CloudflareAccessSso;
 use App\Http\Middleware\ContingenciaHabilitada;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
@@ -80,8 +81,10 @@ Route::post('/logout-completo', function (Request $request) {
     $request->session()->invalidate();
     $request->session()->regenerateToken();
 
-    // Igual que el logout normal: «atrás» no muestra páginas guardadas después de salir.
-    return redirect('/cdn-cgi/access/logout')->header('Clear-Site-Data', '"cache"');
+    // Igual que el logout normal: «atrás» no muestra páginas guardadas después de salir, y
+    // la marca de «salió» evita que Access vuelva a abrir la sesión sola (CloudflareAccessSso).
+    return redirect('/cdn-cgi/access/logout')->header('Clear-Site-Data', '"cache"')
+        ->withCookie(CloudflareAccessSso::marcaSalida());
 })->middleware('auth')->name('logout.completo');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'area.principal'])->name('dashboard');

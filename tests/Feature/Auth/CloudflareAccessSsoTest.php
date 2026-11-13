@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Http\Middleware\CloudflareAccessSso;
 use App\Models\User;
 use App\Services\Auth\CloudflareAccessJwtService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -605,11 +606,116 @@ class CloudflareAccessSsoTest extends TestCase
         $this->assertGuest();
     }
 
+    // ---------- «Salir» con Access delante (12/11/2026) ----------
+    //
+    // En producción cada POST /logout terminaba en GET /dashboard 200 con sesión: Laravel
+    // cerraba, pero el pedido siguiente traía un JWT válido (Access lo renueva en silencio,
+    // aun después de /cdn-cgi/access/logout) y este middleware volvía a hacer Auth::login.
+    // «Salir» ahora deja una marca propia y, con ella, el middleware no abre sesión.
+
+    /** Pedido al host público con el JWT y la marca de «salió». */
+    private function conMarca(string $jwt, string $ruta = '/')
+    {
+        return $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, '1')->entrarConJwt($jwt, $ruta);
+    }
+
+    /** La causa: sin la marca, salir y volver con el JWT abre la sesión otra vez. */
+    public function test_sin_la_marca_salir_y_volver_con_el_jwt_vuelve_a_entrar_solo(): void
+    {
+        $usuario = $this->usuarioSso();
+        $this->actingAs($usuario)->post('https://'.self::HOST.'/logout');
+        $this->assertGuest();
+
+        $this->entrarConJwt($this->jwt())->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($usuario);
+    }
+
+    public function test_salir_deja_la_marca_y_va_a_la_raiz(): void
+    {
+        $this->actingAs($this->usuarioSso())
+            ->post('https://'.self::HOST.'/logout')
+            ->assertRedirect('/')
+            ->assertCookie(CloudflareAccessSso::MARCA_SALIDA);
+
+        $this->assertGuest();
+    }
+
+    public function test_con_la_marca_y_un_jwt_valido_no_entra_solo(): void
+    {
+        $this->usuarioSso();
+
+        $this->conMarca($this->jwt())->assertRedirect(route('login'));
+        $this->assertGuest();
+
+        // El login muestra el formulario y la forma de volver por Access.
+        $this->conMarca($this->jwt(), '/login')->assertOk()
+            ->assertSee('name="password"', false)
+            ->assertSee('Entrar con mi cuenta')
+            ->assertSee(route('login.cuenta'), false);
+        $this->assertGuest();
+    }
+
+    public function test_sin_la_marca_el_login_no_ofrece_entrar_con_mi_cuenta(): void
+    {
+        // En un host local aunque tenga la marca (va primero: después de pedir el host público,
+        // las rutas relativas de la prueba se arman con ese host), y en el público sin ella.
+        $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, '1')->get('http://localhost/login')->assertOk()->assertDontSee('Entrar con mi cuenta');
+        $this->defaultCookies = [];
+        $this->get('https://'.self::HOST.'/login')->assertOk()->assertDontSee('Entrar con mi cuenta');
+    }
+
+    public function test_entrar_con_mi_cuenta_borra_la_marca_y_vuelve_a_entrar_por_access(): void
+    {
+        $usuario = $this->usuarioSso();
+
+        $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, '1')
+            ->withHeaders(['Cf-Access-Jwt-Assertion' => $this->jwt()])
+            ->post('https://'.self::HOST.'/entrar-con-mi-cuenta')
+            ->assertRedirect('/')
+            ->assertCookieExpired(CloudflareAccessSso::MARCA_SALIDA);
+
+        // El navegador ya no manda la marca (las cookies de la prueba se quedan entre pedidos):
+        // el pedido siguiente entra por Access.
+        $this->defaultCookies = [];
+        $this->entrarConJwt($this->jwt())->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($usuario);
+    }
+
+    public function test_entrar_con_usuario_y_contrasena_borra_la_marca(): void
+    {
+        $usuario = $this->usuarioSso();
+
+        $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, '1')
+            ->post('https://'.self::HOST.'/login', ['email' => $usuario->email, 'password' => 'password'])
+            ->assertRedirect(route('dashboard', absolute: false))
+            ->assertCookieExpired(CloudflareAccessSso::MARCA_SALIDA);
+
+        $this->assertAuthenticatedAs($usuario);
+    }
+
+    /** La PC de la fábrica: Access trae a la persona de antes y entra otra con lo suyo. */
+    public function test_otra_persona_entra_con_su_usuario_en_el_mismo_navegador(): void
+    {
+        $this->usuarioSso();
+        $otra = User::factory()->create(['email' => 'otra@ejemplo.test', 'activo' => true]);
+
+        $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, '1')
+            ->withHeaders(['Cf-Access-Jwt-Assertion' => $this->jwt()])
+            ->post('https://'.self::HOST.'/login', ['email' => $otra->email, 'password' => 'password'])
+            ->assertRedirect(route('dashboard', absolute: false));
+        $this->assertAuthenticatedAs($otra);
+
+        // Con su sesión abierta, el JWT de la otra persona no la cambia.
+        $this->entrarConJwt($this->jwt(), '/dashboard')->assertOk();
+        $this->assertAuthenticatedAs($otra);
+    }
+
     public function test_logout_completo_cierra_laravel_y_redirige_al_logout_de_access(): void
     {
         $this->actingAs($this->usuarioSso())
             ->post('https://'.self::HOST.'/logout-completo')
-            ->assertRedirect('/cdn-cgi/access/logout');
+            ->assertRedirect('/cdn-cgi/access/logout')
+            ->assertCookie(CloudflareAccessSso::MARCA_SALIDA);
 
         $this->assertGuest();
     }

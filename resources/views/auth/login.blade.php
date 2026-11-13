@@ -44,4 +44,15 @@
             </x-primary-button>
         </div>
     </form>
+
+    {{-- Salió a propósito en el dominio público: el sistema ya no entra solo con la cuenta de
+         Cloudflare Access. Otra persona puede entrar arriba con lo suyo; quien quiera volver
+         con su cuenta, acá. --}}
+    @if ($entrarConCuenta ?? false)
+        <form method="POST" action="{{ route('login.cuenta') }}" class="mt-6 border-t border-gray-100 pt-4">
+            @csrf
+            <x-secondary-button type="submit" class="w-full justify-center">Entrar con mi cuenta</x-secondary-button>
+            <p class="mt-2 text-xs text-gray-500">Con la misma cuenta con la que entraste a Cloudflare.</p>
+        </form>
+    @endif
 </x-guest-layout>
