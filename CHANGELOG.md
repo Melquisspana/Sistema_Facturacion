@@ -8,6 +8,26 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.13.3] - 2026-11-13
+
+El sistema se puede instalar como app en el celular (#376). «Salir» ya no tarda (#379). Inicio más claro y ordenado, sin lo que ya no se usa (#377, #380). En Pedidos, «No mandar nada» se entiende y pide confirmación (#375). Arreglos de dinero de la auditoría en DTE, Cobros, PPQ y Gastos (#373, #374).
+
+### Agregado
+
+- El sistema se instala como app en el celular: manifiesto e íconos; abre a pantalla completa, sin la barra del navegador (#376).
+- Pedidos: «No mandar nada de este pedido» (o «No mandar lo que falta»), con confirmación y motivo; los otros pedidos van en un solo renglón (#375).
+
+### Cambiado
+
+- Inicio: las ventas del mes son la cifra principal; accesos rápidos según el permiso de cada rol; lo técnico solo para quien administra; últimos documentos en tarjetas en el celular (#377). Fuera «Compras pendientes», «Nueva Factura» y «Nueva lista de empaque»; quedan seis accesos (#380).
+- «Salir» es inmediato: ya no se borra todo lo guardado del sitio. Si después de salir alguien toca «atrás», la página se vuelve a pedir en vez de mostrarse (#379).
+
+### Corregido
+
+- Invalidación de un DTE sin respuesta de Hacienda: queda el rastro y la ficha avisa que hay que verificar en el portal antes de reintentar (#374).
+- Cobros: «Pagado» se recalcula cuando entra una nota de crédito; una sola NC por deducción. PPQ no dice pagado con un importe corto (#374).
+- Gastos: al anular un gasto nacido de un documento de Compras, el documento se puede volver a registrar; la NC del proveedor vuelve a quedar disponible; el sueldo no se ofrece como «se repite»; pagos revertidos tarde y pagos simultáneos sin interbloqueo (#373).
+
 ## [2026.11.13.2] - 2026-11-13
 
 Facturación y el jefe de vendedores pueden corregir o anular un pedido; la PC de pedidos no (#369). «¿Es alguna de estas?» muestra las tiendas nuevas del día (#370). Jefatura ya no ve datos técnicos (#371). Un solo «Salir» (#372). En el celular se ve lo que faltaba (#367). Sin migraciones ni cambios de permisos.
