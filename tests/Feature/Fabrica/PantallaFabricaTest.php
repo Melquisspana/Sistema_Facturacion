@@ -143,6 +143,16 @@ class PantallaFabricaTest extends TestCase
 
     // ══════════════════════════════ 2. la lista
 
+    public function test_la_recarga_sola_de_la_lista_va_en_init_y_no_en_un_x_init_con_try(): void
+    {
+        // Alpine evalúa x-init como expresión: un «try» al comienzo es error de sintaxis y la
+        // lista nunca se recargaba sola (visto en el navegador el 12/11/2026).
+        $html = $this->get(route('fabrica.pedidos.index'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('init() {', $html);
+        $this->assertDoesNotMatchRegularExpression('/x-init="\s*try/', $html);
+    }
+
     public function test_la_lista_muestra_solo_los_nombres_como_botones(): void
     {
         $viejo = $this->pedido([$this->canilla->id => '6'], $this->otraSala, '2026-11-06');
@@ -236,7 +246,11 @@ class PantallaFabricaTest extends TestCase
         $envio = PedidoSalaEnvio::sole();
 
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $envio]))->assertOk()
-            ->assertSee(NombreEmpresa::actual())->assertSee('Envío 1')
+            ->assertSee(NombreEmpresa::actual())
+            // Como un CCF pero que no se confunda, y sin número de envío.
+            ->assertSee('<title>Hoja de despacho · Súper Ficticio Centro</title>', false)
+            ->assertSeeInOrder(['HOJA DE DESPACHO', 'No es factura · Sin valor tributario'])
+            ->assertDontSee('Envío 1')->assertDontSee('envío n.º')->assertDontSee('Envío de la fábrica')
             ->assertSee('Súper Ficticio Centro')->assertSee('Calle de Prueba 123')->assertSee('Ruta Inventada')->assertSee('OC-555')
             ->assertSee('Carlos Inventado')->assertSee('09/11/2026 09:00')
             ->assertSeeInOrder(['Lo que va', 'G01', 'Galleta de prueba', '24', 'Queda pendiente', 'C01', 'Canilla de prueba', '6', 'No salió del horno'])
@@ -250,7 +264,9 @@ class PantallaFabricaTest extends TestCase
         $segundo = $otro->envios()->sole();
         $this->get(route('fabrica.pedidos.imprimir', [$otro, $segundo]))->assertOk()
             ->assertSeeInOrder(['Lo que va', 'Galleta de prueba', '3', 'No va', 'Galleta de prueba', '2', 'Canilla de prueba', '2', 'Sin canillas'])
-            ->assertDontSee('Queda pendiente');
+            ->assertDontSee('Queda pendiente')
+            // Sin orden de compra, el campo no aparece.
+            ->assertDontSee('Orden de compra')->assertDontSee('Sin OC');
     }
 
     public function test_la_reimpresion_de_un_envio_anterior_lo_muestra_como_salio(): void
@@ -306,7 +322,7 @@ class PantallaFabricaTest extends TestCase
         $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
             ->assertSee('const p = this.cola.then(() => this.guardarAhora());', false)
             ->assertSee('while (this.sucio && ! this.error) await this.enviarBorrador();', false)
-            ->assertSee('if (this.error) { this.aviso = true; this.saliendo = false; return; }', false)
+            ->assertSee('if (this.error) { this.aviso = true; this.saliendo = false; return false; }', false)
             ->assertSee('if (this.enviando || this.saliendo) return;', false)
             ->assertSee(':disabled="enviando || saliendo"', false)
             ->assertSee('No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.')
@@ -353,6 +369,22 @@ class PantallaFabricaTest extends TestCase
         // La oficina ve los mismos envíos sin ese botón.
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'));
         $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Envío 1')->assertDontSee('Imprimir de nuevo');
+    }
+
+    public function test_en_monitor_cada_producto_es_un_renglon_y_la_lista_usa_el_ancho(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->canilla->id => '6']);
+        $this->pedido([$this->galleta->id => '3'], $this->otraSala);
+
+        // Un renglón por producto: nombre y código | Pidió | Va, Todo, Nada; el motivo abajo.
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertSee('max-w-full mx-auto', false)
+            ->assertSee('lg:grid lg:grid-cols-2', false)->assertSee('xl:grid-cols-2', false)
+            ->assertSeeInOrder(['Galleta de prueba', 'G01', 'Pidió 12', 'Va', 'Todo', 'Nada', 'Por qué no va'])
+            ->assertSee('sm:grid-cols-2 lg:grid-cols-6', false);
+
+        $this->get(route('fabrica.pedidos.index'))->assertOk()
+            ->assertSee('max-w-full mx-auto', false)->assertSee('lg:grid-cols-4', false);
     }
 
     // ══════════════════════════════ 7. la zona de la tienda nueva

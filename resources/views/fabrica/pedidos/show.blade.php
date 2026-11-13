@@ -11,7 +11,17 @@
      pedidos por mandar, los que se están armando primero. Tocar uno cambia de pedido sin
      perder nada: como «Dejar para después», primero termina de guardar (salir()). Después
      los datos de la sala y, abajo, los productos. «Imprimir y mandar» registra el envío y
-     abre su hoja para imprimir. --}}
+     abre su hoja para imprimir.
+
+     «Salir» de la barra de arriba también espera los guardados (si uno falla, se queda y
+     avisa), y cerrar o recargar la pestaña con algo sin guardar o en vuelo pide
+     confirmación del navegador.
+
+     En monitor (12/11/2026): la hoja usa todo el ancho (max-w-full), los datos de la sala
+     van en una franja de una línea y cada producto es un renglón de dos mitades (lg):
+     nombre, código y «Pidió» | «Va», «Todo», «Nada»; «Por qué no va» abajo, solo si hace
+     falta. Desde xl los renglones van en dos columnas: un pedido de 12 se ve casi entero
+     en 1600×900 sin bajar. Debajo de lg se ve como antes, uno abajo del otro. --}}
 <x-app-layout :pantalla-completa="true">
     @php
         $faltan = $pedido->lineas->filter->tienePendiente();
@@ -23,9 +33,9 @@
     @endphp
 
     <div class="py-6 sm:py-8">
-        <div class="max-w-3xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
+        <div class="max-w-full mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
              x-data="{
-                 enviando: false, saliendo: false, sucio: false, cola: Promise.resolve(),
+                 enviando: false, saliendo: false, sucio: false, guardando: false, cerrando: false, cola: Promise.resolve(),
                  estado: '', error: false, aviso: false, espera: null,
                  {{-- Un solo retardo corto desde el último cambio. `sucio`: hay algo sin guardar. --}}
                  guardar() {
@@ -44,10 +54,11 @@
                      return p;
                  },
                  {{-- keepalive: el guardado llega aunque se esté saliendo de la hoja. Si falla,
-                      lo marcado sigue `sucio`. Nunca rechaza: la fila no se corta. --}}
+                      lo marcado sigue `sucio`. Nunca rechaza: la fila no se corta. `guardando`:
+                      hay uno en vuelo (ya no está `sucio`, pero todavía no llegó). --}}
                  guardarAhora() {
                      if (this.enviando || ! this.sucio) return Promise.resolve();
-                     this.sucio = false;
+                     this.sucio = false; this.guardando = true;
                      this.estado = 'Guardando…'; this.error = false;
                      const datos = new FormData(this.$refs.form);
                      datos.set('_method', 'PATCH');
@@ -60,22 +71,50 @@
                          if (r.status === 401 || r.status === 419) { this.estado = 'Se cerró la sesión. Volvé a entrar.'; return; }
                          const j = await r.json().catch(() => ({}));
                          this.estado = Object.values(j.errors || {}).flat()[0] || 'No se pudo guardar. Volvé a abrir el pedido.';
-                     }).catch(() => { this.error = true; this.sucio = true; this.estado = 'No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.'; });
+                     }).catch(() => { this.error = true; this.sucio = true; this.estado = 'No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.'; })
+                       .finally(() => { this.guardando = false; });
+                 },
+                 {{-- ¿Queda algo por guardar o un guardado en vuelo? (`sucio` solo no alcanza.) --}}
+                 faltaGuardar() {
+                     return this.sucio || this.guardando;
+                 },
+                 {{-- Cerrar o recargar la pestaña con algo sin guardar: el navegador pregunta.
+                      Mandando o borrando lo marcado no: el formulario lleva los datos. --}}
+                 avisarSiFalta(e) {
+                     if (this.enviando || ! this.faltaGuardar()) return;
+                     e.preventDefault(); e.returnValue = '';
                  },
                  {{-- Lo que falta guardar sale antes de irse (la barra de arriba, otra pestaña, cerrar). --}}
                  alSalir() {
                      if (! this.enviando && ! this.saliendo && this.sucio) this.enviarBorrador();
                  },
-                 {{-- «Dejar para después», «Todos» y los otros pedidos: espera la fila entera y se
-                      va solo cuando no queda nada sin guardar. Si un guardado falla, NO se va:
-                      queda todo como está y avisa arriba. Mientras se manda, no se sale. --}}
+                 {{-- «Dejar para después», «Todos», los otros pedidos y «Salir»: espera la fila
+                      entera y se va solo cuando no queda nada sin guardar. Si un guardado falla,
+                      NO se va: queda todo como está, avisa arriba y devuelve false. Mientras se
+                      manda, no se sale. `destino`: una dirección o, para «Salir», qué hacer. --}}
                  async salir(destino) {
                      if (this.enviando || this.saliendo) return;
                      this.saliendo = true;
                      await this.enviarBorrador();
                      while (this.sucio && ! this.error) await this.enviarBorrador();
-                     if (this.error) { this.aviso = true; this.saliendo = false; return; }
-                     location.href = destino;
+                     if (this.error) { this.aviso = true; this.saliendo = false; return false; }
+                     if (typeof destino === 'function') destino(); else location.href = destino;
+                 },
+                 {{-- «Salir» de la barra de arriba (form[data-salir]), en la captura de window:
+                      antes que el cierre de sesión del layout (sw-contingencia), que sigue
+                      después con requestSubmit, cuando ya se guardó todo. Si no se pudo guardar
+                      (sesión vencida, error del servidor), «Salir» no queda trabado: pregunta si
+                      sale igual y pierde lo marcado; si dice que sí, sigue por el mismo camino. --}}
+                 async cerrarSesion(e) {
+                     const form = e.target;
+                     if (this.cerrando || ! (form instanceof HTMLFormElement) || ! form.hasAttribute('data-salir')) return;
+                     e.preventDefault(); e.stopImmediatePropagation();
+                     const seguir = () => { this.cerrando = true; form.requestSubmit ? form.requestSubmit() : form.submit(); };
+                     if (await this.salir(seguir) === false && confirm('No se pudo guardar lo marcado. ¿Salir igual y perderlo?')) {
+                         {{-- Ya no pregunta el navegador ni intenta guardar al irse: lo eligió ella. --}}
+                         this.sucio = false;
+                         seguir();
+                     }
                  },
                  {{-- Mandar o borrar lo marcado: espera los guardados en vuelo y ninguno sale
                       después. Mientras se sale, no se manda. --}}
@@ -86,7 +125,7 @@
                      form.submit();
                  },
              }"
-             @pagehide.window="alSalir()">
+             @pagehide.window="alSalir()" @beforeunload.window="avisarSiFalta($event)" @submit.window.capture="cerrarSesion($event)">
             <nav aria-label="Otros pedidos" class="flex flex-wrap gap-3">
                 <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
                    class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
@@ -110,7 +149,7 @@
 
             <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
                 <h1 id="titulo-pedido" class="text-2xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
-                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2">
+                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2 lg:grid-cols-6">
                     @if ($pedido->direccionSala())
                         <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Dirección</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
                     @endif
@@ -119,7 +158,7 @@
                     <div><dt class="text-sm text-gray-500">Lo sacó</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
                     <div><dt class="text-sm text-gray-500">Fecha y hora</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
                     @if ($pedido->notas)
-                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
+                        <div class="sm:col-span-2 lg:col-span-4"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
                     @endif
                 </dl>
             </section>
@@ -132,7 +171,8 @@
                 <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
 
                 <div class="rounded-lg border border-gray-200 bg-white">
-                    <ul class="divide-y divide-gray-100">
+                    {{-- En monitor (xl), dos columnas de renglones: un pedido de 12 entra sin bajar. --}}
+                    <ul class="grid grid-cols-1 gap-x-6 xl:grid-cols-2">
                         @foreach ($faltan as $linea)
                             @php
                                 $pendiente = \App\Models\PedidoSalaLinea::legible($linea->pendiente());
@@ -147,12 +187,20 @@
                                 }
                                 $mandado = $linea->mandado();
                             @endphp
-                            <li class="p-4 sm:p-5" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
-                                <p class="text-xl font-semibold text-gray-800">{{ $linea->producto?->nombre }}</p>
-                                <p class="mt-0.5 text-sm text-gray-500">
-                                    Pidió {{ $linea->cantidadLegible() }}{{ bccomp($mandado, '0', 4) === 1 ? ' · ya salió '.\App\Models\PedidoSalaLinea::legible($mandado) : '' }}
-                                </p>
-                                <div class="mt-3 flex flex-wrap items-center gap-3">
+                            {{-- En monitor, dos mitades: el producto con lo que pidió | Va, Todo y Nada en una sola línea. --}}
+                            <li class="items-center border-b border-gray-100 p-4 sm:p-5 lg:grid lg:grid-cols-2 lg:gap-3 lg:p-4" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
+                                <div class="min-w-0">
+                                    <p class="text-xl font-semibold text-gray-800">
+                                        {{ $linea->producto?->nombre }}
+                                        @if ($linea->producto?->codigo)
+                                            <span class="ms-1 font-mono text-sm font-normal text-gray-500">{{ $linea->producto->codigo }}</span>
+                                        @endif
+                                    </p>
+                                    <p class="mt-0.5 text-base text-gray-600 lg:font-semibold">
+                                        Pidió {{ $linea->cantidadLegible() }}{{ bccomp($mandado, '0', 4) === 1 ? ' · ya salió '.\App\Models\PedidoSalaLinea::legible($mandado) : '' }}
+                                    </p>
+                                </div>
+                                <div class="mt-3 flex flex-wrap items-center gap-2 lg:mt-0">
                                     <label for="va-{{ $linea->id }}" class="text-lg font-semibold text-gray-700">Va<span class="sr-only"> de {{ $linea->producto?->nombre }}</span></label>
                                     <input id="va-{{ $linea->id }}" name="cantidades[{{ $linea->id }}]" x-model="va" value="{{ $va }}"
                                            inputmode="decimal" autocomplete="off"
@@ -162,8 +210,8 @@
                                     <button type="button" @click="va = '0'; $nextTick(() => guardar())"
                                             class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Nada</button>
                                 </div>
-                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1" />
-                                <div class="mt-3" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
+                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1 lg:col-span-2 lg:mt-0" />
+                                <div class="mt-3 lg:col-span-2 lg:mt-0" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
                                     <label for="motivo-{{ $linea->id }}" class="block text-sm font-medium text-gray-700">Por qué no va (opcional)</label>
                                     <input id="motivo-{{ $linea->id }}" name="motivos[{{ $linea->id }}]" maxlength="200" autocomplete="off"
                                            value="{{ $motivo }}"

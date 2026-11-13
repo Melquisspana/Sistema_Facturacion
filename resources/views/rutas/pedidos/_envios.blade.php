@@ -4,17 +4,20 @@
 
      Variables: $envios (con lineas.linea.producto, registradoPor, anuladoPor y, si
      $conSala, pedido.sala; con $conFacturacion o $conDeshacer, también dte); $conSala (bool);
-     $conDeshacer (bool, solo la fábrica; si ya se facturó, en vez del botón dice que avise a
-     la oficina); $conFacturacion (bool, solo la oficina: «Por facturar»,
-     «Borrador abierto» o «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto);
-     $conImprimir (bool, solo la fábrica: «Imprimir de nuevo» la hoja de cada envío vigente). --}}
+     $conDeshacer (bool, solo la fábrica: «Corregir» y «Deshacer» los envíos que se pueden
+     anular; si ya se facturó, en vez de los botones dice que avise a la oficina);
+     $conFacturacion (bool, solo la oficina: «Por facturar», «Borrador abierto» o
+     «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto);
+     $conImprimir (bool, solo la fábrica: «Imprimir de nuevo» la hoja de cada envío vigente);
+     $enColumnas (bool, solo la fábrica: en monitor, dos columnas de envíos). --}}
 @php
     $conSala ??= false;
     $conDeshacer ??= false;
     $conFacturacion ??= false;
     $conImprimir ??= false;
+    $enColumnas ??= false;
 @endphp
-<ul class="space-y-3">
+<ul class="space-y-3 {{ $enColumnas ? 'lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0' : '' }}">
     @foreach ($envios as $envio)
         @php $anulado = ! $envio->estaVigente(); @endphp
         <li class="rounded-lg border border-gray-200 bg-white p-4">
@@ -40,24 +43,32 @@
                     <li><span class="font-semibold tabular-nums">{{ $linea->cantidadLegible() }}</span> × {{ $linea->linea?->producto?->nombre }}</li>
                 @endforeach
             </ul>
-            @if ($conImprimir && ! $anulado)
-                <a href="{{ route('fabrica.pedidos.imprimir', [$envio->pedido_sala_id, $envio]) }}"
-                   class="mt-3 inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Imprimir de nuevo</a>
-            @endif
-            @if ($conDeshacer)
-                @can('anular', $envio)
-                    <form method="POST" action="{{ route('fabrica.pedidos.anular-envio', [$envio->pedido_sala_id, $envio]) }}" class="mt-3"
-                          onsubmit="return confirm('¿Deshacer este envío? Lo que llevaba vuelve a quedar pendiente.');">
-                        @csrf @method('PATCH')
-                        <button class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Deshacer</button>
-                    </form>
-                @else
-                    {{-- Sin «Deshacer» porque la oficina ya lo facturó: la fábrica sabe a quién
-                         avisar (el mismo texto que da PedidosFabrica si tocan a la vez). --}}
-                    @if (! $anulado && $envio->estaFacturado())
-                        <p class="mt-3 text-base font-medium text-amber-800">{{ \App\Services\Rutas\PedidosFabrica::FACTURADO }}</p>
+            @php($puedeAnular = $conDeshacer && auth()->user()->can('anular', $envio))
+            @if (($conImprimir && ! $anulado) || $puedeAnular)
+                <div class="mt-3 flex flex-wrap gap-3">
+                    @if ($conImprimir && ! $anulado)
+                        <a href="{{ route('fabrica.pedidos.imprimir', [$envio->pedido_sala_id, $envio]) }}"
+                           class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Imprimir de nuevo</a>
                     @endif
-                @endcan
+                    @if ($puedeAnular)
+                        {{-- «Corregir»: lo anula como «Deshacer» y abre el pedido con lo que llevaba marcado. --}}
+                        <form method="POST" action="{{ route('fabrica.pedidos.corregir-envio', [$envio->pedido_sala_id, $envio]) }}"
+                              onsubmit="if (this.dataset.enviado || ! confirm('¿Corregir este envío? Se anula y se abre el pedido con lo que llevaba, para cambiar lo que estuvo mal.')) return false; this.dataset.enviado = '1';">
+                            @csrf @method('PATCH')
+                            <button class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Corregir</button>
+                        </form>
+                        <form method="POST" action="{{ route('fabrica.pedidos.anular-envio', [$envio->pedido_sala_id, $envio]) }}"
+                              onsubmit="return confirm('¿Deshacer este envío? Lo que llevaba vuelve a quedar pendiente.');">
+                            @csrf @method('PATCH')
+                            <button class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Deshacer</button>
+                        </form>
+                    @endif
+                </div>
+            @endif
+            {{-- Sin «Corregir» ni «Deshacer» porque la oficina ya lo facturó: la fábrica sabe a
+                 quién avisar (el mismo texto que da PedidosFabrica si tocan a la vez). --}}
+            @if ($conDeshacer && ! $puedeAnular && ! $anulado && $envio->estaFacturado())
+                <p class="mt-3 text-base font-medium text-amber-800">{{ \App\Services\Rutas\PedidosFabrica::FACTURADO }}</p>
             @endif
         </li>
     @endforeach

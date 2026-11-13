@@ -75,7 +75,8 @@ class PedidoFabricaController extends Controller
         // Recién mandado, el aviso y el «Deshacer» siguen para cuando vuelva a la lista.
         $request->session()->reflash();
 
-        return view('fabrica.pedidos.imprimir', ['pedido' => $pedido, 'envio' => $envio] + $this->fabrica->faltanteAlEnvio($pedido, $envio));
+        return view('fabrica.pedidos.imprimir', ['pedido' => $pedido, 'envio' => $envio, 'corrige' => $this->fabrica->corrigeA($pedido, $envio)]
+            + $this->fabrica->faltanteAlEnvio($pedido, $envio));
     }
 
     /** Lo marcado en la hoja, sin recargar. Responde JSON (los errores, 422 con su texto). */
@@ -154,5 +155,19 @@ class PedidoFabricaController extends Controller
             ->with('status', $cambio
                 ? 'Envío '.$envio->numero.' de '.$pedido->nombreSala().' deshecho. Lo que llevaba vuelve a quedar pendiente.'
                 : 'Ese envío ya estaba deshecho.');
+    }
+
+    /**
+     * «Corregir» un envío del día: lo anula como «Deshacer» y abre el pedido con lo que
+     * llevaba ya marcado. El segundo toque de un doble toque solo abre el pedido.
+     */
+    public function corregirEnvio(Request $request, PedidoSala $pedido, PedidoSalaEnvio $envio): RedirectResponse
+    {
+        $cambio = $this->fabrica->corregirEnvio($pedido, $envio, $request->user());
+        $destino = redirect()->route('fabrica.pedidos.show', $pedido);
+
+        return $cambio
+            ? $destino->with('status', 'Envío '.$envio->numero.' anulado para corregirlo. Cambiá lo que haga falta y tocá «Imprimir y mandar».')
+            : $destino;
     }
 }

@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
+use Spatie\Activitylog\Models\Activity;
 
 /**
  * Lo que la fábrica manda de cada pedido de sala (/fabrica/pedidos). Toda la regla está
@@ -56,6 +57,18 @@ class PedidosFabrica
     public const AUDITORIA_NO_SE_TRAE = 'marcó que el pedido no se trae';
 
     public const AUDITORIA_LO_QUE_FALTA = 'cerró el pedido: lo que falta no se trae';
+
+    /** Lo que dice la auditoría al «Corregir» un envío: lo anula y deja marcado lo que llevaba. */
+    public const AUDITORIA_CORRIGE = 'corrigió un envío del pedido';
+
+    public const AUDITORIA_BORRO = 'borró lo marcado del pedido';
+
+    public const AUDITORIA_ANULO = 'anuló un envío del pedido';
+
+    public const AUDITORIA_TODO = 'mandó todo el pedido';
+
+    /** Lo que dice la auditoría al mandar un envío; ahí va `corrige_numero` si corrige a otro. */
+    public const AUDITORIA_MANDO = [self::AUDITORIA_TODO, self::AUDITORIA_PARTE];
 
     /**
      * Lo que falta mandar, de cualquier fecha desde `pedidos.fabrica_desde`, del más viejo
@@ -235,7 +248,7 @@ class PedidosFabrica
                 ->withProperties(['lineas' => $conBorrador->map(fn (PedidoSalaLinea $l) => [
                     'pedido_sala_linea_id' => $l->id, 'producto_id' => $l->producto_id, 'va_borrador' => (string) $l->getOriginal('va_borrador'),
                 ])->values()->all()])
-                ->log('borró lo marcado del pedido');
+                ->log(self::AUDITORIA_BORRO);
         }, 3);
     }
 
@@ -281,6 +294,7 @@ class PedidosFabrica
             }
 
             $anterior = $pedido->estado;
+            $corrige = $this->correccionPendiente($pedido);
             $envio = $pedido->envios()->create([
                 'numero' => ((int) $pedido->envios->max('numero')) + 1,
                 'clave' => $datos['clave'],
@@ -322,8 +336,8 @@ class PedidosFabrica
                     'motivos' => $pedido->lineas->whereNotNull('motivo_no_enviado')->map(fn ($l) => [
                         'producto_id' => $l->producto_id, 'motivo' => $l->motivo_no_enviado,
                     ])->values()->all(),
-                ])
-                ->log($completo ? 'mandó todo el pedido' : self::AUDITORIA_PARTE);
+                ] + ($corrige ? ['corrige_envio_id' => $corrige['envio_id'], 'corrige_numero' => $corrige['numero']] : []))
+                ->log($completo ? self::AUDITORIA_TODO : self::AUDITORIA_PARTE);
 
             return $envio->setRelation('pedido', $pedido);
         }, 3);
@@ -399,43 +413,135 @@ class PedidosFabrica
      */
     public function anularEnvio(PedidoSala $pedido, PedidoSalaEnvio $envio, User $usuario): bool
     {
+        return DB::transaction(fn () => $this->anularBloqueado($this->bloquear($pedido), $envio, $usuario) !== null, 3);
+    }
+
+    /**
+     * «Corregir» un envío del día, en una sola operación: lo anula como «Deshacer» (mismos
+     * límites, candados y auditoría) y deja marcado como borrador lo que había ido, para
+     * cambiar solo lo que estuvo mal. Los motivos y la casilla «va en otro envío» vuelven
+     * si se pueden saber: los motivos son por línea, así que solo si después de este no
+     * salió ningún envío (ni uno ya deshecho), como en {@see faltanteAlEnvio()}; la casilla,
+     * del estado del pedido antes de anular. Lo que estaba marcado para otro envío se
+     * reemplaza. El próximo envío dice que corrige a este ({@see corrigeA()}).
+     *
+     * Devuelve false si ya estaba anulado (doble toque): no toca nada más.
+     */
+    public function corregirEnvio(PedidoSala $pedido, PedidoSalaEnvio $envio, User $usuario): bool
+    {
         return DB::transaction(function () use ($pedido, $envio, $usuario) {
             $pedido = $this->bloquear($pedido);
-            $lineas = $pedido->lineas()->orderBy('id')->lockForUpdate()->get();
-            $envio = $pedido->envios()->whereKey($envio->id)->lockForUpdate()->firstOrFail()->setRelation('pedido', $pedido);
-            if (! $envio->estaVigente()) {
+            $anterior = $pedido->estado;
+            $envio = $this->anularBloqueado($pedido, $envio, $usuario);
+            if ($envio === null) {
                 return false;
             }
-            // Con las filas bloqueadas (FacturarPedido toma los mismos candados): si la
-            // oficina lo facturó mientras tanto, se avisa en vez de dar un 403.
-            if ($envio->estaFacturado()) {
-                throw ValidationException::withMessages(['envio' => self::FACTURADO]);
-            }
-            Gate::forUser($usuario)->authorize('anular', $envio);
 
-            $anterior = $pedido->estado;
-            $envio->update(['anulado_en' => now(), 'anulado_por' => $usuario->id]);
-            $pedido->setRelation('lineas', $lineas);
-            $this->recargar($pedido);
-            foreach ($pedido->lineas as $linea) {
-                if (! $linea->tienePendiente() && $linea->motivo_no_enviado !== null) {
-                    $linea->update(['motivo_no_enviado' => null]);
-                }
+            $ultimo = $pedido->envios->where('numero', '>', $envio->numero)->isEmpty();
+            $lleva = $envio->lineas->mapWithKeys(fn ($l) => [$l->pedido_sala_linea_id => bcadd((string) $l->cantidad, '0', 4)])->all();
+            $marcado = [];
+            foreach ($pedido->lineas->filter->tienePendiente() as $linea) {
+                $va = $lleva[$linea->id] ?? '0.0000';
+                $linea->update([
+                    'va_borrador' => $va,
+                    'motivo_borrador' => $ultimo && bccomp($va, $linea->pendiente(), 4) === -1 ? $linea->motivo_no_enviado : null,
+                ]);
+                $marcado[] = ['pedido_sala_linea_id' => $linea->id, 'va_borrador' => $va];
             }
-            $pedido->update(['estado' => $this->estadoSegun($pedido, cerrar: false)]);
+            $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id, 'armando_sigue' => $anterior === EstadoPedidoSala::Parcial]);
 
             activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
-                ->withProperties([
-                    'envio_id' => $envio->id,
-                    'numero' => $envio->numero,
-                    'lineas' => $envio->lineas()->get(['pedido_sala_linea_id', 'cantidad'])->toArray(),
-                    'estado_anterior' => $anterior->value,
-                    'estado_nuevo' => $pedido->estado->value,
-                ])
-                ->log('anuló un envío del pedido');
+                ->withProperties(['envio_id' => $envio->id, 'numero' => $envio->numero, 'lineas' => $marcado, 'sigue' => $pedido->armando_sigue])
+                ->log(self::AUDITORIA_CORRIGE);
 
             return true;
         }, 3);
+    }
+
+    /**
+     * El envío (anulado) que corrige este, o null. Se guarda en la auditoría del envío al
+     * mandarlo (`corrige_envio_id`), sin columna propia. La hoja lo nombra por su hora.
+     */
+    public function corrigeA(PedidoSala $pedido, PedidoSalaEnvio $envio): ?PedidoSalaEnvio
+    {
+        $mando = Activity::query()
+            ->where('subject_type', $pedido->getMorphClass())->where('subject_id', $pedido->id)
+            ->whereIn('description', self::AUDITORIA_MANDO)
+            ->orderByDesc('id')->get(['id', 'properties'])
+            ->first(fn (Activity $a) => (int) $a->properties['envio_id'] === $envio->id);
+
+        return isset($mando?->properties['corrige_envio_id'])
+            ? $pedido->envios()->whereKey((int) $mando->properties['corrige_envio_id'])->first()
+            : null;
+    }
+
+    /**
+     * Si lo último que pasó con el pedido fue «Corregir», el envío que se está mandando
+     * corrige a ese: [envio_id, numero]. La corrección se pierde con cualquier cosa que
+     * pase después: otro envío, «Borrar lo marcado» (lo que se mande ya no sale de la
+     * corrección), un cierre o deshacer otro envío (lo que se mande ya no reemplaza solo al
+     * corregido). La anulación propia de «Corregir» se audita ANTES que «corrigió», en la
+     * misma transacción, así que no la corta. Se lee con el pedido bloqueado: dos envíos
+     * no se llevan la misma corrección.
+     *
+     * @return array{envio_id: int, numero: int}|null
+     */
+    private function correccionPendiente(PedidoSala $pedido): ?array
+    {
+        $ultima = Activity::query()
+            ->where('subject_type', $pedido->getMorphClass())->where('subject_id', $pedido->id)
+            ->whereIn('description', [
+                ...self::AUDITORIA_MANDO, self::AUDITORIA_CORRIGE, self::AUDITORIA_BORRO, self::AUDITORIA_ANULO,
+                self::AUDITORIA_NO_SE_TRAE, self::AUDITORIA_LO_QUE_FALTA,
+            ])
+            ->orderByDesc('id')->first(['id', 'description', 'properties']);
+
+        return $ultima?->description === self::AUDITORIA_CORRIGE
+            ? ['envio_id' => (int) $ultima->properties['envio_id'], 'numero' => (int) $ultima->properties['numero']]
+            : null;
+    }
+
+    /**
+     * La anulación de un envío, dentro de la transacción y con el pedido ya bloqueado:
+     * bloquea las líneas y el envío (el orden de la clase), revisa los límites y audita.
+     * Devuelve el envío anulado (con el pedido recargado) o null si ya lo estaba.
+     */
+    private function anularBloqueado(PedidoSala $pedido, PedidoSalaEnvio $envio, User $usuario): ?PedidoSalaEnvio
+    {
+        $lineas = $pedido->lineas()->orderBy('id')->lockForUpdate()->get();
+        $envio = $pedido->envios()->whereKey($envio->id)->lockForUpdate()->firstOrFail()->setRelation('pedido', $pedido);
+        if (! $envio->estaVigente()) {
+            return null;
+        }
+        // Con las filas bloqueadas (FacturarPedido toma los mismos candados): si la
+        // oficina lo facturó mientras tanto, se avisa en vez de dar un 403.
+        if ($envio->estaFacturado()) {
+            throw ValidationException::withMessages(['envio' => self::FACTURADO]);
+        }
+        Gate::forUser($usuario)->authorize('anular', $envio);
+
+        $anterior = $pedido->estado;
+        $envio->update(['anulado_en' => now(), 'anulado_por' => $usuario->id]);
+        $pedido->setRelation('lineas', $lineas);
+        $this->recargar($pedido);
+        foreach ($pedido->lineas as $linea) {
+            if (! $linea->tienePendiente() && $linea->motivo_no_enviado !== null) {
+                $linea->update(['motivo_no_enviado' => null]);
+            }
+        }
+        $pedido->update(['estado' => $this->estadoSegun($pedido, cerrar: false)]);
+
+        activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+            ->withProperties([
+                'envio_id' => $envio->id,
+                'numero' => $envio->numero,
+                'lineas' => $envio->lineas()->get(['pedido_sala_linea_id', 'cantidad'])->toArray(),
+                'estado_anterior' => $anterior->value,
+                'estado_nuevo' => $pedido->estado->value,
+            ])
+            ->log(self::AUDITORIA_ANULO);
+
+        return $envio;
     }
 
     /**
