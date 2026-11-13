@@ -24,6 +24,9 @@ class ResumenDiarioPedidosCorreo extends Mailable
     use Queueable;
     use SerializesModels;
 
+    /** La identidad de los documentos impresos (resources/views/vendor/mail/html/themes/documento.css). */
+    public $theme = 'documento';
+
     public function __construct(public array $contenido, public array $pdf = []) {}
 
     public function envelope(): Envelope
