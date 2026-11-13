@@ -24,6 +24,9 @@
                 @endif
 
                 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+                    {{-- En el celular los filtros se pliegan detrás de «Filtros»; en escritorio, igual que siempre. --}}
+                    <x-filtros-celular class="flex-1" id="filtros-exportacion"
+                                       :activos="($filtros['q'] !== '' ? 1 : 0) + ($filtros['activo'] !== '1' ? 1 : 0)">
                     <form method="GET" class="flex flex-1 flex-wrap items-end gap-3">
                         <div class="min-w-48 flex-1">
                             <x-input-label for="q" value="Buscar" />
@@ -39,16 +42,17 @@
                             </select>
                         </div>
                         <div class="flex gap-2">
-                            <x-primary-button>Filtrar</x-primary-button>
+                            <x-primary-button class="min-h-11 sm:min-h-0">Filtrar</x-primary-button>
                             @if ($filtros['q'] !== '' || $filtros['activo'] !== '1')
                                 <a href="{{ route('productos.exportacion.index') }}" class="self-center px-2 text-sm text-gray-500 hover:underline">Limpiar</a>
                             @endif
                         </div>
                     </form>
+                    </x-filtros-celular>
 
                     @if ($puedeGestionar)
                         <a href="{{ route('productos.exportacion.create') }}"
-                           class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                           class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                             + Nuevo producto
                         </a>
                     @endif

@@ -97,9 +97,11 @@
                         Cada precio es el de la última lista de empaque finalizada de ese cliente.
                     </p>
                 </div>
+                {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada dato
+                     encima del valor. Desde md, la tabla de siempre. --}}
                 <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead>
+                    <table class="block md:table min-w-full text-sm">
+                        <thead class="hidden md:table-header-group">
                             <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                                 <th scope="col" class="py-3 px-4">Cliente</th>
                                 <th scope="col" class="py-3 px-4 text-right">Precio por caja</th>
@@ -108,14 +110,14 @@
                                 <th scope="col" class="py-3 px-4">Estado</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
+                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                             @forelse ($producto->asignaciones as $asignacion)
                                 @php
                                     $base = $producto->precio_caja !== null ? (float) $producto->precio_caja : null;
                                     $diferencia = $base !== null ? (float) $asignacion->precio_caja - $base : null;
                                 @endphp
-                                <tr class="hover:bg-gray-50">
-                                    <td class="py-3 px-4">
+                                <tr class="grid grid-cols-2 py-2 md:table-row hover:bg-gray-50">
+                                    <td class="col-span-2 py-3 px-4">
                                         @if ($asignacion->cliente?->cliente_id)
                                             <a href="{{ route('clientes.show', $asignacion->cliente->cliente_id) }}"
                                                class="font-medium text-indigo-600 hover:underline">{{ $asignacion->cliente->nombreLegal() }}</a>
@@ -124,11 +126,13 @@
                                             <div class="text-xs text-amber-700">Sin cliente vinculado en el directorio</div>
                                         @endif
                                     </td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-800">${{ number_format((float) $asignacion->precio_caja, 2) }}</td>
-                                    <td class="py-3 px-4 text-right tabular-nums text-gray-600">
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-800"><span class="md:hidden block text-xs text-gray-500">Precio por caja</span>${{ number_format((float) $asignacion->precio_caja, 2) }}</td>
+                                    <td class="py-3 px-4 md:text-right tabular-nums text-gray-600">
+                                        <span class="md:hidden block text-xs text-gray-500">Precio por unidad</span>
                                         {{ $asignacion->precioPorUnidad() !== null ? '$'.number_format($asignacion->precioPorUnidad(), 2) : '—' }}
                                     </td>
-                                    <td class="py-3 px-4 text-right tabular-nums {{ $diferencia !== null && abs($diferencia) > 0.001 ? 'text-gray-800' : 'text-gray-400' }}">
+                                    <td class="py-3 px-4 md:text-right tabular-nums {{ $diferencia !== null && abs($diferencia) > 0.001 ? 'text-gray-800' : 'text-gray-400' }}">
+                                        <span class="md:hidden block text-xs text-gray-500">Diferencia vs. base</span>
                                         @if ($diferencia === null)
                                             —
                                         @elseif (abs($diferencia) < 0.001)
@@ -146,7 +150,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="py-10 text-center text-gray-400">Ningún cliente tiene precio para este producto.</td></tr>
+                                <tr class="block md:table-row"><td colspan="5" class="block md:table-cell py-10 text-center text-gray-400">Ningún cliente tiene precio para este producto.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

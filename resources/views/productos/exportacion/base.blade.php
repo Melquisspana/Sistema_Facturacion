@@ -18,8 +18,8 @@
                 </p>
 
                 <div class="flex items-center gap-3 border-t border-gray-100 pt-5">
-                    <x-primary-button>Guardar cambios</x-primary-button>
-                    <a href="{{ route('productos.exportacion.index') }}#producto-{{ $base->id }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
+                    <x-primary-button class="min-h-11 sm:min-h-0 justify-center">Guardar cambios</x-primary-button>
+                    <a href="{{ route('productos.exportacion.index') }}#producto-{{ $base->id }}" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-gray-500 hover:underline">Cancelar</a>
                 </div>
             </form>
         </div>
