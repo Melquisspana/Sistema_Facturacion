@@ -433,6 +433,26 @@ class LlegoDeFabricaTest extends TestCase
             ->assertDontSee($facturar($porFacturar), false);
     }
 
+    /** Jefatura (13/11/2026): el CCF por su número corto y su PDF, sin el número de control. */
+    public function test_jefatura_ve_el_ccf_corto_y_su_pdf_sin_numero_de_control(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Oeste', '9003'), [$this->galleta->id => '2']);
+        $ccf = $this->facturado([$this->envio($pedido, [$this->galleta->id => '2'])], 'aceptado');
+        $ccf->forceFill(['sello_recepcion' => 'SELLO-FICTICIO-1', 'fecha_procesamiento_mh' => now()]);
+        Dte::withoutEvents(fn () => $ccf->saveQuietly());
+        $jefatura = User::factory()->create(['activo' => true])->assignRole('jefatura');
+
+        $this->actingAs($jefatura)->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Facturado en CCF n.º …'.substr($ccf->numero_control, -4))
+            ->assertSee(route('facturacion.pdf', $ccf), false)
+            ->assertDontSee($ccf->numero_control)
+            ->assertDontSee('href="'.route('facturacion.show', $ccf).'"', false);
+
+        $this->actingAs($this->oficina)->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('title="'.$ccf->numero_control.'"', false)
+            ->assertSee('href="'.route('facturacion.show', $ccf).'"', false);
+    }
+
     public function test_el_ccf_del_mismo_pedido_no_avisa_que_la_oc_ya_tiene_ccf_si_no_queda_nada(): void
     {
         $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000123');
