@@ -112,8 +112,13 @@ final class ConsultaGastos
                 // ignoraba lo que se pagó el 31. Los ajustes de abajo no necesitan esto
                 // porque `created_at` sí es un instante y se compara contra el fin del
                 // día.
+                // Uno revertido después del corte cuenta solo si ya estaba REGISTRADO ese
+                // día: cargado más tarde con fecha anterior y revertido, nunca constó, y
+                // sacaba la deuda de ese corte para siempre. Uno vigente cuenta por su
+                // fecha real aunque se haya cargado tarde.
                 fn ($q) => $q->whereDate('p.fecha', '<=', $corte)
-                    ->where(fn ($w) => $w->whereNull('p.revertido_at')->orWhere('p.revertido_at', '>', $finDelCorte)))
+                    ->where(fn ($w) => $w->whereNull('p.revertido_at')
+                        ->orWhere(fn ($r) => $r->where('p.revertido_at', '>', $finDelCorte)->where('p.created_at', '<=', $finDelCorte))))
             ->groupBy('a.cuota_id')
             ->select('a.cuota_id')
             ->selectRaw('SUM('.$centavos('a.importe').') as total');
