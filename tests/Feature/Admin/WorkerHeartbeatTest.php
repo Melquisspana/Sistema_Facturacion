@@ -2,11 +2,12 @@
 
 namespace Tests\Feature\Admin;
 
-use App\Support\WorkerHeartbeat;
 use App\Models\User;
+use App\Support\WorkerHeartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -179,7 +180,7 @@ class WorkerHeartbeatTest extends TestCase
     {
         WorkerHeartbeat::pulse();
         DB::table('failed_jobs')->insert([
-            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+            'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
             'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
         ]);
 
