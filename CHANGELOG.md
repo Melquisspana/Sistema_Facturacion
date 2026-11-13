@@ -8,6 +8,37 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.13] - 2026-11-13
+
+Todo lo que necesitan los vendedores y la PC de pedidos para empezar el 14/11: la pantalla de pedidos a pantalla completa con «Imprimir y mandar» (#356) y «Corregir» (#358), «¿Quién lo entregó?» con botones y sin nadie elegido (#360), los errores probables de los vendedores (#363) y el nombre «Pedidos» en lugar de «Fábrica» (#362). Los documentos impresos toman la forma del CCF sin confundirse con él (#358, #359, #361, #366). Facturación, Seguimiento y Compras se ven bien en el celular (#364). Jefatura ve solo lo que pasó por Hacienda y abre el PDF, y «Salir» por fin sale (#365). La caché se lee una vez por pedido (#354). Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- Pedidos: pantalla completa sin menú, lista de nombres, pedido abierto con los otros arriba, «Imprimir y mandar» con la hoja de despacho (#356). «Corregir» un envío del día ya impreso: la hoja nueva dice a cuál corrige. Vista para monitor, con los productos en dos columnas (#358).
+- Configuración › Rutas › «Salas donde no se sacan pedidos»: esas salas no aparecen en «Sacar pedido» y el servidor rechaza pedidos en ellas (#362).
+- Rutas: avisos ante errores probables: cantidad mucho mayor que lo habitual de la sala, tienda nueva enlazada a una sala que ya tiene pedido ese día; el doble toque en «No se pudo» no cuenta dos fallas; con la sesión vencida el formulario vuelve con lo escrito (#363).
+- «Salir» deja una marca que impide que el ingreso automático por Cloudflare Access vuelva a abrir la sesión; el login ofrece «Entrar con mi cuenta» (#365).
+
+### Cambiado
+
+- Rutas › Por entregar: «¿Quién lo entregó?» son botones con nombre y apellido; nadie viene elegido y el servidor no guarda una entrega ni un «No se pudo» sin quién (también desde la oficina). La tienda nueva muestra la zona del viaje; «No vino» dice la unidad del producto (#360).
+- La PC de pedidos se llama «Pedidos» en pantallas, menú, hoja impresa, correo y «Llegó de pedidos»; las claves internas no cambian (#362).
+- Documentos impresos con la forma del CCF, otro acento y su leyenda: hoja de despacho, PDF del día del vendedor, correo del resumen diario, hoja del pedido, PDF de Ventas, lista de empaque, impresos de planilla, contrato y hoja de asistencia (#358, #359, #361, #366).
+- Jefatura: Documentos fiscales muestra solo aceptados y anulados por Hacienda con «Ver PDF»; no genera el formato de NC. El mapa del jefe de vendedores muestra cantidades, nunca montos (#365).
+- Facturación, Seguimiento y Compras en el celular: tarjetas en lugar de tablas y filtros plegables; en escritorio, igual (#364).
+- Rendimiento: la huella de los ajustes, el nombre de la empresa y el latido del worker se leen una vez por pedido; el tablero de Rutas pasó de 94 lecturas de caché a ninguna (#354).
+- CI: estilo y pruebas al día tras #354 (#357).
+
+### Corregido
+
+- «Salir» nunca cerraba la sesión detrás de Cloudflare Access: el ingreso automático la volvía a abrir (#365).
+- La lista de pedidos no se recargaba sola (error de sintaxis en Alpine) (#358).
+- PDF de Ventas: «N salas más en la pantalla de …» decía el nombre equivocado (#361).
+
+### Quitado
+
+- Órdenes recibidas queda apagada por ahora (interruptor en Configuración › Módulos); la lectura del correo sigue (#365).
+
 ## [2026.11.12.2] - 2026-11-12
 
 Rutas queda lista para que los vendedores la usen todos los días: el CCF sale de «Por entregar» apenas cae su albarán (#351), toda entrega anota quién la entregó (#353), «atrás» vuelve al instante en las pantallas de la oficina (#352) y entran los ajustes que pidió el dueño al verla subida (#350). La planilla sigue las reglas confirmadas por el dueño y la contadora (#349). El DTE toma la fecha del día en que se emite (#347) y hay un aviso nuevo para los firmados sin transmitir (#345). El servidor arranca con las rutas y los eventos ya armados (#348) y la CI principal corre en 4 partes (#344). Sin migraciones. Se quitan los permisos `rutas.salidas.armar` (Administrador y Jefe de vendedores) y `rutas.salidas.terminar` (Administrador), que quedaron sin uso.
