@@ -43,6 +43,7 @@ use App\Http\Controllers\Facturacion\OrdenCompraRecibidaController;
 use App\Http\Controllers\Facturacion\PorFacturarController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
 use App\Http\Controllers\Facturacion\TiendaNuevaController;
+use App\Http\Controllers\ManifiestoWebController;
 use App\Http\Controllers\Ppq\NcExportacionController;
 use App\Http\Controllers\Ppq\PpqBusquedaController;
 use App\Http\Controllers\Ppq\PpqGmailController;
@@ -65,6 +66,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return redirect()->route(auth()->check() ? 'dashboard' : 'login');
 });
+
+// Instalar como app en el celular: el navegador lo pide sin sesión (antes de entrar).
+Route::get('/manifest.webmanifest', ManifiestoWebController::class)->name('manifiesto-web');
 
 Route::get('/sin-internet', SinInternetController::class)
     ->middleware(['auth', ContingenciaHabilitada::class])->name('sin-internet');

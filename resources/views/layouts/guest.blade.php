@@ -14,6 +14,7 @@
         </script>
 
         <title>{{ \App\Support\NombreEmpresa::actual() }}</title>
+        @include('layouts.partials.instalar-app')
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
