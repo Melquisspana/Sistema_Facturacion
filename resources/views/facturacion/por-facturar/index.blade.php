@@ -79,7 +79,7 @@
             @else
                 <ul class="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     @foreach ($pedidos as $pedido)
-                        @include('facturacion.por-facturar._tarjeta', ['pedido' => $pedido, 'oc' => $oc[$pedido->id], 'fecha' => $fecha, 'sinFacturar' => $sinFacturar, 'facturacion' => $facturacion[$pedido->id]])
+                        @include('facturacion.por-facturar._tarjeta', ['pedido' => $pedido, 'oc' => $oc[$pedido->id], 'fecha' => $fecha, 'sinFacturar' => $sinFacturar, 'facturacion' => $facturacion[$pedido->id], 'mismaTienda' => $mismaTienda[$pedido->id] ?? 0])
                     @endforeach
                 </ul>
 

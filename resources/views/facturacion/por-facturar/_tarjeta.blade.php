@@ -14,7 +14,8 @@
      envios vigentes con sus lineas y su dte); $oc [propuestas, titulo («OC del pedido», «OC
      del CCF» si ya está en su CCF, «OC del correo»), aviso, lista];
      $fecha (Y-m-d); $sinFacturar (bool); $facturacion (FacturarPedido::estado: por_facturar,
-     borrador, facturados). --}}
+     borrador, facturados); $mismaTienda (int, cuántos pedidos más hay de la misma tienda nueva:
+     PedidosSala::cuantosMasDeLaTienda). --}}
 @php
     $cerrado = $pedido->estado->cerrado();
     $parcial = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
@@ -40,6 +41,10 @@
             <p class="text-sm text-gray-600">
                 {{ $pedido->sala?->codigo ? 'Código '.$pedido->sala->codigo.' · ' : '' }}{{ $pedido->zonaNombre() }}
             </p>
+            @if (($mismaTienda ?? 0) > 0)
+                {{-- La misma tienda nueva en otros pedidos (13/11/2026): al darla de alta se enlazan todos. --}}
+                <p class="mt-1 text-sm text-indigo-800">Hay {{ $mismaTienda === 1 ? '1 pedido más' : $mismaTienda.' pedidos más' }} de esta tienda nueva con el mismo nombre: al darla de alta se enlazan todos.</p>
+            @endif
         </div>
         <div class="flex shrink-0 flex-wrap gap-2">
             <x-rutas.estado-badge :estado="$pedido->estado" />

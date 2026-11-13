@@ -14,10 +14,12 @@ use App\Models\User;
 use App\Support\Dte\OrdenProductosOc;
 use App\Support\HoraNegocio;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -196,16 +198,93 @@ class PedidosSala
     }
 
     /**
+     * El nombre de la tienda nueva para compararlo: sin tildes, mayúsculas ni espacios de más.
+     * Se compara acá y no en la consulta, para que no dependa de la collation.
+     */
+    public static function nombreTienda(?string $nombre): string
+    {
+        return mb_strtolower(Str::ascii((string) preg_replace('/\s+/u', ' ', trim((string) $nombre))));
+    }
+
+    /**
+     * Los otros pedidos de la misma tienda nueva (13/11/2026): vigentes, todavía sin sala y
+     * con el mismo nombre ({@see nombreTienda()}), de cualquier día. Al dar de alta la tienda
+     * se enlazan todos ({@see enlazarTiendaNueva()}).
+     *
+     * @return Collection<int, PedidoSala>
+     */
+    public static function mismaTiendaNueva(PedidoSala $pedido): Collection
+    {
+        $nombre = self::nombreTienda($pedido->sala_nueva_nombre);
+
+        return $nombre === '' ? collect() : PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->whereKeyNot($pedido->id)
+            ->with('sacadoPor:id,nombre')->orderBy('fecha')->orderBy('id')->get()
+            ->filter(fn (PedidoSala $p) => self::nombreTienda($p->sala_nueva_nombre) === $nombre)->values();
+    }
+
+    /**
+     * Para «Llegó de pedidos»: cuántos pedidos MÁS hay de la misma tienda nueva, por pedido.
+     * Una sola consulta para toda la página. Los que ya tienen sala no cuentan.
+     *
+     * @param  iterable<PedidoSala>  $pedidos
+     * @return array<int, int>
+     */
+    public static function cuantosMasDeLaTienda(iterable $pedidos): array
+    {
+        $nuevas = collect($pedidos)->filter(fn (PedidoSala $p) => $p->esTiendaNueva());
+        if ($nuevas->isEmpty()) {
+            return [];
+        }
+        $porNombre = PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->pluck('sala_nueva_nombre')
+            ->countBy(fn (?string $n) => self::nombreTienda($n));
+
+        return $nuevas->mapWithKeys(fn (PedidoSala $p) => [$p->id => max(0, ($porNombre[self::nombreTienda($p->sala_nueva_nombre)] ?? 1) - 1)])->all();
+    }
+
+    /**
+     * Enlaza la tienda nueva y, con ella, los demás pedidos de esa tienda
+     * ({@see mismaTiendaNueva()}): lo que Facturación da de alta es la tienda, no un pedido.
+     * El abierto, como siempre ({@see enlazarSala()}): si no se puede, no se enlaza ninguno.
+     * Los demás, uno por uno y con las mismas reglas; el que no se puede (por ejemplo, la sala
+     * ya tiene otro pedido en su viaje) queda afuera sin frenar a los otros, con el motivo.
+     *
+     * @return array{pedido: PedidoSala, enlazados: Collection<int, PedidoSala>, afuera: list<string>}
+     */
+    public function enlazarTiendaNueva(PedidoSala $pedido, int $salaId, User $usuario): array
+    {
+        $otros = self::mismaTiendaNueva($pedido);
+        $nombre = self::nombreTienda($pedido->sala_nueva_nombre);
+        $pedido = $this->enlazarSala($pedido, $salaId, $usuario);
+
+        $enlazados = collect();
+        $afuera = [];
+        foreach ($otros as $otro) {
+            try {
+                $enlazados->push($this->enlazarSala($otro, $salaId, $usuario, $nombre));
+            } catch (ValidationException|AuthorizationException $e) {
+                $motivo = $e instanceof ValidationException ? collect($e->errors())->flatten()->first() : 'no tenés permiso para enlazarlo.';
+                $afuera[] = 'N.º '.$otro->id.($otro->sacadoPor ? ', de '.$otro->sacadoPor->nombre : '').': '.$motivo;
+            }
+        }
+
+        return ['pedido' => $pedido, 'enlazados' => $enlazados, 'afuera' => $afuera];
+    }
+
+    /**
      * La oficina enlaza la tienda nueva a su sala, ya dada de alta en Clientes (o una que ya
      * existía). Solo una vez, con el pedido vigente y la sala activa. El pedido toma la zona de
      * la sala y conserva el nombre que escribió el vendedor. Recién entonces se puede facturar.
+     *
+     * Con `$mismaTienda` es otro pedido de esa tienda que se enlaza con ella
+     * ({@see enlazarTiendaNueva()}): además, que siga con ese nombre y que la sala no tenga ya
+     * otro pedido en su viaje (serían dos pedidos de la sala en el mismo viaje).
      */
-    public function enlazarSala(PedidoSala $pedido, int $salaId, User $usuario): PedidoSala
+    public function enlazarSala(PedidoSala $pedido, int $salaId, User $usuario, ?string $mismaTienda = null): PedidoSala
     {
         // Antes de la transacción, como en guardar(): adentro, lo primero es el candado.
         $sinPedidos = self::salasSinPedidos();
 
-        return DB::transaction(function () use ($pedido, $salaId, $usuario, $sinPedidos) {
+        return DB::transaction(function () use ($pedido, $salaId, $usuario, $sinPedidos, $mismaTienda) {
             Gate::forUser($usuario)->authorize('enlazarSala', $pedido);
             $pedido = PedidoSala::lockForUpdate()->findOrFail($pedido->id);
             if (! $pedido->estaVigente()) {
@@ -219,6 +298,15 @@ class PedidosSala
             // Una sala donde no se sacan pedidos tampoco recibe uno por la tienda nueva.
             if (in_array($sala->id, $sinPedidos, true)) {
                 throw ValidationException::withMessages(['cliente_sucursal_id' => 'En «'.$sala->nombre.'» no se sacan pedidos: elegí otra sala.']);
+            }
+            if ($mismaTienda !== null) {
+                if (self::nombreTienda($pedido->sala_nueva_nombre) !== $mismaTienda) {
+                    throw ValidationException::withMessages(['pedido' => 'le cambiaron el nombre de la tienda.']);
+                }
+                if ($pedido->salida_ruta_id !== null && PedidoSala::vigentes()->where('cliente_sucursal_id', $sala->id)
+                    ->where('salida_ruta_id', $pedido->salida_ruta_id)->whereKeyNot($pedido->id)->exists()) {
+                    throw ValidationException::withMessages(['pedido' => '«'.$sala->nombre.'» ya tiene otro pedido en ese viaje.']);
+                }
             }
 
             $pedido->update(['cliente_sucursal_id' => $sala->id, 'ruta_id' => $pedido->ruta_id ?? $this->viajes->zona($sala)?->id]);
@@ -263,16 +351,14 @@ class PedidosSala
 
     /**
      * El doble toque en «Guardar pedido» de una tienda nueva: el mismo vendedor, hoy, con un
-     * pedido vigente y todavía sin sala del mismo nombre, no crea otro. El nombre se compara
-     * acá, sin mayúsculas ni espacios de más, para que no dependa de la collation. Con la
-     * persona ya bloqueada.
+     * pedido vigente y todavía sin sala del mismo nombre ({@see nombreTienda()}), no crea
+     * otro. Con la persona ya bloqueada.
      */
     private function exigirTiendaSinSacar(PersonalRuta $persona, string $nombre): void
     {
-        $igual = fn (?string $n) => mb_strtolower((string) preg_replace('/\s+/u', ' ', trim((string) $n)));
         $repetida = PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->where('sacado_por_id', $persona->id)
             ->whereDate('fecha', HoraNegocio::fechaHoy())->pluck('sala_nueva_nombre')
-            ->contains(fn (?string $n) => $igual($n) === $igual($nombre));
+            ->contains(fn (?string $n) => self::nombreTienda($n) === self::nombreTienda($nombre));
         if ($repetida) {
             throw ValidationException::withMessages(['lineas' => 'El pedido de «'.$nombre.'» ya está sacado. Si cambió algo, corregilo.']);
         }

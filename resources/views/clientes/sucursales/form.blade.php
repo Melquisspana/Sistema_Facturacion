@@ -32,7 +32,7 @@
                     {{-- «Dar de alta la tienda» desde Facturación: vuelve enlazando el pedido. --}}
                     @if (! empty($pedidoSala))
                         <input type="hidden" name="pedido_sala" value="{{ $pedidoSala->id }}">
-                        <p class="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">Es la tienda nueva del pedido N.º {{ $pedidoSala->id }}. Al guardar la sala queda enlazada al pedido y volvés a facturar.</p>
+                        <p class="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">Es la tienda nueva del pedido N.º {{ $pedidoSala->id }}. Al guardar la sala queda enlazada al pedido{{ ($mismaTienda ?? 0) > 0 ? ' y '.($mismaTienda === 1 ? 'al otro pedido' : 'a los otros '.$mismaTienda.' pedidos').' de esa tienda nueva' : '' }} y volvés a facturar.</p>
                     @endif
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

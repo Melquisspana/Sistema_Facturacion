@@ -61,12 +61,14 @@
         @endif
 
         {{-- Tienda nueva (10/11/2026): solo el nombre. La oficina carga sus datos al facturar. --}}
-        @if (! $sala && ! $pedido && ($parecidas ?? collect())->isNotEmpty())
-            {{-- Antes, las que ya existen con un nombre parecido: si es una de estas, se saca ahí. --}}
+        @if (! $sala && ! $pedido && (($parecidas ?? collect())->isNotEmpty() || ($tiendasDeHoy ?? collect())->isNotEmpty()))
+            {{-- Antes, las que ya existen con un nombre parecido: si es una de estas, se saca ahí.
+                 Después, las tiendas nuevas que se anotaron hoy (13/11/2026): elegir una guarda
+                 el pedido con el mismo nombre; la propia, la abre para corregirla. --}}
             <section class="{{ $caja }}" aria-labelledby="parecidas-titulo">
                 <h2 id="parecidas-titulo" class="text-lg font-bold">¿Es alguna de estas?</h2>
                 <ul class="mt-2 divide-y divide-gray-100 dark:divide-ink-700">
-                    @foreach ($parecidas as $parecida)
+                    @foreach ($parecidas ?? [] as $parecida)
                         <li>
                             <a href="{{ route('rutas.sacar-pedido.create', $parecida) }}" class="flex min-h-11 items-center justify-between gap-3 py-2">
                                 <span class="min-w-0">
@@ -74,6 +76,17 @@
                                     <span class="block {{ $gris }}">{{ $parecida->detalleBuscador() }}</span>
                                 </span>
                                 <span class="shrink-0 text-sm font-medium text-indigo-600 underline dark:text-indigo-300">Es esta</span>
+                            </a>
+                        </li>
+                    @endforeach
+                    @foreach ($tiendasDeHoy ?? [] as $tienda)
+                        <li>
+                            <a href="{{ $tienda['url'] }}" class="flex min-h-11 items-center justify-between gap-3 py-2">
+                                <span class="min-w-0">
+                                    <span class="block font-semibold">{{ $tienda['nombre'] }}</span>
+                                    <span class="block {{ $gris }}">Tienda nueva · anotada hoy por {{ $tienda['quien'] }}</span>
+                                </span>
+                                <span class="shrink-0 text-sm font-medium text-indigo-600 underline dark:text-indigo-300">{{ $tienda['suya'] ? 'Corregir' : 'Es esta' }}</span>
                             </a>
                         </li>
                     @endforeach
