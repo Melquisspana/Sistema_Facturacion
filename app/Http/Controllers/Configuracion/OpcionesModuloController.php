@@ -465,12 +465,17 @@ class OpcionesModuloController extends Controller
         $valores = [];
 
         foreach ($definiciones as $campo => $definicion) {
+            // Una lista que no vino en el envío no se reenvía: vacía diría «sin ninguna» y
+            // al confirmar la borraría. La vaciada a propósito sí viene, como [].
+            if ($definicion->tipo === TipoAjuste::Lista && ! array_key_exists($definicion->clave, $propuestos)) {
+                continue;
+            }
             $valor = $propuestos[$definicion->clave] ?? null;
 
             $valores[$campo] = match ($definicion->tipo) {
                 TipoAjuste::Booleano => $valor ? '1' : '0',
-                // Una lista viaja como lista (`campo[]`); sin propuesta, vacía: no se toca.
-                TipoAjuste::Lista => $valor === null ? [] : array_values(array_map('strval', (array) $valor)),
+                // Viaja como lista (`campo[]`, con la casilla oculta vacía delante).
+                TipoAjuste::Lista => array_values(array_map('strval', (array) $valor)),
                 default => (string) ($valor ?? ''),
             };
         }

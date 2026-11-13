@@ -169,8 +169,8 @@ class PedidosSala
     /**
      * Las salas donde no se sacan pedidos (Configuración › Rutas; por ejemplo, la bodega
      * central de un cliente que solo recibe notas de crédito). No salen en «Sacar pedido» y
-     * {@see guardar()} no saca uno nuevo en ellas. Un pedido que ya tenían se sigue
-     * corrigiendo y facturando. Vacío = todas.
+     * {@see guardar()} no saca uno nuevo en ellas, ni {@see enlazarSala()} les enlaza una
+     * tienda nueva. Un pedido que ya tenían se sigue corrigiendo y facturando. Vacío = todas.
      *
      * @return list<int>
      */
@@ -201,7 +201,10 @@ class PedidosSala
      */
     public function enlazarSala(PedidoSala $pedido, int $salaId, User $usuario): PedidoSala
     {
-        return DB::transaction(function () use ($pedido, $salaId, $usuario) {
+        // Antes de la transacción, como en guardar(): adentro, lo primero es el candado.
+        $sinPedidos = self::salasSinPedidos();
+
+        return DB::transaction(function () use ($pedido, $salaId, $usuario, $sinPedidos) {
             Gate::forUser($usuario)->authorize('enlazarSala', $pedido);
             $pedido = PedidoSala::lockForUpdate()->findOrFail($pedido->id);
             if (! $pedido->estaVigente()) {
@@ -212,6 +215,10 @@ class PedidosSala
             }
             $sala = ClienteSucursal::whereKey($salaId)->where('activo', true)->first()
                 ?? throw ValidationException::withMessages(['cliente_sucursal_id' => 'Elegí una sala activa.']);
+            // Una sala donde no se sacan pedidos tampoco recibe uno por la tienda nueva.
+            if (in_array($sala->id, $sinPedidos, true)) {
+                throw ValidationException::withMessages(['cliente_sucursal_id' => 'En «'.$sala->nombre.'» no se sacan pedidos: elegí otra sala.']);
+            }
 
             $pedido->update(['cliente_sucursal_id' => $sala->id, 'ruta_id' => $pedido->ruta_id ?? $this->viajes->zona($sala)?->id]);
             activity('pedido_sala')

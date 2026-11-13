@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Rutas;
 
+use App\Enums\EstadoPedidoSala;
 use App\Facades\Ajustes;
 use App\Http\Controllers\Configuracion\OpcionesModuloController;
 use App\Models\Cliente;
@@ -113,6 +114,31 @@ class SalasSinPedidosTest extends TestCase
         $this->assertSame([], Ajustes::lista(self::CLAVE));
     }
 
+    /** Guardar otro ajuste de la página sin mandar la lista no la toca; vaciarla a propósito, sí. */
+    public function test_un_guardado_sin_la_lista_no_la_borra_y_vaciarla_si(): void
+    {
+        $this->ocultarBodega();
+        $admin = $this->admin();
+        $desde = OpcionesModuloController::campo('pedidos.fabrica_desde');
+
+        $this->actingAs($admin)->put(route('configuracion.opciones.rutas.update'), [$desde => '2026-11-01'])
+            ->assertOk()->assertSee('Esto es lo que va a cambiar')
+            ->assertDontSee('Salas donde no se sacan pedidos')
+            ->assertDontSee('name="'.$this->campo().'[]"', false);
+        $this->actingAs($admin)->put(route('configuracion.opciones.rutas.update'), [$desde => '2026-11-01', 'confirmacion' => '1'])
+            ->assertRedirect(route('configuracion.opciones.rutas'));
+        $this->assertSame('2026-11-01', Ajustes::texto('pedidos.fabrica_desde'));
+        $this->assertSame([(string) $this->bodega->id], Ajustes::lista(self::CLAVE));
+
+        // Vaciada a propósito (solo la casilla oculta): la confirmación lo dice y la reenvía vacía.
+        $this->actingAs($admin)->put(route('configuracion.opciones.rutas.update'), [$this->campo() => ['']])
+            ->assertOk()->assertSee('Salas donde no se sacan pedidos')->assertSee('Bodega de prueba Central')
+            ->assertSee('name="'.$this->campo().'[]" value=""', false);
+        $this->actingAs($admin)->put(route('configuracion.opciones.rutas.update'), [$this->campo() => [''], 'confirmacion' => '1'])
+            ->assertRedirect(route('configuracion.opciones.rutas'));
+        $this->assertSame([], Ajustes::lista(self::CLAVE));
+    }
+
     public function test_el_servidor_exige_salas_que_existan_y_esten_activas(): void
     {
         $apagada = $this->sala->cliente->sucursales()->create(['nombre' => 'Sala de prueba apagada', 'activo' => false]);
@@ -164,9 +190,34 @@ class SalasSinPedidosTest extends TestCase
             $this->assertSame([PedidosSala::SALA_SIN_PEDIDOS], $e->errors()['lineas']);
         }
 
+        // Una tienda nueva tampoco se enlaza después a esa sala desde la oficina.
+        $tienda = app(PedidosSala::class)->guardar(null, ['sala_nueva_nombre' => 'Tienda de prueba Nueva',
+            'lineas' => [['producto_id' => $this->galleta->id, 'cantidad' => '6']]], $this->vendedor);
+        $oficina = User::factory()->create(['activo' => true])->assignRole('facturacion');
+        $this->actingAs($oficina)->post(route('facturacion.pedidos.tienda.enlazar', $tienda), ['cliente_sucursal_id' => $this->bodega->id])
+            ->assertSessionHasErrors(['cliente_sucursal_id' => 'En «Bodega de prueba Central» no se sacan pedidos: elegí otra sala.']);
+        $this->assertNull($tienda->refresh()->cliente_sucursal_id);
+        $this->actingAs($oficina)->post(route('facturacion.pedidos.tienda.enlazar', $tienda), ['cliente_sucursal_id' => $this->sala->id])
+            ->assertSessionHasNoErrors();
+        $this->assertSame($this->sala->id, $tienda->refresh()->cliente_sucursal_id);
+        $tienda->update(['estado' => EstadoPedidoSala::Anulado]);
+        $this->actingAs($this->vendedor);
+
         // Las demás salas, como siempre.
         $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])
             ->assertSessionHasNoErrors();
-        $this->assertSame([$this->sala->id], PedidoSala::pluck('cliente_sucursal_id')->all());
+        $this->assertSame([$this->sala->id], PedidoSala::vigentes()->pluck('cliente_sucursal_id')->all());
+    }
+
+    /** El pedido que la sala ya tenía antes de ocultarla se sigue corrigiendo. */
+    public function test_el_pedido_de_antes_se_sigue_corrigiendo(): void
+    {
+        $this->actingAs($this->vendedor);
+        $this->post(route('rutas.sacar-pedido.store', $this->bodega), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasNoErrors();
+        $pedido = PedidoSala::sole();
+        $this->ocultarBodega();
+
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '6']])->assertSessionHasNoErrors();
+        $this->assertSame('6', $pedido->lineas()->sole()->cantidadLegible());
     }
 }
