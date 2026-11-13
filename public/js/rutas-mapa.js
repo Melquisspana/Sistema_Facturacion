@@ -111,7 +111,8 @@
         if (st.dis) {
             p.set('dis', st.dis);
         }
-        history.replaceState(null, '', '#' + p.toString());
+        // Conserva history.state: ahí está la hora de carga que mira «atrás» después de salir (layouts/partials/salio-atras).
+        history.replaceState(history.state, '', '#' + p.toString());
     };
     const validar = () => {
         if (st.dep && (!L[st.dep] || L[st.dep].nivel !== 'dep' || L[st.dep].fuera)) {

@@ -28,7 +28,9 @@
             @can('rutas.ver')
                 <a href="{{ route('rutas.dashboard') }}" class="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium underline">Volver al tablero</a>
             @endcan
-            <form method="POST" action="{{ route('logout') }}">
+            {{-- Un segundo toque mientras sale no manda otro cierre (con el token ya vencido). Anota la
+                 hora de salida para que «atrás» pida de nuevo las pantallas de antes (layouts/partials/salio-atras). --}}
+            <form method="POST" action="{{ route('logout') }}" onsubmit="if (this.dataset.saliendo) return false; this.dataset.saliendo = '1'; try { localStorage.setItem('dlg-salio', String(Date.now())); } catch (error) {}">
                 @csrf
                 <button class="min-h-11 rounded-lg px-4 text-sm font-medium underline">Salir</button>
             </form>

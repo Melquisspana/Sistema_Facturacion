@@ -69,9 +69,11 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        // Que «atrás» no muestre una página guardada con datos después de salir: las de la
-        // oficina en Rutas se dejan restaurar con «atrás» (`private, no-cache`).
-        return redirect($porAccess ? '/cdn-cgi/access/logout' : '/')->header('Clear-Site-Data', '"cache"')
+        // Sin `Clear-Site-Data: "cache"` (13/11/2026): borrar todo lo guardado del sitio tardaba
+        // segundos en el celular y la pantalla parecía trabada. Que «atrás» no muestre una página
+        // de antes de salir lo resuelve la pestaña (layouts/partials/salio-atras; el vendedor
+        // usa `no-store` y recarga al volver): la pide de nuevo antes de mostrarla.
+        return redirect($porAccess ? '/cdn-cgi/access/logout' : '/')
             ->withCookie(CloudflareAccessSso::marcaSalida());
     }
 }

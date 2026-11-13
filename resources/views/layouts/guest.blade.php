@@ -13,6 +13,7 @@
             })();
         </script>
 
+        @include('layouts.partials.salio-atras')
         <title>{{ \App\Support\NombreEmpresa::actual() }}</title>
         @include('layouts.partials.instalar-app')
 
