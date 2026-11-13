@@ -143,7 +143,14 @@
                  muestra el aviso. Las vistas de facturación además llevan su propio
                  banner detallado (<x-modo-dte-aviso>), que no se toca. --}}
             @if ($modoDte && request()->routeIs('facturacion.*'))
-                <div class="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" title="{{ $modoDte['detalle'] }}">
+                {{-- Celular (debajo de sm): las dos o tres insignias no caben en la barra de 64 px
+                     y se encimaban con el engranaje. Queda UNA corta, del mismo color; el detalle
+                     sigue en el banner de cada pantalla y en el title. --}}
+                <span class="sm:hidden inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold {{ ! empty($modoDte['modo_seguro']) ? 'bg-green-600 text-white' : ($modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600') }}"
+                      title="{{ $modoDte['detalle'] }}">
+                    {{ ! empty($modoDte['modo_seguro']) ? 'NO EMITE' : 'MODO '.$modoDte['etiqueta'] }}
+                </span>
+                <div class="hidden sm:flex min-w-0 flex-wrap items-center gap-1.5 text-xs" title="{{ $modoDte['detalle'] }}">
                     <span class="inline-flex items-center rounded-full px-2 py-0.5 font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
                         MODO {{ $modoDte['etiqueta'] }}
                     </span>
@@ -191,7 +198,13 @@
                 <x-dropdown align="right" width="48">
                     <x-slot name="trigger">
                         <button class="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none dark:bg-transparent dark:text-paper-300 dark:hover:text-paper-100">
-                            <div>{{ $usuario->name }}</div>
+                            {{-- En el celular el nombre (dos o tres renglones) sacaba el menú de la
+                                 pantalla: ahí va el ícono de persona, con el nombre para el lector. --}}
+                            <div class="hidden sm:block">{{ $usuario->name }}</div>
+                            <svg class="h-5 w-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span class="sr-only sm:hidden">{{ $usuario->name }}</span>
                             <div class="ms-1">
                                 <svg class="h-4 w-4 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
