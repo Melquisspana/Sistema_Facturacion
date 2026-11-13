@@ -8,6 +8,25 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.12.2] - 2026-11-12
+
+Rutas queda lista para que los vendedores la usen todos los días: el CCF sale de «Por entregar» apenas cae su albarán (#351), toda entrega anota quién la entregó (#353), «atrás» vuelve al instante en las pantallas de la oficina (#352) y entran los ajustes que pidió el dueño al verla subida (#350). La planilla sigue las reglas confirmadas por el dueño y la contadora (#349). El DTE toma la fecha del día en que se emite (#347) y hay un aviso nuevo para los firmados sin transmitir (#345). El servidor arranca con las rutas y los eventos ya armados (#348) y la CI principal corre en 4 partes (#344). Sin migraciones. Se quitan los permisos `rutas.salidas.armar` (Administrador y Jefe de vendedores) y `rutas.salidas.terminar` (Administrador), que quedaron sin uso.
+
+### Agregado
+
+- Rutas › Por entregar: toda entrega lleva «¿Quién lo entregó?». Viene elegido quien tiene el celular y cualquier vendedor puede elegir a otro de los que tienen la función Vendedor en Personal. En las salas con albarán solo se anota quién; la entrega queda «esperando albarán» y se completa sola cuando cae (#353).
+- Alertas: aviso de los DTE de producción que llevan más de 30 minutos firmados sin transmitir, con qué hacer (#345).
+
+### Cambiado
+
+- Rutas › Por entregar: el CCF sale apenas existe su albarán de entrega (AC01), venga vinculado por orden de compra, por el documento, por Seguimiento o por una línea de PPQ. Los albaranes de crédito ya no lo tapan, y un albarán ligado a dos CCF distintos se marca para revisar (#351).
+- Rutas: las pantallas de la oficina se restauran al instante con «atrás»; las del vendedor que marcan cosas, el detalle del pedido y del viaje, Zonas, Personal y las descargas no se guardan. «Salir» borra lo guardado en el navegador. «Por entregar» hace menos consultas y el mapa pesa menos (#352).
+- Rutas: «Todos los viajes» y la pestaña Vendedores salen del menú; cada viaje abierto tiene «Cancelar viaje» y abajo «Ver viajes anteriores». Sacar pedido ordena los productos como Facturación y busca la sala mientras se escribe (#350).
+- Planilla: quien entra o se va a mitad del período cobra los días trabajados (sueldo ÷ 30 × días). El tope del ISSS es por mes, sumando quincenas y vacaciones. La planilla mensual paga el sueldo completo con descuentos. Las vacaciones llevan descuentos y el bono no lleva renta (#349).
+- DTE: la fecha y la hora de emisión son las del momento de generar, no las del borrador. La invalidación solo se guarda si la respuesta es de ese documento y trae sello (#347).
+- Servidor: al arrancar se guardan armadas las rutas y los eventos; si fallan, arranca igual sin ellos (#348).
+- CI: la prueba principal corre en 4 partes en paralelo (#344).
+
 ## [2026.11.12] - 2026-11-12
 
 Rutas queda con el Tablero como centro y sin el flujo viejo de salidas armadas a mano (#339), con el mapa de ventas nuevo (#341). El correo diario pasa a las 6 de la tarde con lo vendido en el día y el PDF de cada vendedor (#343). Entra la auditoría de código hecha entre Codex y Claude (#340) y los arreglos serios de dinero y concurrencia que salieron de ella (#342). La CI corre MySQL estricto en 4 partes y por fin termina (#338). Sin migraciones. Se quitan los permisos `rutas.ventas.ver` al rol Facturación y `rutas.salidas.terminar` al rol Jefe de vendedores.
