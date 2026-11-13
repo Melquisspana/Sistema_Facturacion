@@ -10,6 +10,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\PreflightEmisionProduccion;
 use App\Services\Dte\PreflightEmisionProduccionExportacion;
 use App\Services\Dte\PreflightEmisionProduccionFactura;
@@ -456,7 +457,7 @@ class ConfirmacionProduccionUiTest extends TestCase
             ->assertSee('Emisión real bloqueada');
 
         // Cada razón que devuelve el servicio debe estar en pantalla.
-        foreach (app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados()['razones'] as $razon) {
+        foreach (app(DteTransmisionService::class)->evaluarCandados()['razones'] as $razon) {
             $respuesta->assertSee($razon);
         }
 

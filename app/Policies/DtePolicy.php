@@ -21,9 +21,15 @@ class DtePolicy
         return $user->can('dte.ver');
     }
 
+    /**
+     * Ver un documento: la ficha, su PDF, la descarga, la impresión y «PDF + orden». Jefatura
+     * solo lo que Hacienda ya procesó (aceptados y anulados con sello real, 12/11/2026): un
+     * borrador o un rechazado no son un documento para ella, tampoco por la URL.
+     */
     public function view(User $user, Dte $dte): bool
     {
-        return $user->can('dte.ver');
+        return $user->can('dte.ver')
+            && (! $user->abreDocumentosComoPdf() || $dte->procesadoPorHacienda());
     }
 
     public function create(User $user): bool

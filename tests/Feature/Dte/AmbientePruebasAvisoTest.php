@@ -16,6 +16,8 @@ use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RepresentacionPdfDte;
 use Tests\TestCase;
 
 /**
@@ -27,9 +29,9 @@ use Tests\TestCase;
  */
 class AmbientePruebasAvisoTest extends TestCase
 {
-    use \Tests\Concerns\RepresentacionPdfDte;
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
+    use RepresentacionPdfDte;
 
     private const AVISO = 'AMBIENTE DE PRUEBAS';
 
@@ -179,7 +181,7 @@ class AmbientePruebasAvisoTest extends TestCase
         $this->assertSame('01', $nc->ambiente->value);
         $this->assertStringNotContainsString(self::AVISO, $this->pdfHtml($nc));
 
-        $this->assertImprimeElPdf($nc, $this->usuario('jefatura'));
+        $this->assertImprimeElPdf($nc, $this->usuario('contabilidad'));
     }
 
     public function test_factura_ambiente_01_no_muestra_aviso(): void
