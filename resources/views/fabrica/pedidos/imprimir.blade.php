@@ -19,7 +19,7 @@
 
         La hoja describe el envío tal como salió: lo que no fue se calcula con ese envío y los
         anteriores, nunca con los de después (PedidosFabrica::faltanteAlEnvio). Los motivos se
-        guardan por línea y no por envío: solo el último envío vigente los muestra, con el
+        guardan por línea y no por envío: solo el último envío (sin ninguno después, ni deshecho) los muestra, con el
         estado actual (mandado en parte, «queda pendiente»; cerrado, «no va»). Uno anterior
         dice solo «No fue en este envío», sin motivos.
 
@@ -86,7 +86,7 @@
 </head>
 <body>
 @php
-    // Solo si es el último envío vigente el estado y los motivos actuales son los suyos.
+    // Solo si es el último envío de todos (ni uno deshecho después) el estado y los motivos actuales son los suyos.
     $queda = $ultimo && $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
     $titulo = ! $ultimo ? 'No fue en este envío' : ($queda ? 'Queda pendiente (va en otro envío)' : 'No va');
     $clase = ! $ultimo ? '' : ($queda ? 'ambar' : 'rojo');

@@ -281,14 +281,34 @@ class PantallaFabricaTest extends TestCase
             ->assertDontSee('No fue en este envío')->assertDontSee('Queda pendiente');
     }
 
+    public function test_si_hubo_un_envio_despues_aunque_se_haya_deshecho_no_muestra_motivos(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $g = $this->linea($pedido, $this->galleta);
+        $this->mandar($pedido, [$this->galleta->id => '4'], ['motivos' => [$g => 'Faltó masa'], 'sigue' => '1'])->assertSessionHasNoErrors();
+        $this->mandar($pedido, [$this->galleta->id => '2'], ['motivos' => [$g => 'Motivo del envío dos'], 'sigue' => '1'])->assertSessionHasNoErrors();
+        $segundo = $pedido->envios()->where('numero', 2)->sole();
+        $this->patch(route('fabrica.pedidos.anular-envio', [$pedido, $segundo]))->assertSessionHasNoErrors();
+
+        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 1)->sole()]))->assertOk()
+            ->assertSeeInOrder(['Lo que va', 'Galleta de prueba', '4', 'No fue en este envío', 'Galleta de prueba', '6'])
+            ->assertSee('Después de este salieron otros envíos.')
+            ->assertDontSee('Motivo del envío dos')->assertDontSee('Faltó masa')->assertDontSee('Queda pendiente');
+    }
+
     public function test_cambiar_de_pedido_solo_se_va_si_lo_marcado_se_guardo(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '24']);
         $g = $this->linea($pedido, $this->galleta);
 
-        // La vista no navega si el guardado falló: se queda y avisa arriba.
+        // Los guardados van en fila; no se sale mientras se manda (ni al revés); y si el
+        // guardado falló, se queda y avisa arriba.
         $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
-            ->assertSee('if (this.error) { this.aviso = true; return; }', false)
+            ->assertSee('const p = this.cola.then(() => this.guardarAhora());', false)
+            ->assertSee('while (this.sucio && ! this.error) await this.enviarBorrador();', false)
+            ->assertSee('if (this.error) { this.aviso = true; this.saliendo = false; return; }', false)
+            ->assertSee('if (this.enviando || this.saliendo) return;', false)
+            ->assertSee(':disabled="enviando || saliendo"', false)
             ->assertSee('No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.')
             ->assertSee('x-show="aviso"', false);
 

@@ -101,17 +101,18 @@ class PedidosFabrica
      * Lo que NO fue en un envío, tal como salió: por línea, lo pedido menos lo que llevaron
      * ese envío y los vigentes anteriores (por número). Los envíos que salieron después no
      * cuentan: reimpreso, el envío 1 sigue diciendo lo que le faltó. `ultimo` dice si después
-     * de este no salió otro vigente: solo entonces el estado y los motivos actuales del pedido
-     * son los de este envío (los motivos se guardan por línea, no por envío).
+     * de este no hubo NINGÚN envío, ni siquiera uno ya deshecho (que pudo dejar su motivo):
+     * solo entonces el estado y los motivos actuales del pedido son los de este envío (los
+     * motivos se guardan por línea, no por envío).
      *
      * @param  PedidoSala  $pedido  con `lineas.producto`
      * @return array{faltan: \Illuminate\Support\Collection<int, array{linea: PedidoSalaLinea, cantidad: string}>, ultimo: bool}
      */
     public function faltanteAlEnvio(PedidoSala $pedido, PedidoSalaEnvio $envio): array
     {
-        $vigentes = $pedido->envios()->whereNull('anulado_en')->with('lineas')->get();
+        $envios = $pedido->envios()->with('lineas')->get();
         $mandado = [];
-        foreach ($vigentes->where('numero', '<=', $envio->numero) as $anterior) {
+        foreach ($envios->whereNull('anulado_en')->where('numero', '<=', $envio->numero) as $anterior) {
             foreach ($anterior->lineas as $l) {
                 $mandado[$l->pedido_sala_linea_id] = bcadd($mandado[$l->pedido_sala_linea_id] ?? '0', (string) $l->cantidad, 4);
             }
@@ -122,7 +123,7 @@ class PedidosFabrica
             ->filter(fn (array $f) => bccomp($f['cantidad'], '0', 4) === 1)
             ->values();
 
-        return ['faltan' => $faltan, 'ultimo' => $vigentes->where('numero', '>', $envio->numero)->isEmpty()];
+        return ['faltan' => $faltan, 'ultimo' => $envios->where('numero', '>', $envio->numero)->isEmpty()];
     }
 
     /**

@@ -25,52 +25,64 @@
     <div class="py-6 sm:py-8">
         <div class="max-w-3xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
              x-data="{
-                 enviando: false, estado: '', error: false, aviso: false, espera: null, enCurso: null,
-                 {{-- Un solo retardo corto desde el último cambio. --}}
+                 enviando: false, saliendo: false, sucio: false, cola: Promise.resolve(),
+                 estado: '', error: false, aviso: false, espera: null,
+                 {{-- Un solo retardo corto desde el último cambio. `sucio`: hay algo sin guardar. --}}
                  guardar() {
                      if (this.enviando) return;
+                     this.sucio = true;
                      clearTimeout(this.espera);
-                     this.espera = setTimeout(() => this.enviarBorrador(), 500);
+                     if (! this.saliendo) this.espera = setTimeout(() => this.enviarBorrador(), 500);
                  },
-                 {{-- keepalive: el guardado llega aunque se esté saliendo de la hoja. --}}
+                 {{-- Los guardados van EN FILA, nunca dos a la vez: cada uno sale cuando terminó
+                      el anterior y lleva lo que hay en ese momento en la hoja. Así uno viejo no
+                      llega después y pisa lo último. --}}
                  enviarBorrador() {
-                     this.espera = null;
-                     if (this.enviando) return Promise.resolve();
+                     clearTimeout(this.espera); this.espera = null;
+                     const p = this.cola.then(() => this.guardarAhora());
+                     this.cola = p;
+                     return p;
+                 },
+                 {{-- keepalive: el guardado llega aunque se esté saliendo de la hoja. Si falla,
+                      lo marcado sigue `sucio`. Nunca rechaza: la fila no se corta. --}}
+                 guardarAhora() {
+                     if (this.enviando || ! this.sucio) return Promise.resolve();
+                     this.sucio = false;
                      this.estado = 'Guardando…'; this.error = false;
                      const datos = new FormData(this.$refs.form);
                      datos.set('_method', 'PATCH');
-                     const p = fetch(@js(route('fabrica.pedidos.borrador', $pedido)), {
+                     return fetch(@js(route('fabrica.pedidos.borrador', $pedido)), {
                          method: 'POST', body: datos, keepalive: true,
                          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                      }).then(async (r) => {
                          if (r.ok) { this.estado = 'Guardado'; this.aviso = false; return; }
-                         this.error = true;
+                         this.error = true; this.sucio = true;
                          if (r.status === 401 || r.status === 419) { this.estado = 'Se cerró la sesión. Volvé a entrar.'; return; }
                          const j = await r.json().catch(() => ({}));
                          this.estado = Object.values(j.errors || {}).flat()[0] || 'No se pudo guardar. Volvé a abrir el pedido.';
-                     }).catch(() => { this.error = true; this.estado = 'No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.'; });
-                     this.enCurso = p;
-                     p.then(() => { if (this.enCurso === p) this.enCurso = null; });
-                     return p;
+                     }).catch(() => { this.error = true; this.sucio = true; this.estado = 'No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.'; });
                  },
-                 {{-- Lo que falta guardar sale antes de irse (menú, otra pestaña, cerrar). --}}
+                 {{-- Lo que falta guardar sale antes de irse (la barra de arriba, otra pestaña, cerrar). --}}
                  alSalir() {
-                     if (! this.enviando && this.espera !== null) { clearTimeout(this.espera); this.enviarBorrador(); }
+                     if (! this.enviando && ! this.saliendo && this.sucio) this.enviarBorrador();
                  },
-                 {{-- «Dejar para después», «Todos» y los otros pedidos: espera a que se guarde y
-                      recién ahí se va. Si el último guardado falló, lo intenta de nuevo; si
-                      vuelve a fallar, NO se va: queda todo como está y avisa arriba. --}}
+                 {{-- «Dejar para después», «Todos» y los otros pedidos: espera la fila entera y se
+                      va solo cuando no queda nada sin guardar. Si un guardado falla, NO se va:
+                      queda todo como está y avisa arriba. Mientras se manda, no se sale. --}}
                  async salir(destino) {
-                     if (this.espera !== null || this.error) { clearTimeout(this.espera); await this.enviarBorrador(); }
-                     else if (this.enCurso) { await this.enCurso; }
-                     if (this.error) { this.aviso = true; return; }
+                     if (this.enviando || this.saliendo) return;
+                     this.saliendo = true;
+                     await this.enviarBorrador();
+                     while (this.sucio && ! this.error) await this.enviarBorrador();
+                     if (this.error) { this.aviso = true; this.saliendo = false; return; }
                      location.href = destino;
                  },
-                 {{-- Mandar o borrar lo marcado: ningún guardado pendiente puede llegar después. --}}
+                 {{-- Mandar o borrar lo marcado: espera los guardados en vuelo y ninguno sale
+                      después. Mientras se sale, no se manda. --}}
                  async enviar(form) {
-                     if (this.enviando) return;
+                     if (this.enviando || this.saliendo) return;
                      clearTimeout(this.espera); this.espera = null; this.enviando = true;
-                     if (this.enCurso) await this.enCurso;
+                     await this.cola;
                      form.submit();
                  },
              }"
@@ -177,7 +189,7 @@
                 <div class="sticky bottom-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-between">
                     <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
                        class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
-                    <button :disabled="enviando"
+                    <button :disabled="enviando || saliendo"
                             class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">Imprimir y mandar</button>
                 </div>
             </form>
@@ -188,7 +200,7 @@
                 <form method="POST" action="{{ route('fabrica.pedidos.cerrar', $pedido) }}" @submit.prevent="enviar($el)">
                     @csrf @method('PATCH')
                     <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
-                    <button :disabled="enviando"
+                    <button :disabled="enviando || saliendo"
                             class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
                         {{ $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial ? 'Lo que falta no se trae' : 'No se trae' }}
                     </button>
@@ -198,7 +210,7 @@
                     <form method="POST" action="{{ route('fabrica.pedidos.borrador.borrar', $pedido) }}"
                           @submit.prevent="if (confirm('¿Borrar lo marcado? Vuelve a quedar cargado todo lo que falta.')) enviar($el)">
                         @csrf @method('PATCH')
-                        <button :disabled="enviando"
+                        <button :disabled="enviando || saliendo"
                                 class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">Borrar lo marcado</button>
                     </form>
                 @endif
