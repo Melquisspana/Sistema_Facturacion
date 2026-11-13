@@ -650,6 +650,20 @@ class MapaVentasTest extends TestCase
         $this->assertSame(['desde' => '2026-03-01', 'hasta' => '2026-03-31', 'anteriorDesde' => '2026-02-01', 'anteriorHasta' => '2026-02-28'], $this->mapa('2026-03')['periodo']);
     }
 
+    /**
+     * El mapa va sin la sangría de las plantillas (12/11/2026): casi la mitad de la página eran
+     * espacios al comienzo de cada renglón, que el navegador no muestra.
+     */
+    public function test_el_html_del_mapa_va_sin_sangria(): void
+    {
+        $this->ventasDeEjemplo();
+
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.mapa'))->assertOk()
+            ->assertSee('Distrito Centro')->assertSee('<script type="application/json" id="mapa-datos">', false)->getContent();
+
+        $this->assertSame(0, preg_match('/^[ \t]+/m', $html));
+    }
+
     public function test_quien_entra_al_mapa(): void
     {
         foreach (['administrador' => 200, 'jefe_vendedores' => 200, 'jefatura' => 200, 'facturacion' => 200, 'vendedor' => 403, 'contabilidad' => 403, 'produccion' => 403] as $rol => $estado) {

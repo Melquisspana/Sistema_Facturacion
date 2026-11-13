@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Rutas;
 use App\Http\Controllers\Controller;
 use App\Services\Rutas\MapaVentas;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
-use Illuminate\View\View;
 
 /**
  * La pestaña «Mapa» del tablero de Rutas ({@see MapaVentas}). Solo lectura. La ruta exige
@@ -16,7 +16,7 @@ use Illuminate\View\View;
  */
 class MapaVentasController extends Controller
 {
-    public function index(Request $request, MapaVentas $mapa): View
+    public function index(Request $request, MapaVentas $mapa): Response
     {
         $meses = MapaVentas::meses();
         $filtro = $request->validate([
@@ -34,7 +34,7 @@ class MapaVentasController extends Controller
 
         $datos = $mapa->calcular($mes, $ruta);
 
-        return view('rutas.mapa', [
+        $html = view('rutas.mapa', [
             'datos' => $datos + [
                 'geo' => ['departamentos' => $version('geo/departamentos.json'), 'distritos' => $version('geo/distritos.json')],
             ],
@@ -43,6 +43,13 @@ class MapaVentasController extends Controller
             'filtro' => ['mes' => $mes, 'ruta' => $ruta],
             'hayFiltro' => $mes !== array_key_first($meses) || $ruta !== null,
             'script' => $version('js/rutas-mapa.js'),
-        ]);
+        ])->render();
+
+        // Sin la sangría de las plantillas (12/11/2026): con las listas de cada departamento y
+        // la tabla, casi la mitad de la página eran espacios al comienzo de los renglones. El
+        // navegador no los muestra (la página no tiene <pre> ni <textarea>) y en el celular
+        // pesaban.
+        // Si la expresión fallara (devuelve null), la página sale tal cual, nunca en blanco.
+        return response(preg_replace('/^[ \t]+/m', '', $html) ?? $html);
     }
 }

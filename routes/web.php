@@ -80,7 +80,8 @@ Route::post('/logout-completo', function (Request $request) {
     $request->session()->invalidate();
     $request->session()->regenerateToken();
 
-    return redirect('/cdn-cgi/access/logout');
+    // Igual que el logout normal: «atrás» no muestra páginas guardadas después de salir.
+    return redirect('/cdn-cgi/access/logout')->header('Clear-Site-Data', '"cache"');
 })->middleware('auth')->name('logout.completo');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'area.principal'])->name('dashboard');

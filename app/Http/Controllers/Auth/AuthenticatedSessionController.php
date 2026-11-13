@@ -42,6 +42,8 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        // Que «atrás» no muestre una página guardada con datos después de salir: las de la
+        // oficina en Rutas se dejan restaurar con «atrás» (`private, no-cache`).
+        return redirect('/')->header('Clear-Site-Data', '"cache"');
     }
 }
