@@ -32,7 +32,7 @@
                     <div><dt class="{{ $dt }}">Nombre que escribió el vendedor</dt><dd class="{{ $dd }}">{{ $pedido->sala_nueva_nombre }}</dd></div>
                     <div><dt class="{{ $dt }}">Pedido</dt><dd class="{{ $dd }}">N.º {{ $pedido->id }} · {{ $pedido->fecha->format('d/m/Y') }}</dd></div>
                     <div><dt class="{{ $dt }}">Lo sacó</dt><dd class="{{ $dd }}">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
-                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</dd></div>
+                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->zonaNombre() }}</dd></div>
                 </dl>
             </section>
 

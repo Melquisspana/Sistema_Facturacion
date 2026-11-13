@@ -61,7 +61,7 @@
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
-                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</dd></div>
+                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->zonaNombre() }}</dd></div>
                     {{-- El viaje, por su nombre («Lunes · San Miguel»); una salida armada a mano de antes, por su fecha. --}}
                     <div><dt class="{{ $dt }}">{{ $pedido->salida && ! $pedido->salida->esViaje() ? 'Salida' : 'Viaje' }}</dt><dd class="{{ $dd }}">
                         @if ($pedido->salida)

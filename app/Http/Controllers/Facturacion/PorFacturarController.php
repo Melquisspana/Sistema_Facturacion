@@ -57,7 +57,7 @@ class PorFacturarController extends Controller
             ->whereHas('envios', $sinFacturar ? $porFacturar : $enviosDelDia)
             ->with([
                 'sala:id,cliente_id,nombre,codigo,requiere_orden_compra', 'sala.cliente:id,requiere_orden_compra',
-                'ruta:id,nombre', 'sacadoPor:id,nombre',
+                'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre',
                 'lineas.producto:id,codigo,nombre', 'lineas.envioLineasVigentes',
                 // Todos los vigentes, para que cuadren con el total (que suma todos); con sus
                 // líneas, para separar lo que llegó el día elegido de lo de otros días.
