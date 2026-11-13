@@ -319,8 +319,11 @@ class PlantaCatalogosCrudTest extends TestCase
 
     public function test_los_filtros_de_proveedores_funcionan(): void
     {
-        PlantaProveedor::factory()->create(['nombre' => 'Distribuidora El Sol']);
-        PlantaProveedor::factory()->create(['nombre' => 'Empaques del Norte', 'activo' => false]);
+        // Sin nombre comercial ni contacto al azar: la búsqueda también mira esos campos y un
+        // «Soledad» o un «Solutions» inventados hacían fallar la prueba de vez en cuando.
+        $sinAzar = ['nombre_comercial' => null, 'contacto' => null];
+        PlantaProveedor::factory()->create(['nombre' => 'Distribuidora El Sol'] + $sinAzar);
+        PlantaProveedor::factory()->create(['nombre' => 'Empaques del Norte', 'activo' => false] + $sinAzar);
 
         $admin = $this->admin();
 
