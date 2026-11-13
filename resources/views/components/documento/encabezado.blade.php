@@ -1,4 +1,4 @@
-@props(['empresa', 'logo' => null, 'detalle' => null, 'etiqueta', 'titulo'])
+@props(['empresa', 'logo' => null, 'detalle' => null, 'etiqueta', 'titulo', 'leyenda' => 'No es factura · Sin valor tributario'])
 {{--
     Encabezado común de los documentos impresos (con <x-documento.estilos>): la línea de color,
     el logo y la empresa a la izquierda y, a la derecha, el recuadro con el nombre del documento
@@ -7,6 +7,9 @@
 
     $logo: la dirección de la imagen (asset() en el navegador; data-URI en DomPDF, como el CCF con
     DtePdfService::logoSrc()). Sin logo, la inicial de la empresa en un cuadro, como el CCF.
+
+    $leyenda: solo la cambia un reporte interno que no sale con mercadería (el de Ventas por zona,
+    «Documento interno · No es factura»); siempre dice que no es factura.
 --}}
 <div class="topline"></div>
 
@@ -27,7 +30,7 @@
             <div class="dbox-h">
                 <span class="lbl">{{ $etiqueta }}</span>
                 <span class="ttl">{{ $titulo }}</span>
-                <span class="nof">No es factura · Sin valor tributario</span>
+                <span class="nof">{{ $leyenda }}</span>
             </div>
             <table class="dbox-t">{{ $slot }}</table>
         </div>

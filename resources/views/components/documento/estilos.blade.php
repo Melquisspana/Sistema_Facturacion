@@ -16,6 +16,8 @@
     $paleta = [
         'verde' => ['fuerte' => '#235C42', 'linea' => '#2F6B4E', 'fondo' => '#EEF5F0', 'borde' => '#BFE0CD'],
         'pizarra' => ['fuerte' => '#2B4A6F', 'linea' => '#3B5F8A', 'fondo' => '#EEF2F7', 'borde' => '#C5D1E0'],
+        'ocre' => ['fuerte' => '#7A5212', 'linea' => '#9A6B1F', 'fondo' => '#F8F2E6', 'borde' => '#E3D0A8'],
+        'grafito' => ['fuerte' => '#33373D', 'linea' => '#4A4F58', 'fondo' => '#F2F3F5', 'borde' => '#D4D8DE'],
     ][$acento];
 @endphp
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -33,7 +35,7 @@ td.head-dbox { width: 40%; }
 .razon { font-size: 1.65em; font-weight: bold; line-height: 1.12; }
 .emi { font-size: .92em; color: #4A4F58; margin-top: .35em; }
 
-/* El recuadro del documento, como el del CCF, con la cabecera del acento y la leyenda. */
+{{-- El recuadro del documento, como el del CCF, con la cabecera del acento y la leyenda. --}}
 .dbox { border: 1px solid #C9CDD4; border-radius: 6px; overflow: hidden; }
 .dbox-h { background: {{ $paleta['fondo'] }}; border-bottom: 1px solid {{ $paleta['borde'] }}; padding: .6em .85em; }
 .dbox-h .lbl { display: block; font-size: .72em; letter-spacing: 1.2px; text-transform: uppercase; color: #6B7280; }
@@ -45,15 +47,15 @@ td.head-dbox { width: 40%; }
 .dbox-t .v { text-align: right; font-weight: bold; }
 .dbox-t tr.key td { background: #FAFBFC; }
 
-/* Aviso de una línea, como las cintas de estado del CCF. */
+{{-- Aviso de una línea, como las cintas de estado del CCF. --}}
 .st { margin: 1em 0 0; padding: .4em .85em; border: 1px solid #E7C98D; border-left-width: 3px; border-left-color: #C8881E; border-radius: 3px; background: #FBF6EC; color: #7A4A0C; }
 
-/* Bloque de datos: borde fino + cabecera gris + cuerpo. */
+{{-- Bloque de datos: borde fino + cabecera gris + cuerpo. --}}
 .sec { margin-top: 1.2em; border: 1px solid #C9CDD4; border-radius: 6px; }
 .sec-h { background: #F2F3F5; border-bottom: 1px solid #D4D8DE; padding: .4em .85em; font-size: .75em; letter-spacing: 1px; text-transform: uppercase; color: #6B7280; font-weight: bold; }
 .sec-b { padding: .75em .85em; }
 
-/* Tablas: encabezado oscuro como el CCF, filas con línea fina; el encabezado se repite en cada hoja. */
+{{-- Tablas: encabezado oscuro como el CCF, filas con línea fina; el encabezado se repite en cada hoja. --}}
 h2 { margin: 1.35em 0 .4em; font-size: 1.08em; }
 .items thead { display: table-header-group; }
 .items thead th { background: #20242C; color: #F3F4F6; font-size: .8em; text-transform: uppercase; letter-spacing: .3px; padding: .5em .6em; text-align: left; }
@@ -61,7 +63,7 @@ h2 { margin: 1.35em 0 .4em; font-size: 1.08em; }
 .items tr { page-break-inside: avoid; }
 .items .r { text-align: right; white-space: nowrap; }
 
-/* Firmas con línea fina. */
+{{-- Firmas con línea fina. --}}
 .firmas { margin-top: 3.6em; page-break-inside: avoid; }
 .firmas td { width: 50%; vertical-align: bottom; padding: 0 1.6em; }
 .firmas td:first-child { padding-left: 0; }

@@ -8,6 +8,7 @@ use App\Models\ClienteSucursal;
 use App\Models\Empresa;
 use App\Models\Producto;
 use App\Models\Ruta;
+use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\VentasRutas;
 use App\Services\Rutas\VentasRutasExcel;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -36,11 +37,12 @@ class VentasController extends Controller
         return response()->download($excel->generar($datos), 'ventas-'.($datos['canal'] === 'exportacion' ? 'exportacion' : 'nacionales').'-'.$datos['periodo']['hasta']->format('Y-m').'.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])->deleteFileAfterSend(true);
     }
 
-    public function pdf(Request $request, VentasRutas $ventas)
+    public function pdf(Request $request, VentasRutas $ventas, DtePdfService $dtePdf)
     {
         $datos = $ventas->consultar($request->query());
 
-        return Pdf::loadView('rutas.ventas.pdf', $datos + ['empresa' => Empresa::where('activo', true)->first()])
+        // El logo como lo carga el PDF del CCF (data-URI): DomPDF no baja imágenes por URL.
+        return Pdf::loadView('rutas.ventas.pdf', $datos + ['empresa' => Empresa::where('activo', true)->first(), 'logo' => $dtePdf->logoSrc()])
             ->setPaper('a4', 'portrait')->setOption('enable_font_subsetting', true)
             ->download('ventas-'.($datos['canal'] === 'exportacion' ? 'exportacion' : 'nacionales').'-'.$datos['periodo']['hasta']->format('Y-m').'.pdf');
     }
