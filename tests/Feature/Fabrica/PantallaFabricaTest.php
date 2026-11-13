@@ -253,6 +253,52 @@ class PantallaFabricaTest extends TestCase
             ->assertDontSee('Queda pendiente');
     }
 
+    public function test_la_reimpresion_de_un_envio_anterior_lo_muestra_como_salio(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $g = $this->linea($pedido, $this->galleta);
+        $this->mandar($pedido, [$this->galleta->id => '4'], ['motivos' => [$g => 'Faltó masa'], 'sigue' => '1'])->assertSessionHasNoErrors();
+        $primero = $pedido->envios()->where('numero', 1)->sole();
+        $hoja1 = route('fabrica.pedidos.imprimir', [$pedido, $primero]);
+
+        // Recién salido: van 4 y quedan 6, con el motivo de ese envío.
+        $this->get($hoja1)->assertOk()
+            ->assertSeeInOrder(['Lo que va', 'Galleta de prueba', '4', 'Queda pendiente', 'Galleta de prueba', '6', 'Faltó masa']);
+
+        // Sale el envío 2 con las 6. Reimpreso, el envío 1 sigue diciendo que no fueron 6;
+        // los motivos de hoy no se mezclan con los de ese envío.
+        $this->travelTo('2026-11-10 08:00:00');
+        $this->mandar($pedido, [$this->galleta->id => '6'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+        $this->get($hoja1)->assertOk()
+            ->assertSeeInOrder(['Lo que va', 'Galleta de prueba', '4', 'No fue en este envío', 'Galleta de prueba', '6'])
+            ->assertSee('Después de este salieron otros envíos.')
+            ->assertDontSee('Queda pendiente')->assertDontSee('No va<', false);
+
+        // El envío 2 completó el pedido: no queda nada.
+        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 2)->sole()]))->assertOk()
+            ->assertSeeInOrder(['Lo que va', 'Galleta de prueba', '6'])
+            ->assertDontSee('No fue en este envío')->assertDontSee('Queda pendiente');
+    }
+
+    public function test_cambiar_de_pedido_solo_se_va_si_lo_marcado_se_guardo(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '24']);
+        $g = $this->linea($pedido, $this->galleta);
+
+        // La vista no navega si el guardado falló: se queda y avisa arriba.
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertSee('if (this.error) { this.aviso = true; return; }', false)
+            ->assertSee('No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.')
+            ->assertSee('x-show="aviso"', false);
+
+        // Los casos en que el servidor rechaza el guardado y la hoja no debe irse.
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '25']])->assertStatus(422);
+        auth()->logout();
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '20']])->assertStatus(401);
+        $this->assertNull($pedido->lineas()->whereKey($g)->value('va_borrador'));
+    }
+
     public function test_la_hoja_solo_de_envios_vigentes_de_ese_pedido_y_con_permiso(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '12']);

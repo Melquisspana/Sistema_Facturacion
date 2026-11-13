@@ -17,11 +17,14 @@
         sus propios estilos, sin el bundle ni modo oscuro, hoja carta vertical. Los colores son
         tonos oscuros y cada parte lleva su título en palabras: se lee igual en blanco y negro.
 
-        Lo que no va o queda sale del estado actual del pedido: mandado en parte, lo que falta
-        va en otro envío; cerrado, no va.
+        La hoja describe el envío tal como salió: lo que no fue se calcula con ese envío y los
+        anteriores, nunca con los de después (PedidosFabrica::faltanteAlEnvio). Los motivos se
+        guardan por línea y no por envío: solo el último envío vigente los muestra, con el
+        estado actual (mandado en parte, «queda pendiente»; cerrado, «no va»). Uno anterior
+        dice solo «No fue en este envío», sin motivos.
 
         Variables: $pedido (con PedidosFabrica::relaciones(conSala: true)), $envio (vigente, con
-        lineas.linea.producto).
+        lineas.linea.producto), $faltan [['linea', 'cantidad']] y $ultimo (bool).
     --}}
     <style>
         :root {
@@ -83,8 +86,10 @@
 </head>
 <body>
 @php
-    $faltan = $pedido->lineas->filter->tienePendiente();
-    $queda = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+    // Solo si es el último envío vigente el estado y los motivos actuales son los suyos.
+    $queda = $ultimo && $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+    $titulo = ! $ultimo ? 'No fue en este envío' : ($queda ? 'Queda pendiente (va en otro envío)' : 'No va');
+    $clase = ! $ultimo ? '' : ($queda ? 'ambar' : 'rojo');
     $direccion = $pedido->direccionSala();
 @endphp
 
@@ -126,20 +131,25 @@
     </table>
 
     @if ($faltan->isNotEmpty())
-        <h2 class="{{ $queda ? 'ambar' : 'rojo' }}">{{ $queda ? 'Queda pendiente (va en otro envío)' : 'No va' }}</h2>
-        <table class="{{ $queda ? 'queda' : 'no-va' }}">
-            <thead><tr><th>Código</th><th>Producto</th><th class="num">Cantidad</th><th>Motivo</th></tr></thead>
+        <h2 class="{{ $clase }}">{{ $titulo }}</h2>
+        <table class="{{ ! $ultimo ? '' : ($queda ? 'queda' : 'no-va') }}">
+            <thead><tr><th>Código</th><th>Producto</th><th class="num">Cantidad</th>@if ($ultimo)<th>Motivo</th>@endif</tr></thead>
             <tbody>
-                @foreach ($faltan as $linea)
+                @foreach ($faltan as $falta)
                     <tr>
-                        <td class="mono">{{ $linea->producto?->codigo }}</td>
-                        <td>{{ $linea->producto?->nombre }}</td>
-                        <td class="num">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</td>
-                        <td class="motivo">{{ $linea->motivo_no_enviado ?? '' }}</td>
+                        <td class="mono">{{ $falta['linea']->producto?->codigo }}</td>
+                        <td>{{ $falta['linea']->producto?->nombre }}</td>
+                        <td class="num">{{ \App\Models\PedidoSalaLinea::legible($falta['cantidad']) }}</td>
+                        @if ($ultimo)
+                            <td class="motivo">{{ $falta['linea']->motivo_no_enviado ?? '' }}</td>
+                        @endif
                     </tr>
                 @endforeach
             </tbody>
         </table>
+    @endif
+    @if (! $ultimo)
+        <p>Después de este salieron otros envíos.</p>
     @endif
 
     <div class="firma">

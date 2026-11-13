@@ -98,6 +98,34 @@ class PedidosFabrica
     }
 
     /**
+     * Lo que NO fue en un envío, tal como salió: por línea, lo pedido menos lo que llevaron
+     * ese envío y los vigentes anteriores (por número). Los envíos que salieron después no
+     * cuentan: reimpreso, el envío 1 sigue diciendo lo que le faltó. `ultimo` dice si después
+     * de este no salió otro vigente: solo entonces el estado y los motivos actuales del pedido
+     * son los de este envío (los motivos se guardan por línea, no por envío).
+     *
+     * @param  PedidoSala  $pedido  con `lineas.producto`
+     * @return array{faltan: \Illuminate\Support\Collection<int, array{linea: PedidoSalaLinea, cantidad: string}>, ultimo: bool}
+     */
+    public function faltanteAlEnvio(PedidoSala $pedido, PedidoSalaEnvio $envio): array
+    {
+        $vigentes = $pedido->envios()->whereNull('anulado_en')->with('lineas')->get();
+        $mandado = [];
+        foreach ($vigentes->where('numero', '<=', $envio->numero) as $anterior) {
+            foreach ($anterior->lineas as $l) {
+                $mandado[$l->pedido_sala_linea_id] = bcadd($mandado[$l->pedido_sala_linea_id] ?? '0', (string) $l->cantidad, 4);
+            }
+        }
+
+        $faltan = $pedido->lineas
+            ->map(fn (PedidoSalaLinea $linea) => ['linea' => $linea, 'cantidad' => bcsub((string) $linea->cantidad, $mandado[$linea->id] ?? '0', 4)])
+            ->filter(fn (array $f) => bccomp($f['cantidad'], '0', 4) === 1)
+            ->values();
+
+        return ['faltan' => $faltan, 'ultimo' => $vigentes->where('numero', '>', $envio->numero)->isEmpty()];
+    }
+
+    /**
      * Los demás pedidos por mandar, para la fila de arriba del pedido abierto: primero los
      * que se están armando y después el resto, cada grupo del más viejo al más nuevo. Solo
      * el nombre: sin líneas.

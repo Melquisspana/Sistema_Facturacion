@@ -75,7 +75,7 @@ class PedidoFabricaController extends Controller
         // Recién mandado, el aviso y el «Deshacer» siguen para cuando vuelva a la lista.
         $request->session()->reflash();
 
-        return view('fabrica.pedidos.imprimir', ['pedido' => $pedido, 'envio' => $envio]);
+        return view('fabrica.pedidos.imprimir', ['pedido' => $pedido, 'envio' => $envio] + $this->fabrica->faltanteAlEnvio($pedido, $envio));
     }
 
     /** Lo marcado en la hoja, sin recargar. Responde JSON (los errores, 422 con su texto). */

@@ -25,7 +25,7 @@
     <div class="py-6 sm:py-8">
         <div class="max-w-3xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
              x-data="{
-                 enviando: false, estado: '', error: false, espera: null, enCurso: null,
+                 enviando: false, estado: '', error: false, aviso: false, espera: null, enCurso: null,
                  {{-- Un solo retardo corto desde el último cambio. --}}
                  guardar() {
                      if (this.enviando) return;
@@ -43,12 +43,12 @@
                          method: 'POST', body: datos, keepalive: true,
                          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                      }).then(async (r) => {
-                         if (r.ok) { this.estado = 'Guardado'; return; }
+                         if (r.ok) { this.estado = 'Guardado'; this.aviso = false; return; }
                          this.error = true;
                          if (r.status === 401 || r.status === 419) { this.estado = 'Se cerró la sesión. Volvé a entrar.'; return; }
                          const j = await r.json().catch(() => ({}));
                          this.estado = Object.values(j.errors || {}).flat()[0] || 'No se pudo guardar. Volvé a abrir el pedido.';
-                     }).catch(() => { this.error = true; this.estado = 'No se pudo guardar. Revisá la conexión.'; });
+                     }).catch(() => { this.error = true; this.estado = 'No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.'; });
                      this.enCurso = p;
                      p.then(() => { if (this.enCurso === p) this.enCurso = null; });
                      return p;
@@ -57,10 +57,13 @@
                  alSalir() {
                      if (! this.enviando && this.espera !== null) { clearTimeout(this.espera); this.enviarBorrador(); }
                  },
-                 {{-- «Dejar para después»: espera a que se guarde y recién ahí vuelve a la lista. --}}
+                 {{-- «Dejar para después», «Todos» y los otros pedidos: espera a que se guarde y
+                      recién ahí se va. Si el último guardado falló, lo intenta de nuevo; si
+                      vuelve a fallar, NO se va: queda todo como está y avisa arriba. --}}
                  async salir(destino) {
-                     if (this.espera !== null) { clearTimeout(this.espera); await this.enviarBorrador(); }
+                     if (this.espera !== null || this.error) { clearTimeout(this.espera); await this.enviarBorrador(); }
                      else if (this.enCurso) { await this.enCurso; }
+                     if (this.error) { this.aviso = true; return; }
                      location.href = destino;
                  },
                  {{-- Mandar o borrar lo marcado: ningún guardado pendiente puede llegar después. --}}
@@ -85,6 +88,11 @@
                     </a>
                 @endforeach
             </nav>
+
+            <p x-show="aviso" x-cloak role="alert"
+               class="rounded-md border border-red-200 bg-red-50 p-3 text-base text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                Te quedaste en este pedido porque no se guardó lo marcado. <span x-text="estado"></span>
+            </p>
 
             <x-rutas.avisos />
 
