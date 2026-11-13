@@ -14,8 +14,8 @@
             })();
         </script>
 
-        <title>{{ \App\Support\NombreEmpresa::actual() }}</title>
         @include('layouts.partials.salio-atras')
+        <title>{{ \App\Support\NombreEmpresa::actual() }}</title>
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
