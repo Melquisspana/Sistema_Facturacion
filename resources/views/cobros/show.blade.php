@@ -296,10 +296,12 @@
                     <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-1">Revisar vinculación</h3>
                     <p class="text-sm text-amber-800 mb-4">{{ $veredicto['motivo'] }}</p>
 
+                    {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada
+                         dato encima. Desde md, la tabla de siempre (igual que la de notas de crédito). --}}
                     <div class="overflow-x-auto">
-                        <table class="min-w-full text-sm">
+                        <table class="block md:table min-w-full text-sm">
                             <caption class="sr-only">Albaranes candidatos</caption>
-                            <thead class="bg-gray-50 text-gray-600 dark:text-paper-300">
+                            <thead class="hidden md:table-header-group bg-gray-50 text-gray-600 dark:text-paper-300">
                                 <tr>
                                     <th scope="col" class="p-2 text-left font-medium">Albarán</th>
                                     <th scope="col" class="p-2 text-left font-medium">Tipo</th>
@@ -310,16 +312,16 @@
                                     <th scope="col" class="p-2 text-right font-medium"><span class="sr-only">Elegir</span></th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
+                            <tbody class="block md:table-row-group divide-y divide-gray-100 dark:divide-ink-600">
                                 @foreach ($veredicto['candidatos'] as $candidato)
-                                    <tr>
-                                        <td class="p-2 font-mono">{{ $candidato['numero'] }}</td>
-                                        <td class="p-2 font-mono">{{ $candidato['tipo'] }}</td>
-                                        <td class="p-2 font-mono">{{ $candidato['sala'] }}</td>
-                                        <td class="p-2">{{ $candidato['fecha'] }}</td>
-                                        <td class="p-2 text-right font-mono">{{ $candidato['monto'] === null ? '—' : number_format((float) $candidato['monto'], 2) }}</td>
-                                        <td class="p-2 font-mono text-xs">{{ $candidato['orden_compra'] }}</td>
-                                        <td class="p-2 text-right">
+                                    <tr class="grid grid-cols-2 py-2 md:table-row">
+                                        <td class="p-2 font-mono"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Albarán</span>{{ $candidato['numero'] }}</td>
+                                        <td class="p-2 font-mono"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Tipo</span>{{ $candidato['tipo'] }}</td>
+                                        <td class="p-2 font-mono"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Sala</span>{{ $candidato['sala'] }}</td>
+                                        <td class="p-2"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Fecha</span>{{ $candidato['fecha'] }}</td>
+                                        <td class="p-2 md:text-right font-mono"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Monto</span>{{ $candidato['monto'] === null ? '—' : number_format((float) $candidato['monto'], 2) }}</td>
+                                        <td class="p-2 font-mono text-xs break-all md:break-normal"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Orden de compra</span>{{ $candidato['orden_compra'] }}</td>
+                                        <td class="col-span-2 p-2 text-right">
                                             @if (! empty($candidato['tomado_por']))
                                                 <span class="text-xs text-rose-700">ya vinculado a {{ $candidato['tomado_por'] }}</span>
                                             @else
@@ -329,8 +331,8 @@
                                                         <input type="hidden" name="ppq_albaran_id" value="{{ $candidato['id'] }}">
                                                         <label class="sr-only" for="nota_{{ $candidato['id'] }}">Nota</label>
                                                         <input id="nota_{{ $candidato['id'] }}" name="nota" required maxlength="255" placeholder="evidencia de por qué este"
-                                                               class="rounded-md border-gray-300 text-xs w-40">
-                                                        <button class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">Vincular</button>
+                                                               class="min-h-11 sm:min-h-0 rounded-md border-gray-300 text-xs w-40">
+                                                        <button class="min-h-11 sm:min-h-0 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">Vincular</button>
                                                     </form>
                                                 @endcan
                                             @endif
@@ -537,10 +539,12 @@
                 @if ($documento->eventos->isEmpty())
                     <p class="text-sm text-gray-500 dark:text-paper-300">Todavía no hay ningún hecho registrado.</p>
                 @else
+                    {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada
+                         dato encima. Desde md, la tabla de siempre (igual que la de notas de crédito). --}}
                     <div class="overflow-x-auto">
-                        <table class="min-w-full text-sm">
+                        <table class="block md:table min-w-full text-sm">
                             <caption class="sr-only">Historia del documento</caption>
-                            <thead class="bg-gray-50 text-gray-600 dark:text-paper-300">
+                            <thead class="hidden md:table-header-group bg-gray-50 text-gray-600 dark:text-paper-300">
                                 <tr>
                                     <th scope="col" class="p-2 text-left font-medium">Registrado</th>
                                     <th scope="col" class="p-2 text-left font-medium">Hecho</th>
@@ -550,23 +554,26 @@
                                     <th scope="col" class="p-2 text-left font-medium">Detalle / evidencia</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
+                            <tbody class="block md:table-row-group divide-y divide-gray-100 dark:divide-ink-600">
                                 @foreach ($documento->eventos as $evento)
-                                    <tr>
-                                        <td class="p-2 whitespace-nowrap">{{ $evento->created_at?->format('d/m/Y H:i') }}</td>
+                                    <tr class="grid grid-cols-2 py-2 md:table-row">
+                                        <td class="p-2 whitespace-nowrap"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Registrado</span>{{ $evento->created_at?->format('d/m/Y H:i') }}</td>
                                         <td class="p-2">
+                                            <span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Hecho</span>
                                             {{ $evento->tipo->label() }}
                                             @if ($evento->tipo->afectaCobrado())
                                                 <span class="block mt-0.5 inline-flex px-1.5 py-0.5 rounded-full text-[10px] {{ $evento->estado->clase() }}"
                                                       title="{{ $evento->estado->detalle() }}">{{ $evento->estado->label() }}</span>
                                             @endif
                                         </td>
-                                        <td class="p-2 text-xs">{{ $evento->origen }}</td>
-                                        <td class="p-2 text-right font-mono {{ $evento->cuenta() ? '' : 'text-gray-400 line-through' }}">
+                                        <td class="p-2 text-xs"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Origen</span>{{ $evento->origen }}</td>
+                                        <td class="p-2 md:text-right font-mono {{ $evento->cuenta() ? '' : 'text-gray-400 line-through' }}">
+                                            <span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Monto</span>
                                             {{ $evento->monto === null ? '—' : number_format((float) $evento->monto, 2) }}
                                         </td>
-                                        <td class="p-2 whitespace-nowrap">{{ $evento->fecha?->format('d/m/Y') ?? '—' }}</td>
-                                        <td class="p-2 text-xs text-gray-600 dark:text-paper-300">
+                                        <td class="p-2 whitespace-nowrap"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Fecha del hecho</span>{{ $evento->fecha?->format('d/m/Y') ?? '—' }}</td>
+                                        <td class="col-span-2 p-2 text-xs text-gray-600 dark:text-paper-300">
+                                            <span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Detalle / evidencia</span>
                                             {{ $evento->detalle }}
                                             @if ($evento->evidencia_nombre)
                                                 <span class="block font-mono text-[11px] text-gray-400">{{ $evento->evidencia_nombre }}</span>

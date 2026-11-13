@@ -260,10 +260,13 @@
                                     @endif
                                 </div>
                             @endif
+                            {{-- Celular (debajo de md): cada CCF se apila como tarjeta en la MISMA fila
+                                 (la casilla sigue dentro del formulario de «Crear PPQ» y de su Alpine).
+                                 Desde md, la tabla de siempre. --}}
                             <div class="overflow-x-auto">
-                                <table class="min-w-full text-sm">
+                                <table class="block md:table min-w-full text-sm">
                                     <caption class="sr-only">CCF de {{ $cliente->nombre }}, página {{ $documentos->currentPage() }} de {{ $documentos->lastPage() }}</caption>
-                                    <thead class="text-xs uppercase tracking-wide text-gray-500 dark:text-paper-300">
+                                    <thead class="hidden md:table-header-group text-xs uppercase tracking-wide text-gray-500 dark:text-paper-300">
                                         <tr class="border-b border-gray-100 dark:border-ink-600">
                                             <th scope="col" class="px-4 py-2.5 w-8"><span class="sr-only">Incluir en el PPQ</span></th>
                                             <th scope="col" class="px-2 py-2.5 text-left font-medium">CCF</th>
@@ -274,7 +277,7 @@
                                             <th scope="col" class="px-4 py-2.5 text-left font-medium">Estado</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
+                                    <tbody class="block md:table-row-group divide-y divide-gray-100 dark:divide-ink-700">
                                         @foreach ($documentos as $doc)
                                             @php
                                                 $pagado = $doc->pago_estado === \App\Enums\Cobros\EstadoPagoCobro::Pagado;
@@ -312,16 +315,17 @@
                                                 $invalidadas = $notas->where('estado', \App\Enums\EstadoDte::Invalidado)->count();
                                                 $vigentes = $notas->where('estado', '!=', \App\Enums\EstadoDte::Invalidado);
                                             @endphp
-                                            <tr class="align-top hover:bg-gray-50/70 dark:hover:bg-ink-700/40">
-                                                <td class="px-4 py-3">
+                                            <tr class="grid grid-cols-3 py-2 md:table-row align-top hover:bg-gray-50/70 dark:hover:bg-ink-700/40">
+                                                <td class="col-span-full px-4 py-3 {{ $presentable && $puedeGestionar ? '' : 'hidden md:table-cell' }}">
                                                     @if ($presentable && $puedeGestionar)
                                                         <label class="sr-only" for="doc_{{ $doc->id }}">Incluir {{ $doc->numero_control }}</label>
                                                         <input id="doc_{{ $doc->id }}" type="checkbox" name="documentos[]" value="{{ $doc->id }}"
                                                                :checked="seleccion.includes('{{ $doc->id }}')" x-on:change="cambiar('{{ $doc->id }}', $event.target.checked)"
                                                                class="h-5 w-5 rounded border-gray-300 text-indigo-600">
+                                                        <label for="doc_{{ $doc->id }}" class="md:hidden ml-2 text-sm text-gray-700 dark:text-paper-100" aria-hidden="true">Incluir en el PPQ</label>
                                                     @endif
                                                 </td>
-                                                <td class="px-2 py-3">
+                                                <td class="col-span-2 px-2 py-3">
                                                     <a href="{{ route('cobros.documentos.show', $doc) }}" title="{{ $doc->numero_control }}"
                                                        class="font-mono text-base font-semibold text-indigo-600 dark:text-indigo-300 hover:underline">{{ $doc->correlativoCorto() }}</a>
                                                     @if ($doc->esNc())
@@ -333,11 +337,13 @@
                                                         <span class="block text-xs text-gray-500 dark:text-paper-300">{{ \App\Support\Sala::descripcion($salaCodigo) }}</span>
                                                     @endif
                                                 </td>
-                                                <td class="px-2 py-3 whitespace-nowrap text-gray-700 dark:text-paper-100">{{ $doc->fecha_emision?->format('d/m/Y') ?? '—' }}</td>
+                                                <td class="px-2 py-3 whitespace-nowrap text-gray-700 dark:text-paper-100"><span class="md:hidden block text-xs font-sans font-normal text-gray-500 dark:text-paper-300">Fecha</span>{{ $doc->fecha_emision?->format('d/m/Y') ?? '—' }}</td>
                                                 <td class="px-2 py-3 font-mono text-xs whitespace-nowrap text-gray-700 dark:text-paper-100">
+                                                    <span class="md:hidden block text-xs font-sans font-normal text-gray-500 dark:text-paper-300">Albarán</span>
                                                     {{ $doc->albaran?->numero_albaran ?? '—' }}
                                                 </td>
                                                 <td class="px-2 py-3 text-xs text-gray-700 dark:text-paper-100">
+                                                    <span class="md:hidden block text-xs font-sans font-normal text-gray-500 dark:text-paper-300">Notas de crédito</span>
                                                     @foreach ($vigentes as $nc)
                                                         <span class="block whitespace-nowrap">
                                                             <span class="font-mono">NC {{ preg_match('/(\d+)$/', (string) $nc->numero_control, $mm) ? (ltrim($mm[1], '0') ?: '0') : '?' }}</span>
@@ -354,8 +360,8 @@
                                                         <span class="text-gray-300 dark:text-ink-500">—</span>
                                                     @endif
                                                 </td>
-                                                <td class="px-2 py-3 text-right font-mono whitespace-nowrap text-gray-800 dark:text-paper-100">{{ number_format((float) $doc->monto, 2) }}</td>
-                                                <td class="px-4 py-3 text-xs">
+                                                <td class="px-2 py-3 text-right font-mono whitespace-nowrap text-gray-800 dark:text-paper-100"><span class="md:hidden block font-sans text-xs text-gray-500 dark:text-paper-300">Monto</span>{{ number_format((float) $doc->monto, 2) }}</td>
+                                                <td class="col-span-full px-4 py-3 text-xs">
                                                     @php
                                                         [$texto, $clase] = match ($estado) {
                                                             'invalidado' => ['Invalidado', 'bg-rose-100 text-rose-700'],

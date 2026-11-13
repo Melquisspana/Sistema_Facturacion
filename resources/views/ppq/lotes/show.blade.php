@@ -198,9 +198,11 @@
                         CCF más recientes primero, con su albarán; los totales son del lote completo
                     </span>
                 </div>
+                {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada
+                     dato encima. Desde md, la tabla de siempre. --}}
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead>
+                    <table class="block md:table w-full text-sm">
+                        <thead class="hidden md:table-header-group">
                             <tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                                 <th class="py-2.5 px-3">Documento</th>
                                 <th class="py-2.5 px-3">Albarán</th>
@@ -211,7 +213,7 @@
                                 <th class="py-2.5 px-3"><span class="sr-only">Acción</span></th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
+                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                             {{-- Dónde va la sala dentro de la OC se lee una vez para toda la página, no en cada documento. --}}
                             @php $posicionSala = \App\Support\OrdenCompra::posicionSala(); @endphp
                             @forelse ($items as $item)
@@ -261,7 +263,7 @@
                                     $montoDteSigno = $item->montoDteConSigno();
                                     $fmt = fn ($v) => ($v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
                                 @endphp
-                                <tr class="align-top hover:bg-gray-50 dark:hover:bg-ink-700/40">
+                                <tr class="grid grid-cols-2 py-2 md:table-row align-top hover:bg-gray-50 dark:hover:bg-ink-700/40">
                                     <td class="py-2 px-3" title="{{ $control }} · código {{ $codigo ?: '—' }} · sello {{ $sello ?: '—' }}">
                                         <span class="font-mono font-semibold {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ preg_match('/(\d+)$/', (string) $control, $mc) ? (ltrim($mc[1], '0') ?: '0') : ($control ?: '—') }}</span>
                                         <span class="text-[11px] {{ $item->esNc() ? 'text-rose-500 font-medium' : 'text-gray-400' }}">{{ $tipo === '05' ? 'NC' : 'CCF' }}</span>
@@ -273,6 +275,7 @@
                                         @endif
                                     </td>
                                     <td class="py-2 px-3 font-mono text-xs">
+                                        <span class="md:hidden block text-xs font-sans font-normal text-gray-500">Albarán</span>
                                         @if ($item->sin_albaran && ! $item->esNc())
                                             <span class="inline-block rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">sin albarán</span>
                                         @else
@@ -283,15 +286,16 @@
                                         @endif
                                         <span class="block font-sans text-[11px] text-gray-400">{{ optional($item->albaran?->fecha_albaran)->format('d/m/Y') }}</span>
                                     </td>
-                                    <td class="py-2 px-3 text-gray-700">
+                                    <td class="col-span-2 py-2 px-3 text-gray-700">
+                                        <span class="md:hidden block text-xs font-sans font-normal text-gray-500">Sala / CD</span>
                                         <span class="block {{ $salaNombre ? 'text-gray-800' : 'text-amber-600' }}">{{ $salaDescripcion }}</span>
                                         @if ($sala)
                                             <span class="block font-mono text-[11px] text-gray-400">{{ $sala }}</span>
                                         @endif
                                     </td>
-                                    <td class="py-2 px-3 text-right whitespace-nowrap {{ $item->esNc() ? 'text-rose-600' : 'text-gray-700' }}">{{ $montoAlbSigno !== null ? $fmt($montoAlbSigno) : '—' }}</td>
-                                    <td class="py-2 px-3 text-right whitespace-nowrap font-medium {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ $fmt($montoDteSigno) }}</td>
-                                    <td class="py-2 px-3 text-center whitespace-nowrap">
+                                    <td class="py-2 px-3 md:text-right whitespace-nowrap {{ $item->esNc() ? 'text-rose-600' : 'text-gray-700' }}"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Monto albarán</span>{{ $montoAlbSigno !== null ? $fmt($montoAlbSigno) : '—' }}</td>
+                                    <td class="py-2 px-3 md:text-right whitespace-nowrap font-medium {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Monto CCF/NC</span>{{ $fmt($montoDteSigno) }}</td>
+                                    <td class="col-span-2 py-2 px-3 text-center md:whitespace-nowrap">
                                         <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium {{ $estado['clase'] }}">
                                             @if ($alerta)
                                                 <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" /></svg>
@@ -312,7 +316,7 @@
                                         {{-- Estado de pago: solo "pagado" si el TXT de Calleja lo confirma --}}
                                         <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium {{ $item->estadoPagoClase() }}" @if ($item->fecha_pago) title="Fecha del documento en TXT: {{ \App\Support\Fecha::dmy($item->fecha_pago) }}" @endif>{{ $item->estadoPagoLabel() }}</span>
                                     </td>
-                                    <td class="py-2 px-3 text-right whitespace-nowrap">
+                                    <td class="col-span-2 py-2 px-3 text-right whitespace-nowrap">
                                         {{-- Una sola acción: si está cobrado, quitar el cobro; si no, quitarlo del lote. --}}
                                         @if ($item->estaConciliado())
                                             @can('ppq.revertir-conciliacion')
@@ -321,19 +325,19 @@
                                                     @csrf
                                                     <input type="hidden" name="page" value="{{ $items->currentPage() }}">
                                                     <input type="hidden" name="motivo" value="">
-                                                    <button class="text-xs text-amber-700 hover:underline">quitar cobro</button>
+                                                    <button class="inline-flex min-h-11 sm:min-h-0 items-center text-xs text-amber-700 hover:underline">quitar cobro</button>
                                                 </form>
                                             @endcan
                                         @elseif ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                                             <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm('¿Quitar este documento del PPQ?')">
                                                 @csrf @method('DELETE')
-                                                <button class="text-xs text-red-600 hover:underline">quitar</button>
+                                                <button class="inline-flex min-h-11 sm:min-h-0 items-center text-xs text-red-600 hover:underline">quitar</button>
                                             </form>
                                         @endif
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="7" class="py-10 text-center text-gray-500">
+                                <tr class="block md:table-row"><td colspan="7" class="block md:table-cell py-10 text-center text-gray-500">
                                     @if ($resumen['cantidad'] > 0)
                                         {{-- Página fuera de rango: el lote SÍ tiene documentos. --}}
                                         Esta página no existe ({{ $resumen['cantidad'] }} documento(s) en {{ $items->lastPage() }} página(s)).
@@ -373,9 +377,11 @@
                         <h3 class="text-sm font-semibold text-gray-700">Historial de conciliación ({{ $lote->conciliaciones->count() }})</h3>
                         <p class="mt-0.5 text-xs text-gray-500">Un archivo solo actualiza los documentos que nombra; los demás conservan su estado.</p>
                     </div>
+                    {{-- Celular (debajo de md): cada fila se apila como tarjeta, con el nombre de cada
+                     dato encima. Desde md, la tabla de siempre. --}}
                     <div class="overflow-x-auto">
-                        <table class="min-w-full text-sm">
-                            <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
+                        <table class="block md:table min-w-full text-sm">
+                            <thead class="hidden md:table-header-group"><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                                 <th class="py-2.5 px-3">Cuándo</th>
                                 <th class="py-2.5 px-3">Origen</th>
                                 <th class="py-2.5 px-3">Archivo / motivo</th>
@@ -383,14 +389,15 @@
                                 <th class="py-2.5 px-3 text-right">Cambiados</th>
                                 <th class="py-2.5 px-3 text-right">Sin cambio</th>
                             </tr></thead>
-                            <tbody class="divide-y divide-gray-100">
+                            <tbody class="block md:table-row-group divide-y divide-gray-100">
                                 @foreach ($lote->conciliaciones as $corrida)
-                                    <tr class="hover:bg-gray-50 align-top">
-                                        <td class="py-2 px-3 text-gray-700 whitespace-nowrap">{{ $corrida->created_at?->translatedFormat('d M Y H:i') ?? '—' }}</td>
+                                    <tr class="grid grid-cols-2 py-2 md:table-row hover:bg-gray-50 align-top">
+                                        <td class="py-2 px-3 text-gray-700 whitespace-nowrap"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Cuándo</span>{{ $corrida->created_at?->translatedFormat('d M Y H:i') ?? '—' }}</td>
                                         <td class="py-2 px-3">
                                             <span class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $corrida->origen->clase() }}">{{ $corrida->origen->label() }}</span>
                                         </td>
-                                        <td class="py-2 px-3 text-gray-700">
+                                        <td class="col-span-2 py-2 px-3 text-gray-700 break-all md:break-normal">
+                                            <span class="md:hidden block text-xs font-sans font-normal text-gray-500">Archivo / motivo</span>
                                             @if ($corrida->archivo_nombre)
                                                 <span class="font-mono text-xs">{{ $corrida->archivo_nombre }}</span>
                                                 {{-- La huella es lo que hace verificable la copia guardada. --}}
@@ -400,9 +407,9 @@
                                                 <span class="block text-xs text-gray-600">{{ $corrida->motivo }}</span>
                                             @endif
                                         </td>
-                                        <td class="py-2 px-3 text-gray-700">{{ $corrida->usuario?->name ?? '—' }}</td>
-                                        <td class="py-2 px-3 text-right tabular-nums text-gray-800">{{ $corrida->items_cambiados }}</td>
-                                        <td class="py-2 px-3 text-right tabular-nums text-gray-500">{{ $corrida->items_sin_cambio }}</td>
+                                        <td class="py-2 px-3 text-gray-700"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Quién</span>{{ $corrida->usuario?->name ?? '—' }}</td>
+                                        <td class="py-2 px-3 md:text-right tabular-nums text-gray-800"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Cambiados</span>{{ $corrida->items_cambiados }}</td>
+                                        <td class="py-2 px-3 md:text-right tabular-nums text-gray-500"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Sin cambio</span>{{ $corrida->items_sin_cambio }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
