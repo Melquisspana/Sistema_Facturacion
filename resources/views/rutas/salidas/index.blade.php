@@ -1,8 +1,10 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            {{-- Todos: los viajes abiertos y cerrados, y las salidas armadas a mano de antes. Acá no se arma nada. --}}
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            {{-- Todos: los viajes abiertos y cerrados, y las salidas armadas a mano de antes. Acá no se arma nada.
+                 Desde el 12/11/2026 no está en el menú: se llega con «Ver viajes anteriores», en Tablero › Viajes. --}}
             <h1 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Todos los viajes</h1>
+            <a href="{{ route('rutas.viajes') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Volver al tablero</a>
         </div>
     </x-slot>
 

@@ -12,6 +12,8 @@ use App\Models\Dte;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
+use App\Models\SalidaRuta;
+use App\Models\SalidaRutaCierre;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaParticipante;
 use App\Services\Dte\DtePdfService;
@@ -51,6 +53,9 @@ class PorEntregarController extends Controller
 {
     private const SIN_RUTA = 'sin';
 
+    /** Lo que necesita el nombre del viaje ({@see SalidaRuta::nombreViaje()}), cargado una vez para todos. */
+    private const NOMBRE_DEL_VIAJE = ['salida.ruta:id,nombre', 'salida.pedidos:id,salida_ruta_id,ruta_id,estado', 'salida.pedidos.ruta:id,nombre'];
+
     public function __construct(private readonly EntregasCcf $entregas, private readonly PorEntregar $porEntregar, private readonly Viajes $viajes) {}
 
     private function persona(Request $request): ?PersonalRuta
@@ -65,7 +70,7 @@ class PorEntregarController extends Controller
         $puedeMarcar = $persona !== null && $request->user()->can(PermisoSistema::RutasEntregasRegistrar->value);
 
         // Lo que el vendedor marcó hoy queda abajo, con «Deshacer», y sale de la lista.
-        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre'])
+        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre', ...self::NOMBRE_DEL_VIAJE])
             ->where('registrado_por', $request->user()->id)->whereNotNull('resultado')->sinFacturadosDespues()
             ->whereDate('fecha_resultado', HoraNegocio::fechaHoy())
             ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))
@@ -85,15 +90,19 @@ class PorEntregarController extends Controller
             ? (string) $request->query('ver') : (array_key_first($vistas) ?? 'todas');
         $dtes = $ver === 'todas' ? $todos : $vistas[$ver];
         // Los que ya van en una salida abierta: se marcan en ella (o esperan a que empiece).
-        $enCamino = SalidaRutaEntrega::with('salida.ruta:id,nombre')->whereIn('dte_id', $dtes->pluck('id'))->pendientes()
+        $enCamino = SalidaRutaEntrega::with(self::NOMBRE_DEL_VIAJE)->whereIn('dte_id', $dtes->pluck('id'))->pendientes()
             ->whereHas('salida', fn ($q) => $q->abiertas())->get()->keyBy('dte_id');
         // Dónde no se puede marcar (sin botones, con el porqué): una formal donde no va, o
         // una salida que ya cerró el día de hoy. Las mismas reglas de PorEntregar.
         $vaEn = $puedeMarcar ? SalidaRutaParticipante::where('rutas_personal_id', $persona->id)
             ->whereIn('salida_ruta_id', $enCamino->pluck('salida_ruta_id'))->pluck('salida_ruta_id')->map(fn ($id) => (int) $id)->all() : [];
+        // El cierre de hoy de todas esas salidas, en una consulta: la misma regla de
+        // SalidaRuta::diaCerrado() (un cierre por salida y día).
+        $cierresDeHoy = ! $puedeMarcar ? collect() : SalidaRutaCierre::whereIn('salida_ruta_id', $enCamino->pluck('salida_ruta_id')->unique())
+            ->whereDate('fecha', HoraNegocio::fechaHoy())->get()->keyBy('salida_ruta_id');
         $trabados = ! $puedeMarcar ? collect() : $enCamino->map(fn (SalidaRutaEntrega $e) => match (true) {
             $e->salida->estado !== EstadoSalidaRuta::EnCurso => null,
-            $e->salida->diaCerrado() => PorEntregar::diaCerrado($e->salida),
+            $cierresDeHoy->get($e->salida_ruta_id)?->estaCerrado() ?? false => PorEntregar::diaCerrado($e->salida),
             ! $e->salida->esAutomatica() && ! in_array((int) $e->salida_ruta_id, $vaEn, true) => PorEntregar::noVa($e->salida),
             default => null,
         })->filter();

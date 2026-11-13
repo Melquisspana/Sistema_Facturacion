@@ -534,8 +534,9 @@ class NavigationTest extends TestCase
 
     /**
      * El área Rutas presenta solo sus pantallas. Menú de la oficina (11/11/2026): Tablero
-     * primero, Pedidos, Ventas, Todos los viajes, Zonas y, al final, UNA sola entrada al celular
-     * del vendedor («Menú del vendedor»); Inicio, Sacar pedido y Por entregar son sus pestañas.
+     * primero, Pedidos, Ventas, Zonas y, al final, UNA sola entrada al celular del vendedor
+     * («Menú del vendedor»); Inicio, Sacar pedido y Por entregar son sus pestañas. «Todos los
+     * viajes» salió del menú (12/11/2026): se abre desde Tablero › Viajes.
      * Facturas por cobrar salió de esta barra (28/10/2026): sigue en la de Facturación.
      */
     public function test_el_area_rutas_presenta_solo_sus_enlaces(): void
@@ -551,7 +552,7 @@ class NavigationTest extends TestCase
                 // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
                 // (29/10/2026), con `rutas.personal.ver`.
                 // Desde el 08/11/2026 su lista es la de Personal, que llega por el selector de áreas.
-                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'personal.empleados',
+                'rutas.dashboard', 'rutas.ventas.index', 'rutas.rutas.index', 'personal.empleados',
                 // «Menú del vendedor»: una sola entrada al celular del vendedor (11/11/2026).
                 'rutas.mi-salida.index',
                 // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
@@ -564,8 +565,8 @@ class NavigationTest extends TestCase
 
         $sidebar = $this->sidebarDe($html);
         // Los títulos nuevos, en orden; los de antes ya no están.
-        $this->assertMatchesRegularExpression('/Tablero.*Pedidos.*Ventas.*Todos los viajes.*Zonas.*Menú del vendedor/su', $sidebar);
-        foreach (['Salidas anteriores', 'Configurar rutas', 'Armar salida', 'Asignar salas', '>Inicio<', 'Sacar pedido', 'Por entregar'] as $retirado) {
+        $this->assertMatchesRegularExpression('/Tablero.*Pedidos.*Ventas.*Zonas.*Menú del vendedor/su', $sidebar);
+        foreach (['Salidas anteriores', 'Todos los viajes', 'Configurar rutas', 'Armar salida', 'Asignar salas', '>Inicio<', 'Sacar pedido', 'Por entregar'] as $retirado) {
             $this->assertStringNotContainsString($retirado, $sidebar);
         }
         $this->assertStringNotContainsString('Facturas por cobrar', $sidebar);

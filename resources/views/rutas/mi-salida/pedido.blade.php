@@ -71,7 +71,7 @@
                             <a href="{{ route('rutas.sacar-pedido.create', $parecida) }}" class="flex min-h-11 items-center justify-between gap-3 py-2">
                                 <span class="min-w-0">
                                     <span class="block font-semibold">{{ $parecida->nombre }}</span>
-                                    <span class="block {{ $gris }}">{{ collect([$parecida->codigo, $parecida->distrito?->nombre, $parecida->cliente?->nombre])->filter()->implode(' · ') }}</span>
+                                    <span class="block {{ $gris }}">{{ $parecida->detalleBuscador() }}</span>
                                 </span>
                                 <span class="shrink-0 text-sm font-medium text-indigo-600 underline dark:text-indigo-300">Es esta</span>
                             </a>

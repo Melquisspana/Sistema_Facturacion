@@ -7,18 +7,18 @@
 <nav class="space-y-6 px-3 py-5">
 
     {{-- Menú de la oficina (11/11/2026), cada título en una línea: el Tablero primero (Resumen,
-         Viajes, Mapa y Vendedores son sus pestañas), Pedidos, Ventas, Todos los viajes y Zonas.
+         Viajes y Mapa son sus pestañas), Pedidos, Ventas y Zonas. «Todos los viajes» salió del
+         menú (12/11/2026): se abre desde Tablero › Viajes y, con su detalle, resalta «Tablero».
          Al final, UNA sola entrada al celular del vendedor: adentro están sus pestañas (Inicio,
          Sacar pedido y Por entregar). Ya no hay «armar salida» ni «asignar salas». --}}
     <x-sidebar-group titulo="Rutas" icono="rutas">
-        <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard', 'rutas.viajes', 'rutas.mapa')">Tablero</x-sidebar-link>
+        <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard', 'rutas.viajes', 'rutas.mapa', 'rutas.salidas.*')">Tablero</x-sidebar-link>
         @can('rutas.pedidos.ver')
             <x-sidebar-link :href="route('rutas.pedidos.index')" :active="request()->routeIs('rutas.pedidos.*')">Pedidos</x-sidebar-link>
         @endcan
         @can('rutas.ventas.ver')
             <x-sidebar-link :href="route('rutas.ventas.index')" :active="request()->routeIs('rutas.ventas.*')">Ventas</x-sidebar-link>
         @endcan
-        <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Todos los viajes</x-sidebar-link>
         <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Zonas</x-sidebar-link>
         {{-- Los empleados son solo de la administración (`planilla.ver`, 04/11/2026). --}}
         @if (auth()->user()->can('rutas.personal.ver') && auth()->user()->can('planilla.ver'))

@@ -16,10 +16,12 @@ use Illuminate\View\View;
 
 /**
  * «Todos los viajes»: los viajes y las salidas de antes y su detalle. Desde el 10/11/2026
- * nadie arma salidas: el viaje se abre y se cierra solo ({@see Viajes}).
+ * nadie arma salidas: el viaje se abre y se cierra solo ({@see Viajes}). Desde el 12/11/2026
+ * no está en el menú: se abre con «Ver viajes anteriores», en Tablero › Viajes.
  *
- * La única acción de estado que queda acá es cancelar, con su ruta, su permiso y su registro
- * de auditoría: para el viaje que se abrió por error. El modelo valida la transición.
+ * La única acción de estado que queda es cancelar, con su ruta, su permiso y su registro de
+ * auditoría: para el viaje que se abrió por error. El botón está en Tablero › Viajes y en el
+ * detalle. El modelo valida la transición.
  */
 class SalidaRutaController extends Controller
 {
@@ -113,7 +115,7 @@ class SalidaRutaController extends Controller
             'estado_nuevo' => $salida->estado->value,
         ]);
 
-        return back()->with('status', 'Salida cancelada.');
+        return back()->with('status', $salida->esViaje() ? 'Viaje cancelado.' : 'Salida cancelada.');
     }
 
     // ------------------------------------------------------------------ apoyo

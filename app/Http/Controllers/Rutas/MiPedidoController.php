@@ -16,6 +16,7 @@ use App\Services\Rutas\Viajes;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\HoraNegocio;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -29,6 +30,9 @@ use Illuminate\View\View;
  */
 class MiPedidoController extends Controller
 {
+    /** Cuántas salas trae, como mucho, la lista que aparece mientras escribe. */
+    public const TOPE_LISTA = 10;
+
     public function __construct(private readonly PedidosSala $pedidos, private readonly Viajes $viajes, private readonly RitmoRutas $ritmo) {}
 
     /** El buscador de salas y los pedidos que sacó hoy. */
@@ -55,6 +59,29 @@ class MiPedidoController extends Controller
             'ritmos' => $salas === null ? [] : $this->ritmos($salas),
             'pedidosHoy' => $pedidosHoy,
         ]);
+    }
+
+    /**
+     * La lista que aparece mientras escribe (12/11/2026, pedido del dueño): las salas activas
+     * que contienen el texto, con la misma consulta que el botón «Buscar»
+     * ({@see ClienteSucursal::scopeBuscarTexto()}; mayúsculas y tildes las iguala la collation
+     * de MySQL). Solo lo que la lista muestra: nada fiscal ni precios. Como mucho
+     * {@see self::TOPE_LISTA}. El permiso y el límite de pedidos los pone la ruta.
+     */
+    public function salas(Request $request): JsonResponse
+    {
+        $texto = $request->validate(['q' => ['required', 'string', 'min:2', 'max:100']])['q'];
+
+        $salas = ClienteSucursal::query()->buscarTexto(trim($texto))
+            ->with(['cliente:id,nombre', 'distrito:id,nombre'])
+            ->orderBy('nombre')->limit(self::TOPE_LISTA)
+            ->get(['id', 'nombre', 'codigo', 'cliente_id', 'distrito_id']);
+
+        return response()->json(['salas' => $salas->map(fn (ClienteSucursal $sala) => [
+            'nombre' => $sala->nombre,
+            'detalle' => $sala->detalleBuscador(),
+            'url' => route('rutas.sacar-pedido.create', $sala),
+        ])->values()]);
     }
 
     public function create(Request $request, ClienteSucursal $sucursal): View|RedirectResponse

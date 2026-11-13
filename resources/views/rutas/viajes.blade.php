@@ -22,6 +22,7 @@
         $plural = fn (int $n, string $uno, string $varios) => $n.' '.($n === 1 ? $uno : $varios);
         $hace = fn (int $n) => match ($n) { 0 => 'hoy', 1 => 'ayer', default => 'hace '.$n.' días' };
         $verPedido = auth()->user()->can('rutas.pedidos.ver');
+        $puedeCancelar = auth()->user()->can('rutas.gestionar');
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -89,10 +90,19 @@
                                         <p class="text-sm font-medium text-indigo-600">{{ $viaje['pedidos']->count() === 1 ? 'Ver su pedido' : 'Ver sus '.$viaje['pedidos']->count().' pedidos' }}</p>
                                     </summary>
 
-                                    {{-- El viaje: sus entregas y el PDF de cada día. --}}
-                                    <p class="border-t border-gray-100 px-4">
+                                    {{-- El viaje: sus entregas y el PDF de cada día. Y, para la oficina, cancelarlo si
+                                         se abrió por error (12/11/2026, antes en «Todos los viajes»): la misma ruta y el
+                                         mismo permiso que en el detalle. --}}
+                                    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-2">
                                         <a href="{{ route('rutas.salidas.show', $salida) }}" class="inline-flex min-h-11 items-center text-sm font-medium text-indigo-600 hover:underline">Ver viaje<span class="sr-only">: {{ $viaje['nombre'] }}</span></a>
-                                    </p>
+                                        @if ($puedeCancelar)
+                                            <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
+                                                  onsubmit="return confirm('¿Cancelar este viaje? Sus CCF vuelven a quedar pendientes.');">
+                                                @csrf @method('PATCH')
+                                                <button class="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Cancelar viaje<span class="sr-only">: {{ $viaje['nombre'] }}</span></button>
+                                            </form>
+                                        @endif
+                                    </div>
                                     {{-- Los pedidos del viaje: lista de tarjetas, se lee igual en el celular. --}}
                                     <ul class="divide-y divide-gray-100 border-t border-gray-100">
                                         @foreach ($viaje['pedidos'] as $p)
@@ -216,6 +226,11 @@
                         </ul>
                     @endif
                 </details>
+                {{-- El listado completo (antes «Todos los viajes» en el menú): también las salidas armadas a mano de antes, para leer. --}}
+                <p class="mt-2 text-sm text-gray-600">
+                    <a href="{{ route('rutas.salidas.index') }}" class="inline-flex min-h-11 items-center font-medium text-indigo-600 hover:underline">Ver viajes anteriores</a>
+                    · Todos los viajes, también las salidas armadas a mano de antes.
+                </p>
             </section>
         </div>
     </div>

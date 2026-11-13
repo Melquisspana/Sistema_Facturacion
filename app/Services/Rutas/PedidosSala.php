@@ -9,6 +9,7 @@ use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
 use App\Models\User;
+use App\Support\Dte\OrdenProductosOc;
 use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -37,10 +38,16 @@ class PedidosSala
         return PersonalRuta::where('user_id', $usuario->id)->where('activo', true)->first();
     }
 
-    /** Productos de facturación activos, para el formulario. */
+    /**
+     * Productos de facturación activos, para el formulario, en el orden de Facturación
+     * (12/11/2026, pedido del dueño): el de la orden de compra ({@see OrdenProductosOc}), el
+     * mismo del editor del CCF y del CCF emitido; lo que no está en ella, al final por nombre.
+     */
     public function productos(): Collection
     {
-        return Producto::query()->where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']);
+        return Producto::query()->where('activo', true)->get(['id', 'codigo', 'codigo_barra', 'nombre'])
+            ->sortBy(fn (Producto $p) => [OrdenProductosOc::rank($p->codigo_barra, $p->nombre), mb_strtoupper($p->nombre)])
+            ->values();
     }
 
     /**
