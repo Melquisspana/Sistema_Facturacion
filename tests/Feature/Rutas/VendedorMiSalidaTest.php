@@ -149,7 +149,9 @@ class VendedorMiSalidaTest extends TestCase
         $this->actingAs(User::factory()->create()->assignRole('facturacion'));
         $this->patch($url, ['resultado' => 'no_entregado'])->assertSessionHasErrors('motivo_no_entrega');
         $this->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro'])->assertSessionHasErrors('nota');
-        $this->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => 'Sin sistema'])->assertSessionHas('status');
+        // Quién fue: alguien de la salida que puede entregar (un vendedor activo).
+        $this->persona->funciones()->create(['funcion' => 'vendedor']);
+        $this->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => 'Sin sistema', 'entregado_por_id' => $this->persona->id])->assertSessionHas('status');
         $this->assertSame('Sin sistema', $entrega->refresh()->nota);
         $this->assertSame(OrigenRegistroEntrega::Oficina, $entrega->origen_registro);
     }

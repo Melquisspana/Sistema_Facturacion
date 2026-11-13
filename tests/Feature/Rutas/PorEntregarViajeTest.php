@@ -332,7 +332,7 @@ class PorEntregarViajeTest extends TestCase
         $this->assertSame(FormaCobroEntrega::Efectivo, $entrega->refresh()->forma_cobro);
         $this->assertSame('80.00', $entrega->monto_cobrado);
         // «No se pudo» no mueve dinero: no pide forma de pago.
-        app(EntregasCcf::class)->registrar($otra, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'], $this->ana, OrigenRegistroEntrega::Vendedor);
+        app(EntregasCcf::class)->registrar($otra, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada', 'entregado_por_id' => $this->personaAna->id], $this->ana, OrigenRegistroEntrega::Vendedor);
         $this->assertSame(ResultadoEntrega::NoEntregado, $otra->refresh()->resultado);
     }
 

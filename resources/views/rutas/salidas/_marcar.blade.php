@@ -3,7 +3,9 @@
 
      Recibe: $accion (URL), $metodo (PATCH o POST), $clave (id de la tarjeta; el formulario
      de «Entregado» se llama entregar-{clave}), $habitual (forma de pago del cliente),
-     $motivos, $entregadoPorId (quién entregó, si va fijo) y $textoNo.
+     $motivos, $entregadoPorId (quién entregó, si va fijo), $quienFue (la oficina con varias
+     personas: la pastilla elegida, que «No entregado» manda desde `quien` de Alpine; sin
+     JavaScript, la preselección) y $textoNo.
 
      Con $pidePago («Por entregar», 10/11/2026) se pregunta «¿Cómo te pagaron?» con las cuatro
      opciones a la vista y sin ninguna marcada: el servidor no deja entregar sin elegir. Con
@@ -16,6 +18,7 @@
 @php
     $metodo ??= 'PATCH';
     $entregadoPorId ??= null;
+    $quienFue ??= null;
     $textoNo ??= 'No entregado';
     $pidePago ??= false;
     $portal ??= false;
@@ -104,6 +107,10 @@
             @if ($quienes)
                 <input type="hidden" name="entregado_por_id" value="" x-bind:value="quien">
                 <p x-show="! quien" class="text-xs text-gray-600 dark:text-paper-300">Tocá quién lo entregó</p>
+            @elseif ($entregadoPorId)
+                <input type="hidden" name="entregado_por_id" value="{{ $entregadoPorId }}">
+            @elseif ($quienFue)
+                <input type="hidden" name="entregado_por_id" value="{{ $quienFue }}" x-bind:value="quien">
             @endif
             @foreach ($motivos as $valor => $texto)
                 @continue($valor === 'otro')
