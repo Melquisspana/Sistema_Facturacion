@@ -246,12 +246,51 @@ class OficinaCorrigePedidosTest extends TestCase
         // Dejar cada producto en lo que ya salió: lo que falta no se trae y el pedido queda mandado.
         $this->corregir($pedido, [$this->galleta->id => '4', $this->pan->id => '6'])->assertSessionHasNoErrors();
         $this->assertSame(EstadoPedidoSala::Parcial, $pedido->refresh()->estado);
-        $this->corregir($pedido, [$this->galleta->id => '4', $this->pan->id => '0'])
-            ->assertSessionHasErrors('cantidades.'.$this->linea($pedido, $this->pan));
 
         // Lo enviado no cambió.
         $this->assertSame(['4.0000'], $envio->lineas()->pluck('cantidad')->map(fn ($c) => (string) $c)->all());
         $this->assertTrue($envio->refresh()->estaVigente());
+    }
+
+    public function test_en_cero_se_quita_un_producto_que_no_se_mando_y_figura_en_la_auditoria(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->pan->id => '6']);
+        $this->mandar($pedido, [$this->galleta->id => '4']);
+
+        $this->corregir($pedido, [$this->galleta->id => '12', $this->pan->id => '0'])->assertSessionHasNoErrors();
+
+        $this->assertSame([$this->galleta->id], $pedido->lineas()->pluck('producto_id')->all());
+        // Sin el pan, solo falta galleta: sigue en parte.
+        $this->assertSame(EstadoPedidoSala::Parcial, $pedido->refresh()->estado);
+        $log = Activity::where('description', PedidosOficina::AUDITORIA_CORRIGE)->sole();
+        $antes = collect($log->properties['antes']['lineas'])->keyBy('producto_id');
+        $despues = collect($log->properties['despues']['lineas'])->keyBy('producto_id');
+        $this->assertSame('6.0000', $antes[$this->pan->id]['cantidad']);
+        $this->assertSame('0.0000', $despues[$this->pan->id]['cantidad']);
+        $this->assertSame('Pan de prueba', $despues[$this->pan->id]['producto']);
+    }
+
+    public function test_en_cero_no_se_deja_lo_que_ya_se_mando(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->pan->id => '6']);
+        $this->mandar($pedido, [$this->galleta->id => '4']);
+
+        $this->corregir($pedido, [$this->galleta->id => '0', $this->pan->id => '6'])
+            ->assertSessionHasErrors('cantidades.'.$this->linea($pedido, $this->galleta));
+
+        $this->assertSame('12.0000', (string) $pedido->lineas()->where('producto_id', $this->galleta->id)->value('cantidad'));
+        $this->assertSame(0, Activity::where('description', PedidosOficina::AUDITORIA_CORRIGE)->count());
+    }
+
+    public function test_todo_el_pedido_en_cero_pide_anular(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->pan->id => '6']);
+
+        $this->corregir($pedido, [$this->galleta->id => '0', $this->pan->id => '0'])
+            ->assertSessionHasErrors(['pedido' => PedidosOficina::TODO_EN_CERO]);
+
+        $this->assertSame(2, $pedido->lineas()->count());
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
     }
 
     public function test_al_dejar_solo_lo_mandado_el_pedido_queda_mandado(): void
@@ -269,7 +308,7 @@ class OficinaCorrigePedidosTest extends TestCase
         $pedido = $this->pedido([$this->galleta->id => '12']);
         $clave = 'cantidades.'.$this->linea($pedido, $this->galleta);
 
-        foreach (['100000', '1.23456', '-1', '1e3', 'diez', '0'] as $mala) {
+        foreach (['100000', '1.23456', '-1', '1e3', 'diez', ''] as $mala) {
             $this->corregir($pedido, [$this->galleta->id => $mala])->assertSessionHasErrors($clave);
         }
         $this->assertSame('12.0000', (string) $pedido->lineas()->value('cantidad'));

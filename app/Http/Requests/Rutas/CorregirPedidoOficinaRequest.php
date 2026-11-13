@@ -27,7 +27,8 @@ class CorregirPedidoOficinaRequest extends FormRequest
             'motivo' => ['required', 'string', 'max:500'],
             'cliente_sucursal_id' => ['nullable', 'integer'],
             'cantidades' => ['nullable', 'array', 'max:500'],
-            'cantidades.*' => ['required', 'numeric', 'regex:/^\d+(?:\.\d{1,4})?$/', 'gt:0', 'max:'.PedidoSala::CANTIDAD_MAXIMA],
+            // 0 quita un producto que no se mandó (13/11/2026); lo demás lo revisa PedidosOficina.
+            'cantidades.*' => ['required', 'numeric', 'regex:/^\d+(?:\.\d{1,4})?$/', 'min:0', 'max:'.PedidoSala::CANTIDAD_MAXIMA],
         ];
     }
 
@@ -39,10 +40,8 @@ class CorregirPedidoOficinaRequest extends FormRequest
             'motivo.required' => 'Escribí por qué se corrige.',
             'motivo.max' => 'El motivo puede tener hasta 500 caracteres.',
             'cliente_sucursal_id.*' => 'Elegí una sala de la lista.',
-            'cantidades.*.required' => 'Cada cantidad tiene que ser un número mayor que cero, con hasta 4 decimales.',
-            'cantidades.*.gt' => 'Cada cantidad tiene que ser mayor que cero.',
             'cantidades.*.max' => 'Cada cantidad puede ser hasta '.number_format(PedidoSala::CANTIDAD_MAXIMA).'.',
-            'cantidades.*.*' => 'Cada cantidad tiene que ser un número mayor que cero, con hasta 4 decimales.',
+            'cantidades.*.*' => 'Cada cantidad tiene que ser un número, con hasta 4 decimales. Para quitar un producto que no se mandó, poné 0.',
         ];
     }
 }

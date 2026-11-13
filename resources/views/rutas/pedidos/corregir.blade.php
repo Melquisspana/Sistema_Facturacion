@@ -88,7 +88,7 @@
                     <h2 id="productos-titulo" class="text-base font-semibold text-gray-800">Productos</h2>
                     <p class="mt-1 text-xs text-gray-500">
                         {{ $porMandar
-                            ? 'Cambiá lo que pide la sala. No puede quedar en menos de lo que ya se mandó. Para que no se traiga lo que falta, dejalo en lo mandado.'
+                            ? 'Cambiá lo que pide la sala. No puede quedar en menos de lo que ya se mandó. Para que no se traiga lo que falta, dejalo en lo mandado. Para quitar un producto que no se mandó, poné 0.'
                             : 'El pedido ya está cerrado: las cantidades ya no se corrigen. Sí se puede cambiar la sala.' }}
                     </p>
                     <ul class="mt-2 divide-y divide-gray-100">
@@ -102,7 +102,7 @@
                                 </label>
                                 @if ($porMandar)
                                     <input id="cantidad-{{ $linea->id }}" name="cantidades[{{ $linea->id }}]" type="number" inputmode="decimal"
-                                           min="{{ (float) $mandado > 0 ? (float) $mandado : '0.0001' }}" max="{{ \App\Models\PedidoSala::CANTIDAD_MAXIMA }}" step="any" required
+                                           min="{{ (float) $mandado }}" max="{{ \App\Models\PedidoSala::CANTIDAD_MAXIMA }}" step="any" required
                                            value="{{ old('cantidades.'.$linea->id, (float) $linea->cantidad) }}"
                                            class="min-h-11 w-28 shrink-0 rounded-md border-gray-300 text-right text-sm tabular-nums">
                                 @else

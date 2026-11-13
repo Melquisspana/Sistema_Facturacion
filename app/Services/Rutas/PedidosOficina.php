@@ -7,6 +7,7 @@ use App\Enums\EstadoPedidoSala;
 use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
+use App\Models\PedidoSalaEnvioLinea;
 use App\Models\PedidoSalaLinea;
 use App\Models\User;
 use App\Policies\PedidoSalaPolicy;
@@ -21,7 +22,7 @@ use Illuminate\Validation\ValidationException;
  *
  *  - Corregir: la sala (si el vendedor se equivocó; la nueva pasa las reglas de sacar pedido)
  *    y las cantidades mientras el pedido siga por mandar. Lo ya mandado no se toca y ninguna
- *    cantidad baja de lo que ya salió. Dejar cada producto en lo mandado es «lo que falta no
+ *    cantidad baja de lo que ya salió; en 0, sale del pedido lo que no se mandó. Dejar cada producto en lo mandado es «lo que falta no
  *    se trae»: el pedido queda mandado.
  *  - Anular: solo sin envíos vigentes. Con algo ya mandado, se corrige lo que falta.
  *  - Nunca si ya se facturó (un CCF de alguno de sus envíos): va por nota de crédito.
@@ -40,6 +41,8 @@ class PedidosOficina
     public const EN_BORRADOR = 'Este pedido ya tiene un CCF en borrador. Eliminá el borrador antes de corregirlo.';
 
     public const CON_ENVIO = 'Ya salió una parte de este pedido: no se anula. Para que no se traiga lo que falta, tocá «Corregir» y dejá cada producto en lo que ya se mandó.';
+
+    public const TODO_EN_CERO = 'Así el pedido queda sin nada. Para eso tocá «Anular» y escribí el motivo.';
 
     public const AUDITORIA_CORRIGE = 'la oficina corrigió el pedido';
 
@@ -79,10 +82,12 @@ class PedidosOficina
                 $this->exigirSalaParaPedido($pedido, $salaNueva, $sinPedidos);
                 $pedido->update(['cliente_sucursal_id' => $salaNueva->id, 'ruta_id' => $this->viajes->zona($salaNueva)?->id]);
             }
-            $this->corregirCantidades($pedido, $datos['cantidades'] ?? []);
+            $quitadas = $this->corregirCantidades($pedido, $datos['cantidades'] ?? []);
 
             $pedido->refresh()->load(['sala:id,nombre', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre']);
             $despues = $this->foto($pedido);
+            // Lo que se quitó también figura en el después, en 0.
+            $despues['lineas'] = [...$despues['lineas'], ...$quitadas];
             if ($antes === $despues) {
                 throw ValidationException::withMessages(['pedido' => 'No cambiaste nada: elegí otra sala o cambiá alguna cantidad.']);
             }
@@ -183,12 +188,15 @@ class PedidosOficina
 
     /**
      * Las cantidades nuevas, por línea. Solo con el pedido por mandar, nunca por debajo de lo
-     * ya mandado. Lo marcado por la PC de pedidos que ya no entra baja a lo que falta, y el
-     * estado sigue la regla de {@see PedidosFabrica}: sin nada por mandar, queda mandado.
+     * ya mandado: 0 solo en lo que no salió nada (el producto anotado de más, 13/11/2026), y
+     * no todo el pedido en 0 (eso es «Anular»). Lo marcado por la PC de pedidos que ya no
+     * entra baja a lo que falta, y el estado sigue la regla de {@see PedidosFabrica}: sin nada
+     * por mandar, queda mandado. Devuelve lo quitado, para el después de la auditoría.
      *
      * @param  array<int|string, string>  $cantidades
+     * @return list<array{producto_id: int, producto: ?string, cantidad: string}>
      */
-    private function corregirCantidades(PedidoSala $pedido, array $cantidades): void
+    private function corregirCantidades(PedidoSala $pedido, array $cantidades): array
     {
         $ids = $pedido->lineas->modelKeys();
         foreach (array_keys($cantidades) as $id) {
@@ -218,11 +226,25 @@ class PedidosOficina
             throw ValidationException::withMessages($errores);
         }
         if ($cambiadas === []) {
-            return;
+            return [];
+        }
+        $nuevas = collect($cambiadas)->mapWithKeys(fn (array $c) => [$c[0]->id => $c[1]]);
+        $total = $pedido->lineas->reduce(fn (string $s, PedidoSalaLinea $l) => bcadd($s, $nuevas[$l->id] ?? (string) $l->cantidad, 4), '0');
+        if (bccomp($total, '0', 4) === 0) {
+            throw ValidationException::withMessages(['pedido' => self::TODO_EN_CERO]);
         }
 
+        $quitadas = [];
         foreach ($cambiadas as [$linea, $nueva]) {
             $linea->cantidad = $nueva;
+            // En 0 (solo llega si no se mandó nada): el producto sale del pedido. Si un envío
+            // ya deshecho lo nombra, la fila queda en 0: ese envío sigue diciendo qué llevó.
+            if (bccomp($nueva, '0', 4) === 0 && ! PedidoSalaEnvioLinea::where('pedido_sala_linea_id', $linea->id)->exists()) {
+                $quitadas[] = ['producto_id' => $linea->producto_id, 'producto' => $linea->producto?->nombre, 'cantidad' => '0.0000'];
+                $linea->delete();
+
+                continue;
+            }
             $pendiente = $linea->pendiente();
             $linea->update([
                 'cantidad' => $nueva,
@@ -233,6 +255,8 @@ class PedidosOficina
         if ($pedido->envios->whereNull('anulado_en')->isNotEmpty()) {
             $pedido->update(['estado' => $pedido->faltaAlgo() ? EstadoPedidoSala::Parcial : EstadoPedidoSala::Enviado]);
         }
+
+        return $quitadas;
     }
 
     /**
