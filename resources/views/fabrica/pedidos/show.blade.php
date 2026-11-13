@@ -17,11 +17,11 @@
      avisa), y cerrar o recargar la pestaña con algo sin guardar o en vuelo pide
      confirmación del navegador.
 
-     En monitor (lg, 1024 px o más; 12/11/2026): la hoja usa el ancho (max-w-7xl), los datos
-     de la sala van en una franja de una línea y cada producto es UN renglón de la grilla:
-     nombre y código | «Pidió» | «Va», «Todo», «Nada»; «Por qué no va» abajo, solo si
-     hace falta. Debajo de lg se ve como antes, uno abajo del otro (entre 768 y 1023 px la
-     hoja ahora llega a todo el ancho: no hay `lg:max-w-*` en el CSS de producción). --}}
+     En monitor (12/11/2026): la hoja usa todo el ancho (max-w-full), los datos de la sala
+     van en una franja de una línea y cada producto es un renglón de dos mitades (lg):
+     nombre, código y «Pidió» | «Va», «Todo», «Nada»; «Por qué no va» abajo, solo si hace
+     falta. Desde xl los renglones van en dos columnas: un pedido de 12 se ve casi entero
+     en 1600×900 sin bajar. Debajo de lg se ve como antes, uno abajo del otro. --}}
 <x-app-layout :pantalla-completa="true">
     @php
         $faltan = $pedido->lineas->filter->tienePendiente();
@@ -33,7 +33,7 @@
     @endphp
 
     <div class="py-6 sm:py-8">
-        <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
+        <div class="max-w-full mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
              x-data="{
                  enviando: false, saliendo: false, sucio: false, guardando: false, cerrando: false, cola: Promise.resolve(),
                  estado: '', error: false, aviso: false, espera: null,
@@ -164,7 +164,8 @@
                 <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
 
                 <div class="rounded-lg border border-gray-200 bg-white">
-                    <ul class="divide-y divide-gray-100">
+                    {{-- En monitor (xl), dos columnas de renglones: un pedido de 12 entra sin bajar. --}}
+                    <ul class="grid grid-cols-1 gap-x-6 xl:grid-cols-2">
                         @foreach ($faltan as $linea)
                             @php
                                 $pendiente = \App\Models\PedidoSalaLinea::legible($linea->pendiente());
@@ -179,17 +180,20 @@
                                 }
                                 $mandado = $linea->mandado();
                             @endphp
-                            <li class="items-center p-4 sm:p-5 lg:grid lg:grid-cols-12 lg:gap-3 lg:p-4" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
-                                <p class="min-w-0 text-xl font-semibold text-gray-800 lg:col-span-5">
-                                    {{ $linea->producto?->nombre }}
-                                    @if ($linea->producto?->codigo)
-                                        <span class="ms-1 font-mono text-sm font-normal text-gray-500">{{ $linea->producto->codigo }}</span>
-                                    @endif
-                                </p>
-                                <p class="mt-0.5 text-sm text-gray-500 lg:col-span-2 lg:mt-0">
-                                    Pidió {{ $linea->cantidadLegible() }}{{ bccomp($mandado, '0', 4) === 1 ? ' · ya salió '.\App\Models\PedidoSalaLinea::legible($mandado) : '' }}
-                                </p>
-                                <div class="mt-3 flex flex-wrap items-center gap-3 lg:col-span-5 lg:mt-0">
+                            {{-- En monitor, dos mitades: el producto con lo que pidió | Va, Todo y Nada en una sola línea. --}}
+                            <li class="items-center border-b border-gray-100 p-4 sm:p-5 lg:grid lg:grid-cols-2 lg:gap-3 lg:p-4" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
+                                <div class="min-w-0">
+                                    <p class="text-xl font-semibold text-gray-800">
+                                        {{ $linea->producto?->nombre }}
+                                        @if ($linea->producto?->codigo)
+                                            <span class="ms-1 font-mono text-sm font-normal text-gray-500">{{ $linea->producto->codigo }}</span>
+                                        @endif
+                                    </p>
+                                    <p class="mt-0.5 text-base text-gray-600 lg:font-semibold">
+                                        Pidió {{ $linea->cantidadLegible() }}{{ bccomp($mandado, '0', 4) === 1 ? ' · ya salió '.\App\Models\PedidoSalaLinea::legible($mandado) : '' }}
+                                    </p>
+                                </div>
+                                <div class="mt-3 flex flex-wrap items-center gap-2 lg:mt-0">
                                     <label for="va-{{ $linea->id }}" class="text-lg font-semibold text-gray-700">Va<span class="sr-only"> de {{ $linea->producto?->nombre }}</span></label>
                                     <input id="va-{{ $linea->id }}" name="cantidades[{{ $linea->id }}]" x-model="va" value="{{ $va }}"
                                            inputmode="decimal" autocomplete="off"
@@ -199,8 +203,8 @@
                                     <button type="button" @click="va = '0'; $nextTick(() => guardar())"
                                             class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Nada</button>
                                 </div>
-                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1 lg:col-span-12 lg:mt-0" />
-                                <div class="mt-3 lg:col-span-12 lg:mt-0" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
+                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1 lg:col-span-2 lg:mt-0" />
+                                <div class="mt-3 lg:col-span-2 lg:mt-0" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
                                     <label for="motivo-{{ $linea->id }}" class="block text-sm font-medium text-gray-700">Por qué no va (opcional)</label>
                                     <input id="motivo-{{ $linea->id }}" name="motivos[{{ $linea->id }}]" maxlength="200" autocomplete="off"
                                            value="{{ $motivo }}"

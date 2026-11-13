@@ -362,8 +362,8 @@ class PantallaFabricaTest extends TestCase
 
         // Un renglón por producto: nombre y código | Pidió | Va, Todo, Nada; el motivo abajo.
         $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
-            ->assertSee('max-w-7xl mx-auto', false)
-            ->assertSee('lg:grid lg:grid-cols-12', false)
+            ->assertSee('max-w-full mx-auto', false)
+            ->assertSee('lg:grid lg:grid-cols-2', false)->assertSee('xl:grid-cols-2', false)
             ->assertSeeInOrder(['Galleta de prueba', 'G01', 'Pidió 12', 'Va', 'Todo', 'Nada', 'Por qué no va'])
             ->assertSee('sm:grid-cols-2 lg:grid-cols-6', false);
 
