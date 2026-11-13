@@ -38,7 +38,7 @@
         <div class="min-w-0">
             <h2 class="text-base font-semibold text-gray-800">{{ $pedido->nombreSala() }}</h2>
             <p class="text-sm text-gray-600">
-                {{ $pedido->sala?->codigo ? 'Código '.$pedido->sala->codigo.' · ' : '' }}{{ $pedido->ruta?->nombre ?? 'Sin zona' }}
+                {{ $pedido->sala?->codigo ? 'Código '.$pedido->sala->codigo.' · ' : '' }}{{ $pedido->zonaNombre() }}
             </p>
         </div>
         <div class="flex shrink-0 flex-wrap gap-2">

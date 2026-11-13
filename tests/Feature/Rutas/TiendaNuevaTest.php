@@ -3,6 +3,8 @@
 namespace Tests\Feature\Rutas;
 
 use App\Enums\EstadoPedidoSala;
+use App\Enums\EstadoSalidaRuta;
+use App\Enums\PropositoSalida;
 use App\Enums\RolSistema;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
@@ -436,5 +438,25 @@ class TiendaNuevaTest extends TestCase
             ->assertSee('Si no es ninguna, seguí abajo: se guarda como tienda nueva.');
         $this->get(route('rutas.sacar-pedido.tienda-nueva.create', ['nombre' => 'Tienda Zapote']))->assertOk()
             ->assertDontSee('¿Es alguna de estas?');
+    }
+
+    public function test_facturacion_y_pedidos_muestran_la_zona_del_viaje_de_la_tienda_nueva(): void
+    {
+        // La tienda nueva se guarda sin zona propia: se muestra la del viaje en que se sacó.
+        $viaje = SalidaRuta::create([
+            'ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-09', 'estado' => EstadoSalidaRuta::EnCurso,
+            'proposito' => PropositoSalida::Ambos, 'automatica' => true, 'suma_pedidos' => true, 'created_by' => $this->vendedor->id,
+        ]);
+        $pedido = $this->pedidoConEnvio();
+        $pedido->update(['salida_ruta_id' => $viaje->id]);
+
+        $this->actingAs($this->oficina);
+        $this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']))->assertOk()->assertSee('Ruta de prueba')->assertDontSee('Sin zona');
+        $this->get(route('facturacion.pedidos.tienda', $pedido))->assertOk()->assertSee('Ruta de prueba')->assertDontSee('Sin zona');
+        $this->get(route('rutas.pedidos.index'))->assertOk()->assertSee('Ruta de prueba')->assertDontSee('Sin zona');
+        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Ruta de prueba')->assertDontSee('Sin zona');
+        $this->get(route('rutas.pedidos.hoja', $pedido))->assertOk()->assertSee('<span class="k">Zona:</span> Ruta de prueba', false);
+
+        $this->assertNull($pedido->refresh()->ruta_id);
     }
 }

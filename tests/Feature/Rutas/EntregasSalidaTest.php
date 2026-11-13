@@ -237,6 +237,7 @@ class EntregasSalidaTest extends TestCase
         $this->servicio()->registrar($primera->entregas()->sole(), [
             'resultado' => 'no_entregado',
             'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value,
+            'entregado_por_id' => $this->carlos->id,
         ], null, OrigenRegistroEntrega::Oficina);
         $primera->finalizar();
 
@@ -278,7 +279,7 @@ class EntregasSalidaTest extends TestCase
         $salida = $this->salida();
         $this->cargarCcfDeLaRuta($salida);
         $entrega = $salida->entregas()->sole();
-        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
+        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value, 'entregado_por_id' => $this->carlos->id], null, OrigenRegistroEntrega::Oficina);
         $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
         $datos = ['resultado' => 'entregado', 'entregado_por_id' => $this->carlos->id];
         $this->actingAs($this->admin())->patch($url, $datos)->assertSessionHasErrors('entrega');
@@ -306,7 +307,7 @@ class EntregasSalidaTest extends TestCase
         $primera = $this->salida();
         $this->cargarCcfDeLaRuta($primera);
         $entrega = $primera->entregas()->sole();
-        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
+        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value, 'entregado_por_id' => $this->carlos->id], null, OrigenRegistroEntrega::Oficina);
         $segunda = $this->salida(EstadoSalidaRuta::Planificada);
         $this->cargarCcfDeLaRuta($segunda);
         $segunda->update(['estado' => EstadoSalidaRuta::EnCurso]);
@@ -324,7 +325,7 @@ class EntregasSalidaTest extends TestCase
         $primera = $this->salida();
         $this->cargarCcfDeLaRuta($primera);
         $entrega = $primera->entregas()->sole();
-        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
+        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value, 'entregado_por_id' => $this->carlos->id], null, OrigenRegistroEntrega::Oficina);
         $this->cargarCcfDeLaRuta($this->salida(EstadoSalidaRuta::Planificada));
         $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.deshacer', [$primera, $entrega]))
             ->assertSessionHasErrors(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
@@ -374,14 +375,31 @@ class EntregasSalidaTest extends TestCase
         $this->actingAs($admin)->patch($url, ['resultado' => 'no_entregado'])->assertSessionHasErrors('motivo_no_entrega');
         $this->actingAs($admin)->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro'])->assertSessionHasErrors('nota');
 
+        // Sin quién fue (o alguien que no va en la salida), la oficina tampoco lo guarda (12/11/2026).
+        foreach ([[], ['entregado_por_id' => ''], ['entregado_por_id' => PersonalRuta::create(['nombre' => 'Ajeno'])->id]] as $quien) {
+            $this->actingAs($admin)->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'] + $quien)
+                ->assertSessionHasErrors(['entregado_por_id' => 'Elegí quién fue entre las personas que van en la salida.']);
+        }
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+
+        // El formulario de «No entregado» de la oficina manda quién fue (la preselección).
+        $this->assertMatchesRegularExpression('/name="resultado" value="no_entregado">\s*<input type="hidden" name="entregado_por_id" value="'.$this->carlos->id.'">/',
+            $this->actingAs($admin)->get(route('rutas.salidas.show', $salida))->assertOk()->getContent());
+        // Con varias personas, la pastilla elegida (la preselección, sin JavaScript).
+        $beto = $this->vendedor('Beto');
+        SalidaDePrueba::participantes($salida, [$this->carlos->id, $beto->id], $beto->id);
+        $this->assertMatchesRegularExpression('/name="resultado" value="no_entregado">\s*<input type="hidden" name="entregado_por_id" value="'.$beto->id.'" x-bind:value="quien">/',
+            $this->actingAs($admin)->get(route('rutas.salidas.show', $salida))->assertOk()->getContent());
+
         $this->actingAs($admin)
-            ->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => 'Se cayó el sistema de la sala'])
+            ->patch($url, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => 'Se cayó el sistema de la sala', 'entregado_por_id' => $this->carlos->id])
             ->assertSessionHas('status');
 
         $entrega->refresh();
         $this->assertSame(ResultadoEntrega::NoEntregado, $entrega->resultado);
         $this->assertSame(OrigenRegistroEntrega::Oficina, $entrega->origen_registro);
         $this->assertSame($admin->id, $entrega->registrado_por);
+        $this->assertSame($this->carlos->id, $entrega->entregado_por_id);
     }
 
     public function test_entregado_exige_que_lo_entregue_alguien_de_la_salida(): void

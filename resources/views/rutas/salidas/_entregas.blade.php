@@ -134,15 +134,17 @@
             @endif
 
             {{-- Por marcar: quién lo entregó y «Entregado» o «No entregado». Las pastillas
-                 son del formulario de «Entregado» (atributo form). --}}
+                 son del formulario de «Entregado» (atributo form); «No entregado» manda la
+                 misma elección (Alpine, `quien`), porque también dice quién fue. --}}
             @if ($puedeMarcar && $entrega->estaPendiente() && ! $albaran && ! isset($noVigentes[$entrega->dte_id]))
+                <div x-data="{ quien: @js((string) $quien) }">
                 @if ($participantes->count() > 1)
                     <fieldset class="mt-3">
                         <legend class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quién lo entregó?</legend>
                         <div class="mt-1.5 flex flex-wrap gap-2">
                             @foreach ($participantes as $p)
                                 <label class="cursor-pointer">
-                                    <input type="radio" form="entregar-{{ $entrega->id }}" name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="peer sr-only" @checked($p->rutas_personal_id === $quien)>
+                                    <input type="radio" form="entregar-{{ $entrega->id }}" name="entregado_por_id" value="{{ $p->rutas_personal_id }}" x-model="quien" class="peer sr-only" @checked($p->rutas_personal_id === $quien)>
                                     <span title="{{ $p->personal->nombre }}" class="{{ $pastilla }} peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-600">{{ $p->personal->nombreCorto() }}</span>
                                 </label>
                             @endforeach
@@ -154,7 +156,9 @@
                     'clave' => $entrega->id,
                     'habitual' => $entrega->dte?->cliente?->cobro_en_entrega,
                     'entregadoPorId' => $participantes->count() === 1 ? $participantes->first()->rutas_personal_id : null,
+                    'quienFue' => $quien,
                 ])
+                </div>
             @endif
 
             @if ($puedeGestionar && $entrega->estaPendiente() && $abierta)

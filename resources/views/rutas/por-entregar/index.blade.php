@@ -89,9 +89,10 @@
                     @endif
                     @foreach ($noVino as $linea)
                         @php
-                            $cajas = \App\Models\PedidoSalaLinea::legible($linea->pendiente());
+                            // Con la unidad del producto («12 u»); sin abreviatura, solo el número.
+                            $unidad = $linea->producto?->unidadMedida?->abreviatura;
                         @endphp
-                        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">No vino: {{ $cajas }} {{ $cajas === '1' ? 'caja' : 'cajas' }} de {{ $linea->producto?->nombre }}</p>
+                        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">No vino: {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}{{ $unidad ? ' '.$unidad : '' }} de {{ $linea->producto?->nombre }}</p>
                     @endforeach
                     @if (($fallas[$dte->id] ?? 0) >= \App\Services\Rutas\EntregasCcf::FALLAS_AVISO)
                         <p class="mt-1 text-sm font-medium text-red-700 dark:text-red-300">No se pudo entregar {{ $fallas[$dte->id] }} veces. El jefe ya lo ve en su tablero.</p>
@@ -136,7 +137,6 @@
                             'pidePago' => true,
                             'portal' => $portal !== null && (int) $dte->cliente_id === $portal,
                             'quienes' => $quienes,
-                            'quienElegido' => $persona->id,
                         ])
                     @endif
                 </div>
@@ -150,7 +150,7 @@
         <section aria-labelledby="sin-quien">
             <h2 id="sin-quien" class="mt-8 text-xl font-semibold">Llegó el albarán: falta quién lo entregó</h2>
             @foreach ($sinQuien as $dte)
-                <div class="{{ $caja }} mt-3 px-4 py-3" x-data="{ quien: @js((string) $persona->id), nombres: @js($quienes->pluck('nombre', 'id')) }">
+                <div class="{{ $caja }} mt-3 px-4 py-3" x-data="{ quien: '' }">
                     <h3 class="text-lg font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</h3>
                     <div class="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                         <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $dte->numero_control }}">
@@ -161,12 +161,12 @@
                         <p class="text-sm font-semibold text-gray-800 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</p>
                     </div>
                     <p class="mt-1 text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado: llegó el albarán</p>
-                    @include('rutas.por-entregar._quien', ['clave' => 'albaran-'.$dte->id, 'quienElegido' => $persona->id])
+                    @include('rutas.por-entregar._quien', ['clave' => 'albaran-'.$dte->id])
                     <form method="POST" action="{{ route('rutas.por-entregar.marcar', $dte) }}" class="mt-2">
                         @csrf
                         <input type="hidden" name="resultado" value="entregado">
-                        <input type="hidden" name="entregado_por_id" value="{{ $persona->id }}" x-bind:value="quien">
-                        <button class="min-h-11 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Anotar quién lo entregó</button>
+                        <input type="hidden" name="entregado_por_id" value="" x-bind:value="quien">
+                        <button disabled x-bind:disabled="! quien" class="min-h-11 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:cursor-not-allowed disabled:opacity-50">Anotar quién lo entregó</button>
                     </form>
                 </div>
             @endforeach
@@ -210,8 +210,10 @@
                     @if ($entrega->entregadoPor)
                         @php
                             $albaranDe = $albaranMarcados[$entrega->dte_id] ?? null;
+                            // «No se pudo» no entregó nada: no espera albarán; solo dice quién fue.
+                            $entregado = $entrega->resultado === \App\Enums\ResultadoEntrega::Entregado;
                         @endphp
-                        <p class="mt-1 text-sm text-gray-700 dark:text-paper-100">{{ $entrega->resultado === \App\Enums\ResultadoEntrega::Entregado ? 'Entregó' : 'Fue' }}: {{ $entrega->entregadoPor->nombre }}{{ $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
+                        <p class="mt-1 text-sm text-gray-700 dark:text-paper-100">{{ $entregado ? 'Entregó' : 'Fue' }}: {{ $entrega->entregadoPor->nombre }}{{ ! $entregado || $albaranDe === null ? '' : ($albaranDe->estaVinculado() ? ' · llegó el albarán' : ' · esperando albarán') }}</p>
                     @endif
                 </div>
             @endforeach

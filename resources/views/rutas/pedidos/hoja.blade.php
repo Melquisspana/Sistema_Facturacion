@@ -156,9 +156,10 @@
                 <div class="sec-h">Sala de entrega</div>
                 <div class="sec-b">
                     <div class="rec-name">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</div>
-                    {{-- La zona de la sala; si no tiene, no va (antes decía «Ruta: Sin ruta»). --}}
-                    @if ($pedido->ruta)
-                        <div class="f-dato"><span class="k">Zona:</span> {{ $pedido->ruta->nombre }}</div>
+                    {{-- La zona de la sala o, en la tienda nueva, la del viaje; si no hay, no va
+                         (antes decía «Ruta: Sin ruta»). --}}
+                    @if ($pedido->zonaNombre() !== 'Sin zona')
+                        <div class="f-dato"><span class="k">Zona:</span> {{ $pedido->zonaNombre() }}</div>
                     @endif
                     <div class="f-dato"><span class="k">Estado:</span> <span class="insignia insignia-{{ $estado->color() }}">{{ $estado->label() }}</span></div>
                 </div>
