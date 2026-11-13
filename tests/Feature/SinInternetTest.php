@@ -89,7 +89,8 @@ class SinInternetTest extends TestCase
         $this->assertStringContainsString('await cleanup()', $html);
         $this->assertStringContainsString('HTMLFormElement.prototype.submit.call(form)', $html);
         $navigation = file_get_contents(resource_path('views/layouts/navigation.blade.php'));
-        $this->assertSame(2, substr_count($navigation, "this.closest('form').requestSubmit()"));
+        // Un solo «Salir» en el menú (13/11/2026); /logout-completo queda para enlaces viejos.
+        $this->assertSame(1, substr_count($navigation, "this.closest('form').requestSubmit()"));
     }
 
     public function test_worker_only_caches_offline_page_and_handles_specified_navigations(): void

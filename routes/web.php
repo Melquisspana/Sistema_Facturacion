@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\ImportacionController;
 use App\Http\Controllers\Admin\SaludSistemaController;
 use App\Http\Controllers\Auditoria\AuditoriaController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Clientes\ClienteController;
 use App\Http\Controllers\Clientes\ClienteExportacionController;
 use App\Http\Controllers\Clientes\ClientePerfilDocumentoController;
@@ -51,13 +52,10 @@ use App\Http\Controllers\Productos\ProductoController;
 use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SinInternetController;
-use App\Http\Middleware\CloudflareAccessSso;
 use App\Http\Middleware\ContingenciaHabilitada;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionProducto;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 // Raíz: nunca la página de bienvenida de Breeze. Invitado -> login; autenticado
@@ -71,21 +69,10 @@ Route::get('/', function () {
 Route::get('/sin-internet', SinInternetController::class)
     ->middleware(['auth', ContingenciaHabilitada::class])->name('sin-internet');
 
-// Cierre de sesión COMPLETO (Laravel + Cloudflare Access): cierra la sesión local
-// igual que el logout normal y redirige al endpoint de logout de Access del MISMO
-// host, que invalida la cookie de Cloudflare. En hosts locales (sin Access) esa
-// ruta no existe en el edge, por eso el enlace solo se muestra en el dominio
-// público (ver layouts/navigation). El logout local normal queda intacto.
-Route::post('/logout-completo', function (Request $request) {
-    Auth::guard('web')->logout();
-    $request->session()->invalidate();
-    $request->session()->regenerateToken();
-
-    // Igual que el logout normal: «atrás» no muestra páginas guardadas después de salir, y
-    // la marca de «salió» evita que Access vuelva a abrir la sesión sola (CloudflareAccessSso).
-    return redirect('/cdn-cgi/access/logout')->header('Clear-Site-Data', '"cache"')
-        ->withCookie(CloudflareAccessSso::marcaSalida());
-})->middleware('auth')->name('logout.completo');
+// Hay un solo «Salir» (13/11/2026) y ya cierra también Cloudflare Access cuando el pedido vino
+// por Access. Esta ruta queda para enlaces y pestañas viejas y hace exactamente lo mismo.
+Route::post('/logout-completo', [AuthenticatedSessionController::class, 'destroy'])
+    ->middleware('auth')->name('logout.completo');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'area.principal'])->name('dashboard');
 
