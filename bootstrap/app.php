@@ -18,10 +18,12 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -109,6 +111,30 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return back()->withErrors(['punto_venta_id' => $e->getMessage()]);
+        });
+
+        // Sesión vencida a media tarea (419: el token del formulario ya no vale). En vez de la
+        // página «419» y perder lo escrito (un pedido entero en el celular), vuelve al
+        // formulario con lo escrito y el aviso; no se guarda nada. Solo si el envío salió de
+        // una página de este mismo sitio (Origin, o el Referer si no viene): otro sitio no
+        // puede dejar datos escritos en el formulario de nadie. Por fetch, sigue el 419.
+        // Sin las contraseñas. Sin Cloudflare Access, el login pide entrar de nuevo y lo
+        // escrito se pierde igual que antes.
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 419 || ! $e->getPrevious() instanceof TokenMismatchException || $request->expectsJson()) {
+                return null;
+            }
+            $propio = fn (?string $url) => is_string($url) && $url !== ''
+                && strcasecmp((string) parse_url($url, PHP_URL_HOST), $request->getHost()) === 0;
+            $volver = $request->headers->get('referer');
+            $origen = $request->headers->get('origin');
+            if (! $propio($volver) || ($origen !== null && ! $propio($origen))) {
+                return null;
+            }
+
+            return redirect()->to($volver)
+                ->withInput($request->except(['_token', '_method', 'password', 'password_confirmation', 'current_password']))
+                ->with('error', 'Tu sesión había vencido y no se guardó nada. Revisá lo que escribiste y volvé a tocar el botón.');
         });
 
         // Guardar configuración durante la ventana de un despliegue a medias (código
