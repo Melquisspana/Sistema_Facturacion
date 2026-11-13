@@ -459,10 +459,10 @@ class PedidosFabrica
     }
 
     /**
-     * El n.º del envío que corrige este, o null. Se guarda en la auditoría del envío al
-     * mandarlo (`corrige_numero`), sin columna propia.
+     * El envío (anulado) que corrige este, o null. Se guarda en la auditoría del envío al
+     * mandarlo (`corrige_envio_id`), sin columna propia. La hoja lo nombra por su hora.
      */
-    public function corrigeA(PedidoSala $pedido, PedidoSalaEnvio $envio): ?int
+    public function corrigeA(PedidoSala $pedido, PedidoSalaEnvio $envio): ?PedidoSalaEnvio
     {
         $mando = Activity::query()
             ->where('subject_type', $pedido->getMorphClass())->where('subject_id', $pedido->id)
@@ -470,7 +470,9 @@ class PedidosFabrica
             ->orderByDesc('id')->get(['id', 'properties'])
             ->first(fn (Activity $a) => (int) $a->properties['envio_id'] === $envio->id);
 
-        return isset($mando?->properties['corrige_numero']) ? (int) $mando->properties['corrige_numero'] : null;
+        return isset($mando?->properties['corrige_envio_id'])
+            ? $pedido->envios()->whereKey((int) $mando->properties['corrige_envio_id'])->first()
+            : null;
     }
 
     /**

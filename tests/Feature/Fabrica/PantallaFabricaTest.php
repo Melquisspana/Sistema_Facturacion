@@ -246,7 +246,11 @@ class PantallaFabricaTest extends TestCase
         $envio = PedidoSalaEnvio::sole();
 
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $envio]))->assertOk()
-            ->assertSee(NombreEmpresa::actual())->assertSee('Envío 1')
+            ->assertSee(NombreEmpresa::actual())
+            // Como un CCF pero que no se confunda, y sin número de envío.
+            ->assertSee('<title>Hoja de despacho · Súper Ficticio Centro</title>', false)
+            ->assertSeeInOrder(['HOJA DE DESPACHO', 'No es factura · Sin valor tributario'])
+            ->assertDontSee('Envío 1')->assertDontSee('envío n.º')->assertDontSee('Envío de la fábrica')
             ->assertSee('Súper Ficticio Centro')->assertSee('Calle de Prueba 123')->assertSee('Ruta Inventada')->assertSee('OC-555')
             ->assertSee('Carlos Inventado')->assertSee('09/11/2026 09:00')
             ->assertSeeInOrder(['Lo que va', 'G01', 'Galleta de prueba', '24', 'Queda pendiente', 'C01', 'Canilla de prueba', '6', 'No salió del horno'])
@@ -260,7 +264,9 @@ class PantallaFabricaTest extends TestCase
         $segundo = $otro->envios()->sole();
         $this->get(route('fabrica.pedidos.imprimir', [$otro, $segundo]))->assertOk()
             ->assertSeeInOrder(['Lo que va', 'Galleta de prueba', '3', 'No va', 'Galleta de prueba', '2', 'Canilla de prueba', '2', 'Sin canillas'])
-            ->assertDontSee('Queda pendiente');
+            ->assertDontSee('Queda pendiente')
+            // Sin orden de compra, el campo no aparece.
+            ->assertDontSee('Orden de compra')->assertDontSee('Sin OC');
     }
 
     public function test_la_reimpresion_de_un_envio_anterior_lo_muestra_como_salio(): void

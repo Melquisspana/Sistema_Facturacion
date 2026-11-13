@@ -224,14 +224,17 @@ class CorregirEnvioTest extends TestCase
         $pedido = $this->pedido([$this->galleta->id => '10']);
         $this->mandar($pedido, [$this->galleta->id => '4'], ['sigue' => '1'])->assertSessionHasNoErrors();
         $primero = PedidoSalaEnvio::sole();
-        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $primero]))->assertOk()->assertDontSee('Corrige al envío');
+        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $primero]))->assertOk()->assertDontSee('Corrige la hoja');
 
+        // Sin números de envío en la hoja: la corrección se nombra por la hora de la anulada.
+        $this->travelTo('2026-11-09 09:20:00');
         $this->corregir($pedido, $primero)->assertSessionHasNoErrors();
         $this->mandar($pedido, [$this->galleta->id => '5'], ['sigue' => '1'])->assertSessionHasNoErrors();
         $segundo = $pedido->envios()->where('numero', 2)->sole();
 
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $segundo]))->assertOk()
-            ->assertSeeInOrder(['Corrige al envío N.º 1', 'Lo que va', 'Galleta de prueba', '5']);
+            ->assertSeeInOrder(['Corrige la hoja de las 09:00', 'Lo que va', 'Galleta de prueba', '5'])
+            ->assertSee('09/11/2026 09:20')->assertDontSee('Corrige al envío');
         $mando = Activity::where('description', PedidosFabrica::AUDITORIA_PARTE)->where('properties->envio_id', $segundo->id)->sole();
         $this->assertSame($primero->id, $mando->properties['corrige_envio_id']);
         $this->assertSame(1, $mando->properties['corrige_numero']);
@@ -240,7 +243,7 @@ class CorregirEnvioTest extends TestCase
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $primero]))->assertNotFound();
         $this->mandar($pedido, [$this->galleta->id => '5'])->assertSessionHasNoErrors();
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 3)->sole()]))->assertOk()
-            ->assertDontSee('Corrige al envío');
+            ->assertDontSee('Corrige la hoja');
     }
 
     public function test_borrar_lo_marcado_despues_de_corregir_corta_la_correccion(): void
@@ -253,7 +256,7 @@ class CorregirEnvioTest extends TestCase
         $this->mandar($pedido, [$this->galleta->id => '5'], ['sigue' => '1'])->assertSessionHasNoErrors();
 
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 2)->sole()]))->assertOk()
-            ->assertDontSee('Corrige al envío');
+            ->assertDontSee('Corrige la hoja');
     }
 
     /** Decidido: lo que se mande ya no reemplaza solo al corregido, así que no lo dice. */
@@ -269,7 +272,7 @@ class CorregirEnvioTest extends TestCase
         $this->mandar($pedido, [$this->galleta->id => '5', $this->canilla->id => '6'], ['sigue' => '1'])->assertSessionHasNoErrors();
 
         $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 3)->sole()]))->assertOk()
-            ->assertDontSee('Corrige al envío');
+            ->assertDontSee('Corrige la hoja');
     }
 
     public function test_un_doble_toque_no_anula_dos_veces_ni_pisa_lo_marcado(): void
