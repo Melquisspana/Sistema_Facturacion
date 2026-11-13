@@ -5,26 +5,29 @@ namespace Tests\Feature\Dte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
+use App\Models\Distrito;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
+use App\Models\Municipio;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RepresentacionPdfDte;
 use Tests\TestCase;
 
 class DteImpresionTest extends TestCase
 {
-    use \Tests\Concerns\RepresentacionPdfDte;
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
+    use RepresentacionPdfDte;
 
     private DteBorradorService $borradores;
 
@@ -162,15 +165,15 @@ class DteImpresionTest extends TestCase
     public function test_imprimir_muestra_departamento_municipio_distrito(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();
-        $olocuilta = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
-        $sucursal = \App\Models\ClienteSucursal::create([
+        $olocuilta = Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $sucursal = ClienteSucursal::create([
             'cliente_id' => $cliente->id,
             'nombre' => 'Súper Selectos Olocuilta',
             'departamento_id' => $olocuilta->departamento_id,
             // El receptor del CCF toma el municipio (CAT-013) de la sala: sin él, el
             // JSON saldría con el campo vacío. La etiqueta impresa sigue viniendo del
             // distrito (municipio 2024), así que las aserciones no cambian.
-            'municipio_id' => \App\Models\Municipio::where('departamento_id', $olocuilta->departamento_id)
+            'municipio_id' => Municipio::where('departamento_id', $olocuilta->departamento_id)
                 ->where('nombre', 'Olocuilta')->firstOrFail()->id,
             'distrito_id' => $olocuilta->id,
             // El receptor del JSON usa la sala: el schema exige complemento no vacío.

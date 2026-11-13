@@ -16,6 +16,8 @@ use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RepresentacionPdfDte;
 use Tests\TestCase;
 
 /**
@@ -27,9 +29,9 @@ use Tests\TestCase;
  */
 class AmbientePruebasAvisoTest extends TestCase
 {
-    use \Tests\Concerns\RepresentacionPdfDte;
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
+    use RepresentacionPdfDte;
 
     private const AVISO = 'AMBIENTE DE PRUEBAS';
 
