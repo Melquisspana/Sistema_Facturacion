@@ -116,19 +116,30 @@ return Application::configure(basePath: dirname(__DIR__))
         // Sesión vencida a media tarea (419: el token del formulario ya no vale). En vez de la
         // página «419» y perder lo escrito (un pedido entero en el celular), vuelve al
         // formulario con lo escrito y el aviso; no se guarda nada. Solo si el envío salió de
-        // una página de este mismo sitio (Origin, o el Referer si no viene): otro sitio no
-        // puede dejar datos escritos en el formulario de nadie. Por fetch, sigue el 419.
-        // Sin las contraseñas. Sin Cloudflare Access, el login pide entrar de nuevo y lo
-        // escrito se pierde igual que antes.
+        // una página de este mismo sitio: el origen completo (esquema, host y puerto) del
+        // Origin y del Referer es el de APP_URL y el de esta petición (detrás de Cloudflare,
+        // https por TrustProxies). Otro sitio, otro esquema u otro puerto no puede dejar datos
+        // escritos en el formulario de nadie. Por fetch, sigue el 419. Sin las contraseñas.
+        // Sin Cloudflare Access, el login pide entrar de nuevo y lo escrito se pierde igual
+        // que antes; entrando por otra dirección que no es APP_URL, también sigue el 419.
         $exceptions->render(function (HttpException $e, Request $request) {
             if ($e->getStatusCode() !== 419 || ! $e->getPrevious() instanceof TokenMismatchException || $request->expectsJson()) {
                 return null;
             }
-            $propio = fn (?string $url) => is_string($url) && $url !== ''
-                && strcasecmp((string) parse_url($url, PHP_URL_HOST), $request->getHost()) === 0;
+            $origenDe = function (?string $url): ?string {
+                $partes = is_string($url) ? parse_url($url) : false;
+                if (! is_array($partes) || ! isset($partes['scheme'], $partes['host'])) {
+                    return null;
+                }
+                $esquema = strtolower($partes['scheme']);
+
+                return $esquema.'://'.strtolower($partes['host']).':'.($partes['port'] ?? ($esquema === 'https' ? 443 : 80));
+            };
+            $sitio = $origenDe($request->getSchemeAndHttpHost());
             $volver = $request->headers->get('referer');
             $origen = $request->headers->get('origin');
-            if (! $propio($volver) || ($origen !== null && ! $propio($origen))) {
+            if ($sitio === null || $sitio !== $origenDe((string) config('app.url'))
+                || $origenDe($volver) !== $sitio || ($origen !== null && $origenDe($origen) !== $sitio)) {
                 return null;
             }
 

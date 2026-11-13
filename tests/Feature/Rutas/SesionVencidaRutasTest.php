@@ -32,6 +32,7 @@ class SesionVencidaRutasTest extends TestCase
     {
         parent::setUp();
         $this->travelTo('2026-11-14 09:00:00');
+        config(['app.url' => 'http://localhost']);
         // En las pruebas Laravel no revisa el token: acá sí, como en el servidor.
         $this->app->bind(ValidateCsrfToken::class, fn ($app) => new class($app, $app['encrypter']) extends ValidateCsrfToken
         {
@@ -50,7 +51,11 @@ class SesionVencidaRutasTest extends TestCase
     /** El pedido con un token vencido, desde el formulario de la sala. */
     private function guardarConTokenVencido(array $cabeceras)
     {
-        return $this->actingAs($this->vendedor)->withHeaders($cabeceras)->post(route('rutas.sacar-pedido.store', $this->sala), [
+        // Solo estas cabeceras: las de la llamada anterior no se arrastran. Y siempre a
+        // http://localhost: el esquema https lo pone solo el proxy con su cabecera.
+        $destino = 'http://localhost'.parse_url(route('rutas.sacar-pedido.store', $this->sala), PHP_URL_PATH);
+
+        return $this->flushHeaders()->actingAs($this->vendedor)->withHeaders($cabeceras)->post($destino, [
             '_token' => 'token-de-una-sesion-vencida',
             'cantidades' => [$this->galleta->id => '12'],
             'notas' => 'Dejar en bodega',
@@ -84,5 +89,35 @@ class SesionVencidaRutasTest extends TestCase
         $this->guardarConTokenVencido(['Referer' => route('rutas.sacar-pedido.create', $this->sala), 'Accept' => 'application/json'])
             ->assertStatus(419);
         $this->assertSame(0, PedidoSala::count());
+    }
+
+    public function test_otro_esquema_u_otro_puerto_del_mismo_host_sigue_siendo_419(): void
+    {
+        $ruta = parse_url(route('rutas.sacar-pedido.create', $this->sala), PHP_URL_PATH);
+        foreach (['https://localhost', 'http://localhost:8080'] as $otro) {
+            $this->guardarConTokenVencido(['Referer' => $otro.$ruta, 'Origin' => $otro])
+                ->assertStatus(419)->assertSessionMissing('_old_input');
+            $this->guardarConTokenVencido(['Referer' => $otro.$ruta])
+                ->assertStatus(419)->assertSessionMissing('_old_input');
+        }
+        // La petición y la página son del mismo origen, pero no del de APP_URL: tampoco.
+        config(['app.url' => 'https://facturacion.example']);
+        $this->guardarConTokenVencido(['Referer' => 'http://localhost'.$ruta, 'Origin' => 'http://localhost'])
+            ->assertStatus(419)->assertSessionMissing('_old_input');
+        $this->assertSame(0, PedidoSala::count());
+    }
+
+    public function test_detras_de_cloudflare_el_esquema_es_https_y_vuelve_con_lo_escrito(): void
+    {
+        // cloudflared llama desde 127.0.0.1 (proxy de confianza) y avisa que afuera es https.
+        config(['app.url' => 'https://localhost']);
+        $ruta = parse_url(route('rutas.sacar-pedido.create', $this->sala), PHP_URL_PATH);
+
+        $this->guardarConTokenVencido(['Referer' => 'https://localhost'.$ruta, 'Origin' => 'https://localhost', 'X-Forwarded-Proto' => 'https'])
+            ->assertRedirect('https://localhost'.$ruta)
+            ->assertSessionHasInput('cantidades', [$this->galleta->id => '12']);
+        // Sin la cabecera del proxy la petición es http: no coincide con la página del navegador.
+        $this->guardarConTokenVencido(['Referer' => 'https://localhost'.$ruta, 'Origin' => 'https://localhost'])
+            ->assertStatus(419);
     }
 }
