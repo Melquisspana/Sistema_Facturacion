@@ -85,6 +85,24 @@ class PedidoSala extends Model
         return $this->belongsTo(Ruta::class, 'ruta_id');
     }
 
+    /**
+     * La zona que se muestra: la del pedido o, si no tiene (la tienda nueva se guarda sin
+     * `ruta_id`), la del viaje en que se sacó. Solo para mostrar: no cambia lo guardado.
+     * En listas, cargar antes `ruta`, `salida` y `salida.ruta`.
+     */
+    public function zonaNombre(): string
+    {
+        return $this->ruta?->nombre
+            ?? ($this->salida?->ruta_id !== null ? $this->salida->ruta->nombre : null)
+            ?? 'Sin zona';
+    }
+
+    /** La dirección de la sala o, si no la tiene, la del cliente. Null en la tienda nueva. */
+    public function direccionSala(): ?string
+    {
+        return $this->sala?->direccion ?: ($this->sala?->cliente?->direccion ?: null);
+    }
+
     public function salida(): BelongsTo
     {
         return $this->belongsTo(SalidaRuta::class, 'salida_ruta_id');

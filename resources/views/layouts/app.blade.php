@@ -35,12 +35,18 @@
              huérfano) empuja el alto REAL del documento (<html> scrollHeight) más allá de
              este wrapper, el lienzo de abajo sigue siendo oscuro en vez de blanco. --}}
         <div class="min-h-screen bg-gray-100 dark:bg-ink-950">
-            @include('layouts.navigation')
+            {{-- A pantalla completa (la fábrica) no hay barra lateral ni menú: solo una barra
+                 chica que no queda fija, con la empresa, la persona y «Salir». --}}
+            @if ($pantallaCompleta ?? false)
+                @include('layouts.partials.barra-pantalla-completa')
+            @else
+                @include('layouts.navigation')
+            @endif
 
             {{-- Contenido corrido: 4rem bajo la topbar fija y 16rem a la derecha de la sidebar en desktop.
                  En el apartado Configuración no hay barra lateral de área (su índice va
                  dentro de la página), así que el contenido usa todo el ancho. --}}
-            <div class="pt-16 {{ \App\Enums\AreaSistema::enApartadoConfiguracion() ? '' : 'lg:pl-64' }}">
+            <div class="{{ ($pantallaCompleta ?? false) ? '' : 'pt-16 '.(\App\Enums\AreaSistema::enApartadoConfiguracion() ? '' : 'lg:pl-64') }}">
                 <x-aviso-contingencia />
                 <!-- Page Heading -->
                 @isset($header)

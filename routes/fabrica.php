@@ -28,6 +28,9 @@ Route::middleware(['auth', 'permission:fabrica.pedidos.mandar', 'cache.headers:n
         Route::patch('{pedido}/borrador', [PedidoFabricaController::class, 'borrador'])->name('borrador');
         Route::patch('{pedido}/borrador/borrar', [PedidoFabricaController::class, 'borrarBorrador'])->name('borrador.borrar');
         Route::post('{pedido}/envios', [PedidoFabricaController::class, 'mandar'])->name('mandar');
+        // La hoja para imprimir de un envío de ese pedido (solo lectura).
+        Route::get('{pedido}/envios/{envio}/imprimir', [PedidoFabricaController::class, 'imprimir'])->name('imprimir')
+            ->scopeBindings();
         Route::patch('{pedido}/no-se-trae', [PedidoFabricaController::class, 'cerrar'])->name('cerrar');
         Route::patch('{pedido}/pendiente', [PedidoFabricaController::class, 'reabrir'])->name('reabrir');
         Route::patch('{pedido}/envios/{envio}/anular', [PedidoFabricaController::class, 'anularEnvio'])->name('anular-envio')

@@ -11,14 +11,11 @@
      tableta de la fábrica ($limiteRecarga = null) se recarga sin tope. No se escucha
      `scroll` ni el movimiento sin desplazamiento: el navegador los dispara solo al
      recargar (restaura la posición, actualiza el hover) y la recarga no tendría fin. Sin
-     librerías: Alpine, que ya está. --}}
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedidos</h1>
-        </div>
-    </x-slot>
+     librerías: Alpine, que ya está.
 
+     A pantalla completa (12/11/2026): sin el menú del sistema. La lista es solo de nombres;
+     al tocar uno se abre el pedido (show), donde se marca qué va y se manda. --}}
+<x-app-layout :pantalla-completa="true">
     @php($hoy = \App\Support\HoraNegocio::fechaHoy())
 
     <div class="py-6 sm:py-8"
@@ -43,6 +40,7 @@
                  if (! enviando && quieto > 20000 && (limite === null || (recuerda && quieto < limite))) location.reload();
              }, 30000)">
         <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8">
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedidos</h1>
             <x-rutas.avisos />
 
             {{-- Lo último se puede deshacer: sin confirmación al hacerlo, con este botón después. --}}
@@ -76,11 +74,11 @@
                     @if ($lista->isNotEmpty())
                         <section aria-label="{{ $titulo }}" class="space-y-3">
                             <h2 class="text-lg font-semibold text-gray-800">{{ $titulo }}</h2>
-                            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            <ul class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                                 @foreach ($lista as $pedido)
-                                    @include('fabrica.pedidos._tarjeta', ['pedido' => $pedido, 'clave' => $claves[$pedido->id], 'atrasado' => $atrasado, 'hoy' => $hoy])
+                                    <li>@include('fabrica.pedidos._tarjeta', ['pedido' => $pedido, 'atrasado' => $atrasado, 'hoy' => $hoy])</li>
                                 @endforeach
-                            </div>
+                            </ul>
                         </section>
                     @endif
                 @endforeach
@@ -90,7 +88,7 @@
                     @if ($hechos['envios']->isEmpty())
                         <div class="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-gray-500">Hoy todavía no salió nada.</div>
                     @else
-                        @include('rutas.pedidos._envios', ['envios' => $hechos['envios'], 'conSala' => true, 'conDeshacer' => true])
+                        @include('rutas.pedidos._envios', ['envios' => $hechos['envios'], 'conSala' => true, 'conDeshacer' => true, 'conImprimir' => true])
                     @endif
                 </section>
 
@@ -107,7 +105,7 @@
                                         <p class="text-lg font-semibold text-gray-800">{{ $pedido->nombreSala() }}</p>
                                         <x-rutas.estado-badge :estado="$pedido->estado" />
                                     </div>
-                                    <p class="mt-1 text-sm text-gray-600">Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }}</p>
+                                    <p class="mt-1 text-sm text-gray-600">Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->zonaNombre() }}</p>
                                     <ul class="mt-2 space-y-1 text-sm text-gray-700">
                                         @foreach ($pedido->lineas->filter->tienePendiente() as $linea)
                                             <li>Faltó <span class="font-semibold tabular-nums">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</span> × {{ $linea->producto?->nombre }}{{ $linea->motivo_no_enviado ? ' · '.$linea->motivo_no_enviado : '' }}</li>

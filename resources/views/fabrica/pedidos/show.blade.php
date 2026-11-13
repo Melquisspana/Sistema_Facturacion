@@ -5,14 +5,14 @@
      sola. Pantalla táctil de fábrica (docs/GUIA_PANTALLAS.md, «Pantalla táctil»):
      botones de min-h-12 con py-4/py-5 y letra text-xl/2xl; funciona igual con el mouse.
 
-     El motivo es opcional y nunca `required`: lo que decide es el servidor. --}}
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
-        </div>
-    </x-slot>
+     El motivo es opcional y nunca `required`: lo que decide es el servidor.
 
+     A pantalla completa (12/11/2026): arriba, «Todos» (vuelve a la lista) y los otros
+     pedidos por mandar, los que se están armando primero. Tocar uno cambia de pedido sin
+     perder nada: como «Dejar para después», primero termina de guardar (salir()). Después
+     los datos de la sala y, abajo, los productos. «Imprimir y mandar» registra el envío y
+     abre su hoja para imprimir. --}}
+<x-app-layout :pantalla-completa="true">
     @php
         $faltan = $pedido->lineas->filter->tienePendiente();
         $conBorrador = $pedido->armando_desde !== null || $pedido->lineas->whereNotNull('va_borrador')->isNotEmpty();
@@ -72,15 +72,37 @@
                  },
              }"
              @pagehide.window="alSalir()">
+            <nav aria-label="Otros pedidos" class="flex flex-wrap gap-3">
+                <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
+                   class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
+                @foreach ($otros as $otro)
+                    <a href="{{ route('fabrica.pedidos.show', $otro) }}" @click.prevent="salir($el.href)"
+                       class="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 {{ $otro->armando_desde ? 'border-indigo-300 bg-indigo-50' : 'border-gray-300 bg-white' }}">
+                        {{ $otro->nombreSala() }}
+                        @if ($otro->armando_desde)
+                            <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
+                        @endif
+                    </a>
+                @endforeach
+            </nav>
+
             <x-rutas.avisos />
 
-            <p class="text-sm text-gray-600">
-                Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}
-                {{ $pedido->numero_orden_compra ? ' · OC '.$pedido->numero_orden_compra : '' }}
-            </p>
-            @if ($pedido->notas)
-                <p class="whitespace-pre-line text-sm text-gray-700">{{ $pedido->notas }}</p>
-            @endif
+            <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
+                <h1 id="titulo-pedido" class="text-2xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
+                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2">
+                    @if ($pedido->direccionSala())
+                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Dirección</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
+                    @endif
+                    <div><dt class="text-sm text-gray-500">Zona</dt><dd class="text-gray-800">{{ $pedido->zonaNombre() }}</dd></div>
+                    <div><dt class="text-sm text-gray-500">Orden de compra</dt><dd class="font-mono text-gray-800">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
+                    <div><dt class="text-sm text-gray-500">Lo sacó</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
+                    <div><dt class="text-sm text-gray-500">Fecha y hora</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
+                    @if ($pedido->notas)
+                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
+                    @endif
+                </dl>
+            </section>
 
             <form method="POST" action="{{ route('fabrica.pedidos.mandar', $pedido) }}" x-ref="form"
                   @input="guardar()"
@@ -143,23 +165,36 @@
 
                 <p class="mt-3 text-sm" role="status" aria-live="polite" x-text="estado" :class="error ? 'text-red-600' : 'text-gray-500'"></p>
 
-                {{-- «Dejar para después» primero y «Mandar» después; en el celular, uno arriba del otro. --}}
+                {{-- «Dejar para después» primero e «Imprimir y mandar» después; en el celular, uno arriba del otro. --}}
                 <div class="sticky bottom-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-between">
                     <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
                        class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
                     <button :disabled="enviando"
-                            class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">Mandar</button>
+                            class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">Imprimir y mandar</button>
                 </div>
             </form>
 
-            @if ($conBorrador)
-                <form method="POST" action="{{ route('fabrica.pedidos.borrador.borrar', $pedido) }}"
-                      @submit.prevent="if (confirm('¿Borrar lo marcado? Vuelve a quedar cargado todo lo que falta.')) enviar($el)">
+            {{-- «No se trae» del pedido entero (o lo que falta): un toque, sin confirmación, y
+                 en la lista sale el aviso con «Deshacer», como antes en la tarjeta. --}}
+            <div class="flex flex-wrap gap-3">
+                <form method="POST" action="{{ route('fabrica.pedidos.cerrar', $pedido) }}" @submit.prevent="enviar($el)">
                     @csrf @method('PATCH')
+                    <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
                     <button :disabled="enviando"
-                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">Borrar lo marcado</button>
+                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
+                        {{ $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial ? 'Lo que falta no se trae' : 'No se trae' }}
+                    </button>
                 </form>
-            @endif
+
+                @if ($conBorrador)
+                    <form method="POST" action="{{ route('fabrica.pedidos.borrador.borrar', $pedido) }}"
+                          @submit.prevent="if (confirm('¿Borrar lo marcado? Vuelve a quedar cargado todo lo que falta.')) enviar($el)">
+                        @csrf @method('PATCH')
+                        <button :disabled="enviando"
+                                class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">Borrar lo marcado</button>
+                    </form>
+                @endif
+            </div>
         </div>
     </div>
 </x-app-layout>

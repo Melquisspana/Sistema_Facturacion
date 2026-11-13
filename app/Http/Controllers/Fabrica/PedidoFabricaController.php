@@ -38,8 +38,6 @@ class PedidoFabricaController extends Controller
             'cuantosPorMandar' => $porMandar?->count() ?? $this->fabrica->porMandar()->count(),
             'atrasados' => $porMandar?->filter(fn (PedidoSala $p) => $p->fecha->toDateString() < $hoy)->values() ?? collect(),
             'deHoy' => $porMandar?->filter(fn (PedidoSala $p) => $p->fecha->toDateString() >= $hoy)->values() ?? collect(),
-            // Una clave por tarjeta: si «Se manda todo» se toca dos veces, sale un solo envío.
-            'claves' => $porMandar?->mapWithKeys(fn (PedidoSala $p) => [$p->id => (string) Str::uuid()])->all() ?? [],
             'hechos' => $ver === 'hechos' ? $this->fabrica->hechos() : null,
             // La recarga sola renueva la sesión: para quien ve más del sistema que Fábrica se
             // corta antes de que la sesión venza por inactividad (SESSION_LIFETIME). La
@@ -55,9 +53,29 @@ class PedidoFabricaController extends Controller
             return redirect()->route('fabrica.pedidos.index')->with('status', 'Ese pedido ya está resuelto.');
         }
         Gate::authorize('mandar', $pedido);
-        $pedido->load($this->fabrica->relaciones());
+        $pedido->load($this->fabrica->relaciones(conSala: true));
 
-        return view('fabrica.pedidos.show', ['pedido' => $pedido, 'clave' => (string) Str::uuid()]);
+        return view('fabrica.pedidos.show', [
+            'pedido' => $pedido,
+            'clave' => (string) Str::uuid(),
+            'otros' => $this->fabrica->otrosPorMandar($pedido),
+        ]);
+    }
+
+    /**
+     * La hoja para imprimir de UN envío: lo que va en la caja, lo que no va y lo que queda.
+     * Solo lectura (GET): no cambia datos. Un envío deshecho ya no se manda y no se imprime.
+     * El envío es de ese pedido por `scopeBindings` (otro pedido en la URL: 404).
+     */
+    public function imprimir(Request $request, PedidoSala $pedido, PedidoSalaEnvio $envio): View
+    {
+        abort_unless($envio->estaVigente(), 404);
+        $pedido->load($this->fabrica->relaciones(conSala: true));
+        $envio->load('lineas.linea.producto:id,nombre,codigo');
+        // Recién mandado, el aviso y el «Deshacer» siguen para cuando vuelva a la lista.
+        $request->session()->reflash();
+
+        return view('fabrica.pedidos.imprimir', ['pedido' => $pedido, 'envio' => $envio]);
     }
 
     /** Lo marcado en la hoja, sin recargar. Responde JSON (los errores, 422 con su texto). */
@@ -75,6 +93,7 @@ class PedidoFabricaController extends Controller
         return redirect()->route('fabrica.pedidos.show', $pedido)->with('status', 'Se borró lo marcado.');
     }
 
+    /** «Imprimir y mandar»: registra el envío y abre su hoja para imprimir. */
     public function mandar(MandarPedidoRequest $request, PedidoSala $pedido): RedirectResponse
     {
         $envio = $this->fabrica->mandar($pedido, $request->validated() + ['sigue' => $request->boolean('sigue')], $request->user());
@@ -87,7 +106,7 @@ class PedidoFabricaController extends Controller
             default => 'Salió el pedido de '.$sala.'.',
         };
 
-        return redirect()->route('fabrica.pedidos.index')->with('status', $mensaje)
+        return redirect()->route('fabrica.pedidos.imprimir', [$pedido, $envio])->with('status', $mensaje)
             ->with('deshacer', ['tipo' => 'envio', 'pedido' => $pedido->id, 'envio' => $envio->id]);
     }
 

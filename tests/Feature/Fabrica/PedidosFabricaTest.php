@@ -134,7 +134,8 @@ class PedidosFabricaTest extends TestCase
         $respuesta = $this->get(route('fabrica.pedidos.index'))->assertOk()
             ->assertSee('Por mandar (4)')
             ->assertSeeInOrder(['De días anteriores', 'Del 06/11/2026 · hace 3 días', 'Del 08/11/2026 · hace 1 día', 'De hoy'])
-            ->assertSee('Carlos Inventado')->assertSee('Se manda todo')->assertSee('Faltan cosas')->assertSee('No se trae')
+            // La lista es solo de nombres: lo que se manda y «No se trae» van en el pedido abierto.
+            ->assertDontSee('Se manda todo')->assertDontSee('Faltan cosas')->assertDontSee('No se trae')
             ->assertDontSee('Sala anulado')->assertDontSee('Sala enviado')->assertDontSee('Sala no_se_trae')
             ->assertDontSee('7.77');
         // Del más viejo al más nuevo; los de hoy, por id.
@@ -142,7 +143,10 @@ class PedidosFabricaTest extends TestCase
         $this->assertTrue(strpos($html, 'pedido-'.$viejo->id) < strpos($html, 'pedido-'.$parcial->id));
         $this->assertTrue(strpos($html, 'pedido-'.$parcial->id) < strpos($html, 'pedido-'.$hoy2->id));
         $this->assertTrue(strpos($html, 'pedido-'.$hoy2->id) < strpos($html, 'pedido-'.$hoy1->id));
-        $respuesta->assertSee('Mandar lo que falta')->assertSee('Lo que falta no se trae');
+        $respuesta->assertSee('Mandado en parte');
+        $this->get(route('fabrica.pedidos.show', $hoy1))->assertOk()->assertSee('Carlos Inventado')
+            ->assertSee('Imprimir y mandar')->assertSee('No se trae')->assertDontSee('7.77');
+        $this->get(route('fabrica.pedidos.show', $parcial))->assertOk()->assertSee('Lo que falta no se trae');
     }
 
     public function test_desde_que_dia_aparecen_segun_el_ajuste(): void
@@ -199,10 +203,9 @@ class PedidosFabricaTest extends TestCase
         }
 
         $this->get(route('dashboard'))->assertRedirect(route('fabrica.pedidos.index'));
+        // Pedidos va a pantalla completa: sin barra lateral (fuera de /fabrica, solo «Pedidos»).
         $html = $this->get(route('fabrica.pedidos.index'))->assertOk()->getContent();
-        preg_match('/<aside id="sidebar-principal".*?<\/aside>/s', $html, $aside);
-        preg_match_all('/href="([^"]+)"/', $aside[0], $enlaces);
-        $this->assertSame([route('fabrica.pedidos.index')], array_values(array_unique($enlaces[1])));
+        $this->assertStringNotContainsString('id="sidebar-principal"', $html);
         $this->assertStringNotContainsString('data-area-selector', $html);
         $this->assertStringNotContainsString(route('configuracion.resumen'), $html);
 
@@ -231,12 +234,13 @@ class PedidosFabricaTest extends TestCase
     {
         $pedido = $this->pedido([$this->galleta->id => '12', $this->canilla->id => '6']);
 
-        $this->mandar($pedido, [$this->galleta->id => '12.0000', $this->canilla->id => '6.0000'])
-            ->assertRedirect(route('fabrica.pedidos.index'))
+        $respuesta = $this->mandar($pedido, [$this->galleta->id => '12.0000', $this->canilla->id => '6.0000'])
             ->assertSessionHas('status', 'Salió el pedido de Súper Ficticio Centro.')
             ->assertSessionHas('deshacer', fn ($d) => $d['tipo'] === 'envio');
 
         $envio = PedidoSalaEnvio::sole();
+        // «Imprimir y mandar»: después del envío, su hoja para imprimir.
+        $respuesta->assertRedirect(route('fabrica.pedidos.imprimir', [$pedido, $envio]));
         $this->assertSame(1, $envio->numero);
         $this->assertSame('2026-11-09', $envio->fecha->toDateString());
         $this->assertSame($this->fabrica->id, $envio->registrado_por);
@@ -266,8 +270,9 @@ class PedidosFabricaTest extends TestCase
         $this->assertSame(EstadoPedidoSala::Parcial, $pedido->estado);
         $this->assertSame('No salió del horno', $pedido->lineas()->where('producto_id', $this->canilla->id)->value('motivo_no_enviado'));
         $this->assertTrue(Activity::where('description', 'mandó una parte del pedido')->exists());
-        $this->get(route('fabrica.pedidos.index'))->assertSee('Por mandar (1)')->assertSee('Mandar lo que falta');
-        $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('Canilla de prueba')->assertDontSee('Galleta de prueba');
+        $this->get(route('fabrica.pedidos.index'))->assertSee('Por mandar (1)')->assertSee('Mandado en parte');
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('Canilla de prueba')->assertDontSee('Galleta de prueba')
+            ->assertSee('Lo que falta no se trae');
 
         // Al día siguiente llegan las canillas: envío 2 y queda «Mandado».
         $this->travelTo('2026-11-10 08:00:00');
@@ -363,9 +368,10 @@ class PedidosFabricaTest extends TestCase
         $id = $this->linea($pedido, $this->galleta);
         $datos = ['clave' => (string) Str::uuid(), 'version' => $this->version($pedido), 'cantidades' => [$id => '12']];
 
-        $this->post(route('fabrica.pedidos.mandar', $pedido), $datos)->assertRedirect(route('fabrica.pedidos.index'))->assertSessionHasNoErrors();
-        // El segundo, con el pedido ya mandado: éxito, no 403 ni error.
-        $this->post(route('fabrica.pedidos.mandar', $pedido), $datos)->assertRedirect(route('fabrica.pedidos.index'))
+        $this->post(route('fabrica.pedidos.mandar', $pedido), $datos)->assertSessionHasNoErrors();
+        $hoja = route('fabrica.pedidos.imprimir', [$pedido, PedidoSalaEnvio::sole()]);
+        // El segundo, con el pedido ya mandado: éxito y la hoja del MISMO envío, no 403 ni error.
+        $this->post(route('fabrica.pedidos.mandar', $pedido), $datos)->assertRedirect($hoja)
             ->assertSessionHasNoErrors()->assertSessionHas('status', 'Salió el pedido de Súper Ficticio Centro.');
         $this->assertSame(1, PedidoSalaEnvio::count());
         $this->assertSame(1, Activity::where('description', 'mandó todo el pedido')->count());
@@ -587,7 +593,7 @@ class PedidosFabricaTest extends TestCase
         $this->patchJson(route('fabrica.pedidos.borrador', $otro), ['cantidades' => [$this->linea($otro, $this->galleta) => '3']])->assertOk();
         $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
             ->assertSee('value="20"', false)->assertSee('value="Sin canillas"', false)->assertSee('Borrar lo marcado');
-        $this->get(route('fabrica.pedidos.index'))->assertSee('Armando')->assertSee('Seguir armando');
+        $this->get(route('fabrica.pedidos.index'))->assertSee('Armando');
 
         // Validaciones de cada guardado: la línea es del pedido y no pasa de lo pendiente.
         $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$this->linea($otro, $this->galleta) => '1']])
@@ -755,15 +761,17 @@ class PedidosFabricaTest extends TestCase
         $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('value="No salió del horno"', false);
     }
 
-    public function test_la_tarjeta_de_un_pedido_que_se_esta_armando_manda_lo_marcado(): void
+    public function test_el_pedido_que_se_esta_armando_manda_lo_marcado(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '24', $this->canilla->id => '6']);
         $g = $this->linea($pedido, $this->galleta);
         $c = $this->linea($pedido, $this->canilla);
         $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '24', $c => '0'], 'motivos' => [$c => 'Sin canillas']])->assertOk();
 
-        $html = $this->get(route('fabrica.pedidos.index'))->assertOk()
-            ->assertSee('Armando')->assertSee('Mandar lo marcado')->assertDontSee('Se manda todo')->getContent();
+        // Desde la lista se abre el pedido (ya no se manda desde la tarjeta); lo que se manda
+        // es LO MARCADO, no todo lo que falta.
+        $this->get(route('fabrica.pedidos.index'))->assertOk()->assertSee('Armando')->assertDontSee('Se manda todo');
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
         $this->post(route('fabrica.pedidos.mandar', $pedido), $this->camposDelFormulario($html, route('fabrica.pedidos.mandar', $pedido)))
             ->assertSessionHasNoErrors();
 
@@ -784,9 +792,8 @@ class PedidosFabricaTest extends TestCase
         $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '24', $c => '0'], 'sigue' => '1'])->assertOk();
         $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
         $this->assertMatchesRegularExpression('/name="sigue" value="1"[^>]*\schecked\b/', $html);
-        // La tarjeta también la respeta: lo que falta sigue por mandar.
-        $tarjeta = $this->get(route('fabrica.pedidos.index'))->getContent();
-        $this->post(route('fabrica.pedidos.mandar', $pedido), $this->camposDelFormulario($tarjeta, route('fabrica.pedidos.mandar', $pedido)))
+        // «Imprimir y mandar» la respeta: lo que falta sigue por mandar.
+        $this->post(route('fabrica.pedidos.mandar', $pedido), $this->camposDelFormulario($html, route('fabrica.pedidos.mandar', $pedido)))
             ->assertSessionHasNoErrors();
         $this->assertSame(EstadoPedidoSala::Parcial, $pedido->refresh()->estado);
         $this->assertFalse($pedido->armando_sigue);
