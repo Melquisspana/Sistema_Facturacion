@@ -7,7 +7,7 @@
 
      2. NADA DEPENDE DEL COLOR. Se imprime en blanco y negro sobre papel barato.
         Un pago parcial se distingue por un recuadro y una palabra, nunca por un
-        tono. El único color de la hoja es el del logo.
+        tono. Solo el encabezado lleva color: el acento violeta de Planilla.
 
      3. LAS TABLAS FIJAN SU COLOR. Sin doctype —o en cualquier modo quirks— una
         tabla no hereda el color de su contenedor y cae al del documento: sobre
@@ -17,27 +17,38 @@
         entre dos páginas: la cabecera se repite y las filas se mantienen enteras.
 
      Diez personas caben en una carta porque se comprimió el ENTORNO —logo de
-     13 mm, márgenes de 10, pie de firmas en una fila baja— antes que la letra. --}}
+     13 mm, márgenes de 10, pie de firmas en una fila baja— antes que la letra.
+
+     5. LA FORMA DE LOS DOCUMENTOS IMPRESOS (docs/GUIA_PANTALLAS.md, «Documentos
+        impresos»), como el PDF del CCF, con el acento VIOLETA. Las piezas comunes
+        (components/documento) fijan body, table y *: acá viven dentro de la app, así
+        que van ANIDADAS en .hoja-impresa para no tocar el resto de la pantalla, y el
+        encabezado se achica para que sigan entrando diez personas por carta. --}}
 <style>
     .hoja-impresa {
+        <x-documento.estilos acento="violeta" />
+    }
+    .hoja-impresa {
         background: #fff; color: #141414;
-        font-family: "Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-family: "DejaVu Sans", "Segoe UI", Arial, sans-serif;
         font-size: 10.5pt; line-height: 1.42;
         padding: 10mm; margin: 0 auto 1rem; max-width: 216mm;
         border: 1px solid #d4d4d8; border-radius: 4px;
     }
     .hoja-impresa .mono { font-family: ui-monospace, "SFMono-Regular", "IBM Plex Mono", Menlo, Consolas, monospace; }
 
-    .hi-membrete { display: flex; align-items: center; gap: 6mm; padding-bottom: 2.6mm; border-bottom: 1.2pt solid #141414; }
-    .hi-logo { width: 8.6mm; height: 13mm; flex: none; object-fit: contain; }
-    .hi-identidad { flex: 1; min-width: 0; }
-    .hi-negocio { font-weight: 700; font-size: 13.5pt; letter-spacing: .03em; line-height: 1.05; }
-    .hi-empleadora { font-size: 8.4pt; line-height: 1.25; margin-top: .6mm; }
-    .hi-empleadora .et { font-size: 6.4pt; letter-spacing: .14em; text-transform: uppercase; color: #5c5c5c; }
-    .hi-empleadora .nom { font-weight: 600; }
-    .hi-tipo { text-align: right; flex: none; }
-    .hi-doc { font-weight: 600; font-size: 10.5pt; letter-spacing: .1em; text-transform: uppercase; line-height: 1.1; }
-    .hi-folio { font-size: 7.6pt; color: #4a4a4a; margin-top: 1mm; line-height: 1.35; }
+    /* El encabezado común, compacto: logo de 13 mm y un recuadro bajo. */
+    .hoja-impresa .topline { margin-bottom: 2.6mm; }
+    .hoja-impresa td.head-logo { width: 12mm; padding-right: 3mm; }
+    .hoja-impresa .logo { width: 8.6mm; height: 13mm; object-fit: contain; }
+    .hoja-impresa .razon { font-size: 13.5pt; letter-spacing: .03em; line-height: 1.05; }
+    .hoja-impresa .emi { font-size: 8.4pt; margin-top: .6mm; }
+    .hoja-impresa td.head-dbox { width: 44%; }
+    .hoja-impresa .dbox-h { padding: 1.2mm 3mm; }
+    .hoja-impresa .dbox-h .lbl { font-size: 6.4pt; }
+    .hoja-impresa .dbox-h .ttl { font-size: 11.5pt; text-transform: uppercase; }
+    .hoja-impresa .dbox-h .nof { font-size: 7.6pt; margin-top: .4mm; }
+    .hoja-impresa .dbox-t td.folio { padding: 1mm 3mm; font-size: 7.6pt; color: #4a4a4a; line-height: 1.35; }
 
     table.hi-grupal { width: 100%; border-collapse: collapse; margin-top: 3.5mm; color: #141414; }
     table.hi-grupal thead th {

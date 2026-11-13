@@ -34,6 +34,7 @@
                 ? ($ind ? 'Detalle del pago' : ($vac ? 'Detalle de vacaciones' : 'Detalle de la quincena'))
                 : ($ind['titulo'] ?? ($vac ? 'Recibo de vacaciones' : 'Recibo de pago')),
             'folio' => $esBorrador ? 'Sin número · impreso el '.e($cabecera['hoy']) : e($l['folio']),
+            'leyenda' => ($vac || $ind) && ! $esBorrador ? '' : 'Documento interno',
         ])
 
         <div class="hi-persona">
