@@ -46,7 +46,7 @@ class WorkerHeartbeat
      * Estado del worker según el último pulso.
      *
      * @return array{estado: string, ultimo: ?Carbon, hace: ?string, umbral_seg: int}
-     *   estado ∈ {'activo', 'inactivo', 'sin_datos'}
+     *                                                                                estado ∈ {'activo', 'inactivo', 'sin_datos'}
      */
     public static function estado(): array
     {

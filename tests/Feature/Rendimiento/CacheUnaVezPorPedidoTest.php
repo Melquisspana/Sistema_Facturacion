@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Rendimiento;
 
+use App\Ajustes\Ajustes;
 use App\Models\Empresa;
 use App\Models\User;
 use App\Support\MemoDePedido;
@@ -84,7 +85,7 @@ class CacheUnaVezPorPedidoTest extends TestCase
 
     public function test_leer_muchos_ajustes_consulta_la_huella_una_sola_vez(): void
     {
-        $ajustes = app(\App\Ajustes\Ajustes::class);
+        $ajustes = app(Ajustes::class);
         $this->lecturas = [];
 
         for ($i = 0; $i < 30; $i++) {
