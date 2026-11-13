@@ -18,10 +18,12 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -109,6 +111,41 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return back()->withErrors(['punto_venta_id' => $e->getMessage()]);
+        });
+
+        // Sesión vencida a media tarea (419: el token del formulario ya no vale). En vez de la
+        // página «419» y perder lo escrito (un pedido entero en el celular), vuelve al
+        // formulario con lo escrito y el aviso; no se guarda nada. Solo si el envío salió de
+        // una página de este mismo sitio: el origen completo (esquema, host y puerto) del
+        // Origin y del Referer es el de APP_URL y el de esta petición (detrás de Cloudflare,
+        // https por TrustProxies). Otro sitio, otro esquema u otro puerto no puede dejar datos
+        // escritos en el formulario de nadie. Por fetch, sigue el 419. Sin las contraseñas.
+        // Sin Cloudflare Access, el login pide entrar de nuevo y lo escrito se pierde igual
+        // que antes; entrando por otra dirección que no es APP_URL, también sigue el 419.
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 419 || ! $e->getPrevious() instanceof TokenMismatchException || $request->expectsJson()) {
+                return null;
+            }
+            $origenDe = function (?string $url): ?string {
+                $partes = is_string($url) ? parse_url($url) : false;
+                if (! is_array($partes) || ! isset($partes['scheme'], $partes['host'])) {
+                    return null;
+                }
+                $esquema = strtolower($partes['scheme']);
+
+                return $esquema.'://'.strtolower($partes['host']).':'.($partes['port'] ?? ($esquema === 'https' ? 443 : 80));
+            };
+            $sitio = $origenDe($request->getSchemeAndHttpHost());
+            $volver = $request->headers->get('referer');
+            $origen = $request->headers->get('origin');
+            if ($sitio === null || $sitio !== $origenDe((string) config('app.url'))
+                || $origenDe($volver) !== $sitio || ($origen !== null && $origenDe($origen) !== $sitio)) {
+                return null;
+            }
+
+            return redirect()->to($volver)
+                ->withInput($request->except(['_token', '_method', 'password', 'password_confirmation', 'current_password']))
+                ->with('error', 'Tu sesión había vencido y no se guardó nada. Revisá lo que escribiste y volvé a tocar el botón.');
         });
 
         // Guardar configuración durante la ventana de un despliegue a medias (código

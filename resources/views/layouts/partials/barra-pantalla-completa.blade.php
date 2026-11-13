@@ -17,7 +17,8 @@
                    class="inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-500 underline hover:text-gray-700 dark:text-paper-300 dark:hover:text-paper-100">Volver al sistema</a>
             @endunless
             <x-theme-toggle />
-            <form method="POST" action="{{ route('logout') }}">
+            {{-- `data-salir`: la hoja del pedido (fabrica/pedidos/show) espera lo marcado antes de cerrar la sesión. --}}
+            <form method="POST" action="{{ route('logout') }}" data-salir>
                 @csrf
                 <button class="inline-flex min-h-11 items-center rounded-md px-4 text-base font-semibold text-gray-700 underline hover:text-gray-900 dark:text-paper-100 dark:hover:text-paper-100">Salir</button>
             </form>

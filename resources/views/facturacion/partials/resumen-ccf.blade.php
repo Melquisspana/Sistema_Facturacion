@@ -25,7 +25,7 @@
          cantidad (DteController::respuestaLineas). --}}
     @if (($avisosPedido ?? []) !== [])
         <div role="alert" class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
-            <strong>⚠ Revisá contra lo que llegó de la fábrica:</strong>
+            <strong>⚠ Revisá contra lo que llegó de pedidos:</strong>
             <ul class="mt-1 list-disc list-inside">
                 @foreach ($avisosPedido as $aviso)
                     <li>{{ $aviso }}</li>

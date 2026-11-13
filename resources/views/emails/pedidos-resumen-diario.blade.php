@@ -8,6 +8,9 @@
     $literal: sin eso, un motivo con `[texto](url)` sería un enlace en el correo.
 
     $ventas y $vendedores en null: no se pudieron calcular (ResumenDiarioPedidos lo reporta).
+
+    Forma (12/11/2026): mail::documento con el tema «documento», la identidad de los documentos
+    impresos (logo, empresa y el recuadro «Resumen diario», acento azul pizarra como el PDF del día).
 --}}
 @php
     $dinero = fn ($n) => ($n < 0 ? '−' : '').'$'.number_format(abs($n), 2);
@@ -18,7 +21,7 @@
     $hastaLas = $contenido['hasta_las'] ?? $hora;
     $nombres = fn (array $lista) => implode(', ', array_map($literal, $lista));
 @endphp
-<x-mail::message>
+<x-mail::documento titulo="Resumen diario" :fecha="$contenido['fecha']" :message="$message ?? null">
 # Pedidos del {{ $contenido['fecha'] }}
 
 @if ($ventas === null)
@@ -108,4 +111,4 @@ Este resumen llega cada día a {{ $hora }}. Los correos que lo reciben se cambia
 en **Configuración › Rutas**.
 
 {{ \App\Support\NombreEmpresa::actual() }}
-</x-mail::message>
+</x-mail::documento>

@@ -87,13 +87,14 @@ class PedidoSala extends Model
 
     /**
      * La zona que se muestra: la del pedido o, si no tiene (la tienda nueva se guarda sin
-     * `ruta_id`), la del viaje en que se sacó. Solo para mostrar: no cambia lo guardado.
-     * En listas, cargar antes `ruta`, `salida` y `salida.ruta`.
+     * `ruta_id`), la del viaje en que se sacó. La sala que existe y no tiene zona sigue
+     * diciendo «Sin zona»: así la oficina ve que falta agregarla a una. Solo para mostrar: no
+     * cambia lo guardado. En listas, cargar antes `ruta`, `salida` y `salida.ruta`.
      */
     public function zonaNombre(): string
     {
         return $this->ruta?->nombre
-            ?? ($this->salida?->ruta_id !== null ? $this->salida->ruta->nombre : null)
+            ?? ($this->esTiendaNueva() && $this->salida?->ruta_id !== null ? $this->salida->ruta->nombre : null)
             ?? 'Sin zona';
     }
 

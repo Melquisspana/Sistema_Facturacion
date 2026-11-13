@@ -9,12 +9,13 @@
         Todo lo que pidió el vendedor, lo que llegó en cada envío vigente y una «F» en lo que
         faltó, con su motivo. Sin precios: con esto y la OC la oficina factura.
 
-        Página impresa (docs/GUIA_PANTALLAS.md, «Páginas para imprimir»): documento aparte,
-        igual que facturacion/listas/imprimir, con sus propios estilos, sin el bundle de la
-        aplicación y sin modo oscuro. Lleva color de acento (índigo, verde, ámbar, rojo) que se
-        imprime tal cual (print-color-adjust: exact), pero se lee igual en una impresora en
-        blanco y negro: la «F» sigue siendo una letra en un recuadro y los textos de color son
-        tonos oscuros. Entra en hoja carta vertical.
+        Forma (12/11/2026, pedido del dueño): la de los documentos impresos (docs/GUIA_PANTALLAS.md,
+        «Documentos impresos»), como el PDF del CCF, la hoja de despacho de la fábrica y el PDF
+        del día, con el acento OCRE y «HOJA DE PEDIDO» con «No es factura · Sin valor tributario»
+        en el recuadro. Lo común sale de components/documento. Documento aparte, sin el bundle de
+        la aplicación ni modo oscuro, carta vertical. Se lee igual en una impresora en blanco y
+        negro: la «F» sigue siendo una letra en un recuadro y los textos de color son tonos
+        oscuros. La sirven la oficina (rutas.pedidos.hoja) y «Por entregar» (rutas.por-entregar.hoja).
 
         Dice el estado del pedido. La «F» solo con el pedido cerrado (Mandado o No se trae):
         mandado en parte, lo que falta «va en otro envío»; pendiente o anulado, un aviso y
@@ -29,123 +30,76 @@
         (Y-m-d o null), el día al que vuelve «Llegó de la fábrica».
     --}}
     <style>
-        :root {
-            --tinta: #111827;
-            --suave: #4b5563;
-            --indigo: #3730a3;
-            --indigo-borde: #c7d2fe;
-            --indigo-claro: #eef2ff;
-            --verde: #166534;
-            --verde-claro: #dcfce7;
-            --ambar: #92400e;
-            --ambar-claro: #fef3c7;
-            --rojo: #991b1b;
-            --rojo-claro: #fee2e2;
-            --gris: #374151;
-            --gris-claro: #f3f4f6;
-        }
-        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        body {
-            margin: 0;
-            padding: 24px 16px;
-            background: #fff;
-            color: var(--tinta);
-            font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-            font-size: 13px;
-            line-height: 1.4;
-        }
+        <x-documento.estilos acento="ocre" />
+
+        @page { size: letter portrait; margin: 12mm; }
+        body { padding: 24px 16px; font-size: 12px; }
         .hoja { max-width: 820px; margin: 0 auto; }
-        .mono { font-family: "Consolas", "Courier New", monospace; }
 
-        .franja {
-            display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px;
-            margin-bottom: 16px; padding: 14px 20px;
-            background: var(--indigo); color: #fff; border-radius: 10px;
-            border-bottom: 5px solid #818cf8;
-        }
-        .empresa { margin: 0 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #e0e7ff; }
-        h1 { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.2; }
-        .numero { margin: 0; text-align: right; }
-        .numero span { display: block; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #e0e7ff; }
-        .numero strong { font-size: 28px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+        /* Aviso del estado: el ámbar común (.st) y una variante roja para el anulado. */
+        .st.rojo { border-color: #E3B5BF; border-left-color: #B0334F; background: #FBEDF0; color: #8A2440; }
 
-        .aviso { margin: 0 0 16px; padding: 10px 14px; border: 2px solid; border-radius: 8px; font-weight: 700; text-align: center; }
-        .aviso-rojo { background: var(--rojo-claro); border-color: var(--rojo); color: var(--rojo); }
-        .aviso-ambar { background: var(--ambar-claro); border-color: var(--ambar); color: var(--ambar); }
+        /* Sala y envíos en dos bloques lado a lado (en el celular, uno debajo del otro). */
+        .bloques > tbody > tr > td { width: 50%; vertical-align: top; padding: 0 .6em; }
+        .bloques > tbody > tr > td:first-child { padding-left: 0; }
+        .bloques > tbody > tr > td:last-child { padding-right: 0; }
+        .rec-name { font-size: 1.25em; font-weight: bold; }
+        .f-dato { margin-top: .3em; }
+        .f-dato .k { color: #8A9099; }
+        .envio { display: block; }
 
-        .datos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
-        .datos > div { min-width: 0; padding: 8px 12px; background: var(--indigo-claro); border: 1px solid var(--indigo-borde); border-radius: 8px; }
-        .datos .ancho { grid-column: span 2; }
-        .datos dt { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--indigo); }
-        .datos dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-        .datos dd .envio { display: block; }
-
-        .insignia { display: inline-block; padding: 1px 10px; border: 1.5px solid; border-radius: 999px; font-size: 13px; font-weight: 700; }
-        .insignia-green { background: var(--verde-claro); border-color: var(--verde); color: var(--verde); }
-        .insignia-amber { background: var(--ambar-claro); border-color: var(--ambar); color: var(--ambar); }
-        .insignia-red { background: var(--rojo-claro); border-color: var(--rojo); color: var(--rojo); }
-        .insignia-gray { background: var(--gris-claro); border-color: var(--gris); color: var(--gris); }
+        .insignia { display: inline-block; padding: 0 .7em; border: 1px solid; border-radius: 999px; font-weight: bold; }
+        .insignia-green { background: #EEF5F0; border-color: #2F6B4E; color: #235C42; }
+        .insignia-amber { background: #FBF6EC; border-color: #C8881E; color: #7A4A0C; }
+        .insignia-red { background: #FBEDF0; border-color: #B0334F; color: #8A2440; }
+        .insignia-gray { background: #F2F3F5; border-color: #8A9099; color: #374151; }
 
         .tabla-wrap { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; border: 1px solid var(--indigo); }
-        th, td { border: 1px solid #a5b4fc; padding: 6px 8px; vertical-align: middle; }
-        thead th {
-            background: var(--indigo); color: #fff; border-color: #6366f1;
-            font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-align: left;
-        }
-        tbody tr:nth-child(even) td { background: #f5f7ff; }
-        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-        td.num { font-size: 16px; font-weight: 600; }
-        td.llego { font-weight: 800; color: var(--verde); }
-        td.falta { white-space: nowrap; font-size: 15px; }
+        .items tbody td { vertical-align: middle; }
+        .items tbody tr:nth-child(even) td { background: #F8F9FA; }
+        .items th.num, .items td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .items td.num { font-size: 1.3em; font-weight: bold; }
+        .items td.cod { font-weight: bold; font-size: .92em; }
+        .items td.llego { color: #235C42; }
+        .items td.falta { white-space: nowrap; font-size: 1.2em; }
         .f {
             display: inline-block; min-width: 1.7em; margin-right: 4px; padding: 0 2px;
-            border: 2px solid var(--rojo); border-radius: 4px; background: var(--rojo-claro); color: var(--rojo);
-            font-size: 17px; font-weight: 900; line-height: 1.3; text-align: center;
+            border: 2px solid #8A2440; border-radius: 4px; background: #FBEDF0; color: #8A2440;
+            font-size: 1.15em; font-weight: 900; line-height: 1.3; text-align: center;
         }
-        .cuanto-falto { font-weight: 800; color: var(--rojo); }
+        .cuanto-falto { font-weight: bold; color: #8A2440; }
         .otro-envio {
-            display: inline-block; padding: 1px 8px; border: 1.5px solid var(--ambar); border-radius: 6px;
-            background: var(--ambar-claro); color: var(--ambar); font-size: 12px; font-weight: 700;
+            display: inline-block; padding: 1px 8px; border: 1px solid #C8881E; border-radius: 4px;
+            background: #FBF6EC; color: #7A4A0C; font-size: .8em; font-weight: bold;
         }
-        td.motivo { font-style: italic; color: var(--gris); }
-        td.regresa { font-weight: 800; color: var(--ambar); }
-        tbody tr.falto td { background: #fff1f1; }
+        .items td.motivo { font-style: italic; color: #4A4F58; }
+        .items td.regresa { color: #7A4A0C; }
+        .items tbody tr.falto td { background: #FDF3F5; }
 
-        .leyenda { margin: 8px 0 0; padding: 6px 10px; border-left: 4px solid; border-radius: 4px; font-size: 12px; font-weight: 600; }
-        .leyenda-rojo { border-color: var(--rojo); background: var(--rojo-claro); color: var(--rojo); }
-        .leyenda-ambar { border-color: var(--ambar); background: var(--ambar-claro); color: var(--ambar); }
+        .leyenda { margin: .6em 0 0; padding: .4em .85em; border: 1px solid; border-left-width: 3px; border-radius: 3px; font-size: .92em; font-weight: bold; }
+        .leyenda-rojo { border-color: #E3B5BF; border-left-color: #B0334F; background: #FBEDF0; color: #8A2440; }
+        .leyenda-ambar { border-color: #E7C98D; border-left-color: #C8881E; background: #FBF6EC; color: #7A4A0C; }
 
-        .observaciones { margin-top: 18px; border: 1px solid var(--borde, #d1d5db); border-radius: 8px; padding: 10px 14px; page-break-inside: avoid; }
-        .observaciones h2 { margin: 0 0 6px; font-size: 13px; }
-        .observaciones ul { margin: 0; padding-left: 18px; }
-        .observaciones li { margin: 3px 0; font-size: 12px; }
-        .firma { margin-top: 56px; display: flex; flex-wrap: wrap; gap: 32px 48px; }
-        .firma div { flex: 1 1 200px; border-top: 2px solid var(--indigo); padding-top: 4px; text-align: center; font-size: 11px; color: var(--suave); }
+        .observaciones { page-break-inside: avoid; }
+        .observaciones h2.sec-h { margin: 0; }
+        .observaciones ul { margin: 0; padding-left: 2.2em; }
+        .observaciones li { margin: .2em 0; }
 
         .no-print { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 820px; margin: 0 auto 16px; }
-        .no-print a, .no-print button {
-            display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
-            border: 1px solid #d1d5db; background: #fff; color: #374151; font: inherit; font-weight: 500;
-            text-decoration: none; border-radius: 6px; cursor: pointer;
-        }
-        .no-print a:hover, .no-print button:hover { background: #f9fafb; }
-        .no-print a:focus-visible, .no-print button:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
+        .no-print a, .no-print button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid #C9CDD4; background: #fff; color: #20242C; font: inherit; font-weight: 600; text-decoration: none; border-radius: 6px; cursor: pointer; }
+        .no-print a:hover, .no-print button:hover { background: #F8F9FA; }
+        .no-print a:focus-visible, .no-print button:focus-visible { outline: 2px solid #9A6B1F; outline-offset: 2px; }
 
-        @media (max-width: 640px) {
-            .datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        /* En el celular el recuadro y los bloques bajan uno debajo del otro (solo pantalla; al imprimir, al lado). */
+        @media screen and (max-width: 600px) {
+            td.head-emisor, td.head-dbox { display: block; width: auto; padding: 0 0 14px; }
+            .bloques > tbody > tr > td { display: block; width: auto; padding: 0; }
         }
-        @media (max-width: 400px) {
-            .datos { grid-template-columns: minmax(0, 1fr); }
-            .datos .ancho { grid-column: auto; }
-            .numero { text-align: left; }
-        }
-        @page { size: letter portrait; margin: 12mm; }
+
         @media print {
             body { padding: 0; }
             .hoja { max-width: none; }
-            thead { display: table-header-group; }
-            tr { page-break-inside: avoid; }
+            .head, .sec { page-break-inside: avoid; }
             .no-print { display: none; }
         }
     </style>
@@ -166,11 +120,12 @@
     $enviosTexto = fn ($lista) => ($lista->count() === 1 ? 'envío ' : 'envíos ').$lista->pluck('numero')->join(', ', ' y ');
     $enviosDe = fn ($dte) => $enviosTexto($envios->where('dte_id', $dte->id));
     $conRegresa = $regresa !== [];
+    $empresa = \App\Support\NombreEmpresa::actual();
 @endphp
 
 <div class="no-print">
     @can('viewAny', App\Models\Dte::class)
-        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de la fábrica»</a>
+        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de pedidos»</a>
     @endcan
     @if ($volverPorEntregar ?? false)
         <a href="{{ route('rutas.por-entregar.index') }}">Volver a «Por entregar»</a>
@@ -181,54 +136,64 @@
 </div>
 
 <main class="hoja">
-    <header class="franja">
-        <div>
-            <p class="empresa">{{ \App\Support\NombreEmpresa::actual() }}</p>
-            <h1>Lo que salió de la fábrica</h1>
-        </div>
-        <p class="numero"><span>Pedido n.º</span> <strong>{{ $pedido->id }}</strong></p>
-    </header>
+    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Lo que se despachó"
+        etiqueta="Documento interno de Rutas" titulo="HOJA DE PEDIDO">
+        <tr class="key"><td class="k">Pedido n.º</td><td class="v">{{ $pedido->id }}</td></tr>
+        <tr><td class="k">Fecha del pedido</td><td class="v">{{ $pedido->fecha->format('d/m/Y') }}</td></tr>
+        <tr><td class="k">Vendedor</td><td class="v">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td></tr>
+        <tr><td class="k">Orden de compra</td><td class="v mono">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</td></tr>
+    </x-documento.encabezado>
 
     @if ($estado === \App\Enums\EstadoPedidoSala::Anulado)
-        <p class="aviso aviso-rojo" role="alert">Este pedido está anulado: no se factura.</p>
+        <p class="st rojo" role="alert"><strong>Este pedido está anulado: no se factura.</strong></p>
     @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado)
-        <p class="aviso aviso-ambar" role="alert">La fábrica todavía no mandó nada de este pedido.</p>
+        <p class="st" role="alert"><strong>Todavía no se despachó nada de este pedido.</strong></p>
     @endif
 
-    <dl class="datos">
-        <div class="ancho"><dt>Sala</dt><dd>{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
-        <div><dt>Estado</dt><dd><span class="insignia insignia-{{ $estado->color() }}">{{ $estado->label() }}</span></dd></div>
-        <div><dt>Orden de compra</dt><dd class="mono">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
-        {{-- La zona de la sala; si no tiene, la cajita no va (antes decía «Ruta: Sin ruta»). --}}
-        @if ($pedido->ruta)
-            <div><dt>Zona</dt><dd>{{ $pedido->ruta->nombre }}</dd></div>
-        @endif
-        <div><dt>Vendedor</dt><dd>{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
-        <div><dt>Fecha del pedido</dt><dd>{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
-        <div><dt>Envíos</dt><dd>
-            @forelse ($envios as $envio)
-                <span class="envio">Envío {{ $envio->numero }} · {{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</span>
-            @empty
-                Todavía no salió nada.
-            @endforelse
-        </dd></div>
-        @if ($conCcf)
-            <div class="ancho"><dt>Facturación</dt><dd>
-                @foreach ($facturacion['facturados'] as $dte)
-                    <span class="envio">CCF n.º {{ $dte->numero_control ? '…'.\App\Support\OrdenCompra::ultimosDigitos($dte->numero_control) : $dte->etiquetaNumeroSistema() }} · {{ $enviosDe($dte) }}</span>
-                @endforeach
-                @if ($facturacion['borrador'])
-                    <span class="envio">CCF en borrador · {{ $enviosDe($facturacion['borrador']) }}</span>
-                @endif
-                @if ($facturacion['por_facturar']->isNotEmpty())
-                    <span class="envio">Sin facturar · {{ $enviosTexto($facturacion['por_facturar']) }}</span>
-                @endif
-            </dd></div>
-        @endif
-    </dl>
+    <table class="bloques"><tr>
+        <td>
+            <section class="sec">
+                <div class="sec-h">Sala de entrega</div>
+                <div class="sec-b">
+                    <div class="rec-name">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</div>
+                    {{-- La zona de la sala o, en la tienda nueva, la del viaje; si no hay, no va
+                         (antes decía «Ruta: Sin ruta»). --}}
+                    @if ($pedido->zonaNombre() !== 'Sin zona')
+                        <div class="f-dato"><span class="k">Zona:</span> {{ $pedido->zonaNombre() }}</div>
+                    @endif
+                    <div class="f-dato"><span class="k">Estado:</span> <span class="insignia insignia-{{ $estado->color() }}">{{ $estado->label() }}</span></div>
+                </div>
+            </section>
+        </td>
+        <td>
+            <section class="sec">
+                <div class="sec-h">Envíos</div>
+                <div class="sec-b">
+                    @forelse ($envios as $envio)
+                        <span class="envio">Envío {{ $envio->numero }} · {{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</span>
+                    @empty
+                        Todavía no salió nada.
+                    @endforelse
+                    @if ($conCcf)
+                        <div class="f-dato"><span class="k">Facturación:</span></div>
+                        @foreach ($facturacion['facturados'] as $dte)
+                            <span class="envio">CCF n.º {{ $dte->numero_control ? '…'.\App\Support\OrdenCompra::ultimosDigitos($dte->numero_control) : $dte->etiquetaNumeroSistema() }} · {{ $enviosDe($dte) }}</span>
+                        @endforeach
+                        @if ($facturacion['borrador'])
+                            <span class="envio">CCF en borrador · {{ $enviosDe($facturacion['borrador']) }}</span>
+                        @endif
+                        @if ($facturacion['por_facturar']->isNotEmpty())
+                            <span class="envio">Sin facturar · {{ $enviosTexto($facturacion['por_facturar']) }}</span>
+                        @endif
+                    @endif
+                </div>
+            </section>
+        </td>
+    </tr></table>
 
+    <h2>Lo que se pidió y lo que llegó</h2>
     <div class="tabla-wrap">
-        <table>
+        <table class="items">
             <thead>
                 <tr>
                     <th>Código</th>
@@ -254,7 +219,7 @@
                         $falto = $pendiente && $cerrado;
                     @endphp
                     <tr class="{{ $falto ? 'falto' : '' }}">
-                        <td class="mono">{{ $linea->producto?->codigo }}</td>
+                        <td class="cod mono">{{ $linea->producto?->codigo }}</td>
                         <td>{{ $linea->producto?->nombre }}</td>
                         <td class="num">{{ $linea->cantidadLegible() }}</td>
                         @if ($variosEnvios)
@@ -294,9 +259,9 @@
         $deMenos = ($cerrado || $parcial) ? $pedido->lineas->filter->tienePendiente() : collect();
     @endphp
     @if ($deMenos->isNotEmpty())
-        <section class="observaciones" aria-labelledby="observaciones-titulo">
-            <h2 id="observaciones-titulo">Observaciones</h2>
-            <ul>
+        <section class="sec observaciones" aria-labelledby="observaciones-titulo">
+            <h2 class="sec-h" id="observaciones-titulo">Observaciones</h2>
+            <ul class="sec-b">
                 @foreach ($deMenos as $linea)
                     <li>{{ $linea->producto?->nombre }}: se pidieron {{ $linea->cantidadLegible() }}, vinieron {{ \App\Models\PedidoSalaLinea::legible($linea->mandado()) }} ({{ $cerrado ? 'faltaron' : 'faltan' }} {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}).@if ($cerrado && filled($linea->motivo_no_enviado)) Motivo: {{ $linea->motivo_no_enviado }}.@elseif (! $cerrado) Va en otro envío.@endif</li>
                 @endforeach
@@ -304,10 +269,9 @@
         </section>
     @endif
 
-    <div class="firma">
-        <div>Entrega</div>
-        <div>Recibe (gerente de la sala)</div>
-    </div>
+    <x-documento.firmas :quienes="['Entrega', 'Recibe (gerente de la sala)']" />
+
+    <p class="pie">Hoja interna del pedido de {{ $empresa }}. No es factura ni documento tributario.</p>
 </main>
 
 </body>

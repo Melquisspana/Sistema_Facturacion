@@ -35,7 +35,7 @@ class TiendaNuevaController extends Controller
             : collect();
 
         return view('facturacion.tienda-nueva', [
-            'pedido' => $pedido->loadMissing(['sacadoPor:id,nombre', 'ruta:id,nombre']),
+            'pedido' => $pedido->loadMissing(['sacadoPor:id,nombre', 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre']),
             'texto' => $texto,
             'salas' => $salas,
             'puedeDarDeAlta' => $request->user()->can('create', [Cliente::class, $pedido]),
@@ -56,9 +56,18 @@ class TiendaNuevaController extends Controller
             ->with('status', self::listo($pedido));
     }
 
-    /** El aviso al volver a facturar, también desde el alta de la sala en Clientes. */
+    /**
+     * El aviso al volver a facturar, también desde el alta de la sala en Clientes. Si la sala
+     * ya tenía otro pedido vigente ese día, lo dice: dos vendedores pudieron escribir la misma
+     * tienda con nombres distintos. Solo avisa; facturar o no, lo decide la oficina.
+     */
     public static function listo(PedidoSala $pedido): string
     {
-        return 'Listo: el pedido de «'.$pedido->sala_nueva_nombre.'» quedó enlazado a la sala «'.$pedido->sala?->nombre.'». Ya podés facturarlo.';
+        $otro = PedidoSala::vigentes()->where('cliente_sucursal_id', $pedido->cliente_sucursal_id)->whereKeyNot($pedido->id)
+            ->whereDate('fecha', $pedido->fecha)->with('sacadoPor:id,nombre')->orderBy('id')->first();
+
+        return 'Listo: el pedido de «'.$pedido->sala_nueva_nombre.'» quedó enlazado a la sala «'.$pedido->sala?->nombre.'». Ya podés facturarlo.'
+            .($otro === null ? '' : ' Ojo: «'.$pedido->sala?->nombre.'» ya tiene otro pedido del '.$pedido->fecha->format('d/m/Y')
+                .($otro->sacadoPor ? ', de '.$otro->sacadoPor->nombre : '').'. Revisá que no sea el mismo antes de facturar los dos.');
     }
 }

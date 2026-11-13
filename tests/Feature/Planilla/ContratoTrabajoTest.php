@@ -93,6 +93,19 @@ class ContratoTrabajoTest extends TestCase
         $this->assertStringContainsString('Edad: 36', $html);
     }
 
+    public function test_el_contrato_lleva_el_recuadro_con_su_nombre_y_ninguna_leyenda(): void
+    {
+        $html = view('planilla.contrato-pdf', app(ContratoTrabajo::class)->datos($this->empleado()) + ['logo' => null])->render();
+
+        $this->assertStringContainsString('<span class="ttl">CONTRATO INDIVIDUAL DE TRABAJO</span>', $html);
+        // Se firma con validez: nada en el papel que le reste («documento interno», «no es factura»).
+        $this->assertStringNotContainsString('class="nof"', $html);
+        $this->assertStringNotContainsString('Documento interno', $html);
+        $this->assertStringNotContainsString('No es factura', $html);
+        // El texto legal sigue igual.
+        $this->assertStringContainsString('convenimos en celebrar el presente Contrato Individual de Trabajo', preg_replace('/\s+/', ' ', $html));
+    }
+
     public function test_el_horario_suma_44_horas_y_no_cuenta_el_almuerzo(): void
     {
         $html = view('planilla.contrato-pdf', app(ContratoTrabajo::class)->datos($this->empleado()) + ['logo' => null])->render();

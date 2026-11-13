@@ -215,7 +215,8 @@ class EntregasCcf
      * cuando registra el vendedor en su viaje o en la automática: ahí es obligatoria (y en el
      * supermercado del portal siempre es sin cobro). No toca la ficha del cliente. En «Entregado», `nota` es la observación (una devolución); en
      * «No entregado», el detalle del motivo. `entregado_por_id` es quién lo entregó (o quién
-     * fue, en «No entregado», donde es opcional): alguien que va en la salida.
+     * fue, en «No entregado»): alguien que va en la salida. Obligatorio en los dos; los «No
+     * entregado» de antes del 12/11/2026 pueden tenerlo vacío y se leen igual.
      *
      * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
      *
@@ -298,11 +299,10 @@ class EntregasCcf
             if ($motivo->exigeNota() && $nota === null) {
                 throw ValidationException::withMessages(['nota' => 'Con «Otro», escribí qué pasó.']);
             }
-            // Quién fue (12/11/2026), si se dice: va en su PDF del día. Alguien de la salida.
-            $fue = filled($datos['entregado_por_id'] ?? null) ? (int) $datos['entregado_por_id'] : null;
-            if ($fue !== null) {
-                $this->exigirQuienEntrega($salida, $fue, $usuario, 'Elegí quién fue entre las personas que van en la salida.');
-            }
+            // Quién fue (12/11/2026): va en su PDF del día. Alguien de la salida, por cualquier
+            // pantalla (antes la oficina podía dejarlo vacío).
+            $fue = (int) ($datos['entregado_por_id'] ?? 0);
+            $this->exigirQuienEntrega($salida, $fue, $usuario, 'Elegí quién fue entre las personas que van en la salida.');
 
             $entrega->update($comun + [
                 'motivo_no_entrega' => $motivo,

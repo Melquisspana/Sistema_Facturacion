@@ -3,14 +3,17 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoPedidoSala;
+use App\Facades\Ajustes;
 use App\Http\Requests\Rutas\PedidoSalaRequest;
 use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
+use App\Models\PedidoSalaLinea;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
 use App\Models\User;
 use App\Support\Dte\OrdenProductosOc;
 use App\Support\HoraNegocio;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +33,42 @@ use Illuminate\Validation\ValidationException;
  */
 class PedidosSala
 {
-    public function __construct(private readonly Viajes $viajes) {}
+    public function __construct(private readonly Viajes $viajes, private readonly EstimadoPedidos $estimado) {}
+
+    /** Desde cuántas veces lo habitual de la sala una cantidad se avisa como «mucho más». */
+    public const VECES_HABITUAL = 3;
+
+    /**
+     * «Revisá: Galleta lleva 1,000 y esta sala suele llevar 10.» El 1000 en vez de 10: lo que
+     * pasa de {@see self::VECES_HABITUAL} veces lo que la sala suele llevar de ese producto (la
+     * mediana de {@see EstimadoPedidos}, con sus pedidos hasta ayer: no se compara consigo mismo). Solo
+     * con 3 pedidos o más y en lo que suele pedir. Solo avisa: el pedido ya se guardó (puede
+     * ser cierto) y quien lo sacó lo corrige mientras pueda.
+     *
+     * @return list<string>
+     */
+    public function avisosCantidad(PedidoSala $pedido): array
+    {
+        if ($pedido->cliente_sucursal_id === null) {
+            return [];
+        }
+        $estimado = $this->estimado->paraSala($pedido->cliente_sucursal_id, CarbonImmutable::parse(HoraNegocio::fechaHoy())->subDay());
+        if ($estimado->confianza() === PedidoEstimado::POCO_DATO) {
+            return [];
+        }
+        $habitual = collect($estimado->lineas)->keyBy('producto_id');
+
+        return $pedido->lineas()->with('producto:id,nombre')->orderBy('id')->get()
+            ->map(function (PedidoSalaLinea $linea) use ($habitual) {
+                $suele = $habitual->get($linea->producto_id);
+                // Contra la mediana, no la última vez: una vez rara no sube el umbral.
+                $tope = $suele === null ? null : (float) $suele['cantidad'] * self::VECES_HABITUAL;
+
+                return $tope !== null && (float) $linea->cantidad > $tope
+                    ? 'Revisá: '.$linea->producto?->nombre.' lleva '.$linea->cantidadLegible().' y esta sala suele llevar '.PedidoSalaLinea::legible($suele['cantidad']).'.'
+                    : null;
+            })->filter()->values()->all();
+    }
 
     /** Quien saca el pedido: la ficha de Rutas activa del usuario. */
     public static function persona(User $usuario): ?PersonalRuta
@@ -73,8 +111,10 @@ class PedidosSala
     {
         Gate::forUser($usuario)->authorize('create', PedidoSala::class);
         $personaId = self::persona($usuario)?->id ?? abort(403);
+        // Antes de la transacción: adentro, lo primero son los candados.
+        $sinPedidos = self::salasSinPedidos();
 
-        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido, $personaId) {
+        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido, $personaId, $sinPedidos) {
             $persona = PersonalRuta::whereKey($personaId)->where('user_id', $usuario->id)->where('activo', true)->lockForUpdate()->first() ?? abort(403);
             if ($sala !== null) {
                 $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
@@ -98,6 +138,9 @@ class PedidosSala
                 $pedido->update($campos);
                 $pedido->lineas()->delete();
             } else {
+                if ($sala !== null && in_array($sala->id, $sinPedidos, true)) {
+                    throw ValidationException::withMessages(['lineas' => self::SALA_SIN_PEDIDOS]);
+                }
                 $sala !== null ? $this->exigirSinSacar($sala, $usuario) : $this->exigirTiendaSinSacar($persona, $campos['sala_nueva_nombre']);
                 $viaje = $this->viajes->paraPedido($persona, $sala, $usuario);
                 $pedido = $viaje->pedidos()->create($campos + [
@@ -122,6 +165,21 @@ class PedidosSala
         });
     }
 
+    public const SALA_SIN_PEDIDOS = 'En esta sala no se sacan pedidos.';
+
+    /**
+     * Las salas donde no se sacan pedidos (Configuración › Rutas; por ejemplo, la bodega
+     * central de un cliente que solo recibe notas de crédito). No salen en «Sacar pedido» y
+     * {@see guardar()} no saca uno nuevo en ellas, ni {@see enlazarSala()} les enlaza una
+     * tienda nueva. Un pedido que ya tenían se sigue corrigiendo y facturando. Vacío = todas.
+     *
+     * @return list<int>
+     */
+    public static function salasSinPedidos(): array
+    {
+        return array_map('intval', Ajustes::lista('pedidos.salas_sin_pedidos'));
+    }
+
     public const AUDITORIA_ENLACE = 'enlazó la tienda nueva a su sala';
 
     /**
@@ -144,7 +202,10 @@ class PedidosSala
      */
     public function enlazarSala(PedidoSala $pedido, int $salaId, User $usuario): PedidoSala
     {
-        return DB::transaction(function () use ($pedido, $salaId, $usuario) {
+        // Antes de la transacción, como en guardar(): adentro, lo primero es el candado.
+        $sinPedidos = self::salasSinPedidos();
+
+        return DB::transaction(function () use ($pedido, $salaId, $usuario, $sinPedidos) {
             Gate::forUser($usuario)->authorize('enlazarSala', $pedido);
             $pedido = PedidoSala::lockForUpdate()->findOrFail($pedido->id);
             if (! $pedido->estaVigente()) {
@@ -155,6 +216,10 @@ class PedidosSala
             }
             $sala = ClienteSucursal::whereKey($salaId)->where('activo', true)->first()
                 ?? throw ValidationException::withMessages(['cliente_sucursal_id' => 'Elegí una sala activa.']);
+            // Una sala donde no se sacan pedidos tampoco recibe uno por la tienda nueva.
+            if (in_array($sala->id, $sinPedidos, true)) {
+                throw ValidationException::withMessages(['cliente_sucursal_id' => 'En «'.$sala->nombre.'» no se sacan pedidos: elegí otra sala.']);
+            }
 
             $pedido->update(['cliente_sucursal_id' => $sala->id, 'ruta_id' => $pedido->ruta_id ?? $this->viajes->zona($sala)?->id]);
             activity('pedido_sala')
@@ -246,7 +311,7 @@ class PedidosSala
         });
     }
 
-    public const EN_FABRICA = 'La fábrica ya marcó este pedido; ya no se puede corregir. Avisá a la oficina.';
+    public const EN_FABRICA = 'Este pedido ya está en despacho; ya no se puede corregir. Avisá a la oficina.';
 
     /**
      * Freno del vendedor: si la fábrica ya empezó (algún envío, aunque esté anulado, un
@@ -282,7 +347,7 @@ class PedidosSala
     {
         return match (true) {
             ! $pedido->estaVigente() => null,
-            $pedido->fabricaEmpezo() => 'Ya está en la fábrica: si cambió algo, avisá a la oficina.',
+            $pedido->fabricaEmpezo() => 'Ya está en despacho: si cambió algo, avisá a la oficina.',
             self::sacoElSiguiente($pedido) => 'Ya sacaste otro pedido: este lo corrige la oficina.',
             default => null,
         };

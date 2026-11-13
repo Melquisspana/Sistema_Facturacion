@@ -561,6 +561,8 @@ class IndemnizacionBajaTest extends TestCase
 
         $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo']))->assertOk()
             ->assertSee('Recibo de indemnización')
+            // Prueba un pago que manda la ley: sin leyenda que le reste validez.
+            ->assertDontSee('Documento interno')->assertDontSee('No es factura')
             ->assertSee('IND-'.str_pad((string) $planilla->id, 5, '0', STR_PAD_LEFT))
             ->assertSeeInOrder(['Ana Ficticia', 'Puesto: Vendedora'])
             ->assertSeeInOrder(['Recibí de Patrona Ejemplo la cantidad de US$', '2,147.04', 'en concepto de indemnización por despido, por',

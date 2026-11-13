@@ -31,7 +31,7 @@ class PedidoSalaController extends Controller
         ]);
 
         $pedidos = PedidoSala::query()
-            ->with(['sala:id,nombre,codigo', 'ruta:id,nombre', 'sacadoPor:id,nombre'])
+            ->with(['sala:id,nombre,codigo', 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre'])
             ->withCount('lineas')
             ->when($filtros['desde'] ?? null, fn (Builder $q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($filtros['hasta'] ?? null, fn (Builder $q, $f) => $q->whereDate('fecha', '<=', $f))
@@ -61,7 +61,7 @@ class PedidoSalaController extends Controller
     public function show(PedidoSala $pedido, FacturarPedido $facturar): View
     {
         Gate::authorize('view', $pedido);
-        $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'salida', 'sacadoPor:id,nombre', 'registradoPor:id,name', 'lineas.producto:id,codigo,nombre',
+        $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'salida', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'registradoPor:id,name', 'lineas.producto:id,codigo,nombre',
             'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->orderBy('numero'), 'envios.lineas.linea.producto:id,nombre',
             'envios.registradoPor:id,name', 'envios.anuladoPor:id,name', 'envios.dte']);
 
@@ -93,7 +93,7 @@ class PedidoSalaController extends Controller
      */
     public static function datosHoja(PedidoSala $pedido, FacturarPedido $facturar, ?string $fecha): array
     {
-        $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'sacadoPor:id,nombre', 'lineas.producto:id,codigo,nombre',
+        $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'lineas.producto:id,codigo,nombre',
             'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->whereNull('anulado_en')->orderBy('numero'), 'envios.lineas', 'envios.dte']);
 
         return [

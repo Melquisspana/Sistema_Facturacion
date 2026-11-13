@@ -451,7 +451,7 @@ class PedidosSalaTest extends TestCase
         $envio = $this->envioDeFabrica($pedido);
         $pedido->update(['estado' => EstadoPedidoSala::Enviado]);
         $lineas = $pedido->lineas()->pluck('id')->all();
-        $error = 'La fábrica ya marcó este pedido; ya no se puede corregir. Avisá a la oficina.';
+        $error = 'Este pedido ya está en despacho; ya no se puede corregir. Avisá a la oficina.';
 
         $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '4']])
             ->assertSessionHasErrors(['lineas' => $error]);
@@ -460,7 +460,7 @@ class PedidosSalaTest extends TestCase
         $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
 
         // Con la pantalla vieja o desde la sala: el aviso, no un 403.
-        $aviso = 'El pedido de «Tienda Centro» ya está en la fábrica. Si cambió algo, avisá a la oficina.';
+        $aviso = 'El pedido de «Tienda Centro» ya está en despacho. Si cambió algo, avisá a la oficina.';
         $this->get(route('rutas.sacar-pedido.edit', $pedido))->assertRedirect()->assertSessionHas('error', $aviso);
         $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertRedirect()->assertSessionHas('error', $aviso);
         // Otro vendedor no lo corrige: 403.

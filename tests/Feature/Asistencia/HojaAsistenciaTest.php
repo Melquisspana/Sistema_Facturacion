@@ -76,7 +76,9 @@ class HojaAsistenciaTest extends TestCase
             ['Carla Prueba Tres', null, null],
             ['Ana Prueba Uno', '07:55', '18:30'],
         ], $filas);
-        $respuesta->assertSee('CONTROL DE ASISTENCIA')->assertSee('Producción')->assertSee('09/11/2026')
+        // Forma de los documentos impresos: el recuadro con su nombre y «Documento interno».
+        $respuesta->assertSee('HOJA DE ASISTENCIA')->assertSee('Documento interno')->assertDontSee('No es factura')
+            ->assertSee('Producción')->assertSee('09/11/2026')
             ->assertSee('Firma')->assertDontSee('De Baja')->assertDontSee('Dario');
     }
 

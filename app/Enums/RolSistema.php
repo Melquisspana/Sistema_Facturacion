@@ -39,7 +39,7 @@ enum RolSistema: string
             self::Vendedor => 'Vendedor',
             self::JefeVendedores => 'Jefe de vendedores',
             self::Produccion => 'Producción',
-            self::Fabrica => 'Fábrica',
+            self::Fabrica => 'Pedidos',
         };
     }
 

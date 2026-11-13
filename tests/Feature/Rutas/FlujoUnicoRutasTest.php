@@ -30,6 +30,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\QuienEntrega;
 use Tests\TestCase;
 
 /**
@@ -235,7 +236,7 @@ class FlujoUnicoRutasTest extends TestCase
             ->assertSee('Sin zona')
             ->assertSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false)
             ->assertDontSee('pedile a la oficina que se la asigne');
-        $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
 
         $salida = SalidaRuta::sole();
         $this->assertNull($salida->ruta_id);
@@ -245,7 +246,7 @@ class FlujoUnicoRutasTest extends TestCase
 
         // La segunda del mismo día va a la misma salida; otro vendedor arma la suya.
         $otro = $this->ccf($this->sala('Otra tienda de prueba sin zona', false));
-        $this->post(route('rutas.por-entregar.marcar', $otro), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $this->post(route('rutas.por-entregar.marcar', $otro), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertSessionHasNoErrors();
         $this->assertSame(1, SalidaRuta::count());
         $this->assertSame(2, $salida->entregas()->count());
     }
@@ -558,7 +559,7 @@ class FlujoUnicoRutasTest extends TestCase
         $html = view('rutas.mi-salida.dia-pdf', ['resumen' => $resumen, 'persona' => $this->persona, 'empresa' => 'Empresa de prueba', 'generado' => now()])->render();
         $this->assertStringContainsString('Gastos del día', $html);
         $this->assertStringContainsString('Peaje de prueba', $html);
-        foreach (['$13.75', '$36.25', 'Efectivo a entregar', 'Entregó:', 'Recibió:'] as $texto) {
+        foreach (['$13.75', '$36.25', 'Efectivo a entregar', '>Entregó<', '>Recibió<', 'RESUMEN DEL DÍA', 'No es factura · Sin valor tributario'] as $texto) {
             $this->assertStringContainsString($texto, $html);
         }
         $this->assertStringNotContainsString('$99.00', $html);

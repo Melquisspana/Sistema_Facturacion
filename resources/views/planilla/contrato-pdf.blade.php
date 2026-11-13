@@ -1,33 +1,45 @@
 {{-- Contrato individual de trabajo. El texto legal es fijo y los datos son marcadores: acá
-     no va ningún dato real. Ver App\Services\Planilla\ContratoTrabajo. --}}
+     no va ningún dato real. Ver App\Services\Planilla\ContratoTrabajo.
+
+     Forma (13/11/2026, pedido del dueño): la de los documentos impresos (docs/GUIA_PANTALLAS.md,
+     «Documentos impresos»), con el acento violeta de Planilla. Solo cambian el encabezado (el
+     recuadro «CONTRATO INDIVIDUAL DE TRABAJO»), la letra y las firmas; el texto legal queda tal
+     cual. SIN leyenda: es un documento que se firma con validez y nada debe restarle. --}}
 <!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <title>Contrato individual de trabajo</title>
 <style>
+    <x-documento.estilos acento="violeta" />
+
     @page { margin: 18mm 20mm; }
-    body { font-family: DejaVu Sans, sans-serif; font-size: 9.5px; line-height: 1.45; color: #111; }
-    h1 { font-size: 13px; text-align: center; margin: 4px 0 10px; }
-    h2 { font-size: 9.5px; margin: 11px 0 3px; }
+    body { font-size: 9.5px; line-height: 1.45; }
+    h2 { font-size: 9.5px; margin: 11px 0 3px; color: #4A3A7A; }
     p { margin: 0 0 4px; }
-    .logo { text-align: center; }
-    .logo img { height: 42px; }
-    table { width: 100%; border-collapse: collapse; }
+    .generales { margin-top: 12px; }
     .generales td { width: 50%; vertical-align: top; padding: 0 8px 0 0; }
-    .generales th { text-align: left; padding: 0 0 3px; }
-    .dependientes th, .dependientes td { border: 1px solid #555; padding: 2px 4px; text-align: left; }
+    .generales th { text-align: left; padding: 0 0 3px; font-size: .9em; letter-spacing: .4px; color: #4A3A7A; border-bottom: 1px solid #D3CCE6; }
+    .generales tr + tr td { padding-top: 4px; }
+    .dependientes th, .dependientes td { border: 1px solid #C9CDD4; padding: 2px 4px; text-align: left; }
+    .dependientes th { background: #20242C; color: #F3F4F6; border-color: #20242C; }
+    /* Renglones vacíos con alto para llenarlos a mano. */
+    .dependientes td { height: 14px; }
+    .dbox-h .ttl { font-size: 1.15em; }
+    /* Firmas del contrato: la línea fina de los documentos impresos y, debajo, el nombre de quien firma. */
     .firmas { margin-top: 90px; }
-    .firmas td { width: 50%; text-align: center; padding: 0 12px; }
-    .linea { border-top: 1px solid #111; padding-top: 2px; }
+    .firmas td { text-align: center; }
+    .firmas .fline { height: 0; margin-bottom: 3px; }
+    .firmas .flk { font-size: .9em; color: #20242C; letter-spacing: 0; text-transform: none; }
     .huella { margin-top: 26px; }
 </style>
 </head>
 <body>
-    @if ($logo)
-        <div class="logo"><img src="{{ $logo }}" alt=""></div>
-    @endif
-    <h1>CONTRATO INDIVIDUAL DE TRABAJO</h1>
+    <x-documento.encabezado :empresa="$patrono['razon_social']" :logo="$logo" :detalle="filled($patrono['nit']) ? 'NIT '.$patrono['nit'] : null"
+        etiqueta="Documento laboral" titulo="CONTRATO INDIVIDUAL DE TRABAJO" leyenda="">
+        <tr class="key"><td class="k">Trabajador</td><td class="v">{{ $empleado->nombre }}</td></tr>
+        <tr><td class="k">A partir de</td><td class="v">{{ $inicio }}</td></tr>
+    </x-documento.encabezado>
 
     <table class="generales">
         <tr><th>GENERALES DE PARTE PATRONAL</th><th>GENERALES DEL TRABAJADOR</th></tr>
@@ -153,8 +165,8 @@
 
     <table class="firmas">
         <tr>
-            <td><div class="linea">(f) {{ mb_strtoupper($patrono['nombre']) }}</div></td>
-            <td><div class="linea">(f) {{ mb_strtoupper($empleado->nombre) }}</div></td>
+            <td><span class="fline"></span><span class="flk">(f) {{ mb_strtoupper($patrono['nombre']) }}</span></td>
+            <td><span class="fline"></span><span class="flk">(f) {{ mb_strtoupper($empleado->nombre) }}</span></td>
         </tr>
     </table>
     <div class="huella">

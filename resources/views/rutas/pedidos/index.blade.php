@@ -77,7 +77,7 @@
                                     <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="min-w-0 font-medium text-indigo-600 underline">{{ $pedido->nombreSala() }}</a>
                                     <x-rutas.estado-badge :estado="$pedido->estado" class="shrink-0" />
                                 </div>
-                                <p class="mt-1 text-sm text-gray-600">{{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin zona' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}</p>
+                                <p class="mt-1 text-sm text-gray-600">{{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->zonaNombre() }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}</p>
                                 <p class="mt-1 text-sm text-gray-600">
                                     {{ $pedido->lineas_count }} {{ $pedido->lineas_count === 1 ? 'producto' : 'productos' }} · {{ $pedido->numero_orden_compra ? 'OC '.$pedido->numero_orden_compra : 'Sin OC' }}
                                 </p>
@@ -105,7 +105,7 @@
                                     <tr>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->fecha->format('d/m/Y') }}</td>
                                         <td class="px-4 py-3 font-medium text-gray-800">{{ $pedido->nombreSala() }}</td>
-                                        <td class="px-4 py-3 text-gray-600">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</td>
+                                        <td class="px-4 py-3 text-gray-600">{{ $pedido->zonaNombre() }}</td>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td>
                                         <td class="px-4 py-3 text-right tabular-nums">{{ $pedido->lineas_count }}</td>
                                         <td class="px-4 py-3 font-mono text-gray-600">{{ $pedido->numero_orden_compra ?? '—' }}</td>

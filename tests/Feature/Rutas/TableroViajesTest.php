@@ -204,8 +204,8 @@ class TableroViajesTest extends TestCase
 
         $this->assertEquals([
             'Sala facturada hace 3 dias' => 'Facturado hace 3 días y todavía no se entrega.',
-            'Sala en armado hace 3 dias' => 'Sacado hace 3 días y todavía no sale de la fábrica.',
-            'Sala sacada hace 2 dias' => 'Sacado hace 2 días y todavía no sale de la fábrica.',
+            'Sala en armado hace 3 dias' => 'Sacado hace 3 días y todavía no se despacha.',
+            'Sala sacada hace 2 dias' => 'Sacado hace 2 días y todavía no se despacha.',
             'Sala mandada sin facturar' => 'Sacado hace 3 días y todavía no se factura.',
         ], $trabados);
         $this->assertSame(4, $fila['trabados']);

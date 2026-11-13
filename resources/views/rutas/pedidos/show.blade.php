@@ -61,7 +61,7 @@
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
-                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->ruta?->nombre ?? 'Sin zona' }}</dd></div>
+                    <div><dt class="{{ $dt }}">Zona</dt><dd class="{{ $dd }}">{{ $pedido->zonaNombre() }}</dd></div>
                     {{-- El viaje, por su nombre («Lunes · San Miguel»); una salida armada a mano de antes, por su fecha. --}}
                     <div><dt class="{{ $dt }}">{{ $pedido->salida && ! $pedido->salida->esViaje() ? 'Salida' : 'Viaje' }}</dt><dd class="{{ $dd }}">
                         @if ($pedido->salida)
@@ -141,9 +141,9 @@
 
             {{-- Cada envío por separado, para compararlo con el sugerido y la OC. --}}
             <section class="{{ $caja }}" aria-labelledby="envios-titulo">
-                <h2 id="envios-titulo" class="text-base font-semibold text-gray-800">Lo que mandó la fábrica</h2>
+                <h2 id="envios-titulo" class="text-base font-semibold text-gray-800">Lo que se despachó</h2>
                 @if ($pedido->envios->isEmpty())
-                    <p class="mt-1 text-sm text-gray-500">La fábrica todavía no mandó nada.</p>
+                    <p class="mt-1 text-sm text-gray-500">Todavía no se despachó nada.</p>
                 @else
                     <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios, 'conFacturacion' => true])</div>
                 @endif

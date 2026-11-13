@@ -12,6 +12,7 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaGasto;
 use App\Models\User;
+use App\Services\Dte\DtePdfService;
 use App\Support\HoraNegocio;
 use App\Support\NombreEmpresa;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -214,6 +215,8 @@ class DiaVendedor
             'resumen' => $this->resumen($persona, $usuario, $fecha),
             'persona' => $persona,
             'empresa' => NombreEmpresa::actual(),
+            // El logo como lo carga el PDF del CCF (data-URI): DomPDF no baja imágenes por URL.
+            'logo' => app(DtePdfService::class)->logoSrc(),
             'generado' => HoraNegocio::aLocal(now()),
         ])->setPaper('letter');
     }

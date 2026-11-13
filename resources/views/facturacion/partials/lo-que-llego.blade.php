@@ -6,7 +6,7 @@
      borrador); $sinNada (bool, no queda ningún envío por facturar). --}}
 <section aria-labelledby="llego-titulo" class="rounded-lg border border-gray-200 overflow-hidden">
     <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-        <h3 id="llego-titulo" class="text-xs font-semibold uppercase tracking-wide text-gray-500">Lo que llegó de la fábrica</h3>
+        <h3 id="llego-titulo" class="text-xs font-semibold uppercase tracking-wide text-gray-500">Lo que llegó de pedidos</h3>
     </div>
     <div class="space-y-3 p-4 text-sm">
         @if (! $pedido->estaVigente())
