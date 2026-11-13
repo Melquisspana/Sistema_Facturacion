@@ -260,4 +260,36 @@ class PpqLoteFichaPaginadaTest extends TestCase
             ->assertSeeText('Reporte del caso de Cliente de prueba, S.A.')
             ->assertSeeText('Lo que Cliente de prueba, S.A. registró queda presentado');
     }
+
+    /** Jefatura (13/11/2026): montos y albaranes sí; número de control, OC, sello y los archivos del portal no. */
+    public function test_jefatura_ve_el_lote_sin_datos_tecnicos_ni_archivos_del_portal(): void
+    {
+        $lote = $this->lote();
+        $this->item($lote, '03', 'DTE-03-M001P002-000000000000123', 11.00)
+            ->update(['sello_recepcion' => 'SELLO-FICTICIO-123', 'codigo_generacion' => 'CODIGO-FICTICIO-123']);
+        $jefatura = User::factory()->create()->assignRole(RolSistema::Jefatura->value);
+
+        $this->actingAs($jefatura)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSeeText('123')
+            ->assertSee('$11.00')
+            ->assertDontSee('DTE-03-M001P002-000000000000123')
+            ->assertDontSee('SELLO-FICTICIO-123')
+            ->assertDontSee('CODIGO-FICTICIO-123')
+            ->assertDontSee(self::OC)
+            ->assertDontSee(route('ppq.lotes.quedan', $lote), false);
+        $this->actingAs($jefatura)->get(route('ppq.lotes.index'))->assertOk()
+            ->assertSee('PPQ grande')
+            ->assertDontSee(route('ppq.lotes.excel', $lote), false);
+        $this->actingAs($jefatura)->get(route('ppq.lotes.excel', $lote))->assertForbidden();
+        $this->actingAs($jefatura)->get(route('ppq.lotes.quedan', $lote))->assertForbidden();
+
+        $admin = User::factory()->create()->assignRole(RolSistema::Administrador->value);
+        $this->actingAs($admin)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSee('DTE-03-M001P002-000000000000123')
+            ->assertSee('SELLO-FICTICIO-123')
+            ->assertSee(self::OC)
+            ->assertSee(route('ppq.lotes.quedan', $lote), false);
+        $this->actingAs($admin)->get(route('ppq.lotes.index'))->assertOk()
+            ->assertSee(route('ppq.lotes.excel', $lote), false);
+    }
 }
