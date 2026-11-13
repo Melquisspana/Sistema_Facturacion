@@ -231,12 +231,17 @@ class MiPedidoController extends Controller
         return $viaje !== null && $this->viajes->sigueSumando($viaje) ? $viaje : null;
     }
 
-    /** A «Sacar pedido», con el aviso de la OC si su forma no cuadra (no bloquea). */
+    /**
+     * A «Sacar pedido», con el aviso de la OC si su forma no cuadra y el de la cantidad que es
+     * mucho más que lo habitual de la sala ({@see PedidosSala::avisosCantidad()}). No bloquean.
+     */
     private function volver(PedidoSala $pedido, string $mensaje): RedirectResponse
     {
         $avisos = $pedido->avisosOrdenCompra();
+        $cantidades = $this->pedidos->avisosCantidad($pedido);
 
         return redirect()->route('rutas.sacar-pedido.index')
-            ->with('status', trim($mensaje.($avisos ? ' Revisá la orden de compra: '.implode(' ', $avisos) : '')));
+            ->with('status', trim($mensaje.($avisos ? ' Revisá la orden de compra: '.implode(' ', $avisos) : '')
+                .($cantidades ? ' '.implode(' ', $cantidades).' Si fue un error, tocá «Corregir».' : '')));
     }
 }

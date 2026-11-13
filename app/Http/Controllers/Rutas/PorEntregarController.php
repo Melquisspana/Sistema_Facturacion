@@ -188,6 +188,15 @@ class PorEntregarController extends Controller
             : $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
 
         $registrada = DB::transaction(function () use ($request, $dte, $persona, $quien, $datos) {
+            // Los toques del mismo vendedor, en fila. Lo que ya marcó hoy sale de su lista y
+            // queda en «Marcados hoy» con «Deshacer»: otro envío del mismo CCF es el doble toque
+            // o el reintento con mala señal. Sin esto, un «No se pudo» repetido se anotaba como
+            // otro intento y el jefe veía dos fallas. Se lee después del candado: ve lo que el
+            // primer toque acaba de guardar.
+            PersonalRuta::whereKey($persona->id)->lockForUpdate()->first();
+            if ($this->yaLoMarcoHoy($dte, $request->user()->id)) {
+                return null;
+            }
             $entrega = $this->porEntregar->entregaPara($dte, $persona, $request->user());
             Gate::authorize('registrar', $entrega->salida);
             if ($quien->id !== $persona->id) {
@@ -196,6 +205,9 @@ class PorEntregarController extends Controller
 
             return $this->entregas->registrar($entrega, $datos + ['entregado_por_id' => $quien->id], $request->user(), OrigenRegistroEntrega::Vendedor);
         });
+        if ($registrada === null) {
+            return back()->with('status', self::YA_ANOTADA);
+        }
 
         // Solo el viaje se nombra: la salida que se arma sola para entregar no le dice nada al vendedor.
         $salida = $registrada->salida;
@@ -222,6 +234,19 @@ class PorEntregarController extends Controller
     }
 
     private const QUIEN_INVALIDO = 'Elegí quién lo entregó entre los vendedores activos.';
+
+    public const YA_ANOTADA = 'Esa entrega ya estaba anotada. Si fue un error, tocá «Deshacer» en «Marcados hoy».';
+
+    /**
+     * ¿El vendedor ya marcó hoy este CCF y sigue en «Marcados hoy»? La misma regla de esa lista
+     * en {@see index()}: lo registró él, hoy, en una salida en curso.
+     */
+    private function yaLoMarcoHoy(Dte $dte, int $usuarioId): bool
+    {
+        return SalidaRutaEntrega::where('dte_id', $dte->id)->where('registrado_por', $usuarioId)->whereNotNull('resultado')
+            ->sinFacturadosDespues()->whereDate('fecha_resultado', HoraNegocio::fechaHoy())
+            ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))->exists();
+    }
 
     /**
      * La hoja del pedido de un CCF de la lista (el sugerido en limpio, con la F en lo que

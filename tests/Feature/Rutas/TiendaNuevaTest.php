@@ -246,6 +246,24 @@ class TiendaNuevaTest extends TestCase
         $this->assertSame($sala->id, Dte::sole()->cliente_sucursal_id);
     }
 
+    public function test_enlazar_avisa_si_la_sala_ya_tiene_otro_pedido_ese_dia(): void
+    {
+        // Dos vendedores escribieron la misma tienda con nombres distintos: dos pedidos.
+        $sala = $this->salaDePrueba();
+        $primero = $this->pedidoConEnvio('Tienda Nueva de Prueba');
+        $segundo = $this->pedidoConEnvio('Tiendita Nueva Prueba');
+        $this->actingAs($this->oficina);
+
+        $this->post(route('facturacion.pedidos.tienda.enlazar', $primero), ['cliente_sucursal_id' => $sala->id])
+            ->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Ojo'));
+        $this->post(route('facturacion.pedidos.tienda.enlazar', $segundo), ['cliente_sucursal_id' => $sala->id])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', fn (string $s) => str_contains($s, 'Ojo: «Sala de prueba Norte» ya tiene otro pedido del 09/11/2026')
+                && str_contains($s, 'Vendedor de prueba'));
+        // Solo avisa: el enlace se hace igual y la oficina decide.
+        $this->assertSame($sala->id, $segundo->refresh()->cliente_sucursal_id);
+    }
+
     public function test_no_se_enlaza_dos_veces_ni_a_una_sala_inactiva_ni_un_pedido_anulado(): void
     {
         $pedido = $this->pedidoConEnvio();
