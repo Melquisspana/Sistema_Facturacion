@@ -558,7 +558,7 @@ class FlujoUnicoRutasTest extends TestCase
         $html = view('rutas.mi-salida.dia-pdf', ['resumen' => $resumen, 'persona' => $this->persona, 'empresa' => 'Empresa de prueba', 'generado' => now()])->render();
         $this->assertStringContainsString('Gastos del día', $html);
         $this->assertStringContainsString('Peaje de prueba', $html);
-        foreach (['$13.75', '$36.25', 'Efectivo a entregar', 'Entregó:', 'Recibió:'] as $texto) {
+        foreach (['$13.75', '$36.25', 'Efectivo a entregar', '>Entregó<', '>Recibió<', 'RESUMEN DEL DÍA', 'No es factura · Sin valor tributario'] as $texto) {
             $this->assertStringContainsString($texto, $html);
         }
         $this->assertStringNotContainsString('$99.00', $html);

@@ -738,9 +738,13 @@ class PorEntregarViajeTest extends TestCase
             'resumen' => app(DiaVendedor::class)->resumen($this->personaAna, $this->ana, '2026-11-10'),
             'persona' => $this->personaAna, 'empresa' => 'Empresa de prueba', 'generado' => now(),
         ])->render();
-        $this->assertStringContainsString('Entregó: ______________________', $html);
-        $this->assertStringContainsString('Recibió: ______________________', $html);
+        // Firmas con línea fina, como el CCF y la hoja de la fábrica.
+        $this->assertMatchesRegularExpression('/<span class="flk">Entregó<\/span><span class="fline"><\/span>.*<span class="flk">Recibió<\/span><span class="fline"><\/span>/s', $html);
         $this->assertStringContainsString('el vendedor entrega a la oficina el efectivo, los cheques y los quedan', $html);
+        // La forma de los documentos impresos: su nombre en el recuadro y que no es factura.
+        $this->assertMatchesRegularExpression('/<span class="ttl">RESUMEN DEL DÍA<\/span>\s*<span class="nof">No es factura · Sin valor tributario<\/span>/', $html);
+        $this->assertStringContainsString('border-top: 2px solid #3B5F8A', $html);
+        $this->assertStringContainsString('No es factura ni documento tributario.', $html);
     }
 
     public function test_no_vino_en_por_entregar_y_la_hoja_con_observaciones_para_firmar(): void
