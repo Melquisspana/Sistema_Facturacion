@@ -44,7 +44,9 @@
                 </a>
             @endcan
 
+            {{-- Jefatura no lo usa (12/11/2026); NcExportacionController le da 403. --}}
             @can('ppq.ver')
+                @unlessrole('jefatura')
                 @if (\App\Models\ClientePerfilDocumento::where('activo', true)->whereNotNull('formato_export')->exists())
                     <a href="{{ route('ppq.nc-exportaciones.index') }}"
                        class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -55,6 +57,7 @@
                         Generar formato de NC
                     </a>
                 @endif
+                @endunlessrole
             @endcan
         </div>
     </x-slot>

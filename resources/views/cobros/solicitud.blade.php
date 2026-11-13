@@ -263,7 +263,11 @@
                                         <td class="p-2 text-right font-mono">{{ $vinculo->dte ? number_format((float) $vinculo->dte->total_pagar, 2) : '—' }}</td>
                                         <td class="p-2 text-xs">
                                             @if ($vinculo->exportacion)
-                                                <a href="{{ route('ppq.nc-exportaciones.show', $vinculo->exportacion) }}" class="font-mono text-indigo-600 hover:underline">{{ $vinculo->exportacion->referencia }}</a>
+                                                @unlessrole('jefatura')
+                                                    <a href="{{ route('ppq.nc-exportaciones.show', $vinculo->exportacion) }}" class="font-mono text-indigo-600 hover:underline">{{ $vinculo->exportacion->referencia }}</a>
+                                                @else
+                                                    <span class="font-mono">{{ $vinculo->exportacion->referencia }}</span>
+                                                @endunlessrole
                                                 @if ($vinculo->exportacion->presentada_en)
                                                     <span class="block {{ $gris }}">
                                                         cargado el {{ $vinculo->exportacion->presentada_en->format('d/m/Y') }}
