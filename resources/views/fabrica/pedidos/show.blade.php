@@ -90,24 +90,31 @@
                  },
                  {{-- «Dejar para después», «Todos», los otros pedidos y «Salir»: espera la fila
                       entera y se va solo cuando no queda nada sin guardar. Si un guardado falla,
-                      NO se va: queda todo como está y avisa arriba. Mientras se manda, no se
-                      sale. `destino`: una dirección o, para «Salir», qué hacer. --}}
+                      NO se va: queda todo como está, avisa arriba y devuelve false. Mientras se
+                      manda, no se sale. `destino`: una dirección o, para «Salir», qué hacer. --}}
                  async salir(destino) {
                      if (this.enviando || this.saliendo) return;
                      this.saliendo = true;
                      await this.enviarBorrador();
                      while (this.sucio && ! this.error) await this.enviarBorrador();
-                     if (this.error) { this.aviso = true; this.saliendo = false; return; }
+                     if (this.error) { this.aviso = true; this.saliendo = false; return false; }
                      if (typeof destino === 'function') destino(); else location.href = destino;
                  },
                  {{-- «Salir» de la barra de arriba (form[data-salir]), en la captura de window:
                       antes que el cierre de sesión del layout (sw-contingencia), que sigue
-                      después con requestSubmit, cuando ya se guardó todo. --}}
-                 cerrarSesion(e) {
+                      después con requestSubmit, cuando ya se guardó todo. Si no se pudo guardar
+                      (sesión vencida, error del servidor), «Salir» no queda trabado: pregunta si
+                      sale igual y pierde lo marcado; si dice que sí, sigue por el mismo camino. --}}
+                 async cerrarSesion(e) {
                      const form = e.target;
                      if (this.cerrando || ! (form instanceof HTMLFormElement) || ! form.hasAttribute('data-salir')) return;
                      e.preventDefault(); e.stopImmediatePropagation();
-                     this.salir(() => { this.cerrando = true; form.requestSubmit ? form.requestSubmit() : form.submit(); });
+                     const seguir = () => { this.cerrando = true; form.requestSubmit ? form.requestSubmit() : form.submit(); };
+                     if (await this.salir(seguir) === false && confirm('No se pudo guardar lo marcado. ¿Salir igual y perderlo?')) {
+                         {{-- Ya no pregunta el navegador ni intenta guardar al irse: lo eligió ella. --}}
+                         this.sucio = false;
+                         seguir();
+                     }
                  },
                  {{-- Mandar o borrar lo marcado: espera los guardados en vuelo y ninguno sale
                       después. Mientras se sale, no se manda. --}}

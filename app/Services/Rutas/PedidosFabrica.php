@@ -61,6 +61,10 @@ class PedidosFabrica
     /** Lo que dice la auditoría al «Corregir» un envío: lo anula y deja marcado lo que llevaba. */
     public const AUDITORIA_CORRIGE = 'corrigió un envío del pedido';
 
+    public const AUDITORIA_BORRO = 'borró lo marcado del pedido';
+
+    public const AUDITORIA_ANULO = 'anuló un envío del pedido';
+
     public const AUDITORIA_TODO = 'mandó todo el pedido';
 
     /** Lo que dice la auditoría al mandar un envío; ahí va `corrige_numero` si corrige a otro. */
@@ -244,7 +248,7 @@ class PedidosFabrica
                 ->withProperties(['lineas' => $conBorrador->map(fn (PedidoSalaLinea $l) => [
                     'pedido_sala_linea_id' => $l->id, 'producto_id' => $l->producto_id, 'va_borrador' => (string) $l->getOriginal('va_borrador'),
                 ])->values()->all()])
-                ->log('borró lo marcado del pedido');
+                ->log(self::AUDITORIA_BORRO);
         }, 3);
     }
 
@@ -470,9 +474,13 @@ class PedidosFabrica
     }
 
     /**
-     * Si lo último que pasó con el pedido fue «Corregir» (sin un envío ni un cierre
-     * después), el envío que se está mandando corrige a ese: [envio_id, numero]. Se lee con
-     * el pedido bloqueado, así que dos envíos no se llevan la misma corrección.
+     * Si lo último que pasó con el pedido fue «Corregir», el envío que se está mandando
+     * corrige a ese: [envio_id, numero]. La corrección se pierde con cualquier cosa que
+     * pase después: otro envío, «Borrar lo marcado» (lo que se mande ya no sale de la
+     * corrección), un cierre o deshacer otro envío (lo que se mande ya no reemplaza solo al
+     * corregido). La anulación propia de «Corregir» se audita ANTES que «corrigió», en la
+     * misma transacción, así que no la corta. Se lee con el pedido bloqueado: dos envíos
+     * no se llevan la misma corrección.
      *
      * @return array{envio_id: int, numero: int}|null
      */
@@ -480,7 +488,10 @@ class PedidosFabrica
     {
         $ultima = Activity::query()
             ->where('subject_type', $pedido->getMorphClass())->where('subject_id', $pedido->id)
-            ->whereIn('description', [...self::AUDITORIA_MANDO, self::AUDITORIA_CORRIGE, self::AUDITORIA_NO_SE_TRAE, self::AUDITORIA_LO_QUE_FALTA])
+            ->whereIn('description', [
+                ...self::AUDITORIA_MANDO, self::AUDITORIA_CORRIGE, self::AUDITORIA_BORRO, self::AUDITORIA_ANULO,
+                self::AUDITORIA_NO_SE_TRAE, self::AUDITORIA_LO_QUE_FALTA,
+            ])
             ->orderByDesc('id')->first(['id', 'description', 'properties']);
 
         return $ultima?->description === self::AUDITORIA_CORRIGE
@@ -526,7 +537,7 @@ class PedidosFabrica
                 'estado_anterior' => $anterior->value,
                 'estado_nuevo' => $pedido->estado->value,
             ])
-            ->log('anuló un envío del pedido');
+            ->log(self::AUDITORIA_ANULO);
 
         return $envio;
     }

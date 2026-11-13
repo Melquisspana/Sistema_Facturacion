@@ -243,6 +243,35 @@ class CorregirEnvioTest extends TestCase
             ->assertDontSee('Corrige al envío');
     }
 
+    public function test_borrar_lo_marcado_despues_de_corregir_corta_la_correccion(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->mandar($pedido, [$this->galleta->id => '4'], ['sigue' => '1'])->assertSessionHasNoErrors();
+        $this->corregir($pedido, PedidoSalaEnvio::sole())->assertSessionHasNoErrors();
+
+        $this->patch(route('fabrica.pedidos.borrador.borrar', $pedido))->assertSessionHasNoErrors();
+        $this->mandar($pedido, [$this->galleta->id => '5'], ['sigue' => '1'])->assertSessionHasNoErrors();
+
+        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 2)->sole()]))->assertOk()
+            ->assertDontSee('Corrige al envío');
+    }
+
+    /** Decidido: lo que se mande ya no reemplaza solo al corregido, así que no lo dice. */
+    public function test_deshacer_otro_envio_despues_de_corregir_corta_la_correccion(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '6']);
+        $this->mandar($pedido, [$this->galleta->id => '4'], ['sigue' => '1'])->assertSessionHasNoErrors();
+        $this->mandar($pedido, [$this->canilla->id => '6'], ['sigue' => '1'])->assertSessionHasNoErrors();
+        [$primero, $segundo] = $pedido->envios()->orderBy('numero')->get()->all();
+
+        $this->corregir($pedido, $primero)->assertSessionHasNoErrors();
+        $this->patch(route('fabrica.pedidos.anular-envio', [$pedido, $segundo]))->assertSessionHasNoErrors();
+        $this->mandar($pedido, [$this->galleta->id => '5', $this->canilla->id => '6'], ['sigue' => '1'])->assertSessionHasNoErrors();
+
+        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->where('numero', 3)->sole()]))->assertOk()
+            ->assertDontSee('Corrige al envío');
+    }
+
     public function test_un_doble_toque_no_anula_dos_veces_ni_pisa_lo_marcado(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '10']);
@@ -337,6 +366,8 @@ class CorregirEnvioTest extends TestCase
             ->assertSee('@beforeunload.window="avisarSiFalta($event)"', false)
             ->getContent();
         $this->assertStringContainsString('return this.sucio || this.guardando;', $html);
+        // Si no se pudo guardar, «Salir» no queda trabado: pregunta si sale igual.
+        $this->assertStringContainsString("confirm('No se pudo guardar lo marcado. ¿Salir igual y perderlo?')", $html);
 
         // La lista (sin hoja) cierra sesión como siempre.
         $this->get(route('fabrica.pedidos.index'))->assertOk()->assertDontSee('cerrarSesion', false);

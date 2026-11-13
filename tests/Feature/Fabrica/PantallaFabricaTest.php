@@ -306,7 +306,7 @@ class PantallaFabricaTest extends TestCase
         $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
             ->assertSee('const p = this.cola.then(() => this.guardarAhora());', false)
             ->assertSee('while (this.sucio && ! this.error) await this.enviarBorrador();', false)
-            ->assertSee('if (this.error) { this.aviso = true; this.saliendo = false; return; }', false)
+            ->assertSee('if (this.error) { this.aviso = true; this.saliendo = false; return false; }', false)
             ->assertSee('if (this.enviando || this.saliendo) return;', false)
             ->assertSee(':disabled="enviando || saliendo"', false)
             ->assertSee('No se pudo guardar lo marcado. Revisá la conexión y probá de nuevo.')
