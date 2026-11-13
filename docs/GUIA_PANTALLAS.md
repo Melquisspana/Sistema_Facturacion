@@ -259,6 +259,7 @@ Desde el 12/11/2026 (lo pidió el dueño): la mayoría de los documentos que se 
 
 - **Forma común:** línea fina del acento arriba; logo y empresa a la izquierda; a la derecha el recuadro del documento con su nombre en grande y sus datos (fecha, vendedor…); bloques con borde fino y cabecera gris; tablas con encabezado oscuro (`#20242C`) y filas con línea fina; firmas sobre una línea fina; pie chico y gris. Tinta `#20242C`, bordes `#C9CDD4`/`#D4D8DE`.
 - **Leyenda obligatoria** en el recuadro, debajo del nombre: «No es factura · Sin valor tributario». Solo el CCF y los demás DTE no la llevan. Un reporte interno que no acompaña mercadería puede cambiarla con `leyenda="…"` en el encabezado, siempre diciendo que no es factura (el de Ventas: «Documento interno · No es factura»).
+- **La leyenda nunca le resta validez a un documento que sale de la empresa o que se firma.** La lista de empaque viaja con la mercadería a la aduana y al cliente: no dice «no es factura» ni «documento interno», sino lo que es («Acompaña a la factura · Accompanies the invoice»).
 - **Componentes compartidos** (`resources/views/components/documento`): `<x-documento.estilos acento="…" />` dentro del `<style>` del documento, `<x-documento.encabezado>` (línea, logo, empresa y recuadro con la leyenda; las filas del recuadro van en el slot) y `<x-documento.firmas :quienes="[…]" />`. Sirven igual en el navegador y en DomPDF: todo con tablas, sin flex ni grid, y los tamaños en `em` (cada documento fija su letra en `body`). En DomPDF el logo va como data-URI (`DtePdfService::logoSrc()`); en el navegador, con `asset()`.
 - **Correos con la misma identidad:** `<x-mail::documento titulo="…">` en lugar de `<x-mail::message>` y `public $theme = 'documento';` en el Mailable (tema `vendor/mail/html/themes/documento.css`, 600 px, acento pizarra). El logo va incrustado en el correo.
 
@@ -269,6 +270,7 @@ Desde el 12/11/2026 (lo pidió el dueño): la mayoría de los documentos que se 
 | PDF del día del vendedor (`rutas/mi-salida/dia-pdf`) y correo del resumen diario | Azul pizarra `#2B4A6F` / `#3B5F8A` | RESUMEN DEL DÍA · Resumen diario |
 | Hoja del pedido de la oficina y de «Por entregar» (`rutas/pedidos/hoja`), la que firma el gerente | Ocre `#7A5212` / `#9A6B1F` | HOJA DE PEDIDO |
 | PDF de Ventas por zona (`rutas/ventas/pdf`), solo Administrador y Jefatura | Grafito `#33373D` / `#4A4F58` | REPORTE DE VENTAS, con la leyenda «Documento interno · No es factura» |
+| Lista de empaque impresa (`facturacion/listas/imprimir`), la de exportación | Petróleo `#1D5560` / `#2A6F7C` | LISTA DE EMPAQUE, con la leyenda «Acompaña a la factura · Accompanies the invoice» |
 
 Un documento nuevo elige un acento que no esté en la tabla, lo agrega a `components/documento/estilos` y a esta tabla.
 

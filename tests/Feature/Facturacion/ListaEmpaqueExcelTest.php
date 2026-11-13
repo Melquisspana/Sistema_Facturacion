@@ -651,7 +651,11 @@ class ListaEmpaqueExcelTest extends TestCase
         $lista = $this->lista();
 
         $this->actingAs($this->usuario())->get(route('facturacion.listas.imprimir', $lista))->assertOk()
-            ->assertSee('LISTA DE EMPAQUE / PACKING LIST')
+            // Forma de los documentos impresos: el recuadro con su nombre y una leyenda que no
+            // le resta validez ante la aduana o el cliente (ni «no es factura» ni «interno»).
+            ->assertSee('LISTA DE EMPAQUE')->assertSee('Packing list')
+            ->assertSee('Acompaña a la factura · Accompanies the invoice')
+            ->assertDontSee('No es factura')->assertDontSee('Documento interno')
             ->assertSee('IMPORTADOR NORTE LLC')
             ->assertSee('Caja de camote \\ Sweet potato candy box')
             ->assertSee('00000000001')

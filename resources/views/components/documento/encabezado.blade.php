@@ -9,7 +9,10 @@
     DtePdfService::logoSrc()). Sin logo, la inicial de la empresa en un cuadro, como el CCF.
 
     $leyenda: solo la cambia un reporte interno que no sale con mercadería (el de Ventas por zona,
-    «Documento interno · No es factura»); siempre dice que no es factura.
+    «Documento interno · No es factura»), un documento que va a la aduana o al cliente (la lista de
+    empaque) o uno laboral (planilla, asistencia), donde «no es factura» no viene al caso. Vacía
+    (leyenda=""; null vuelve a la de siempre), sin leyenda: los que se firman con validez legal (el contrato, los recibos de vacaciones y de
+    indemnización) no llevan nada que los pueda restar.
 --}}
 <div class="topline"></div>
 
@@ -30,7 +33,7 @@
             <div class="dbox-h">
                 <span class="lbl">{{ $etiqueta }}</span>
                 <span class="ttl">{{ $titulo }}</span>
-                <span class="nof">{{ $leyenda }}</span>
+                @if (filled($leyenda))<span class="nof">{{ $leyenda }}</span>@endif
             </div>
             <table class="dbox-t">{{ $slot }}</table>
         </div>
