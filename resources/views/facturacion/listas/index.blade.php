@@ -2,6 +2,11 @@
     // min-h-11 solo en el celular (sm:min-h-0 lo devuelve a su alto de siempre).
     $chipOn = 'inline-flex min-h-11 sm:min-h-0 items-center rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-white';
     $chipOff = 'inline-flex min-h-11 sm:min-h-0 items-center rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600 hover:bg-gray-200';
+    // Jefatura (13/11/2026): la factura por su número corto, no por el número de control.
+    $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
+    $textoFactura = fn ($lista) => $soloNegocio && $lista->facturas()->isNotEmpty()
+        ? $lista->facturas()->map(fn ($dte) => 'n.º '.$dte->correlativoCorto())->implode(' · ')
+        : $lista->textoFactura();
 @endphp
 
 <x-app-layout>
@@ -94,7 +99,7 @@
                                     </td>
                                     <td class="py-3 px-4 text-gray-800">{{ $lista->cliente?->nombreLegal() ?? $lista->cliente_nombre }}</td>
                                     <td class="py-3 px-4 tabular-nums text-gray-600">{{ $lista->fecha?->format('d/m/Y') ?? '—' }}</td>
-                                    <td class="py-3 px-4 font-mono text-xs text-gray-600">{{ $lista->textoFactura() ?: '—' }}</td>
+                                    <td class="py-3 px-4 font-mono text-xs text-gray-600">{{ $textoFactura($lista) ?: '—' }}</td>
                                     <td class="py-3 px-4 text-right tabular-nums text-gray-600">{{ $lista->items_count }}</td>
                                     <td class="py-3 px-4">
                                         @if ($lista->estaFinalizada())
@@ -152,8 +157,8 @@
                                     <span class="tabular-nums">{{ $lista->fecha?->format('d/m/Y') ?? '—' }}</span>
                                     <span class="tabular-nums">{{ $lista->items_count }} {{ $lista->items_count === 1 ? 'producto' : 'productos' }}</span>
                                 </div>
-                                @if ($lista->textoFactura())
-                                    <p class="mt-1 break-all font-mono text-xs text-gray-600">{{ $lista->textoFactura() }}</p>
+                                @if ($textoFactura($lista))
+                                    <p class="mt-1 break-all font-mono text-xs text-gray-600">{{ $textoFactura($lista) }}</p>
                                 @endif
                             </a>
                         </li>
