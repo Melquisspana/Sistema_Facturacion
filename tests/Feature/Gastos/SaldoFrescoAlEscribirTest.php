@@ -11,6 +11,7 @@ use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\User;
+use App\Services\Gastos\CompraContado;
 use App\Services\Gastos\RegistrarAjuste;
 use App\Services\Gastos\RegistrarPago;
 use App\Services\Gastos\SaldosGastos;
@@ -299,5 +300,77 @@ class SaldoFrescoAlEscribirTest extends TestCase
 
         $despuesDelCandado = new \ArrayObject(array_slice($sql->getArrayCopy(), array_search($conCandado[$cuota], $sql->getArrayCopy(), true)));
         $this->assertTodasLeidasConCandado($despuesDelCandado, 'gastos_pago_aplicaciones');
+    }
+
+    // ═══════════════════════ El turno, antes que todo lo del saldo ═══════════════════════
+
+    /**
+     * La lectura con candado del saldo bloquea el HUECO del índice, que comparten cuotas
+     * vecinas de gastos distintos: dos movimientos a la vez se cruzaban al insertar. Por eso
+     * todos toman primero el mismo turno, antes de su usuario y de cualquier gasto, cuota o
+     * saldo. Lo que
+     * se comprueba acá es el orden de las sentencias; la espera real la prueba
+     * {@see PagosVecinosMysqlTest} en MySQL.
+     *
+     * @param  \ArrayObject<int, string>  $sql
+     */
+    private function assertTomaElTurnoPrimero(\ArrayObject $sql, string $camino): void
+    {
+        $consultas = $sql->getArrayCopy();
+        $primera = fn (\Closure $cumple) => array_key_first(array_filter($consultas, $cumple));
+
+        $turno = $primera(fn (string $q) => $this->nombra($q, 'secuencias') && $this->llevaCandado($q));
+        $this->assertNotNull($turno, $camino.': no tomó el turno.');
+
+        // Es el PRIMER candado: antes que el del propio usuario. Quien espera en la fila no
+        // tiene nada tomado, así que nadie puede estar esperándolo a él.
+        $otro = $primera(fn (string $q) => $this->llevaCandado($q) && ! $this->nombra($q, 'secuencias'));
+        $this->assertLessThan($otro, $turno, $camino.': tomó otro candado antes que el turno: '.$consultas[$otro]);
+
+        $gasto = $primera(fn (string $q) => preg_match('/from [`"]gastos[`"]/', $q) === 1 && $this->llevaCandado($q));
+        $saldo = $primera(fn (string $q) => str_starts_with($q, 'select')
+            && ($this->nombra($q, 'gastos_pago_aplicaciones') || $this->nombra($q, 'gastos_ajustes'))
+            && $this->llevaCandado($q));
+
+        $this->assertNotNull($gasto, $camino.': no bloqueó el gasto.');
+        $this->assertLessThan($gasto, $turno, $camino.': tomó el gasto antes que el turno.');
+        if ($saldo !== null) {
+            $this->assertLessThan($saldo, $turno, $camino.': leyó el saldo con candado antes que el turno.');
+        }
+    }
+
+    public function test_pagos_ajustes_y_anular_una_planilla_toman_el_turno_antes_que_el_saldo(): void
+    {
+        $cuota = $this->gasto()->cuotas->first();
+
+        $sql = $this->consultasConCandado();
+        $this->pagar($cuota, '10.00');
+        $this->assertTomaElTurnoPrimero($sql, 'Pagar');
+
+        $sql = $this->consultasConCandado();
+        $debito = $this->ajustar($cuota, 'debito', '20.00');
+        $this->assertTomaElTurnoPrimero($sql, 'Ajustar');
+
+        $sql = $this->consultasConCandado();
+        app(RegistrarAjuste::class)->revertir($this->actor, $debito, 'Se cargó de más.');
+        $this->assertTomaElTurnoPrimero($sql, 'Revertir un ajuste');
+
+        // Quien paga dentro de su propia transacción, con lo suyo ya escrito, toma el turno
+        // antes de escribirlo.
+        $sql = $this->consultasConCandado();
+        app(CompraContado::class)->registrar($this->actor, [
+            'clave' => (string) Str::uuid(), 'concepto' => 'Compra de prueba', 'importe' => '12.00',
+            'fecha' => '2026-09-05', 'metodo' => 'efectivo', 'ambito' => 'empresarial', 'moneda' => 'USD',
+            'sin_comprobante' => 'sin recibo',
+        ]);
+        $this->assertTomaElTurnoPrimero($sql, 'Compré y pagué');
+        $insercion = array_key_first(array_filter($sql->getArrayCopy(), fn (string $q) => str_starts_with($q, 'insert')));
+        $turno = array_key_first(array_filter($sql->getArrayCopy(), fn (string $q) => $this->nombra($q, 'secuencias')));
+        $this->assertLessThan($insercion, $turno, 'Compré y pagué escribió antes de tomar el turno.');
+
+        $planilla = $this->planillaConfirmada();
+        $sql = $this->consultasConCandado();
+        app(AnularPlanilla::class)->anular($this->actor, $planilla, 'Se generó con un error.');
+        $this->assertTomaElTurnoPrimero($sql, 'Anular una planilla');
     }
 }

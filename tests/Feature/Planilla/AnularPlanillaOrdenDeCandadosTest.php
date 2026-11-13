@@ -71,7 +71,7 @@ class AnularPlanillaOrdenDeCandadosTest extends TestCase
         $conCandado = array_values(array_filter(array_column($consultas->getArrayCopy(), 'sql'),
             fn (string $sql) => str_starts_with($sql, 'select') && str_contains($sql, 'for update')));
         $orden = [];
-        foreach (['users', 'planillas', 'gastos', 'gastos_cuotas'] as $tabla) {
+        foreach (['secuencias', 'users', 'planillas', 'gastos', 'gastos_cuotas'] as $tabla) {
             foreach ($conCandado as $i => $sql) {
                 if (preg_match('/from [`"]'.$tabla.'[`"]/', $sql) === 1) {
                     $orden[$tabla] = $i;
@@ -80,12 +80,16 @@ class AnularPlanillaOrdenDeCandadosTest extends TestCase
             }
         }
 
-        $this->assertSame(['users', 'planillas', 'gastos', 'gastos_cuotas'], array_keys($orden), 'Falta alguno de los candados.');
-        $this->assertSame(0, $orden['users'], 'El primer candado de la anulación tiene que ser el de quien anula.');
+        $this->assertSame(['secuencias', 'users', 'planillas', 'gastos', 'gastos_cuotas'], array_keys($orden), 'Falta alguno de los candados.');
+        // Como un pago: primero el turno de quienes mueven saldos
+        // ({@see \App\Services\Gastos\SaldosGastos::tomarTurno()}), después quien anula.
+        $this->assertSame(0, $orden['secuencias'], 'El primer candado de la anulación tiene que ser el turno.');
+        $this->assertTrue(collect($conCandado)->slice(0, $orden['users'])->every(fn (string $sql) => $this->nombra($sql, 'secuencias')),
+            'Entre el turno y quien anula no puede haber otro candado.');
         $this->assertLessThan($orden['gastos'], $orden['planillas']);
         $this->assertLessThan($orden['gastos_cuotas'], $orden['gastos']);
         // Y lo primero que LEE la transacción es ese candado.
-        $this->assertTrue($this->nombra($consultas[0]['sql'], 'users') && str_contains($consultas[0]['sql'], 'for update'));
+        $this->assertTrue($this->nombra($consultas[0]['sql'], 'secuencias') && str_contains($consultas[0]['sql'], 'for update'));
         $this->assertSame('anulada', $planilla->fresh()->estado);
     }
 }

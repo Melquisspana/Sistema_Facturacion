@@ -41,6 +41,7 @@ final class RegistrarGasto
         private RegistrarPago $pagos,
         private AlmacenAdjuntos $almacen,
         private VincularCompra $compras,
+        private SaldosGastos $saldos,
     ) {}
 
     public function registrar(RegistrarGastoRequest $request): Gasto
@@ -74,6 +75,12 @@ final class RegistrarGasto
 
         try {
             return DB::transaction(function () use ($usuario, $request, $datos, $archivos, $huella, &$rutas) {
+                // Si trae pago, el turno de quienes mueven saldos va antes que todo lo que
+                // se bloquea o escribe acá ({@see SaldosGastos::tomarTurno()}).
+                if ($request->boolean('ya_pagado')) {
+                    $this->saldos->tomarTurno();
+                }
+
                 // Serializa los reintentos del MISMO operador (doble clic, reenvío del
                 // formulario). Entre operadores distintos el candado real es el índice
                 // único de `clave` y, para el saldo, el bloqueo de gasto/cuota.

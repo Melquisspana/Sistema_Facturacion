@@ -51,10 +51,12 @@ final class RegistrarPago
         usort($aplicaciones, fn ($a, $b) => $a['cuota_id'] <=> $b['cuota_id']);
         $huella = hash('sha256', json_encode([$datos, $aplicaciones], JSON_THROW_ON_ERROR));
 
-        // Tres intentos: la lectura con candado del saldo toma el hueco del índice, y dos
-        // movimientos a cuotas vecinas sin historial pueden cruzarse al insertar. MySQL corta
-        // uno y se vuelve a entrar; es seguro porque de ese intento no quedó nada escrito.
+        // Tres intentos: si MySQL corta esta transacción por un interbloqueo, se vuelve a
+        // entrar; es seguro porque de ese intento no quedó nada escrito. Los pagos entre sí
+        // ya no se cruzan: hacen fila en el turno ({@see SaldosGastos::tomarTurno()}).
         return DB::transaction(function () use ($usuario, $datos, $aplicaciones, $huella) {
+            // El primer candado, siempre: la fila de quienes mueven saldos.
+            $this->saldos->tomarTurno();
             // Serializa reintentos del mismo operador; gasto/cuota serializa operadores distintos.
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
             if ($existente = Pago::where('clave', $datos['clave'])->first()) {

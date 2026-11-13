@@ -163,7 +163,11 @@ class OrdenDeCandadosPlanillaTest extends TestCase
 
         app(AnularPlanilla::class)->anular($this->actor, $planilla, 'Se generó con un error.');
 
-        $this->assertTrue($this->nombra($consultas[0]['sql'], 'users') && $this->llevaCandado($consultas[0]['sql']));
+        // Primero el turno de quienes mueven saldos, después quien anula.
+        $this->assertTrue($this->nombra($consultas[0]['sql'], 'secuencias') && $this->llevaCandado($consultas[0]['sql']));
+        $usuario = collect($consultas->getArrayCopy())->search(fn (array $q) => $this->nombra($q['sql'], 'users') && $this->llevaCandado($q['sql']));
+        $this->assertNotFalse($usuario);
+        $this->assertTrue(collect($consultas->getArrayCopy())->slice(0, $usuario)->every(fn (array $q) => $this->nombra($q['sql'], 'secuencias')));
         $this->assertFichasAntesQueLaPlanilla($consultas, [$this->ana->id, $this->beto->id]);
     }
 

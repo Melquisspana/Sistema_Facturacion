@@ -178,6 +178,9 @@ class PanelController extends Controller
         abort_if($vence === null, 422, 'Ese período no corresponde a esta regla, o está fuera de lo que se puede pagar desde acá.');
 
         return DB::transaction(function () use ($request, $regla, $datos, $vence, $generador, $completar, $pagos, $saldos) {
+            // Termina pagando con la obligación ya tomada: el turno de quienes mueven
+            // saldos va primero ({@see SaldosGastos::tomarTurno()}).
+            $saldos->tomarTurno();
             $gasto = $generador->asegurarPeriodo($regla, $datos['periodo'], $vence, $request->user());
 
             // Monto variable: la obligación nace sin importe y hay que ponérselo antes
