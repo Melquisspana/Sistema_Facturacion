@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Contabilidad;
 
+use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Jobs\EnviarPaqueteContabilidad;
 use App\Jobs\GenerarPaqueteContabilidad;
@@ -12,9 +13,12 @@ use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\Contabilidad\PeriodoPaquete;
 use App\Services\Reportes\ReporteContadoraQuery;
 use App\Support\Contabilidad\CorreoContabilidad;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -34,11 +38,25 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * SOLO LECTURA: no vuelve a descargar correos, no toca DTE emitidos, correlativos,
  * firmador ni transmisión. No cambia estados al generar el ZIP.
+ *
+ * Jefatura ve el resumen pero no arma ni baja el ZIP, que lleva los JSON (Melqui,
+ * 13/11/2026): 403 aunque tenga `reportes.ver`. Va por rol, como el formato de NC.
  */
-class PaqueteContabilidadController extends Controller
+class PaqueteContabilidadController extends Controller implements HasMiddleware
 {
     /** Frase exacta que el usuario debe escribir para confirmar el envío. */
     public const FRASE_ENVIO = 'ENVIAR A CONTABILIDAD';
+
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function (Request $request, Closure $next) {
+                abort_if($request->user()?->hasRole(RolSistema::Jefatura->value), 403);
+
+                return $next($request);
+            }, only: ['generar', 'estado', 'descargar']),
+        ];
+    }
 
     public function __construct(private readonly PeriodoPaquete $periodo) {}
 

@@ -6,6 +6,9 @@
     @php
         $meses = [1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio',
                   7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'];
+        // Jefatura (13/11/2026): ve el resumen del período, sin los faltantes de JSON ni el
+        // ZIP (que lleva los JSON): PaqueteContabilidadController le da 403 a generarlo y bajarlo.
+        $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
     @endphp
 
     <div class="py-8">
@@ -205,7 +208,9 @@
                         <p class="text-sm text-sky-700">Total ${{ number_format($resumen['compras_total'], 2) }}</p>
                         <p class="mt-1 text-xs text-sky-700/80">
                             Sin PDF: <span class="font-semibold {{ $resumen['compras_sin_pdf'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['compras_sin_pdf']) }}</span>
-                            · Sin JSON: <span class="font-semibold {{ $resumen['compras_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['compras_sin_json']) }}</span>
+                            @unless ($soloNegocio)
+                                · Sin JSON: <span class="font-semibold {{ $resumen['compras_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['compras_sin_json']) }}</span>
+                            @endunless
                         </p>
                     </div>
                     <div class="rounded-lg bg-green-50 ring-1 ring-green-200 p-4">
@@ -218,9 +223,11 @@
                         @if (($resumen['ventas_pendientes_sello'] ?? 0) > 0)
                             <p class="mt-1 text-sm font-semibold text-amber-700 dark:text-amber-400">{{ number_format($resumen['ventas_pendientes_sello']) }} pendientes de sello (no suman)</p>
                         @endif
-                        <p class="mt-1 text-xs text-green-700/80">
-                            Sin JSON generado: <span class="font-semibold {{ $resumen['ventas_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['ventas_sin_json']) }}</span>
-                        </p>
+                        @unless ($soloNegocio)
+                            <p class="mt-1 text-xs text-green-700/80">
+                                Sin JSON generado: <span class="font-semibold {{ $resumen['ventas_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['ventas_sin_json']) }}</span>
+                            </p>
+                        @endunless
                     </div>
                 </div>
 
@@ -249,6 +256,7 @@
             </div>
 
             {{-- Generar --}}
+            @unless ($soloNegocio)
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Generar paquete</h3>
                 <p class="mt-1 text-xs text-gray-500">
@@ -397,6 +405,7 @@
                     </p>
                 @endunless
             </div>
+            @endunless
 
             {{-- Modal de confirmación de envío a contabilidad --}}
             @if ($puedeEnviar)
