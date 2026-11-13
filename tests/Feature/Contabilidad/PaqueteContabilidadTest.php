@@ -622,6 +622,33 @@ class PaqueteContabilidadTest extends TestCase
         $this->actingAs($jefa)->post(route('contabilidad.paquete.enviar'), [])->assertForbidden();
     }
 
+    /** Jefatura (13/11/2026): el resumen sí; los faltantes de JSON y el ZIP (que lleva los JSON), no. */
+    public function test_jefatura_ve_el_resumen_sin_json_ni_zip(): void
+    {
+        Mail::fake();
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->compra('2026-07-05', 100);
+        $periodo = ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 1, 'incluir_ventas' => 1];
+        $jefa = $this->usuario('jefatura');
+
+        $this->actingAs($jefa)->get(route('contabilidad.paquete', $periodo))->assertOk()
+            ->assertSee('Resumen del periodo')
+            ->assertSee('$100.00')
+            ->assertDontSee('Sin JSON')
+            ->assertDontSee('Generar ZIP')
+            ->assertDontSee(route('contabilidad.paquete.generar'), false);
+        $this->actingAs($jefa)->post(route('contabilidad.paquete.generar'), $periodo)->assertForbidden();
+        $this->actingAs($jefa)->get(route('contabilidad.paquete.estado', $periodo))->assertForbidden();
+        $this->actingAs($jefa)->get(route('contabilidad.paquete.descargar', $periodo))->assertForbidden();
+
+        $admin = $this->usuario('administrador');
+        $this->actingAs($admin)->get(route('contabilidad.paquete', $periodo))->assertOk()
+            ->assertSee('Sin JSON')
+            ->assertSee('Generar ZIP');
+        $this->actingAs($admin)->post(route('contabilidad.paquete.generar'), $periodo)->assertRedirect();
+        $this->actingAs($admin)->get(route('contabilidad.paquete.estado', $periodo))->assertOk();
+    }
+
     public function test_facturacion_ve_el_paquete_pero_no_lo_envia(): void
     {
         // Facturación puede ver reportes, pero NO enviar el paquete a contabilidad.

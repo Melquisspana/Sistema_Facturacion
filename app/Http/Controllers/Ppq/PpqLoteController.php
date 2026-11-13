@@ -7,6 +7,7 @@ use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Enums\EstadoPpq;
+use App\Enums\RolSistema;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Exceptions\Ppq\ArchivoQuedanIncompletoException;
@@ -392,6 +393,7 @@ class PpqLoteController extends Controller
 
     public function excel(PpqLote $lote, ExcelCallejaExporter $exporter): BinaryFileResponse|RedirectResponse
     {
+        $this->cerradoAJefatura();
         if ($lote->items()->count() === 0) {
             return redirect()->route('ppq.lotes.show', $lote)->with('error', 'El lote no tiene documentos para exportar.');
         }
@@ -411,6 +413,7 @@ class PpqLoteController extends Controller
      */
     public function quedan(PpqLote $lote, QuedanCallejaExporter $exporter): BinaryFileResponse|RedirectResponse
     {
+        $this->cerradoAJefatura();
         try {
             $ruta = $exporter->generar($lote);
         } catch (ArchivoQuedanIncompletoException|ArchivoProveedorInvalidoException $e) {
@@ -422,6 +425,16 @@ class PpqLoteController extends Controller
         return response()->download($ruta, $exporter->nombreArchivo($lote), [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend();
+    }
+
+    /**
+     * Jefatura no genera los archivos del portal (Excel y quedan), que llevan números de
+     * control y sellos (Melqui, 13/11/2026): 403 aunque tenga `ppq.ver`. Va por rol, como el
+     * formato de NC (NcExportacionController).
+     */
+    private function cerradoAJefatura(): void
+    {
+        abort_if(request()->user()?->hasRole(RolSistema::Jefatura->value), 403);
     }
 
     /**

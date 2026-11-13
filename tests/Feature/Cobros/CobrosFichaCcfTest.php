@@ -101,7 +101,8 @@ class CobrosFichaCcfTest extends TestCase
 
     private function ficha(CobroDocumento $documento, ?User $usuario = null)
     {
-        $usuario ??= User::factory()->create()->assignRole(RolSistema::Jefatura->value);
+        // Lectura sin gestión. Jefatura ve la ficha sin los datos técnicos (prueba aparte).
+        $usuario ??= User::factory()->create()->assignRole(RolSistema::Contabilidad->value);
 
         return $this->actingAs($usuario)->get(route('cobros.documentos.show', $documento));
     }
@@ -229,5 +230,62 @@ class CobrosFichaCcfTest extends TestCase
         }
 
         $this->assertSame($conUna, $contar());
+    }
+
+    public function test_jefatura_ve_el_cobro_sin_datos_tecnicos_y_el_quedan_le_da_403(): void
+    {
+        $solicitud = CobroSolicitud::create([
+            'cliente_id' => $this->cliente->id, 'referencia' => 'SOL-FICTICIA-02', 'formato' => 'prueba',
+            'archivo_nombre' => 'ficticio.xlsx',
+        ]);
+        $documento = $this->seguimiento(['cobro_solicitud_id' => $solicitud->id]);
+        $jefatura = User::factory()->create()->assignRole(RolSistema::Jefatura->value);
+
+        $this->ficha($documento, $jefatura)->assertOk()
+            ->assertSeeText('CCF 777')
+            ->assertSeeText('Cliente Ficticio, S.A. de C.V.')
+            ->assertSeeText('Sala Ficticia Centro')
+            ->assertSee('$113.00')
+            ->assertSee(route('facturacion.pdf', $this->ccf), false)
+            ->assertDontSee($this->ccf->numero_control)
+            ->assertDontSee('26090090100777')
+            ->assertDontSeeText('Número de control')
+            ->assertDontSeeText('Orden de compra')
+            ->assertDontSeeText('ID técnico')
+            ->assertDontSee(route('facturacion.imprimir', $this->ccf), false)
+            ->assertDontSee('SOL-FICTICIA-02')
+            ->assertDontSee(route('cobros.solicitudes.show', $solicitud), false)
+            ->assertDontSeeText('(quedan)');
+
+        $this->actingAs($jefatura)->get(route('cobros.solicitudes.show', $solicitud))->assertForbidden();
+        $this->actingAs($jefatura)->post(route('cobros.solicitudes.descargar', $solicitud))->assertForbidden();
+
+        $admin = User::factory()->create()->assignRole(RolSistema::Administrador->value);
+        $this->ficha($documento, $admin)->assertOk()
+            ->assertSee($this->ccf->numero_control)
+            ->assertSee('26090090100777')
+            ->assertSee(route('cobros.solicitudes.show', $solicitud), false)
+            ->assertSee(route('facturacion.imprimir', $this->ccf), false);
+        $this->actingAs($admin)->get(route('cobros.solicitudes.show', $solicitud))->assertOk();
+    }
+
+    public function test_jefatura_no_ve_codigo_ni_sello_del_documento_sin_dte(): void
+    {
+        $externo = CobroDocumento::create([
+            'cliente_id' => $this->cliente->id, 'origen' => OrigenCobroDocumento::Externo->value,
+            'tipo_dte' => '03', 'numero_control' => 'DTE-03-M001P002-000000000000555',
+            'codigo_generacion' => 'CODIGO-FICTICIO-555', 'sello_recepcion' => 'SELLO-FICTICIO-555',
+            'fecha_emision' => '2026-09-10', 'monto' => '50.00',
+        ]);
+
+        $this->ficha($externo, User::factory()->create()->assignRole(RolSistema::Jefatura->value))->assertOk()
+            ->assertSeeText('CCF 555')
+            ->assertDontSee('CODIGO-FICTICIO-555')
+            ->assertDontSee('SELLO-FICTICIO-555')
+            ->assertDontSee('DTE-03-M001P002-000000000000555');
+
+        $this->ficha($externo, User::factory()->create()->assignRole(RolSistema::Administrador->value))->assertOk()
+            ->assertSee('CODIGO-FICTICIO-555')
+            ->assertSee('SELLO-FICTICIO-555');
     }
 }

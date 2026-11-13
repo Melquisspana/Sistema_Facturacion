@@ -3,6 +3,9 @@
     $card = 'bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-4 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
     // El diagnóstico usa 'correcto' (no 'ok'); se traduce solo para reusar $colorEstado.
     $colorDiagnostico = ['correcto' => $colorEstado['ok'], 'advertencia' => $colorEstado['advertencia'], 'critico' => $colorEstado['critico']];
+    // Jefatura (13/11/2026): sin número de control ni estado del DTE; fecha y el PDF, como en
+    // Documentos fiscales (el controlador ya le trae solo lo procesado por Hacienda).
+    $soloPdf = (bool) auth()->user()?->abreDocumentosComoPdf();
 @endphp
 <x-app-layout>
     <x-slot name="header">
@@ -116,10 +119,16 @@
                                 <thead>
                                     <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 dark:bg-ink-900 dark:text-paper-500">
                                         <th class="py-2.5 px-4">Tipo</th>
-                                        <th class="py-2.5 px-4">Número de control</th>
+                                        @if ($soloPdf)
+                                            <th class="py-2.5 px-4">Fecha</th>
+                                        @else
+                                            <th class="py-2.5 px-4">Número de control</th>
+                                        @endif
                                         <th class="py-2.5 px-4">Cliente</th>
                                         <th class="py-2.5 px-4 text-right">Total</th>
-                                        <th class="py-2.5 px-4 text-center">Estado</th>
+                                        @unless ($soloPdf)
+                                            <th class="py-2.5 px-4 text-center">Estado</th>
+                                        @endunless
                                         <th class="py-2.5 px-4 text-right">&nbsp;</th>
                                     </tr>
                                 </thead>
@@ -127,7 +136,11 @@
                                     @foreach ($actividad as $dte)
                                         <tr class="hover:bg-gray-50 dark:hover:bg-ink-700">
                                             <td class="py-2.5 px-4 text-gray-600 dark:text-paper-300">{{ $dte->tipo_dte->label() }}</td>
-                                            <td class="py-2.5 px-4 font-mono text-xs text-gray-600 dark:text-paper-300">{{ $dte->numero_control ?? '—' }}</td>
+                                            @if ($soloPdf)
+                                                <td class="py-2.5 px-4 whitespace-nowrap text-gray-600 dark:text-paper-300">{{ $dte->fecha_emision?->format('d/m/Y') }}</td>
+                                            @else
+                                                <td class="py-2.5 px-4 font-mono text-xs text-gray-600 dark:text-paper-300">{{ $dte->numero_control ?? '—' }}</td>
+                                            @endif
                                             {{-- Cliente fiscal + sala/sucursal, igual que el listado de Facturación y el PDF. --}}
                                             <td class="py-2.5 px-4 text-gray-800 dark:text-paper-100">
                                                 <div>{{ $dte->cliente?->nombre ?? '—' }}</div>
@@ -136,10 +149,16 @@
                                                 @endif
                                             </td>
                                             <td class="py-2.5 px-4 text-right tabular-nums text-gray-700 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</td>
-                                            <td class="py-2.5 px-4 text-center"><x-estado-dte-badge :estado="$dte->estado" /></td>
-                                            <td class="py-2.5 px-4 text-right">
-                                                <a href="{{ route('facturacion.show', $dte) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Abrir</a>
-                                            </td>
+                                            @if ($soloPdf)
+                                                <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                                                    <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="inline-flex min-h-11 sm:min-h-0 items-center text-indigo-600 hover:underline dark:text-indigo-400">Ver PDF</a>
+                                                </td>
+                                            @else
+                                                <td class="py-2.5 px-4 text-center"><x-estado-dte-badge :estado="$dte->estado" /></td>
+                                                <td class="py-2.5 px-4 text-right">
+                                                    <a href="{{ route('facturacion.show', $dte) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Abrir</a>
+                                                </td>
+                                            @endif
                                         </tr>
                                     @endforeach
                                 </tbody>

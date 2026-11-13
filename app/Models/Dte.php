@@ -376,6 +376,19 @@ class Dte extends Model
     }
 
     /**
+     * El número corto del documento: el correlativo final del número de control sin ceros
+     * («777»), el mismo que muestra Facturas por cobrar (CobroDocumento::correlativoCorto()).
+     * Es lo que ve Jefatura en lugar del número de control (13/11/2026). Sin número de
+     * control (borrador), el N.º del sistema.
+     */
+    public function correlativoCorto(): string
+    {
+        return preg_match('/(\d+)$/', (string) $this->numero_control, $m)
+            ? (ltrim($m[1], '0') ?: '0')
+            : $this->etiquetaNumeroSistema();
+    }
+
+    /**
      * Sala a la que CORRESPONDE una nota por avería. Puede no ser la sala receptora del
      * documento (esa es clienteSucursal, la del CCF relacionado): cuando la avería se
      * acredita contra un CCF de otra sala del mismo cliente, el producto dañado sigue

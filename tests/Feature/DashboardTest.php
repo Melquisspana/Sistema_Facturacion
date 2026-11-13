@@ -130,6 +130,29 @@ class DashboardTest extends TestCase
         $resp->assertSee(route('facturacion.show', $dte), false);
     }
 
+    public function test_jefatura_ve_fecha_y_pdf_sin_numero_de_control_ni_estado(): void
+    {
+        $procesado = $this->dte(['ambiente' => '01', 'sello_recepcion' => 'SELLO'.Str::random(30), 'fecha_procesamiento_mh' => now()]);
+        $sinSello = $this->dte(['ambiente' => '01', 'numero_control' => 'DTE-03-M001P001-000000000000002']);
+
+        $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk()
+            ->assertSee('CLIENTE DASHBOARD SA')
+            ->assertSee(route('facturacion.pdf', $procesado), false)
+            // El aceptado sin sello real no le abre PDF (DtePolicy::view): no se lista.
+            ->assertDontSee(route('facturacion.pdf', $sinSello), false)
+            ->assertDontSee($procesado->numero_control)
+            ->assertDontSee('Número de control')
+            // El badge de estado del DTE.
+            ->assertDontSeeText('Aceptado')
+            ->assertDontSee('href="'.route('facturacion.show', $procesado).'"', false);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()
+            ->assertSee($procesado->numero_control)
+            ->assertSee('Número de control')
+            ->assertSeeText('Aceptado')
+            ->assertSee(route('facturacion.show', $procesado), false);
+    }
+
     public function test_actividad_reciente_muestra_la_sala_del_documento(): void
     {
         // Igual que el listado de Facturación y el PDF: nombre fiscal + sala debajo.

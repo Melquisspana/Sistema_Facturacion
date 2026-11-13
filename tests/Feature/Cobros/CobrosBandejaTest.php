@@ -325,6 +325,22 @@ class CobrosBandejaTest extends TestCase
             ->assertDontSee('name="documentos[]"', false);
     }
 
+    /** Jefatura ve el número corto, no el número de control (13/11/2026). */
+    public function test_jefatura_ve_el_numero_corto_sin_numero_de_control(): void
+    {
+        $cliente = $this->cliente();
+        $doc = $this->documento($cliente, ['numero_control' => 'DTE-03-M001P002-000000000004321']);
+        $ruta = route('cobros.index', ['cliente_id' => $cliente->id]);
+
+        $this->actingAs($this->usuario(RolSistema::Jefatura))->get($ruta)->assertOk()
+            ->assertSee(route('cobros.documentos.show', $doc), false)
+            ->assertSeeText('4321')
+            ->assertDontSee('DTE-03-M001P002-000000000004321');
+
+        $this->actingAs($this->usuario())->get($ruta)->assertOk()
+            ->assertSee('DTE-03-M001P002-000000000004321');
+    }
+
     /** Sin `ppq.gestionar` no se puede escribir, aunque se llame a la ruta directamente. */
     public function test_solo_lectura_no_puede_sincronizar(): void
     {

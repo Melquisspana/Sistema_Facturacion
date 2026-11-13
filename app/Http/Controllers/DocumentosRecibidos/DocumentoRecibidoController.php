@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\DocumentosRecibidos;
 
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
+use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Jobs\RecuperarPeriodoCompras;
 use App\Models\DocumentoRecibido;
@@ -329,6 +330,8 @@ class DocumentoRecibidoController extends Controller
     public function descargarArchivo(DocumentoRecibido $documento, string $tipo): StreamedResponse
     {
         abort_unless(in_array($tipo, ['pdf', 'json'], true), 404);
+        // Jefatura abre el PDF, no el JSON (Melqui, 13/11/2026). Por rol, como el formato de NC.
+        abort_if($tipo === 'json' && request()->user()?->hasRole(RolSistema::Jefatura->value), 403);
 
         $ruta = $documento->archivoGuardado($tipo);
 

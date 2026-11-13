@@ -58,7 +58,7 @@ class QuedanCallejaExporterTest extends TestCase
 
     private function usuario(): User
     {
-        return User::factory()->create()->assignRole(RolSistema::Jefatura->value);
+        return User::factory()->create()->assignRole(RolSistema::Contabilidad->value);
     }
 
     private function lote(): PpqLote

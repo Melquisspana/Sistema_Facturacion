@@ -7,7 +7,12 @@
     en Cobros entra quien tiene `ppq.ver`, que no siempre tiene `dte.ver`.
 
     Parámetros: $dte (con cliente, clienteSucursal y dteRelacionado cargados).
+
+    Jefatura (13/11/2026, solo la ve en Cobros: la ficha de Facturación la lleva al PDF) no
+    ve estado, número interno ni de control, orden de compra ni el ID técnico: ve el número
+    corto y «Ver PDF» en lugar de «Imprimir».
 --}}
+@php $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf(); @endphp
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>
@@ -27,7 +32,12 @@
                          falló / Pendiente de correo» sobre el mismo dato. --}}
                     @can('view', $dte)
                         <div class="flex items-center gap-3 flex-wrap">
-                            <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="inline-flex min-h-11 sm:min-h-0 items-center text-gray-600 hover:underline text-sm">Imprimir</a>
+                            @if ($soloNegocio)
+                                {{-- Jefatura abre el PDF, como en Documentos fiscales (DtePolicy::view). --}}
+                                <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-indigo-700 hover:bg-gray-50">Ver PDF</a>
+                            @else
+                                <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="inline-flex min-h-11 sm:min-h-0 items-center text-gray-600 hover:underline text-sm">Imprimir</a>
+                            @endif
                         </div>
                     @endcan
                 </div>
@@ -37,7 +47,9 @@
                     @if ($dte->tipo_nota_credito)
                         <div><dt class="text-gray-500">Tipo de NC</dt><dd>{{ $dte->tipo_nota_credito->label() }}</dd></div>
                     @endif
+                    @unless ($soloNegocio)
                     <div><dt class="text-gray-500">Estado</dt><dd><x-estado-dte-badge :estado="$dte->estado" /></dd></div>
+                    @endunless
                     {{-- Numeración COMERCIAL visible del sistema (compartida por todos los
                          tipos). El id de la fila NO es un número comercial: se muestra
                          aparte y etiquetado como técnico, solo para soporte/auditoría. --}}
@@ -45,26 +57,34 @@
                         <dt class="text-gray-500">N.º sistema</dt>
                         <dd class="font-semibold">{{ $dte->etiquetaNumeroSistema() }}</dd>
                     </div>
+                    @if ($soloNegocio)
+                        <div><dt class="text-gray-500">Número</dt><dd class="font-semibold">{{ $dte->correlativoCorto() }}</dd></div>
+                    @else
                     <div><dt class="text-gray-500">Número interno</dt><dd class="font-mono">{{ $dte->numero_interno ?? '—' }}</dd></div>
-                    @if ($dte->numero_control)
+                    @endif
+                    @if ($dte->numero_control && ! $soloNegocio)
                         <div><dt class="text-gray-500">Número de control</dt><dd class="font-mono break-all">{{ $dte->numero_control }}</dd></div>
                     @endif
                     {{-- En borrador no hay fecha: la de emisión es la del día en que se genera. --}}
                     <div><dt class="text-gray-500">Fecha</dt><dd>{{ $dte->esEditable() ? 'La del día en que se emita' : $dte->fecha_emision?->format('d/m/Y') }}</dd></div>
+                    @unless ($soloNegocio)
                     <div><dt class="text-gray-500">Orden de compra</dt><dd>{{ $dte->numero_orden_compra ?? '—' }}</dd></div>
                     {{-- Identificador TÉCNICO de la fila: solo para soporte y auditoría,
                          nunca como número de documento frente al cliente. --}}
                     <div><dt class="text-gray-500">ID técnico (soporte)</dt><dd class="font-mono text-xs text-gray-400">{{ $dte->id }}</dd></div>
+                    @endunless
                     @if ($dte->dte_relacionado_id)
                         <div>
                             <dt class="text-gray-500">Documento original</dt>
-                            @can('view', $dte)
+                            @if ($soloNegocio)
+                                <dd class="font-semibold">{{ $dte->dteRelacionado?->correlativoCorto() ?? '—' }}</dd>
+                            @elseif (auth()->user()?->can('view', $dte))
                                 <dd><a href="{{ route('facturacion.show', $dte->dteRelacionado) }}" class="text-indigo-600 hover:underline font-mono">
                                     {{ $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}
                                 </a></dd>
                             @else
                                 <dd class="font-mono">{{ $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}</dd>
-                            @endcan
+                            @endif
                         </div>
                     @elseif ($dte->tipo_dte === \App\Enums\TipoDte::NotaCredito)
                         <div>

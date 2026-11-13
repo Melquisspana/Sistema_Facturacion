@@ -1,6 +1,9 @@
 @php
     $puedeGestionar = auth()->user()?->can('exportaciones.gestionar') ?? false;
     $editable = $lista->puedeEditarse();
+    // Jefatura (13/11/2026): cada factura por su número corto y su PDF, sin número de control
+    // ni estado del DTE (como en Documentos fiscales, DtePolicy::view).
+    $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
 @endphp
 
 <x-app-layout>
@@ -178,7 +181,7 @@
                         </div>
                         <div>
                             <dt class="inline text-xs uppercase tracking-wide text-gray-400">Factura:</dt>
-                            <dd class="inline font-mono text-gray-800">{{ $lista->textoFactura() ?: '—' }}</dd>
+                            <dd class="inline font-mono text-gray-800">{{ ($soloNegocio ? $lista->facturaCorta() : $lista->textoFactura()) ?: '—' }}</dd>
                         </div>
                         <div>
                             <dt class="inline text-xs uppercase tracking-wide text-gray-400">FDA de la empresa:</dt>
@@ -243,7 +246,9 @@
                             <thead class="hidden md:table-header-group">
                                 <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                                     <th scope="col" class="py-3 px-4">Número</th>
-                                    <th scope="col" class="py-3 px-4">Estado</th>
+                                    @unless ($soloNegocio)
+                                        <th scope="col" class="py-3 px-4">Estado</th>
+                                    @endunless
                                     <th scope="col" class="py-3 px-4">Fecha</th>
                                     <th scope="col" class="py-3 px-4 text-right">Total</th>
                                     @if ($puedeGestionar && $editable)
@@ -255,11 +260,24 @@
                                 @foreach ($facturas as $factura)
                                     <tr class="grid grid-cols-2 py-2 md:table-row hover:bg-gray-50">
                                         <td class="col-span-2 py-3 px-4 break-all md:break-normal">
-                                            <a href="{{ route('facturacion.show', $factura) }}" class="font-mono text-indigo-600 hover:underline">
-                                                {{ $factura->numero_control ?: 'Borrador #'.$factura->id }}
-                                            </a>
+                                            @if ($soloNegocio)
+                                                <span class="font-semibold text-gray-800">n.º {{ $factura->correlativoCorto() }}</span>
+                                                @if ($factura->estado === \App\Enums\EstadoDte::Invalidado)
+                                                    <span class="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">Anulado</span>
+                                                @endif
+                                                @can('view', $factura)
+                                                    <a href="{{ route('facturacion.pdf', $factura) }}" target="_blank"
+                                                       class="ml-2 inline-flex min-h-11 sm:min-h-0 items-center text-indigo-600 hover:underline">Ver PDF</a>
+                                                @endcan
+                                            @else
+                                                <a href="{{ route('facturacion.show', $factura) }}" class="font-mono text-indigo-600 hover:underline">
+                                                    {{ $factura->numero_control ?: 'Borrador #'.$factura->id }}
+                                                </a>
+                                            @endif
                                         </td>
-                                        <td class="py-3 px-4"><x-estado-dte-badge :estado="$factura->estado" /></td>
+                                        @unless ($soloNegocio)
+                                            <td class="py-3 px-4"><x-estado-dte-badge :estado="$factura->estado" /></td>
+                                        @endunless
                                         <td class="py-3 px-4 tabular-nums text-gray-600">{{ $factura->fecha_emision?->format('d/m/Y') ?? '—' }}</td>
                                         <td class="col-span-2 py-3 px-4 text-right tabular-nums text-gray-800">${{ number_format((float) $factura->total_pagar, 2) }}</td>
                                         @if ($puedeGestionar && $editable)

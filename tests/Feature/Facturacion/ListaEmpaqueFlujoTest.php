@@ -464,4 +464,54 @@ class ListaEmpaqueFlujoTest extends TestCase
         $this->actingAs($jefa)->patch(route('facturacion.listas.finalizar', $lista))->assertForbidden();
         $this->actingAs($jefa)->delete(route('facturacion.listas.destroy', $lista))->assertForbidden();
     }
+
+    /** Jefatura (13/11/2026): la factura por su número corto y su PDF, sin número de control ni estado. */
+    public function test_jefatura_ve_la_factura_sin_numero_de_control_ni_estado(): void
+    {
+        ['cliente' => $cliente, 'perfil' => $perfil] = $this->clienteHabilitado();
+        $lista = $this->lista($perfil);
+        $fex = $this->fex($cliente, 'DTE-11-M001P001-000000000000042', 'aceptado');
+        $fex->forceFill(['sello_recepcion' => 'SELLO-FICTICIO-42', 'fecha_procesamiento_mh' => now()]);
+        Dte::withoutEvents(fn () => $fex->saveQuietly());
+        $this->actingAs($this->usuario())
+            ->post(route('facturacion.listas.facturas.vincular', $lista), ['dte_id' => $fex->id])
+            ->assertSessionHas('status');
+        $jefa = $this->usuario('jefatura');
+
+        $this->actingAs($jefa)->get(route('facturacion.listas.index'))->assertOk()
+            ->assertSee('n.º 42')
+            ->assertDontSee('DTE-11-M001P001-000000000000042');
+        $this->actingAs($jefa)->get(route('facturacion.listas.show', $lista))->assertOk()
+            ->assertSee('n.º 42')
+            ->assertSee(route('facturacion.pdf', $fex), false)
+            ->assertDontSee('DTE-11-M001P001-000000000000042')
+            ->assertDontSeeText('Aceptado');
+
+        $this->actingAs($this->usuario())->get(route('facturacion.listas.show', $lista))->assertOk()
+            ->assertSee('DTE-11-M001P001-000000000000042')
+            ->assertSeeText('Aceptado');
+    }
+
+    /** Sin factura vinculada, el texto histórico tecleado tampoco le muestra el número de control. */
+    public function test_jefatura_ve_corto_el_numero_historico_sin_factura_vinculada(): void
+    {
+        ['perfil' => $perfil] = $this->clienteHabilitado();
+        $conNumero = $this->lista($perfil, ['factura' => 'DTE-11-M001P001-000000000000058']);
+        $sinNumero = $this->lista($perfil, ['factura' => 'pendiente de facturar']);
+        $jefa = $this->usuario('jefatura');
+
+        $this->actingAs($jefa)->get(route('facturacion.listas.index'))->assertOk()
+            ->assertSee('n.º 58')
+            ->assertSee('Sin factura vinculada')
+            ->assertDontSee('DTE-11-M001P001-000000000000058')
+            ->assertDontSee('pendiente de facturar');
+        $this->actingAs($jefa)->get(route('facturacion.listas.show', $conNumero))->assertOk()
+            ->assertSee('n.º 58')
+            ->assertDontSee('DTE-11-M001P001-000000000000058');
+        $this->actingAs($jefa)->get(route('facturacion.listas.show', $sinNumero))->assertOk()
+            ->assertSee('Sin factura vinculada');
+
+        $this->actingAs($this->usuario())->get(route('facturacion.listas.show', $conNumero))->assertOk()
+            ->assertSee('DTE-11-M001P001-000000000000058');
+    }
 }

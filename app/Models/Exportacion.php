@@ -244,6 +244,24 @@ class Exportacion extends Model
         return $numeros !== [] ? implode(' · ', $numeros) : trim((string) $this->factura);
     }
 
+    /**
+     * La casilla «Factura» para Jefatura (13/11/2026): cada factura por su número corto
+     * («n.º 42»), nunca el número de control. Sin facturas vinculadas, el texto histórico
+     * se reduce a sus últimos dígitos, porque puede traer un número de control completo
+     * tecleado a mano; si no termina en dígitos, «Sin factura vinculada».
+     */
+    public function facturaCorta(): string
+    {
+        $facturas = $this->facturas();
+        if ($facturas->isNotEmpty()) {
+            return $facturas->map(fn (Dte $dte) => 'n.º '.$dte->correlativoCorto())->implode(' · ');
+        }
+
+        return preg_match('/(\d+)$/', trim((string) $this->factura), $m)
+            ? 'n.º '.(ltrim($m[1], '0') ?: '0')
+            : 'Sin factura vinculada';
+    }
+
     // ------------------------------------------------------------------ estado
 
     public function estaFinalizada(): bool

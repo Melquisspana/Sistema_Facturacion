@@ -5,18 +5,21 @@
 
      Variables: $dte (un CCF que sigue facturado: ni borrado, ni invalidado, ni rechazado). --}}
 @php
+    // Jefatura (13/11/2026): sin el número de control en el globo y, en vez de la ficha, el PDF
+    // (solo de lo que Hacienda ya procesó: DtePolicy::view).
+    $soloPdf = (bool) auth()->user()?->abreDocumentosComoPdf();
     $esBorrador = $dte->estado === \App\Enums\EstadoDte::Borrador;
     $textoCcf = $esBorrador
         ? 'Borrador abierto'
         : 'Facturado en CCF n.º '.($dte->numero_control ? '…'.\App\Support\OrdenCompra::ultimosDigitos($dte->numero_control) : $dte->etiquetaNumeroSistema());
     $urlCcf = match (true) {
         $esBorrador && (bool) auth()->user()?->can('update', $dte) => route('facturacion.edit', $dte),
-        (bool) auth()->user()?->can('view', $dte) => route('facturacion.show', $dte),
+        (bool) auth()->user()?->can('view', $dte) => route($soloPdf ? 'facturacion.pdf' : 'facturacion.show', $dte),
         default => null,
     };
 @endphp
 @if ($urlCcf)
-    <a href="{{ $urlCcf }}" class="text-indigo-600 underline" @if ($dte->numero_control) title="{{ $dte->numero_control }}" @endif>{{ $textoCcf }}</a>
+    <a href="{{ $urlCcf }}" class="text-indigo-600 underline" @if ($dte->numero_control && ! $soloPdf) title="{{ $dte->numero_control }}" @endif @if ($soloPdf) target="_blank" @endif>{{ $textoCcf }}</a>
 @else
     <span>{{ $textoCcf }}</span>
 @endif

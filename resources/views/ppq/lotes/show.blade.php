@@ -4,6 +4,9 @@
         $quedan->precargarDocumentos($lote, $items->getCollection());
         // El nombre sale de la ficha del cliente del lote, nunca escrito a mano.
         $nombreCliente = $lote->cliente?->nombre ?? $estadoReal['cliente_derivado']?->nombre ?? 'su cliente';
+        // Jefatura (13/11/2026): sin número de control, orden de compra, código ni sello, y sin
+        // generar el quedan (PpqLoteController le da 403). Montos, albaranes y cobro, igual.
+        $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
     @endphp
     <x-slot name="header">
         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -15,7 +18,7 @@
                 @else
                     <a href="{{ route('ppq.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
                 @endif
-                @if ($resumen['cantidad'] > 0)
+                @if ($resumen['cantidad'] > 0 && ! $soloNegocio)
                     {{-- El archivo de NC se genera días antes desde Documentos fiscales; acá solo el quedan (AC01 + AC02/AC04). --}}
                     <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
@@ -72,7 +75,7 @@
                     @else
                         <p>NC posterior a la presentación: {{ $ncNuevas->count() }} NC de CCF de este PPQ se emitieron después de presentarlo. No se agregan a este lote.</p>
                         @foreach ($ncNuevas as $nc)
-                            <p>{{ $nc->numero_control }} · {{ $money($nc->total_pagar) }}</p>
+                            <p>{{ $soloNegocio ? 'NC '.$nc->correlativoCorto() : $nc->numero_control }} · {{ $money($nc->total_pagar) }}</p>
                         @endforeach
                     @endif
                 </div>
@@ -85,14 +88,14 @@
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
-            @if ($resumen['cantidad'] > 0)
+            @if ($resumen['cantidad'] > 0 && ! $soloNegocio)
                 <p class="text-xs text-gray-500">
                     El formato de quedan trae los CCF (AC01) y sus NC (AC02/AC04). Las NC se suben antes al portal, desde Documentos fiscales. Luego cargá aquí el reporte del caso.
                     El TXT de pago se carga en <a href="{{ route('cobros.index') }}" class="text-indigo-600 hover:underline">Facturas por cobrar</a> y actualiza este PPQ solo.
                 </p>
             @endif
 
-            @if ($fueraDelQuedan !== [])
+            @if ($fueraDelQuedan !== [] && ! $soloNegocio)
                 <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
                     <p>El formato quedan deja fuera lo que ya no vale ante Hacienda:</p>
                     <ul class="mt-1 list-disc pl-5">
@@ -264,13 +267,13 @@
                                     $fmt = fn ($v) => ($v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
                                 @endphp
                                 <tr class="grid grid-cols-2 py-2 md:table-row align-top hover:bg-gray-50 dark:hover:bg-ink-700/40">
-                                    <td class="py-2 px-3" title="{{ $control }} · código {{ $codigo ?: '—' }} · sello {{ $sello ?: '—' }}">
+                                    <td class="py-2 px-3" @unless ($soloNegocio) title="{{ $control }} · código {{ $codigo ?: '—' }} · sello {{ $sello ?: '—' }}" @endunless>
                                         <span class="font-mono font-semibold {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ preg_match('/(\d+)$/', (string) $control, $mc) ? (ltrim($mc[1], '0') ?: '0') : ($control ?: '—') }}</span>
                                         <span class="text-[11px] {{ $item->esNc() ? 'text-rose-500 font-medium' : 'text-gray-400' }}">{{ $tipo === '05' ? 'NC' : 'CCF' }}</span>
                                         @if ($item->esNc() && $item->dte?->dte_relacionado_id && ! $idsCcfLote->has($item->dte->dte_relacionado_id))
                                             <span class="inline-block rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">NC posterior</span>
                                         @endif
-                                        @if ($item->numero_orden_compra)
+                                        @if ($item->numero_orden_compra && ! $soloNegocio)
                                             <span class="block font-mono text-[11px] text-gray-400">OC {{ $item->numero_orden_compra }}</span>
                                         @endif
                                     </td>

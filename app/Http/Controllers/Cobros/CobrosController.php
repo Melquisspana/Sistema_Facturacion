@@ -11,6 +11,7 @@ use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Enums\ResultadoEntrega;
+use App\Enums\RolSistema;
 use App\Exceptions\CopiaArchivadaInservibleException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
 use App\Exceptions\Ppq\ArchivoPagosDeOtroClienteException;
@@ -342,6 +343,7 @@ class CobrosController extends Controller
      */
     public function showSolicitud(CobroSolicitud $solicitud): View
     {
+        $this->cerradoAJefatura();
         $solicitud->loadMissing([
             'cliente:id,nombre',
             'usuario:id,name',
@@ -731,6 +733,7 @@ class CobrosController extends Controller
      */
     public function descargarSolicitud(CobroSolicitud $solicitud): BinaryFileResponse|RedirectResponse
     {
+        $this->cerradoAJefatura();
         try {
             $archivo = $this->solicitudes->archivo($solicitud);
         } catch (CopiaArchivadaInservibleException $e) {
@@ -1025,6 +1028,15 @@ class CobrosController extends Controller
         }
 
         return $previa;
+    }
+
+    /**
+     * Jefatura no usa la solicitud de quedan ni su archivo (Melqui, 13/11/2026): 403 aunque
+     * tenga `ppq.ver`. Va por rol, como el formato de NC (NcExportacionController).
+     */
+    private function cerradoAJefatura(): void
+    {
+        abort_if(request()->user()?->hasRole(RolSistema::Jefatura->value), 403);
     }
 
     /**
