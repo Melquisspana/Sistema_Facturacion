@@ -52,7 +52,7 @@ class ReversionConciliacion
     {
         $motivo = trim((string) $motivo) ?: self::SIN_MOTIVO;
 
-        if (! $item->estaConciliado()) {
+        if (! $item->tieneCobroRegistrado()) {
             throw ValidationException::withMessages([
                 'motivo' => 'Ese renglón no tiene ningún cobro registrado: no hay nada que revertir.',
             ]);

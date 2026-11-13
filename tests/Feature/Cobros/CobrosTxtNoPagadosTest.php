@@ -217,7 +217,10 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertSame(0, $e['lote']->items()->where('dte_id', $e['c']->dte_id)->count());
         $this->assertSame(0, $e['lote']->items()->where('dte_id', $e['n1']->id)->count());
         $this->assertSame(1, $e['lote']->items()->where('dte_id', $e['b']->dte_id)->count());
-        $this->assertSame(EstadoPpq::Pagado, $e['lote']->refresh()->estado);
+        // B pagó 90 de 100: con la misma regla que Cobros es un pago incompleto, así que el
+        // lote no queda «Pagado» (antes PPQ lo daba por pagado y Cobros por parcial).
+        $this->assertSame('parcial', $this->item($e['lote'], $e['b']->dte_id)->conciliacion_estado);
+        $this->assertSame(EstadoPpq::Enviado, $e['lote']->refresh()->estado);
         $this->assertStringContainsString($e['c']->correlativoCorto(), (string) $e['lote']->observaciones);
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $e['c']->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $e['b']->refresh()->presentacion_estado);

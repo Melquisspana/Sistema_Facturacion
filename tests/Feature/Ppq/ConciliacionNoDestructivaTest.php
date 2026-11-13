@@ -741,6 +741,94 @@ class ConciliacionNoDestructivaTest extends TestCase
      * Una fila que nombra el documento pero no dice cuánto se pagó no es evidencia de
      * pago: se aparta, se muestra y el renglón queda como estaba.
      */
+    /**
+     * Misma regla que Cobros (CobroDocumento::estadoDePago): un importe que no cubre el CCF
+     * —menos sus NC aceptadas— no es «pagado». Antes PPQ lo marcaba pagado y dejaba el lote
+     * Pagado mientras Cobros decía «Parcial».
+     */
+    public function test_un_importe_que_no_cubre_el_ccf_no_queda_pagado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 100.00);
+
+        $respuesta = $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 60.00))
+            ->assertOk()->assertSeeText('Pago incompleto');
+
+        $item->refresh();
+        $this->assertSame('parcial', $item->conciliacion_estado);
+        $this->assertSame('60.00', (string) $item->monto_pagado);
+        $this->assertFalse($item->estaConciliado());
+        $this->assertNotSame(EstadoPpq::Pagado, $lote->refresh()->estado);
+        $totales = $respuesta->viewData('reporte')['totales'];
+        $this->assertSame(0, $totales['cantidad_ccf_pagados']);
+        $this->assertSame(1, $totales['cantidad_ccf_incompletos']);
+
+        // El cobro registrado se puede quitar como cualquier otro.
+        $this->actingAs($usuario)->post(route('ppq.lotes.items.revertir-cobro', [$lote, $item]), ['motivo' => 'prueba'])
+            ->assertSessionHasNoErrors();
+        $this->assertNull($item->refresh()->conciliacion_estado);
+    }
+
+    /** Una fila CF por $0 no es un pago: el renglón pendiente sigue pendiente, sin movimiento. */
+    public function test_una_fila_en_cero_no_concilia_un_renglon_pendiente(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 100.00);
+
+        $reporte = $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 0.00))
+            ->assertOk()->viewData('reporte');
+
+        $item->refresh();
+        $this->assertNull($item->conciliacion_estado);
+        $this->assertNull($item->monto_pagado);
+        $this->assertSame(0, PpqConciliacionMovimiento::count());
+        $this->assertSame(0, $reporte['totales']['cantidad_ccf_pagados']);
+        $this->assertCount(1, $reporte['ccfPendientes']);
+        $this->assertSame(0, $reporte['totales']['cantidad_no_en_ppq']);
+        $this->assertNotSame(EstadoPpq::Pagado, $lote->refresh()->estado);
+    }
+
+    /** Y sobre un renglón ya pagado, una fila en cero de otro archivo no le borra el cobro. */
+    public function test_una_fila_en_cero_no_toca_un_renglon_ya_pagado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 100.00);
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 100.00))->assertOk();
+        $this->assertSame('pagado', $item->refresh()->conciliacion_estado);
+
+        $reporte = $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '12-JUN-26', 0.00), 'pagos-2.txt')
+            ->assertOk()->viewData('reporte');
+
+        $item->refresh();
+        $this->assertSame('pagado', $item->conciliacion_estado);
+        $this->assertSame('100.00', (string) $item->monto_pagado);
+        $this->assertSame('2026-06-05', $item->fecha_pago->toDateString());
+        $this->assertSame(1, PpqConciliacionMovimiento::count());
+        $this->assertCount(1, $reporte['conservados']);
+    }
+
+    /** La línea CF llega neta de las NC aceptadas del CCF: eso sí lo cubre. */
+    public function test_la_linea_neta_de_las_nc_aceptadas_cubre_el_ccf(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $ccf = $this->ccf('DTE-03-M001P001-000000000000967', 100.00);
+        Dte::create($ccf->only(['establecimiento_id', 'estado', 'ambiente', 'cliente_id', 'fecha_emision', 'hora_emision', 'fecha_procesamiento_mh']) + [
+            'tipo_dte' => '05', 'dte_relacionado_id' => $ccf->id, 'total_pagar' => 10.00,
+            'numero_control' => 'DTE-05-M001P001-000000000000339', 'codigo_generacion' => strtoupper(Str::uuid()->toString()),
+            'sello_recepcion' => '2026'.strtoupper(Str::random(36)),
+        ]);
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 100.00);
+        $item->update(['dte_id' => $ccf->id]);
+
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 90.00))->assertOk();
+
+        $this->assertSame('pagado', $item->refresh()->conciliacion_estado);
+    }
+
     public function test_una_fila_sin_importe_no_marca_el_documento_como_pagado(): void
     {
         $usuario = $this->usuario();

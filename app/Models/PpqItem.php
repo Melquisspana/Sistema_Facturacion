@@ -169,12 +169,22 @@ class PpqItem extends Model
         return in_array($this->conciliacion_estado, ['pagado', 'aplicada'], true);
     }
 
+    /**
+     * ¿El archivo de pagos dejó un cobro en este renglón, aunque no lo cubra («parcial»)?
+     * Es lo que se conserva entre corridas y lo que se puede quitar a mano.
+     */
+    public function tieneCobroRegistrado(): bool
+    {
+        return $this->estaConciliado() || $this->conciliacion_estado === 'parcial';
+    }
+
     /** Etiqueta del estado de pago para pantalla (NUNCA "pagado" solo por estar en el PPQ). */
     public function estadoPagoLabel(): string
     {
         return match ($this->conciliacion_estado) {
             'pagado' => 'Pagado / conciliado',
             'aplicada' => 'Descontada / aplicada',
+            'parcial' => 'Pago incompleto',
             default => 'Pendiente',
         };
     }
@@ -185,6 +195,7 @@ class PpqItem extends Model
         return match ($this->conciliacion_estado) {
             'pagado' => 'bg-green-100 text-green-700',
             'aplicada' => 'bg-indigo-100 text-indigo-700',
+            'parcial' => 'bg-amber-100 text-amber-700',
             default => 'bg-gray-100 text-gray-500',
         };
     }

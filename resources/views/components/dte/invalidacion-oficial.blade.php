@@ -280,6 +280,20 @@
     @endif
 
     @if (! $yaInvalidado)
+        {{-- Último envío real sin respuesta definitiva, o rechazado como si ya estuviera
+             invalidado: Hacienda pudo haberlo tomado. El documento no se marca sin sello. --}}
+        @if (($inv['aviso_hacienda'] ?? null) === 'sin_respuesta')
+            <div role="status" class="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <p class="font-semibold">Invalidación enviada sin respuesta</p>
+                <p class="mt-1">Hacienda no contestó el último envío y pudo haberla recibido: verificá en el portal de Hacienda antes de reintentar.</p>
+            </div>
+        @elseif (($inv['aviso_hacienda'] ?? null) === 'revisar')
+            <div role="status" class="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <p class="font-semibold">Revisar la invalidación en el portal de Hacienda</p>
+                <p class="mt-1">Hacienda rechazó el último envío, pero puede que el documento ya esté invalidado. Sigue vigente acá hasta tener el sello: no reintentes ni lo reviertas sin verificarlo antes.</p>
+            </div>
+        @endif
+
         @if ($bloqueadoReal)
             {{-- Mensajes para el usuario (no técnicos): las razones se derivan de las condiciones
                  de negocio. El detalle técnico completo (flags/configs/parámetros) NO se muestra en

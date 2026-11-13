@@ -433,6 +433,14 @@ class AplicadorPagosTxt
             ->where('cliente_id', $cliente->id)
             ->where('referencia_calleja', $referenciaCalleja)
             ->where('monto', $fila['valor'])->whereNotNull('nc_dte_id')->latest('id')->first();
+        // La misma deducción ya llegó en otro archivo y todavía espera su nota: se reconoce, y
+        // la nota que se haga desde cualquiera de los dos queda para ambos (NotaCreditoAjuste::crear).
+        $pendiente = $previo !== null || $referenciaCalleja === null ? null : CobroAjuste::query()
+            ->where('cliente_id', $cliente->id)
+            ->where('referencia_calleja', $referenciaCalleja)
+            ->where('monto', $fila['valor'])->where('estado', '!=', 'descartado')
+            ->where(fn ($q) => $q->where('evidencia_hash', '!=', $archivo->hash)->orWhere('referencia_linea', '!=', (string) $fila['linea']))
+            ->latest('id')->first();
 
         $solicitud = $referenciaCalleja === null
             ? null
@@ -456,11 +464,14 @@ class AplicadorPagosTxt
                 'evidencia_nombre' => $archivo->nombre,
                 'motivo' => $previo
                     ? 'Misma deducción informada nuevamente; se conserva la nota de crédito del ajuste #'.$previo->id.'.'
+                    : ($pendiente !== null
+                    ? 'Misma deducción informada nuevamente que el ajuste #'.$pendiente->id
+                        .', todavía sin nota de crédito: la nota se hace una sola vez y queda para los dos.'
                     : ($solicitud === null
                     ? 'No se encontró ninguna solicitud con la referencia '.($referenciaCalleja ?? '—')
                         .'. Queda para revisión manual.'
                     : 'Descuento de pronto pago sobre la solicitud '.$solicitud->referencia
-                        .'. Pendiente de emitir la nota de crédito por el circuito de NC.'),
+                        .'. Pendiente de emitir la nota de crédito por el circuito de NC.')),
                 'user_id' => $usuario?->id,
             ],
         );

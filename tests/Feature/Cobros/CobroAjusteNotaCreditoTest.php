@@ -375,6 +375,50 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $this->assertNull($informe['ajustes'][0]['ajuste']->nc_dte_id);
     }
 
+    /**
+     * El mismo QD llega en dos archivos ANTES de hacer la nota: son dos ajustes pendientes de la
+     * misma deducción. Hecha la nota desde uno, el otro no puede dar una segunda nota.
+     */
+    public function test_mismo_qd_en_dos_txt_antes_de_la_nota_no_permite_dos_notas(): void
+    {
+        $servicio = app(AplicadorPagosTxt::class);
+        $contenido = "000123;Proveedor;QD;PPQ/33762;;-153.01\n";
+        $a = $servicio->aplicar($this->cliente, app(ConciliacionTxtParser::class)->parse($contenido),
+            ArchivoConciliacion::desdeContenido($contenido, 'uno.txt'), $this->usuario)['ajustes'][0]['ajuste'];
+        $acumulado = "000123;Proveedor;CF;DTE031234;;10.00\n".$contenido;
+        $b = $servicio->aplicar($this->cliente, app(ConciliacionTxtParser::class)->parse($acumulado),
+            ArchivoConciliacion::desdeContenido($acumulado, 'dos.txt'), $this->usuario)['ajustes'][0]['ajuste'];
+        $this->assertNotSame($a->id, $b->id);
+        $this->assertStringContainsString('Misma deducción', $b->motivo);
+
+        $this->post(route('facturacion.store-nota-credito'), $this->datos($a))->assertSessionHasNoErrors();
+        $nc = $a->fresh()->notaCredito;
+        $this->assertNotNull($nc);
+
+        // El otro ajuste de la misma deducción queda con la misma nota, no pendiente.
+        $this->assertSame($nc->id, $b->fresh()->nc_dte_id);
+        $this->post(route('facturacion.store-nota-credito'), $this->datos($b))->assertSessionHasErrors('cobro_ajuste_id');
+        $this->assertSame(1, Dte::where('tipo_dte', '05')->count());
+    }
+
+    /** Un hermano que ya quedó pendiente de antes (sin vínculo) tampoco abre una segunda nota. */
+    public function test_ajuste_hermano_sin_vinculo_no_crea_otra_nota_si_la_deduccion_ya_tiene_una(): void
+    {
+        $nc = $this->nc();
+        $this->ajuste(['nc_dte_id' => $nc->id]);
+        $hermano = $this->ajuste(['referencia_linea' => '2']);
+
+        $this->post(route('facturacion.store-nota-credito'), $this->datos($hermano))->assertSessionHasErrors('cobro_ajuste_id');
+        $this->assertStringContainsString('ya tiene la nota de crédito', session('errors')->first('cobro_ajuste_id'));
+        $this->assertSame(1, Dte::where('tipo_dte', '05')->count());
+        $this->assertNull($hermano->fresh()->nc_dte_id);
+
+        // Con la nota anterior invalidada, la deducción vuelve a quedar libre.
+        DB::table('dtes')->where('id', $nc->id)->update(['estado' => EstadoDte::Invalidado->value, 'sello_invalidacion' => 'INVALIDACION']);
+        $this->post(route('facturacion.store-nota-credito'), $this->datos($hermano))->assertSessionHasNoErrors();
+        $this->assertNotNull($hermano->fresh()->nc_dte_id);
+    }
+
     public function test_bandeja_y_resultado_txt_muestran_acciones_y_nc_en_proceso(): void
     {
         $ajuste = $this->ajuste();

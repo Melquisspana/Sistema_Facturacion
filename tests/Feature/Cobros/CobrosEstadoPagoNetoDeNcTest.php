@@ -23,6 +23,7 @@ use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\ConsultasConCandado;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -34,6 +35,7 @@ use Tests\TestCase;
  */
 class CobrosEstadoPagoNetoDeNcTest extends TestCase
 {
+    use ConsultasConCandado;
     use PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -267,6 +269,59 @@ class CobrosEstadoPagoNetoDeNcTest extends TestCase
 
         $this->assertSame(0, Dinero::comparar('100.00', $documento->refresh()->facturadoEfectivo()));
         $this->assertSame(EstadoPagoCobro::Pagado, $documento->pago_estado);
+    }
+
+    /**
+     * El cliente pagó neto antes de que la NC estuviera aceptada: queda «Parcial». Al aceptarse
+     * la NC el CCF pasa solo a «Pagado», sin correr el comando; si después se invalida, vuelve.
+     */
+    public function test_el_ccf_se_recalcula_al_aceptarse_y_al_invalidarse_su_nc(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '10.00', ['estado' => 'firmado', 'sello_recepcion' => null]);
+        $this->assertSame(EstadoPagoCobro::Parcial, $this->pagar($documento, '90.00')->pago_estado);
+
+        $nc->forceFill(['estado' => 'aceptado', 'sello_recepcion' => '2026SELLO'.Str::random(8)])->save();
+        $this->assertSame(EstadoPagoCobro::Pagado, $documento->refresh()->pago_estado);
+
+        $nc->forceFill(['sello_invalidacion' => 'SELLOINV'.Str::random(8)])->save();
+        $nc->forceFill(['estado' => 'invalidado'])->save();
+        $this->assertSame(EstadoPagoCobro::Parcial, $documento->refresh()->pago_estado);
+    }
+
+    /**
+     * El recálculo que dispara la NC bloquea el seguimiento del CCF ANTES de leer sus eventos,
+     * dentro de su transacción: un cobro que entra a la vez no queda pisado con lo leído antes.
+     */
+    public function test_el_recalculo_por_la_nc_bloquea_el_seguimiento_antes_de_leer_sus_eventos(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '10.00');
+        $this->pagar($documento, '90.00');
+
+        $consultas = $this->consultasEnTransaccion();
+        $nc->forceFill(['sello_invalidacion' => 'SELLOINV'.Str::random(8), 'estado' => 'invalidado'])->save();
+
+        $sql = array_column($consultas->getArrayCopy(), 'sql');
+        $candado = array_key_first(array_filter($sql, fn (string $q) => str_starts_with($q, 'select')
+            && $this->nombra($q, 'cobro_documentos') && $this->llevaCandado($q)));
+        $eventos = array_key_first(array_filter($sql, fn (string $q) => str_starts_with($q, 'select') && $this->nombra($q, 'cobro_eventos')));
+        $this->assertNotNull($candado, 'El seguimiento del CCF se lee con candado.');
+        $this->assertNotNull($eventos, 'Los eventos se leen dentro de la misma transacción.');
+        $this->assertLessThan($eventos, $candado, 'El candado va antes de leer los eventos.');
+        $this->assertSame(EstadoPagoCobro::Parcial, $documento->refresh()->pago_estado);
+    }
+
+    /** Pagado completo y después se acepta una NC: ya no cuadra, se cobró de más. */
+    public function test_ccf_pagado_completo_con_nc_aceptada_despues_queda_en_diferencia(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '10.00', ['estado' => 'firmado', 'sello_recepcion' => null]);
+        $this->assertSame(EstadoPagoCobro::Pagado, $this->pagar($documento, '100.00')->pago_estado);
+
+        $nc->forceFill(['estado' => 'aceptado', 'sello_recepcion' => '2026SELLO'.Str::random(8)])->save();
+
+        $this->assertSame(EstadoPagoCobro::Diferencia, $documento->refresh()->pago_estado);
     }
 
     /** Reparación de los CCF que quedaron «con diferencia» con la regla anterior. */

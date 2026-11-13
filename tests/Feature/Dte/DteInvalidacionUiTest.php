@@ -13,6 +13,7 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -455,6 +456,47 @@ class DteInvalidacionUiTest extends TestCase
         $this->assertNull($nc->sello_invalidacion);                 // rechazo no trae sello
         $this->assertSame($selloOriginal, $nc->sello_recepcion);    // evidencia original intacta
         $this->assertIsArray($nc->respuesta_mh_invalidacion);       // pero sí guarda el motivo
+    }
+
+    public function test_invalidacion_sin_respuesta_avisa_en_la_ficha_verificar_en_el_portal(): void
+    {
+        $this->abrirCandados();
+        Http::fake([
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200),
+            '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
+            '*anulardte*' => fn () => throw new ConnectionException('timeout'),
+        ]);
+        $nc = $this->ncAceptada();
+        $admin = $this->usuario('administrador');
+
+        $this->actingAs($admin)
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertRedirect(route('facturacion.show', $nc))
+            ->assertSessionHas('error', fn (string $mensaje) => str_contains($mensaje, 'verificá en el portal de Hacienda antes de reintentar')
+                && ! str_contains($mensaje, 'podés reintentar'));
+
+        $this->actingAs($admin)->get(route('facturacion.show', $nc))
+            ->assertOk()
+            ->assertSee('Invalidación enviada sin respuesta')
+            ->assertSee('verificá en el portal de Hacienda antes de reintentar');
+        $this->assertSame(EstadoDte::Aceptado, $nc->refresh()->estado);
+    }
+
+    public function test_rechazo_por_ya_invalidado_avisa_revisar_en_la_ficha(): void
+    {
+        $this->abrirCandados();
+        $this->fakeHttp(['_http' => 400, 'estado' => 'RECHAZADO', 'descripcionMsg' => 'Documento ya invalidado']);
+        $nc = $this->ncAceptada();
+        $admin = $this->usuario('administrador');
+
+        $this->actingAs($admin)
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertSessionHas('error', fn (string $mensaje) => str_contains($mensaje, 'portal de Hacienda')
+                && ! str_contains($mensaje, 'revertirlo con una nota de crédito'));
+
+        $this->actingAs($admin)->get(route('facturacion.show', $nc))
+            ->assertOk()
+            ->assertSee('Revisar la invalidación en el portal de Hacienda');
     }
 
     public function test_aceptacion_sin_sello_no_invalida_y_la_pantalla_lo_dice(): void
