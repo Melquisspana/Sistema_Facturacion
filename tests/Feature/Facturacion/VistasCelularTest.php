@@ -17,10 +17,13 @@ use App\Models\PpqLote;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Dte\DteBorradorService;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\BuzonFalso;
 use Tests\TestCase;
 
 /**
@@ -217,6 +220,69 @@ class VistasCelularTest extends TestCase
             ->assertSee('id="filtros-compras"', false)
             ->assertSee('filtro puesto')
             ->assertSee('grid grid-cols-2 py-2 md:table-row', false);
+    }
+
+    public function test_ficha_del_documento_apila_el_historial_de_envios_sin_duplicar_reenviar(): void
+    {
+        $dte = $this->borradorConLinea();
+        Dte::withoutEvents(fn () => $dte->forceFill([
+            'estado' => 'aceptado', 'numero_control' => 'DTE-03-M001P001-000000000000778',
+            'sello_recepcion' => 'SELLO-DE-PRUEBA-0002', 'fecha_procesamiento_mh' => now(), 'fecha_emision' => now()->toDateString(),
+        ])->saveQuietly());
+        $envio = $dte->envios()->create([
+            'destinatario' => 'cliente@prueba.test', 'destinatarios' => ['cliente@prueba.test'],
+            'estado' => 'enviado', 'adjuntos' => 'PDF', 'canal' => 'cliente',
+        ]);
+
+        $html = $this->get(route('facturacion.show', $dte))->assertOk()
+            ->assertSee('Historial de envíos (1)')
+            ->assertSee('<tr class="grid grid-cols-2 py-2 md:table-row">', false)
+            ->assertSee('<span class="md:hidden block text-xs text-gray-500">Destinatarios</span>', false)
+            ->assertSee('inline-flex min-h-11 sm:min-h-0 items-center text-indigo-600', false)
+            ->getContent();
+
+        // Filas apiladas: la misma tabla, un solo «Reenviar» por envío.
+        $this->assertSame(1, substr_count($html, 'action="'.route('facturacion.correo.reenviar', [$dte, $envio]).'"'));
+    }
+
+    public function test_paquete_mensual_y_ficha_del_lote_ppq_con_botones_de_44_px_en_el_celular(): void
+    {
+        $this->get(route('contabilidad.paquete'))->assertOk()
+            ->assertSee('class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-indigo-600', false)
+            ->assertSee('class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md border border-gray-300 bg-white px-3 py-2', false);
+
+        $lote = PpqLote::create(['referencia' => 'PPQ-PRUEBA-44', 'fecha' => '2026-11-10', 'estado' => 'borrador']);
+        $html = $this->get(route('ppq.lotes.show', $lote))->assertOk()->getContent();
+
+        // Historial, Buscar / agregar CCF, Editar y Eliminar lote.
+        $this->assertGreaterThanOrEqual(4, substr_count($html, 'inline-flex min-h-11 sm:min-h-0 items-center'));
+        $this->assertStringContainsString('items-center text-sm text-red-600 hover:underline">Eliminar lote', $html);
+    }
+
+    public function test_ficha_de_compras_apila_las_lineas_en_el_celular_y_las_imprime_como_tabla(): void
+    {
+        Storage::fake('local');
+        $this->app->instance(MailboxClient::class, new BuzonFalso(disponible: false));
+        Storage::disk('local')->put('documentos-recibidos/c1/dte.json', json_encode(['dteJson' => [
+            'identificacion' => ['tipoDte' => '03', 'numeroControl' => 'DTE-03-F0000001-000000000000555', 'fecEmi' => '2026-11-04'],
+            'emisor' => ['nombre' => 'PROVEEDOR DE PRUEBA'],
+            'cuerpoDocumento' => [['numItem' => 1, 'cantidad' => 2, 'descripcion' => 'Caja de prueba', 'precioUni' => 5.0,
+                'ventaNoSuj' => 0, 'ventaExenta' => 0, 'ventaGravada' => 10.0]],
+            'resumen' => ['totalGravada' => 10.0, 'totalPagar' => 11.3],
+        ]]));
+        $compra = DocumentoRecibido::create([
+            'gmail_message_id' => 'c1', 'emisor_nombre' => 'PROVEEDOR DE PRUEBA', 'tipo_documento' => '03',
+            'numero_control' => 'DTE-03-F0000001-000000000000555', 'estado' => 'pendiente', 'clasificacion' => 'dte_valido',
+            'total' => 11.30, 'tiene_pdf' => false, 'tiene_json' => true, 'fecha_correo' => '2026-11-04',
+            'metadata_json' => ['archivos' => ['documentos-recibidos/c1/dte.json']],
+        ]);
+
+        $this->get(route('documentos-recibidos.ver', $compra))->assertOk()
+            ->assertSee('Caja de prueba')
+            // Solo en pantalla: la hoja impresa mide menos de 768 px y sigue saliendo como tabla.
+            ->assertSee('@media screen and (max-width: 767px)', false)
+            ->assertSee('<span class="fr-cel">Descripción</span>Caja de prueba', false)
+            ->assertSee('<span class="fr-cel">Gravado</span>$10.00', false);
     }
 
     public function test_documentos_fiscales_pliega_accesos_y_botones_de_crear_en_el_celular(): void
