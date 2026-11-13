@@ -51,14 +51,18 @@ class AuthenticatedSessionController extends Controller
     }
 
     /**
-     * Destroy an authenticated session.
+     * «Salir», el único del sistema (también atiende /logout-completo, por enlaces viejos).
      *
-     * Deja la marca de «salió a propósito» ({@see CloudflareAccessSso::MARCA_SALIDA}): sin ella,
+     * Deja la marca con la hora de salida ({@see CloudflareAccessSso::MARCA_SALIDA}): sin ella,
      * en el dominio público el pedido siguiente traía el JWT de Access y la sesión se abría
-     * otra vez sola. Por eso «Salir» nunca funcionó ahí (12/11/2026).
+     * otra vez sola (12/11/2026). Si el pedido vino por Access, cierra también Access con su
+     * ruta del mismo dominio: la próxima vez pide el PIN y entra directo (13/11/2026). Por la
+     * red local no hay Access: va a la raíz y de ahí al login.
      */
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request, CloudflareAccessSso $sso): RedirectResponse
     {
+        $porAccess = $sso->vinoPorAccess($request);
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();
@@ -67,7 +71,7 @@ class AuthenticatedSessionController extends Controller
 
         // Que «atrás» no muestre una página guardada con datos después de salir: las de la
         // oficina en Rutas se dejan restaurar con «atrás» (`private, no-cache`).
-        return redirect('/')->header('Clear-Site-Data', '"cache"')
+        return redirect($porAccess ? '/cdn-cgi/access/logout' : '/')->header('Clear-Site-Data', '"cache"')
             ->withCookie(CloudflareAccessSso::marcaSalida());
     }
 }

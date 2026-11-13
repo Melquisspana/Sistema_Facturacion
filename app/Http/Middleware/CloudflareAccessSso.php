@@ -33,12 +33,12 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * El header Cf-Access-Authenticated-User-Email NUNCA se usa para autenticar.
  *
- * Quien salió a propósito no vuelve a entrar solo (12/11/2026). Access manda el JWT en cada
- * pedido mientras su cookie viva (y la renueva en silencio con Google aun después de
- * /cdn-cgi/access/logout), así que salir de Laravel duraba un pedido: la sesión se abría otra
- * vez. «Salir» deja la cookie {@see MARCA_SALIDA} y, mientras esté, acá no se abre sesión: el
- * login muestra el formulario y «Entrar con mi cuenta», que la borra. Entrar con usuario y
- * contraseña también la borra. Así, en la PC de la fábrica, otra persona puede entrar con lo suyo.
+ * Quien salió a propósito no vuelve a entrar solo (12-13/11/2026). Access manda el JWT en cada
+ * pedido mientras su sesión viva, así que salir de Laravel duraba un pedido. «Salir» deja la
+ * cookie {@see MARCA_SALIDA} con la HORA en que salió y, si vino por Access, manda a
+ * /cdn-cgi/access/logout. Con la marca, acá solo se entra con un JWT emitido DESPUÉS (`iat`): un
+ * ingreso nuevo a Access, con su PIN. El JWT de antes de salir no entra y queda el login, con
+ * «Entrar con mi cuenta» de respaldo. La marca solo frena: nunca abre una sesión por sí sola.
  */
 class CloudflareAccessSso
 {
@@ -47,10 +47,18 @@ class CloudflareAccessSso
 
     public function __construct(private readonly CloudflareAccessJwtService $jwtService) {}
 
-    /** La marca que deja «Salir»: Secure, dominio y SameSite de la cookie de sesión. */
+    /** La marca que deja «Salir», con la hora de salida: Secure, dominio y SameSite de la sesión. */
     public static function marcaSalida(): Cookie
     {
-        return CookieFacade::forever(self::MARCA_SALIDA, '1');
+        return CookieFacade::forever(self::MARCA_SALIDA, (string) time());
+    }
+
+    /** ¿El pedido vino por Access? Host público y un JWT que valida (lo pregunta «Salir»). */
+    public function vinoPorAccess(Request $request): bool
+    {
+        $jwt = (string) $request->headers->get('Cf-Access-Jwt-Assertion', '');
+
+        return $this->aplicaAlRequest($request) && $jwt !== '' && $this->jwtService->validar($jwt) !== null;
     }
 
     public function handle(Request $request, Closure $next): Response
@@ -61,11 +69,6 @@ class CloudflareAccessSso
 
         // Sesión local ya iniciada: no revalidar el JWT en cada request.
         if (Auth::check()) {
-            return $next($request);
-        }
-
-        // Salió a propósito: entra con usuario y contraseña o con «Entrar con mi cuenta».
-        if ($request->hasCookie(self::MARCA_SALIDA)) {
             return $next($request);
         }
 
@@ -81,6 +84,12 @@ class CloudflareAccessSso
             // JWT presente pero inválido: en el dominio público esto es una
             // anomalía real (Cloudflare siempre manda uno válido) -> corte neutro.
             abort(403, 'Acceso no autorizado.');
+        }
+
+        // Salió a propósito: solo un ingreso a Access posterior (otra vez el PIN) entra solo.
+        $salio = $request->cookie(self::MARCA_SALIDA);
+        if ($salio !== null && ! $this->ingresoPosterior($claims, (string) $salio)) {
+            return $next($request);
         }
 
         if (! (bool) config('cloudflare_access.auto_login', true)) {
@@ -105,7 +114,26 @@ class CloudflareAccessSso
             ->withProperties(['via' => 'cloudflare_access', 'host' => $request->getHost()])
             ->log('Inicio de sesión SSO (Cloudflare Access)');
 
-        return $next($request);
+        $respuesta = $next($request);
+        if ($salio !== null) {
+            $respuesta->headers->setCookie(CookieFacade::forget(self::MARCA_SALIDA));
+        }
+
+        return $respuesta;
+    }
+
+    /**
+     * ¿El JWT es de un ingreso a Access posterior a la salida? Access emite el JWT de la
+     * aplicación al autenticarse (`iat`) y lo reusa mientras dura esa sesión: el de antes de
+     * salir tiene un `iat` anterior. Sin `iat` numérico, no (fail closed).
+     *
+     * @param  array<string, mixed>  $claims
+     */
+    private function ingresoPosterior(array $claims, string $salio): bool
+    {
+        $iat = $claims['iat'] ?? null;
+
+        return is_numeric($iat) && ctype_digit($salio) && (int) $iat > (int) $salio;
     }
 
     /**
