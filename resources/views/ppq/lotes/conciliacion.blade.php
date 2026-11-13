@@ -122,6 +122,9 @@
             {{-- Conteos rápidos --}}
             <div class="flex flex-wrap gap-2 text-xs">
                 <span class="rounded-full bg-green-100 text-green-700 px-3 py-1">CCF pagados: {{ $t['cantidad_ccf_pagados'] }}</span>
+                @if (($t['cantidad_ccf_incompletos'] ?? 0) > 0)
+                    <span class="rounded-full bg-amber-100 text-amber-700 px-3 py-1">CCF con pago incompleto: {{ $t['cantidad_ccf_incompletos'] }}</span>
+                @endif
                 <span class="rounded-full bg-amber-100 text-amber-700 px-3 py-1">CCF pendientes: {{ $t['cantidad_ccf_pendientes'] }}</span>
                 <span class="rounded-full bg-indigo-100 text-indigo-700 px-3 py-1">NC aplicadas: {{ $t['cantidad_nc_aplicadas'] }}</span>
                 <span class="rounded-full bg-rose-100 text-rose-700 px-3 py-1">NC pendientes: {{ $t['cantidad_nc_pendientes'] }}</span>
@@ -131,9 +134,9 @@
                 @endif
             </div>
 
-            {{-- CCF del PPQ pagados según TXT --}}
+            {{-- CCF del PPQ que trae el TXT: pagados, o con un importe que no los cubre --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
-                <div class="px-5 py-3 border-b border-gray-200"><h3 class="text-sm font-semibold text-gray-700">CCF del PPQ pagados según TXT ({{ count($reporte['ccfPagados']) }})</h3></div>
+                <div class="px-5 py-3 border-b border-gray-200"><h3 class="text-sm font-semibold text-gray-700">CCF del PPQ cobrados según TXT ({{ count($reporte['ccfPagados']) }})</h3></div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
@@ -149,7 +152,7 @@
                                 @php $dif = $p['diferencia']; $alerta = $dif !== null && abs((float) $dif) >= 0.01; @endphp
                                 <tr class="hover:bg-gray-50">
                                     <td class="py-2 px-3 font-mono text-xs text-gray-700">{{ $ctrl($p['item']) }}</td>
-                                    <td class="py-2 px-3"><span class="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[11px] font-medium">Pagado / conciliado</span></td>
+                                    <td class="py-2 px-3"><span class="rounded-full {{ $p['item']->estadoPagoClase() }} px-2 py-0.5 text-[11px] font-medium">{{ $p['item']->estadoPagoLabel() }}</span></td>
                                     <td class="py-2 px-3 text-gray-700">{{ $dmy($p['fecha']) }}</td>
                                     <td class="py-2 px-3 text-right text-gray-800">{{ $money($p['item']->monto_dte) }}</td>
                                     <td class="py-2 px-3 text-right text-gray-800">{{ $p['monto_txt'] !== null ? $money($p['monto_txt']) : '—' }}</td>

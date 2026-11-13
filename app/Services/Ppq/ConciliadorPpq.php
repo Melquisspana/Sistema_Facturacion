@@ -2,16 +2,19 @@
 
 namespace App\Services\Ppq;
 
+use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\OrigenConciliacionPpq;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Exceptions\Ppq\ConciliacionYaProcesadaException;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqConciliacion;
 use App\Models\PpqConciliacionMovimiento;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\EvidenciaEntreCircuitos;
+use App\Services\Dte\SaldoMontoCcf;
 use App\Support\Dinero;
 use App\Support\EjercicioControl;
 use Illuminate\Database\QueryException;
@@ -23,7 +26,8 @@ use Illuminate\Support\Facades\DB;
  * {@see ConciliacionTxtParser}).
  *
  * Regla central, que no cambia: un CCF NO está pagado por estar en el PPQ. Solo se marca
- * PAGADO cuando aparece en el TXT como tipo CF, y una NC como APLICADA cuando aparece
+ * PAGADO cuando aparece en el TXT como tipo CF con un importe que lo cubre (si no, queda
+ * «parcial», con la regla de Cobros: {@see estadoDelCcf()}), y una NC como APLICADA cuando aparece
  * como NC. El cruce es por número NORMALIZADO, ejercicio y tipo. Sin fecha se exige un único candidato en el lote.
  *
  * ═══════════════════ Toda fila es del proveedor esperado, o nada se aplica ═══════════════════
@@ -162,7 +166,7 @@ class ConciliadorPpq
                     if ($fila === null) {
                         $sinCambio++;
 
-                        if ($item->estaConciliado()) {
+                        if ($item->tieneCobroRegistrado()) {
                             // Tenía un pago de una corrida anterior y lo conserva. Esta es
                             // exactamente la fila que antes se borraba en silencio.
                             $conservados[] = $item;
@@ -177,7 +181,7 @@ class ConciliadorPpq
 
                     $esNc ? ($usadosNc[$clave] = true) : ($usadosCf[$clave] = true);
 
-                    $movimiento = $this->aplicar($item, $esNc ? 'aplicada' : 'pagado', $fila);
+                    $movimiento = $this->aplicar($item, $esNc ? 'aplicada' : $this->estadoDelCcf($item, $fila), $fila);
 
                     if ($movimiento === null) {
                         $sinCambio++;
@@ -499,6 +503,27 @@ class ConciliadorPpq
     }
 
     /**
+     * «Pagado» o «parcial» para el CCF que nombra la fila, con la MISMA regla que Cobros
+     * ({@see CobroDocumento::estadoDePago()}, con su tolerancia) y las mismas NC descontadas
+     * ({@see SaldoMontoCcf::descontadoEnCobro()}): la línea CF llega neta de las NC aceptadas.
+     * Lo que no cubre el documento es «parcial»; cobrado de más (la línea bruta, con la NC
+     * en su propia línea) sí lo cubre.
+     *
+     * @param  array<string, mixed>  $fila
+     */
+    private function estadoDelCcf(PpqItem $item, array $fila): string
+    {
+        $facturado = Dinero::redondear($item->monto_dte ?? '0');
+        if ($item->dte_id !== null) {
+            $facturado = Dinero::restar($facturado, app(SaldoMontoCcf::class)->descontadoEnCobro([(int) $item->dte_id])[(int) $item->dte_id]);
+        }
+
+        return CobroDocumento::estadoDePago($facturado, $this->importe($fila['valor'])) === EstadoPagoCobro::Parcial
+            ? 'parcial'
+            : 'pagado';
+    }
+
+    /**
      * Fila de detalle para el resumen: item + datos del TXT + diferencia de monto.
      *
      * @param  array<string, mixed>  $fila
@@ -513,6 +538,7 @@ class ConciliadorPpq
             'linea' => $fila['linea'],
             'fecha' => $fila['fecha'],
             'monto_txt' => $montoTxt,
+            'incompleto' => $item->conciliacion_estado === 'parcial',
             'diferencia' => $montoTxt === null
                 ? null
                 : Dinero::redondear(Dinero::restar($item->monto_dte ?? '0', $montoTxt)),
@@ -544,8 +570,12 @@ class ConciliadorPpq
         $totalNc = $sum(array_values($nc));         // NC del TXT (negativo)
         $totalQd = $sum($qd);                        // QD del TXT (negativo)
 
+        $incompletos = count(array_filter($ccfPagados, fn (array $p) => $p['incompleto'] ?? false));
+
         return [
-            'cantidad_ccf_pagados' => count($ccfPagados),
+            // Pagados de verdad; los que el archivo nombra con un importe que no cubre van aparte.
+            'cantidad_ccf_pagados' => count($ccfPagados) - $incompletos,
+            'cantidad_ccf_incompletos' => $incompletos,
             'cantidad_ccf_pendientes' => count($ccfPendientes),
             'cantidad_nc_aplicadas' => count($ncAplicadas),
             'cantidad_nc_pendientes' => count($ncPendientes),

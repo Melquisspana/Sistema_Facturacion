@@ -318,7 +318,7 @@
                                     </td>
                                     <td class="col-span-2 py-2 px-3 text-right whitespace-nowrap">
                                         {{-- Una sola acción: si está cobrado, quitar el cobro; si no, quitarlo del lote. --}}
-                                        @if ($item->estaConciliado())
+                                        @if ($item->tieneCobroRegistrado())
                                             @can('ppq.revertir-conciliacion')
                                                 <form method="POST" action="{{ route('ppq.lotes.items.revertir-cobro', [$lote, $item]) }}"
                                                       onsubmit="const m = prompt('Motivo (opcional):'); if (m === null) return false; this.motivo.value = m; return true;">
