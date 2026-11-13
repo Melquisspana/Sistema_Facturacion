@@ -45,6 +45,9 @@ class CloudflareAccessSso
     /** Cookie propia de «salió a propósito». Larga, HttpOnly y fuera de la sesión (que se invalida). */
     public const MARCA_SALIDA = 'salio_a_proposito';
 
+    /** Desde cuándo una marca cuenta como hora de salida (01/01/2026); antes, freno permanente. */
+    private const HORA_MINIMA_MARCA = 1767225600;
+
     public function __construct(private readonly CloudflareAccessJwtService $jwtService) {}
 
     /** La marca que deja «Salir», con la hora de salida: Secure, dominio y SameSite de la sesión. */
@@ -125,7 +128,9 @@ class CloudflareAccessSso
     /**
      * ¿El JWT es de un ingreso a Access posterior a la salida? Access emite el JWT de la
      * aplicación al autenticarse (`iat`) y lo reusa mientras dura esa sesión: el de antes de
-     * salir tiene un `iat` anterior. Sin `iat` numérico, no (fail closed).
+     * salir tiene un `iat` anterior. Sin `iat` numérico, no (fail closed). Una marca que no es
+     * una hora (la vieja del #365 vale «1») frena siempre: sale con «Entrar con mi cuenta» o
+     * con la contraseña, nunca con un JWT cualquiera.
      *
      * @param  array<string, mixed>  $claims
      */
@@ -133,7 +138,8 @@ class CloudflareAccessSso
     {
         $iat = $claims['iat'] ?? null;
 
-        return is_numeric($iat) && ctype_digit($salio) && (int) $iat > (int) $salio;
+        return is_numeric($iat) && ctype_digit($salio) && (int) $salio >= self::HORA_MINIMA_MARCA
+            && (int) $iat > (int) $salio;
     }
 
     /**

@@ -736,6 +736,29 @@ class CloudflareAccessSsoTest extends TestCase
         $this->assertGuest();
     }
 
+    /**
+     * Actualización desde el #365: la marca vieja vale «1» (no es una hora). Frena siempre, aun
+     * con un JWT recién emitido, hasta entrar a propósito con «Entrar con mi cuenta».
+     */
+    public function test_la_marca_vieja_sin_hora_frena_hasta_entrar_a_proposito(): void
+    {
+        $usuario = $this->usuarioSso();
+
+        foreach (['1', 'basura'] as $vieja) {
+            $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, $vieja)
+                ->entrarConJwt($this->jwt(['iat' => time()]))->assertRedirect(route('login'));
+            $this->assertGuest();
+        }
+
+        $this->withCookie(CloudflareAccessSso::MARCA_SALIDA, '1')
+            ->withHeaders(['Cf-Access-Jwt-Assertion' => $this->jwt()])
+            ->post('https://'.self::HOST.'/entrar-con-mi-cuenta')
+            ->assertRedirect('/')->assertCookieExpired(CloudflareAccessSso::MARCA_SALIDA);
+        $this->defaultCookies = [];
+        $this->entrarConJwt($this->jwt())->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($usuario);
+    }
+
     /** Otra persona en la misma PC pone su propio correo y PIN en Access: entra como ella. */
     public function test_otra_persona_entra_con_su_propio_ingreso_a_access(): void
     {
