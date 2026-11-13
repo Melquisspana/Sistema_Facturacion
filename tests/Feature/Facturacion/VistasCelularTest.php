@@ -4,6 +4,7 @@ namespace Tests\Feature\Facturacion;
 
 use App\Enums\TipoDte;
 use App\Models\Cliente;
+use App\Models\ClientePerfilDocumento;
 use App\Models\Correlativo;
 use App\Models\DocumentoRecibido;
 use App\Models\Dte;
@@ -19,6 +20,7 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Dte\DteBorradorService;
+use App\Services\Dte\PerfilDocumentoResolver;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -234,11 +236,19 @@ class VistasCelularTest extends TestCase
             'estado' => 'enviado', 'adjuntos' => 'PDF', 'canal' => 'cliente',
         ]);
 
+        $dte->envios()->create([
+            'destinatario' => 'cliente@prueba.test', 'destinatarios' => ['cliente@prueba.test'],
+            'estado' => 'error', 'error' => 'Servidor de prueba rechazó la conexión', 'canal' => 'cliente',
+        ]);
+
         $html = $this->get(route('facturacion.show', $dte))->assertOk()
-            ->assertSee('Historial de envíos (1)')
+            ->assertSee('Historial de envíos (2)')
             ->assertSee('<tr class="grid grid-cols-2 py-2 md:table-row">', false)
             ->assertSee('<span class="md:hidden block text-xs text-gray-500">Destinatarios</span>', false)
             ->assertSee('inline-flex min-h-11 sm:min-h-0 items-center text-indigo-600', false)
+            // El ⓘ con title no se toca en el celular: el error va escrito en la fila.
+            ->assertSee('whitespace-normal break-words text-xs text-rose-600">Servidor de prueba rechazó la conexión</span>', false)
+            ->assertSee('items-center text-sm text-gray-500 hover:underline">← Volver al listado', false)
             ->getContent();
 
         // Filas apiladas: la misma tabla, un solo «Reenviar» por envío.
@@ -257,6 +267,27 @@ class VistasCelularTest extends TestCase
         // Historial, Buscar / agregar CCF, Editar y Eliminar lote.
         $this->assertGreaterThanOrEqual(4, substr_count($html, 'inline-flex min-h-11 sm:min-h-0 items-center'));
         $this->assertStringContainsString('items-center text-sm text-red-600 hover:underline">Eliminar lote', $html);
+        // El mismo margen lateral que las demás pantallas.
+        $this->assertStringContainsString('class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6"', $html);
+    }
+
+    public function test_facturas_por_cobrar_con_botones_y_meses_de_44_px_en_el_celular(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente de prueba Cobros']);
+        ClientePerfilDocumento::create([
+            'cliente_id' => $cliente->id, 'activo' => true, 'codigo_proveedor' => '000123',
+            'formato_export' => 'albaran_nc_v1', 'exige_albaran_en_nc' => false, 'tolerancia_albaran' => 0,
+        ]);
+        app(PerfilDocumentoResolver::class)->olvidar();
+
+        $html = $this->get(route('cobros.index', ['cliente_id' => $cliente->id]))->assertOk()
+            ->assertSee('Cliente de prueba Cobros')
+            ->assertSee('inline-flex min-h-11 sm:min-h-0 items-center rounded-full px-3 py-1 text-sm', false)
+            ->assertSee('class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revisar TXT', false)
+            ->getContent();
+
+        // Historial de PPQ y Buscar CCF / NC, arriba.
+        $this->assertSame(2, substr_count($html, 'inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md border'));
     }
 
     public function test_ficha_de_compras_apila_las_lineas_en_el_celular_y_las_imprime_como_tabla(): void
