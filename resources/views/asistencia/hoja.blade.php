@@ -10,97 +10,65 @@
         marca con el lector; quien no marcó sale con las horas vacías para anotarlas a mano.
         No marca llegadas tarde: eso es un aviso suave en «Marcas de hoy».
 
-        Página impresa (docs/GUIA_PANTALLAS.md, «Páginas para imprimir»), igual que
-        rutas/pedidos/hoja: documento aparte, sus propios estilos, sin el bundle ni modo
-        oscuro, se lee igual en blanco y negro y entra en hoja carta vertical.
+        Documento aparte, sus propios estilos, sin el bundle ni modo oscuro, se lee igual en
+        blanco y negro y entra en hoja carta vertical.
+
+        Forma (13/11/2026, pedido del dueño): la de los documentos impresos (docs/GUIA_PANTALLAS.md,
+        «Documentos impresos»), como el PDF del CCF, con el acento TERRACOTA y «HOJA DE ASISTENCIA»
+        con «Documento interno» en el recuadro (es un control interno de Producción; «no es
+        factura» no viene al caso). Lo común sale de components/documento.
 
         Variables: $fecha (CarbonImmutable, el día local) y $filas
         [{nombre, entrada, salida}] con las horas ya en hora local («H:i» o null).
     --}}
     <style>
-        :root {
-            --tinta: #111827;
-            --suave: #4b5563;
-            --indigo: #3730a3;
-            --indigo-borde: #c7d2fe;
-            --indigo-claro: #eef2ff;
-        }
-        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        body {
-            margin: 0;
-            padding: 24px 16px;
-            background: #fff;
-            color: var(--tinta);
-            font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-            font-size: 13px;
-            line-height: 1.4;
-        }
+        <x-documento.estilos acento="terracota" />
+
+        @page { size: letter portrait; margin: 12mm; }
+        body { padding: 24px 16px; font-size: 13px; line-height: 1.4; }
         .hoja { max-width: 820px; margin: 0 auto; }
 
-        .franja {
-            display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
-            margin-bottom: 16px; padding: 14px 20px;
-            background: var(--indigo); color: #fff; border-radius: 10px;
-            border-bottom: 5px solid #818cf8;
-        }
-        .marca { display: flex; align-items: center; gap: 16px; min-width: 0; }
-        .logo { flex: none; width: 48px; height: 72px; padding: 4px; background: #fff; border-radius: 8px; object-fit: contain; }
-        .empresa { margin: 0 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #e0e7ff; overflow-wrap: anywhere; }
-        h1 { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.2; letter-spacing: .04em; }
-        .numero { margin: 0; text-align: right; }
-        .numero span { display: block; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #e0e7ff; }
-        .numero strong { font-size: 24px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-
-        .datos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
-        .datos > div { min-width: 0; padding: 8px 12px; background: var(--indigo-claro); border: 1px solid var(--indigo-borde); border-radius: 8px; }
-        .datos dt { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--indigo); }
-        .datos dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-
-        .tabla-wrap { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; border: 1px solid var(--indigo); }
-        th, td { border: 1px solid #a5b4fc; padding: 6px 8px; vertical-align: middle; }
-        thead th {
-            background: var(--indigo); color: #fff; border-color: #6366f1;
-            font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-align: left;
-        }
-        tbody tr:nth-child(even) td { background: #f5f7ff; }
-        tbody td { height: 40px; }
+        .tabla-wrap { overflow-x: auto; margin-top: 1.2em; }
+        .items th, .items td { vertical-align: middle; }
+        .items tbody td { height: 40px; border-left: 1px solid #EAECEF; }
+        .items tbody td:first-child { border-left: 0; }
+        .items tbody tr:nth-child(even) td { background: #F8F9FA; }
         td.n, th.n { width: 2.5em; text-align: right; font-variant-numeric: tabular-nums; }
-        td.n { color: var(--suave); }
+        td.n { color: #6B7280; }
         td.nombre { font-weight: 600; }
         td.hora, th.hora { width: 5.5em; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
         td.hora { font-size: 16px; font-weight: 700; }
         td.firma, th.firma { width: 22%; }
-        .vacia { padding: 24px 8px; text-align: center; color: var(--suave); }
+        .items th.n { text-align: right; }
+        .items th.hora { text-align: center; }
+        .vacia { padding: 24px 8px; text-align: center; color: #6B7280; }
 
-        .leyenda { margin: 8px 0 0; font-size: 11px; color: var(--suave); }
+        .leyenda { margin: 8px 0 0; font-size: 11px; color: #6B7280; }
 
         .no-print { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 820px; margin: 0 auto 16px; }
         .no-print form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-right: auto; }
-        .no-print label { font-weight: 600; color: #374151; }
+        .no-print label { font-weight: 600; color: #20242C; }
         .no-print input {
-            min-height: 44px; padding: 0 10px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; color: var(--tinta);
+            min-height: 44px; padding: 0 10px; border: 1px solid #C9CDD4; border-radius: 6px; font: inherit; color: #20242C;
         }
         .no-print a, .no-print button {
             display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
-            border: 1px solid #d1d5db; background: #fff; color: #374151; font: inherit; font-weight: 500;
+            border: 1px solid #C9CDD4; background: #fff; color: #20242C; font: inherit; font-weight: 600;
             text-decoration: none; border-radius: 6px; cursor: pointer;
         }
-        .no-print a:hover, .no-print button:hover { background: #f9fafb; }
-        .no-print a:focus-visible, .no-print button:focus-visible, .no-print input:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
+        .no-print a:hover, .no-print button:hover { background: #F8F9FA; }
+        .no-print a:focus-visible, .no-print button:focus-visible, .no-print input:focus-visible { outline: 2px solid #A5512F; outline-offset: 2px; }
         .no-print .error { flex-basis: 100%; margin: 0; color: #991b1b; font-weight: 600; }
 
-        @media (max-width: 640px) {
-            .datos { grid-template-columns: minmax(0, 1fr); }
-            .numero { text-align: left; }
+        /* En el celular el recuadro baja debajo de la empresa (solo pantalla; al imprimir, al lado). */
+        @media screen and (max-width: 640px) {
+            td.head-emisor, td.head-dbox { display: block; width: auto; padding: 0 0 14px; }
             td.firma, th.firma { width: auto; min-width: 6em; }
         }
-        @page { size: letter portrait; margin: 12mm; }
         @media print {
             body { padding: 0; }
             .hoja { max-width: none; }
-            thead { display: table-header-group; }
-            tr { page-break-inside: avoid; }
+            .head { page-break-inside: avoid; }
             .no-print { display: none; }
         }
     </style>
@@ -122,25 +90,15 @@
 </div>
 
 <main class="hoja">
-    <header class="franja">
-        <div class="marca">
-            <img class="logo" src="{{ asset('images/dte/logo-pdf.png') }}" alt="Logo de {{ $empresa }}" width="48" height="72">
-            <div>
-                <p class="empresa">{{ $empresa }}</p>
-                <h1>CONTROL DE ASISTENCIA</h1>
-            </div>
-        </div>
-        <p class="numero"><span>Fecha</span> <strong>{{ $fecha->format('d/m/Y') }}</strong></p>
-    </header>
-
-    <dl class="datos">
-        <div><dt>Área</dt><dd>Producción</dd></div>
-        <div><dt>Día</dt><dd>{{ ucfirst($fecha->locale('es')->dayName) }} {{ $fecha->format('d/m/Y') }}</dd></div>
-        <div><dt>Personas</dt><dd>{{ count($filas) }}</dd></div>
-    </dl>
+    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Producción · horas del lector y firmas"
+        etiqueta="Control de asistencia" titulo="HOJA DE ASISTENCIA" leyenda="Documento interno">
+        <tr class="key"><td class="k">Día</td><td class="v">{{ ucfirst($fecha->locale('es')->dayName) }} {{ $fecha->format('d/m/Y') }}</td></tr>
+        <tr><td class="k">Área</td><td class="v">Producción</td></tr>
+        <tr><td class="k">Personas</td><td class="v">{{ count($filas) }}</td></tr>
+    </x-documento.encabezado>
 
     <div class="tabla-wrap">
-        <table>
+        <table class="items">
             <thead>
                 <tr>
                     <th class="n" scope="col">N.º</th>

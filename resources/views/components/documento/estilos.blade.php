@@ -18,6 +18,9 @@
         'pizarra' => ['fuerte' => '#2B4A6F', 'linea' => '#3B5F8A', 'fondo' => '#EEF2F7', 'borde' => '#C5D1E0'],
         'ocre' => ['fuerte' => '#7A5212', 'linea' => '#9A6B1F', 'fondo' => '#F8F2E6', 'borde' => '#E3D0A8'],
         'grafito' => ['fuerte' => '#33373D', 'linea' => '#4A4F58', 'fondo' => '#F2F3F5', 'borde' => '#D4D8DE'],
+        'petroleo' => ['fuerte' => '#1D5560', 'linea' => '#2A6F7C', 'fondo' => '#EBF4F5', 'borde' => '#B9D9DE'],
+        'violeta' => ['fuerte' => '#4A3A7A', 'linea' => '#5D4C93', 'fondo' => '#F1EFF7', 'borde' => '#D3CCE6'],
+        'terracota' => ['fuerte' => '#8A3F24', 'linea' => '#A5512F', 'fondo' => '#F9EFEA', 'borde' => '#E6C6B6'],
     ][$acento];
 @endphp
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }

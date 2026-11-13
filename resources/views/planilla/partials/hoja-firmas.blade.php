@@ -30,6 +30,7 @@
             .'<br>'.($esBorrador
                 ? 'Sin pagar · impresa el '.e($cabecera['hoy'])
                 : 'Pagada el '.e($cabecera['fecha_pago'] ?? '—')),
+        'leyenda' => ($deVacaciones || $deIndemnizacion) && ! $esBorrador ? '' : 'Documento interno',
     ])
 
     <table class="hi-grupal">

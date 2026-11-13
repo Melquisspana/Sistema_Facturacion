@@ -217,6 +217,8 @@ class FlujoDiezPersonasTest extends TestCase
         $papel = $hoja->getContent();
 
         $hoja->assertSee('Planilla para firma', false);
+        // Forma de los documentos impresos: recuadro con «Documento interno», nunca «no es factura».
+        $hoja->assertSee('Documento interno')->assertDontSee('No es factura');
         $hoja->assertSee('DULCES LA NEGRITA', false);
         $hoja->assertSee('10 trabajadores');
         $hoja->assertSee('no sustituye la Planilla', false);
@@ -243,6 +245,7 @@ class FlujoDiezPersonasTest extends TestCase
             ->assertOk();
 
         $recibos->assertSee('Recibo de pago', false);
+        $recibos->assertSee('Documento interno')->assertDontSee('No es factura');
         $recibos->assertSee('no sustituye la Planilla', false);
         $recibos->assertSee('del 08/09/2026 al 15/09/2026', false);
         $recibos->assertSee('Total recibido');

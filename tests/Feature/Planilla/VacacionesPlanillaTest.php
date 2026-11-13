@@ -586,6 +586,8 @@ class VacacionesPlanillaTest extends TestCase
 
         $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo']))->assertOk()
             ->assertSee('Recibo de vacaciones')
+            // Prueba un pago que manda la ley: sin leyenda que le reste validez.
+            ->assertDontSee('Documento interno')->assertDontSee('No es factura')
             ->assertSee('correspondientes al año de servicio del 10/11/2025 al 10/11/2026.')
             ->assertDontSee('01/03/2025');
         $this->actingAs($this->actor)->get(route('planilla.show', $planilla))->assertOk()

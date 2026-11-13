@@ -342,7 +342,7 @@ class AltaEmpleadoTest extends TestCase
             $this->actingAs($actor)->get(route('planilla.impresos', [$planilla, 'formato' => $formato]))->assertOk()->assertSee('Pasaporte FICTICIO-8')->assertDontSee('DUI FICTICIO-8');
         }
         $anticipo = app(RegistrarAnticipo::class)->registrar($actor, $e, ['fecha' => '2026-11-02', 'importe' => '10.00', 'moneda' => 'USD']);
-        $this->get(route('planilla.anticipos.comprobante', $anticipo))->assertOk()->assertSee('Pasaporte FICTICIO-8')->assertDontSee('DUI FICTICIO-8');
+        $this->get(route('planilla.anticipos.comprobante', $anticipo))->assertOk()->assertSee('Documento interno')->assertSee('Pasaporte FICTICIO-8')->assertDontSee('DUI FICTICIO-8');
         $detalle->update(['documento_tipo_snapshot' => null]);
         $this->get(route('planilla.impresos', $planilla))->assertOk()->assertSee('DUI FICTICIO-8');
     }
