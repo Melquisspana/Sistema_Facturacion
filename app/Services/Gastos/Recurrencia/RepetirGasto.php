@@ -8,6 +8,7 @@ use App\Models\Gastos\Regla;
 use App\Models\Gastos\ReglaVersion;
 use App\Models\User;
 use App\Services\Gastos\AccesoGastos;
+use App\Services\Gastos\Contracts\ProteccionDeGastos;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -59,6 +60,7 @@ final class RepetirGasto
     public function __construct(
         private AccesoGastos $acceso,
         private CalendarioRecurrencia $calendario,
+        private ProteccionDeGastos $proteccion,
     ) {}
 
     /** La repetición de la que ya nació este gasto, si nació de alguna. */
@@ -81,6 +83,12 @@ final class RepetirGasto
 
         if ($this->reglaDe($gasto) !== null) {
             return 'Este gasto ya viene de uno que se repite.';
+        }
+
+        // Lo que nació en otro módulo —un sueldo de Planilla— ya lo genera ese módulo
+        // cada período: repetirlo acá crearía una deuda gemela fuera de él.
+        if ($this->proteccion->motivoParaNoAnular($gasto->id) !== null) {
+            return 'Este gasto lo creó otro módulo, que ya lo genera cada período: no se repite desde Gastos.';
         }
 
         // Varias cuotas es un CALENDARIO DE PAGOS, no algo que se repita: no está

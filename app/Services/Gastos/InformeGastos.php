@@ -93,7 +93,10 @@ final class InformeGastos
             // avisar. `basePagos()` ya lo hacía así; esto los pone de acuerdo.
             ->whereDate('p.fecha', '>=', $desde)
             ->whereDate('p.fecha', '<=', $hasta)
-            ->where(fn ($w) => $w->whereNull('p.revertido_at')->orWhere('p.revertido_at', '>', $hasta.' 23:59:59'));
+            // Revertido después, sí, pero solo si ya estaba registrado al cerrar el período:
+            // cargado más tarde con fecha de entonces y revertido, nunca constó en él.
+            ->where(fn ($w) => $w->whereNull('p.revertido_at')
+                ->orWhere(fn ($r) => $r->where('p.revertido_at', '>', $hasta.' 23:59:59')->where('p.created_at', '<=', $hasta.' 23:59:59')));
 
         if (! $usuario->can('gastos.personales')) {
             $consulta->where('g.ambito', 'empresarial');

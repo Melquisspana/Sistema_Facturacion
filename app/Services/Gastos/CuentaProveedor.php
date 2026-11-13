@@ -245,38 +245,44 @@ final class CuentaProveedor
 
         $centavos = Dinero::centavos((string) $datos['importe']);
 
-        if ($reparto === null) {
-            $plan = $this->repartir($usuario, $datos['beneficiario'], $datos['moneda'], $centavos);
+        // Con el turno tomado primero, el reparto se calcula sobre el saldo de ahora y ningún
+        // otro pago lo cambia antes de registrarlo ({@see SaldosGastos::tomarTurno()}).
+        return DB::transaction(function () use ($usuario, $datos, $centavos, $reparto) {
+            $this->saldos->tomarTurno();
 
-            if ($plan['sobrante'] > 0) {
-                throw ValidationException::withMessages([
-                    'importe' => 'El abono supera lo que se le debe por '
-                        .$datos['moneda'].' '.Dinero::decimal($plan['sobrante'])
-                        .'. Revisá el importe, o agregá primero la compra que falta.',
-                ]);
+            if ($reparto === null) {
+                $plan = $this->repartir($usuario, $datos['beneficiario'], $datos['moneda'], $centavos);
+
+                if ($plan['sobrante'] > 0) {
+                    throw ValidationException::withMessages([
+                        'importe' => 'El abono supera lo que se le debe por '
+                            .$datos['moneda'].' '.Dinero::decimal($plan['sobrante'])
+                            .'. Revisá el importe, o agregá primero la compra que falta.',
+                    ]);
+                }
+
+                if ($plan['lineas'] === []) {
+                    throw ValidationException::withMessages([
+                        'importe' => 'Esta cuenta no tiene compras pendientes. Agregá la compra antes de abonar.',
+                    ]);
+                }
+
+                $reparto = array_map(fn (array $l) => [
+                    'cuota_id' => $l['cuota_id'],
+                    'importe' => Dinero::decimal($l['aplica']),
+                ], $plan['lineas']);
             }
 
-            if ($plan['lineas'] === []) {
-                throw ValidationException::withMessages([
-                    'importe' => 'Esta cuenta no tiene compras pendientes. Agregá la compra antes de abonar.',
-                ]);
-            }
-
-            $reparto = array_map(fn (array $l) => [
-                'cuota_id' => $l['cuota_id'],
-                'importe' => Dinero::decimal($l['aplica']),
-            ], $plan['lineas']);
-        }
-
-        return $this->pagos->registrar($usuario, [
-            'clave' => $datos['clave'],
-            'importe' => Dinero::decimal($centavos),
-            'fecha' => $datos['fecha'],
-            'metodo' => $datos['metodo'],
-            'pagado_por' => $usuario->id,
-            'referencia' => $datos['referencia'] ?? null,
-            'sin_comprobante' => $datos['sin_comprobante'] ?? null,
-        ], $reparto);
+            return $this->pagos->registrar($usuario, [
+                'clave' => $datos['clave'],
+                'importe' => Dinero::decimal($centavos),
+                'fecha' => $datos['fecha'],
+                'metodo' => $datos['metodo'],
+                'pagado_por' => $usuario->id,
+                'referencia' => $datos['referencia'] ?? null,
+                'sin_comprobante' => $datos['sin_comprobante'] ?? null,
+            ], $reparto);
+        });
     }
 
     /**

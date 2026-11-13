@@ -4,6 +4,7 @@ namespace App\Services\Gastos;
 
 use App\Models\Gastos\Cuota;
 use App\Models\Gastos\Gasto;
+use App\Models\Secuencia;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,9 +30,50 @@ use Illuminate\Support\Facades\DB;
  * pagos simultáneos se pasaban del saldo de la cuota. Con candado se lee lo último
  * confirmado. Es compartido: quien escribe ya tiene bloqueados el gasto y la cuota, y acá
  * solo hace falta que la cuenta sea la de ahora. Las pantallas siguen leyendo sin candado.
+ *
+ * Y ANTES DE TODO ESO, EL TURNO ({@see tomarTurno()}).
  */
 final class SaldosGastos
 {
+    /** La fila de {@see Secuencia} que hace de turno para mover saldos. */
+    public const TURNO = 'gastos.saldos';
+
+    /**
+     * EL TURNO PARA MOVER SALDOS: un solo candado, siempre el mismo y siempre primero.
+     *
+     * En MySQL la lectura con candado del saldo de una cuota bloquea también el HUECO del
+     * índice `cuota_id`, que comparten cuotas vecinas de gastos distintos. Dos pagos a la
+     * vez tomaban el mismo hueco y después los dos insertaban su aplicación ahí: cada uno
+     * esperaba al otro y MySQL cortaba a uno (pasaba siempre, en una prueba con dos
+     * procesos). Ningún orden por id lo evita, porque el hueco no es de nadie.
+     *
+     * Con el turno, quien va a insertar o revertir pagos y ajustes lo toma COMO PRIMER
+     * CANDADO de su transacción, antes de su usuario, de cualquier gasto, cuota o saldo:
+     * quien espera en la fila no tiene nada tomado, así que nadie puede estar esperándolo.
+     * Lo toman todos los que cambian un saldo: registrar y revertir pagos y ajustes, y
+     * anular una planilla. Y también, primero, las transacciones de afuera que llegan a un
+     * pago con algo ya bloqueado o escrito (alta con pago, «compré y pagué», pagar lo
+     * programado) o que CALCULAN lo que van a pagar (pagar el saldo desde el panel, abonar a
+     * una cuenta, pagar una planilla): con el turno tomado, ningún saldo cambia hasta que
+     * terminen, así que lo calculado es lo que hay. Adentro, volver a tomarlo no espera.
+     *
+     * No es una lectura común: en MySQL la primera lectura común fija la foto de la
+     * transacción, y tomarla antes de esperar dejaría al que entra sin ver, por ejemplo, el
+     * pago que su propio doble clic acaba de guardar.
+     *
+     * Debe llamarse dentro de la transacción: el candado dura hasta que esta termina.
+     */
+    public function tomarTurno(): void
+    {
+        // Primero el upsert, sin mirar antes si la fila existe. Un FOR UPDATE sobre una fila
+        // que no está bloquea el HUECO del índice: dos procesos lo tomaban a la vez, después
+        // los dos insertaban y MySQL cortaba a uno, que no siempre reintenta. El upsert toma
+        // la fila en exclusiva aunque la esté creando otro: el segundo solo espera
+        // ({@see Secuencia::siguiente()}). Tampoco es una lectura común: no fija la foto.
+        Secuencia::query()->upsert([['clave' => self::TURNO, 'ultimo_numero' => 0]], ['clave'], ['clave']);
+        Secuencia::consultaBloqueada(self::TURNO)->firstOrFail();
+    }
+
     /**
      * Pendiente de UNA cuota, en centavos. Puede ser negativo si un crédito la excede.
      *

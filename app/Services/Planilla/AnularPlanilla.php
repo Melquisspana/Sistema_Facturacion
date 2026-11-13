@@ -77,7 +77,11 @@ final class AnularPlanilla
         // Tres intentos, como al registrar un pago: si MySQL corta esta transacción por un
         // interbloqueo, se vuelve a entrar. Es seguro porque de ese intento no quedó nada.
         return DB::transaction(function () use ($usuario, $planilla, $motivo, $personas) {
-            // Primero quien anula, como en los pagos y los ajustes de Gastos (usuario, gasto,
+            // Antes que nada, el turno de quienes mueven saldos: los créditos de abajo leen el
+            // saldo con candado e insertan ajustes, como un pago ({@see SaldosGastos::tomarTurno()}).
+            $this->saldos->tomarTurno();
+
+            // Después quien anula, como en los pagos y los ajustes de Gastos (usuario, gasto,
             // cuota). Los ajustes de más abajo apuntan a este usuario, y escribirlos espera
             // su candado: sin tomarlo acá, la misma persona pagando y anulando a la vez podía
             // quedar con cada pedido esperando al otro.

@@ -53,10 +53,11 @@ final class RegistrarAjuste
             'motivo.min' => 'El motivo tiene que decir algo: un ajuste sin explicación no se puede auditar después.',
         ])->validate();
 
-        // Tres intentos: la lectura con candado del saldo toma el hueco del índice, y dos
-        // movimientos a cuotas vecinas sin historial pueden cruzarse al insertar. MySQL corta
-        // uno y se vuelve a entrar; es seguro porque de ese intento no quedó nada escrito.
+        // Tres intentos: si MySQL corta esta transacción por un interbloqueo, se vuelve a
+        // entrar; es seguro porque de ese intento no quedó nada escrito. Con los pagos ya no
+        // se cruza: hacen fila en el mismo turno ({@see SaldosGastos::tomarTurno()}).
         return DB::transaction(function () use ($usuario, $cuota, $datos) {
+            $this->saldos->tomarTurno();
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
 
             if ($existente = Ajuste::where('clave', $datos['clave'])->first()) {
@@ -152,6 +153,9 @@ final class RegistrarAjuste
         ])->validate();
 
         DB::transaction(function () use ($usuario, $ajuste, $motivo) {
+            // Revertir cambia el índice (cuota, revertido) y uno de débito lee el saldo con
+            // candado: hace la misma fila que quien registra.
+            $this->saldos->tomarTurno();
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
 
             $cuota = Cuota::whereKey($ajuste->cuota_id)->firstOrFail();

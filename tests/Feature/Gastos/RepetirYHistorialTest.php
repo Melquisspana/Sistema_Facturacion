@@ -13,6 +13,9 @@ use App\Services\Gastos\Recurrencia\GenerarObligaciones;
 use App\Services\Gastos\Recurrencia\RepetirGasto;
 use App\Services\Gastos\RegistrarPago;
 use App\Services\Gastos\SaldosGastos;
+use App\Services\Planilla\ConfirmarPlanilla;
+use App\Services\Planilla\PrepararPlanilla;
+use App\Services\Planilla\RegistrarEmpleado;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -267,6 +270,43 @@ class RepetirYHistorialTest extends TestCase
 
         $this->assertNotNull(app(RepetirGasto::class)->motivoNoRepetible($generado));
         $this->assertSame($regla->id, app(RepetirGasto::class)->reglaDe($generado)?->id);
+    }
+
+    /**
+     * Un sueldo lo genera Planilla cada quincena. Si además se lo marcaba «se repite»,
+     * cada mes nacía una deuda gemela fuera de Planilla: el mismo sueldo debido dos
+     * veces, y una regla con el nombre y el importe a la vista de quien ve gastos.
+     */
+    public function test_un_sueldo_de_planilla_no_se_repite_desde_gastos(): void
+    {
+        config()->set('planilla.enabled', true);
+        config()->set('asistencia.enabled', false);
+        $u = $this->usuario(array_map(fn ($p) => $p->value, [
+            PermisoSistema::PlanillaVer, PermisoSistema::PlanillaSalarios, PermisoSistema::PlanillaGestionar,
+            PermisoSistema::GastosVer, PermisoSistema::GastosRecurrencias, PermisoSistema::GastosPersonales,
+            PermisoSistema::DteVer, PermisoSistema::DashboardVer,
+        ]));
+        $planilla = app(PrepararPlanilla::class)->abrir($u, [
+            'tipo_periodo' => 'quincenal', 'fecha' => '2026-09-10',
+            'clase' => 'regular', 'moneda' => 'USD', 'fecha_pago' => '2026-09-16',
+        ]);
+        $persona = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Persona de prueba', 'cargo' => 'Ventas']);
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            ['planilla_empleado_id' => $persona->id, 'salario' => '260.50', 'conceptos' => []],
+        ]);
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh()->load('detalles.conceptos'));
+        $sueldo = $planilla->fresh()->detalles->first()->gasto;
+
+        $this->assertStringContainsString('otro módulo', (string) app(RepetirGasto::class)->motivoNoRepetible($sueldo));
+
+        try {
+            $this->repetir($u, $sueldo, ['dia_mes' => 16]);
+            $this->fail('Un sueldo no se repite desde Gastos: lo genera Planilla.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('otro módulo', $e->getMessage());
+        }
+
+        $this->assertSame(0, Regla::count());
     }
 
     // ─────────────────── Fijo o variable, sin volver a pedir el importe ───────────────────

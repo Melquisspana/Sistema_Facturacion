@@ -11,6 +11,8 @@ use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\User;
+use App\Services\Gastos\CompraContado;
+use App\Services\Gastos\CuentaProveedor;
 use App\Services\Gastos\RegistrarAjuste;
 use App\Services\Gastos\RegistrarPago;
 use App\Services\Gastos\SaldosGastos;
@@ -18,6 +20,7 @@ use App\Services\Gastos\VincularCompra;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\AnularPlanilla;
 use App\Services\Planilla\ConfirmarPlanilla;
+use App\Services\Planilla\PagarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -299,5 +302,138 @@ class SaldoFrescoAlEscribirTest extends TestCase
 
         $despuesDelCandado = new \ArrayObject(array_slice($sql->getArrayCopy(), array_search($conCandado[$cuota], $sql->getArrayCopy(), true)));
         $this->assertTodasLeidasConCandado($despuesDelCandado, 'gastos_pago_aplicaciones');
+    }
+
+    // ═══════════════════════ El turno, antes que todo lo del saldo ═══════════════════════
+
+    /**
+     * La lectura con candado del saldo bloquea el HUECO del índice, que comparten cuotas
+     * vecinas de gastos distintos: dos movimientos a la vez se cruzaban al insertar. Por eso
+     * todos toman primero el mismo turno, antes de su usuario y de cualquier gasto, cuota o
+     * saldo. Lo que
+     * se comprueba acá es el orden de las sentencias; la espera real la prueba
+     * {@see PagosVecinosMysqlTest} en MySQL.
+     *
+     * @param  \ArrayObject<int, string>  $sql
+     */
+    private function assertTomaElTurnoPrimero(\ArrayObject $sql, string $camino): void
+    {
+        $consultas = $sql->getArrayCopy();
+        $primera = fn (\Closure $cumple) => array_key_first(array_filter($consultas, $cumple));
+
+        $turno = $primera(fn (string $q) => $this->nombra($q, 'secuencias') && $this->llevaCandado($q));
+        $this->assertNotNull($turno, $camino.': no tomó el turno.');
+
+        // Es el PRIMER candado: antes que el del propio usuario. Quien espera en la fila no
+        // tiene nada tomado, así que nadie puede estar esperándolo a él.
+        $otro = $primera(fn (string $q) => $this->llevaCandado($q) && ! $this->nombra($q, 'secuencias'));
+        $this->assertLessThan($otro, $turno, $camino.': tomó otro candado antes que el turno: '.$consultas[$otro]);
+
+        $gasto = $primera(fn (string $q) => preg_match('/from [`"]gastos[`"]/', $q) === 1 && $this->llevaCandado($q));
+        $saldo = $primera(fn (string $q) => str_starts_with($q, 'select')
+            && ($this->nombra($q, 'gastos_pago_aplicaciones') || $this->nombra($q, 'gastos_ajustes'))
+            && $this->llevaCandado($q));
+
+        $this->assertNotNull($gasto, $camino.': no bloqueó el gasto.');
+        $this->assertLessThan($gasto, $turno, $camino.': tomó el gasto antes que el turno.');
+        if ($saldo !== null) {
+            $this->assertLessThan($saldo, $turno, $camino.': leyó el saldo con candado antes que el turno.');
+        }
+    }
+
+    public function test_pagos_ajustes_y_anular_una_planilla_toman_el_turno_antes_que_el_saldo(): void
+    {
+        $cuota = $this->gasto()->cuotas->first();
+
+        $sql = $this->consultasConCandado();
+        $this->pagar($cuota, '10.00');
+        $this->assertTomaElTurnoPrimero($sql, 'Pagar');
+
+        $sql = $this->consultasConCandado();
+        $debito = $this->ajustar($cuota, 'debito', '20.00');
+        $this->assertTomaElTurnoPrimero($sql, 'Ajustar');
+
+        $sql = $this->consultasConCandado();
+        app(RegistrarAjuste::class)->revertir($this->actor, $debito, 'Se cargó de más.');
+        $this->assertTomaElTurnoPrimero($sql, 'Revertir un ajuste');
+
+        // Quien paga dentro de su propia transacción, con lo suyo ya escrito, toma el turno
+        // antes de escribirlo.
+        $sql = $this->consultasConCandado();
+        app(CompraContado::class)->registrar($this->actor, [
+            'clave' => (string) Str::uuid(), 'concepto' => 'Compra de prueba', 'importe' => '12.00',
+            'fecha' => '2026-09-05', 'metodo' => 'efectivo', 'ambito' => 'empresarial', 'moneda' => 'USD',
+            'sin_comprobante' => 'sin recibo',
+        ]);
+        $this->assertTomaElTurnoPrimero($sql, 'Compré y pagué');
+        $insercion = array_key_first(array_filter($sql->getArrayCopy(), fn (string $q) => str_starts_with($q, 'insert') && ! $this->nombra($q, 'secuencias')));
+        $turno = array_key_first(array_filter($sql->getArrayCopy(), fn (string $q) => $this->nombra($q, 'secuencias') && $this->llevaCandado($q)));
+        $this->assertLessThan($insercion, $turno, 'Compré y pagué escribió antes de tomar el turno.');
+
+        $planilla = $this->planillaConfirmada();
+        $sql = $this->consultasConCandado();
+        app(AnularPlanilla::class)->anular($this->actor, $planilla, 'Se generó con un error.');
+        $this->assertTomaElTurnoPrimero($sql, 'Anular una planilla');
+    }
+
+    /**
+     * La fila del turno se crea con un upsert ANTES de bloquearla, sin mirar si existe: un
+     * FOR UPDATE sobre una fila ausente bloquea el hueco del índice, y dos procesos que la
+     * creaban a la vez se cortaban entre sí la primera vez.
+     */
+    public function test_el_turno_se_crea_sin_bloquear_antes_una_fila_ausente(): void
+    {
+        $sql = $this->consultasConCandado();
+
+        DB::transaction(fn () => app(SaldosGastos::class)->tomarTurno());
+        DB::transaction(fn () => app(SaldosGastos::class)->tomarTurno());
+
+        $delTurno = array_values(array_filter($sql->getArrayCopy(), fn (string $q) => $this->nombra($q, 'secuencias')));
+        $this->assertCount(4, $delTurno, implode("\n", $delTurno));
+        foreach ([0, 2] as $i) {
+            $this->assertStringStartsWith('insert', $delTurno[$i], 'Lo primero es el upsert, no una lectura.');
+            $this->assertTrue(str_starts_with($delTurno[$i + 1], 'select') && $this->llevaCandado($delTurno[$i + 1]));
+        }
+        $this->assertSame(1, DB::table('secuencias')->where('clave', SaldosGastos::TURNO)->count());
+    }
+
+    /**
+     * Quien CALCULA lo que va a pagar toma el turno antes de calcular. Si otro pago entra
+     * mientras espera, lo ve y paga lo que de verdad queda; antes calculaba $225, el otro
+     * pagaba $60 y el lote entero se rechazaba por pasarse del saldo.
+     */
+    public function test_pagar_un_lote_de_planilla_calcula_el_pendiente_con_el_turno_tomado(): void
+    {
+        $planilla = $this->planillaConfirmada();
+        $cuota = PlanillaDetalle::where('planilla_id', $planilla->id)->sole()->gasto->cuotas->first();
+        $this->consultasConCandado();
+        $this->mientrasEsperaElCandadoDe('secuencias', fn () => $this->pagoDeOtroProceso($cuota, '60.00'));
+
+        $resultado = app(PagarPlanilla::class)->pagarLote($this->actor, $planilla->fresh(), [
+            'fecha' => '2026-10-15', 'metodo' => 'efectivo', 'pagado_por' => $this->actor->id, 'sin_comprobante' => 'sin recibo',
+        ], PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('id')->all());
+
+        $this->assertSame(1, $resultado['pagos']);
+        $this->assertSame(0, app(SaldosGastos::class)->pendienteCuota($cuota->fresh()));
+        // Los $60 del otro y los $165 que quedaban: ni un centavo de más.
+        $this->assertSame(22500, app(SaldosGastos::class)->aplicado($cuota->id));
+    }
+
+    public function test_abonar_a_una_cuenta_reparte_con_el_turno_tomado(): void
+    {
+        $vieja = $this->gasto();
+        $nueva = $this->gasto();
+        Gasto::whereKey([$vieja->id, $nueva->id])->update(['naturaleza' => 'compra']);
+        Gasto::whereKey($vieja->id)->update(['created_at' => now()->subDay()]);
+        $this->consultasConCandado();
+        $this->mientrasEsperaElCandadoDe('secuencias', fn () => $this->pagoDeOtroProceso($vieja->cuotas->first(), '60.00'));
+
+        app(CuentaProveedor::class)->abonar($this->actor, [
+            'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor de prueba', 'importe' => '100.00',
+            'fecha' => '2026-09-05', 'metodo' => 'efectivo', 'moneda' => 'USD', 'sin_comprobante' => 'sin recibo',
+        ]);
+
+        $this->assertSame(0, app(SaldosGastos::class)->pendienteCuota($vieja->cuotas->first()));
+        $this->assertSame(4000, app(SaldosGastos::class)->pendienteCuota($nueva->cuotas->first()));
     }
 }

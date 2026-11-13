@@ -741,6 +741,8 @@ class FlujoGastosTest extends TestCase
         $u = $this->operador();
         $gasto = $this->gasto($u, ['concepto' => 'Pagada en enero', 'created_at' => '2026-01-05 09:00:00'], [['100.00', '2026-01-10']]);
 
+        // Registrado en enero: el 31 ya constaba.
+        $this->travelTo('2026-01-20 12:00:00');
         $pago = app(RegistrarPago::class)->registrar($u, [
             'clave' => (string) Str::uuid(), 'importe' => '100.00', 'fecha' => '2026-01-20',
             'metodo' => 'transferencia', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
@@ -810,6 +812,8 @@ class FlujoGastosTest extends TestCase
         $dentro = $this->gasto($u, ['concepto' => 'Revertido en el mes'], [['50.00', null]]);
         $fuera = $this->gasto($u, ['concepto' => 'Revertido despues'], [['70.00', null]]);
 
+        // Registrados en enero: al cerrar el mes constaban.
+        $this->travelTo('2026-01-06 12:00:00');
         $pagoDentro = app(RegistrarPago::class)->registrar($u, [
             'clave' => (string) Str::uuid(), 'importe' => '50.00', 'fecha' => '2026-01-05',
             'metodo' => 'efectivo', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
@@ -831,6 +835,38 @@ class FlujoGastosTest extends TestCase
         $this->assertCount(1, $filas, 'El revertido dentro del período no está.');
         $this->assertSame('Revertido despues', $filas->first()->concepto);
         $this->assertNotNull($filas->first()->revertido_despues, 'Y el que sí está viene marcado.');
+    }
+
+    /**
+     * Un pago cargado DESPUÉS del corte con fecha anterior, y revertido, nunca constó
+     * ese día: no puede sacar la deuda de «pendientes al» ni sumar en los pagos de ese
+     * período. Antes bastaba con que la reversión fuera posterior al corte, y el gasto
+     * desaparecía para siempre de un día en que se debía. Un pago antedatado que SIGUE
+     * vigente sí cuenta con su fecha real: el dinero salió ese día.
+     */
+    public function test_un_pago_antedatado_y_revertido_no_falsea_el_corte(): void
+    {
+        $this->travelTo('2026-11-01 09:00:00');
+        $u = $this->operador();
+        $revertido = $this->gasto($u, ['concepto' => 'Pago cargado por error'], [['100.00', '2026-11-30']]);
+        $vigente = $this->gasto($u, ['concepto' => 'Pago cargado tarde'], [['100.00', '2026-11-30']]);
+
+        $this->travelTo('2026-11-10 10:00:00');
+        $pagar = fn (Gasto $gasto) => app(RegistrarPago::class)->registrar($u, [
+            'clave' => (string) Str::uuid(), 'importe' => '100.00', 'fecha' => '2026-11-03',
+            'metodo' => 'efectivo', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
+        ], [['cuota_id' => $gasto->cuotas->first()->id, 'importe' => '100.00']]);
+        $porError = $pagar($revertido);
+        $pagar($vigente);
+        $this->travelTo('2026-11-10 11:00:00');
+        app(RegistrarPago::class)->revertir($u, $porError, 'Se cargó al gasto equivocado');
+
+        $informes = app(InformeGastos::class);
+        $pendientes = $informes->pendientes($u, '2026-11-05');
+        $this->assertSame([$revertido->id], $pendientes->pluck('id')->all());
+        $this->assertSame(10000, (int) $pendientes->first()->pendiente);
+
+        $this->assertSame([$vigente->id], $informes->pagos($u, '2026-11-01', '2026-11-05')->pluck('gasto_id')->all());
     }
 
     // ─────────── Notas de crédito de Compras: sin doble descuento ───────────

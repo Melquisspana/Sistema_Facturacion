@@ -172,6 +172,45 @@ class DocumentoNoDuplicaDeudaTest extends TestCase
     }
 
     /**
+     * Un gasto anulado ya no es deuda: el papel que lo originó queda libre para volver
+     * a registrarse bien. Antes la fila del anulado seguía ocupando el índice único y
+     * la única salida era cargarlo a mano, sin el vínculo que impide duplicarlo.
+     */
+    public function test_anular_el_gasto_libera_el_documento_para_registrarlo_de_nuevo(): void
+    {
+        $u = $this->operador();
+        $u->givePermissionTo(PermisoSistema::GastosAdministrar->value);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $u = $u->fresh();
+        $documento = $this->documento();
+
+        $this->actingAs($u)
+            ->post(route('gastos.store'), $this->datos($u, ['documento' => $documento->id]))
+            ->assertRedirect();
+        $malo = Gasto::sole();
+        $this->actingAs($u)->post(route('gastos.anular', $malo), ['motivo' => 'Se cargó con el importe mal.'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull(app(VincularCompra::class)->gastoDeLaDeuda($documento), 'Un anulado no es la deuda del documento.');
+
+        $this->actingAs($u)
+            ->post(route('gastos.store'), $this->datos($u, ['documento' => $documento->id]))
+            ->assertSessionHasNoErrors();
+
+        $bueno = Gasto::whereNull('anulado_at')->sole();
+        $this->assertNotSame($malo->id, $bueno->id);
+        $this->assertSame($bueno->id, app(VincularCompra::class)->gastoDeLaDeuda($documento)?->id);
+        // La ficha del anulado conserva de dónde nació.
+        $this->assertSame('deuda', Fuente::where('gasto_id', $malo->id)->sole()->papel);
+
+        // El candado sigue en pie para el gasto vivo.
+        $this->actingAs($u)
+            ->post(route('gastos.store'), $this->datos($u, ['documento' => $documento->id]))
+            ->assertSessionHasErrors('documento');
+        $this->assertSame(1, Gasto::whereNull('anulado_at')->count());
+    }
+
+    /**
      * Lo importante no es solo que no haya DOS gastos: es que no quede UNO A MEDIAS.
      *
      * El vínculo se guarda dentro de la misma transacción que el gasto, así que cuando

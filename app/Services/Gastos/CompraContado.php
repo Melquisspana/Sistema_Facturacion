@@ -46,6 +46,7 @@ final class CompraContado
     public function __construct(
         private AccesoGastos $acceso,
         private RegistrarPago $pagos,
+        private SaldosGastos $saldos,
     ) {}
 
     /**
@@ -90,6 +91,10 @@ final class CompraContado
         $centavos = Dinero::centavos((string) $datos['importe']);
 
         return DB::transaction(function () use ($usuario, $datos, $centavos) {
+            // Paga dentro de esta transacción: el turno de quienes mueven saldos va antes
+            // que todo lo que se escribe acá ({@see SaldosGastos::tomarTurno()}).
+            $this->saldos->tomarTurno();
+
             // Idempotencia: la misma clave devuelve lo que ya se guardó. Un doble clic no
             // registra la compra dos veces.
             if ($existente = Gasto::where('clave', $datos['clave'])->first()) {
