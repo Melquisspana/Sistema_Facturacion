@@ -291,7 +291,7 @@ Schedule::command('cobros:leer-correos --aplicar')
 |--------------------------------------------------------------------------
 | Avisos por correo cuando algo falla (issue #163)
 |--------------------------------------------------------------------------
-| Solo LEE: trabajos fallidos, DTE rechazados, contingencia, respaldos, lector de
+| Solo LEE: trabajos fallidos, DTE rechazados o firmados sin transmitir, contingencia, respaldos, lector de
 | asistencia, /salud y lo anotado por errores 500 y tareas que fallan. Escribe solo
 | en la caché (estado de cada aviso) y manda correo cuando algo se abre, empeora o se
 | normaliza, con tope diario por tipo. Ver App\Services\Alertas\Avisador.

@@ -8,6 +8,7 @@ use App\Mail\AlertaSistemaCorreo;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\EventosRecientes;
+use App\Services\Alertas\Detectores\FirmadoSinTransmitir;
 use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
 use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
@@ -59,6 +60,7 @@ class Avisador
             app(TrabajosFallidos::class),
             app(DteRechazados::class),
             app(ContingenciaVencida::class),
+            app(FirmadoSinTransmitir::class),
             app(RespaldoFallido::class),
             app(LectorSinPing::class),
             app(GmailDesconectado::class),
