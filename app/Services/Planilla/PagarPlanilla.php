@@ -119,6 +119,8 @@ final class PagarPlanilla
         $gasto = $this->obligacionDe($detalle);
 
         return DB::transaction(function () use ($usuario, $gasto, $datos) {
+            // El turno antes que cualquier lectura ({@see SaldosGastos::tomarTurno()}).
+            $this->saldos->tomarTurno();
             $cuota = $gasto->cuotas()->first();
 
             return $this->pagos->registrar($usuario, [
@@ -195,6 +197,11 @@ final class PagarPlanilla
         // Tres intentos: si InnoDB mata esta transacción por interbloqueo, se vuelve a
         // entrar. Es seguro porque cada pago se reconoce por su clave derivada.
         return DB::transaction(function () use ($usuario, $planilla, $datos, $detalleIds, $lote) {
+            // Lo primero, el turno de quienes mueven saldos: el pendiente de cada persona se
+            // calcula acá abajo, y con el turno tomado ningún otro pago lo cambia antes de
+            // pagarlo. Sin esto, un abono confirmado en el medio rechazaba el lote entero
+            // ({@see SaldosGastos::tomarTurno()}).
+            $this->saldos->tomarTurno();
             $lote = PlanillaLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
 
             $pagados = 0;

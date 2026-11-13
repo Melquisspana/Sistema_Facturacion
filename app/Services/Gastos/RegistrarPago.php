@@ -125,6 +125,8 @@ final class RegistrarPago
         abort_unless($usuario->activo && $usuario->can('gastos.pagos.corregir'), 403);
         Validator::make(['motivo' => trim($motivo)], ['motivo' => ['required', 'string', 'min:5', 'max:500']])->validate();
         DB::transaction(function () use ($usuario, $pago, $motivo) {
+            // Revertir devuelve saldo: hace la misma fila que quien lo calcula para pagar.
+            $this->saldos->tomarTurno();
             User::whereKey($usuario->id)->lockForUpdate()->firstOrFail();
             $ids = DB::table('gastos_pago_aplicaciones')->where('pago_id', $pago->id)->pluck('cuota_id');
             Gasto::whereIn('id', Cuota::whereIn('id', $ids)->select('gasto_id'))->orderBy('id')->lockForUpdate()->get();

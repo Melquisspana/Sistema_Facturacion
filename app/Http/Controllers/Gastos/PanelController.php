@@ -89,29 +89,34 @@ class PanelController extends Controller
             'sin_comprobante' => ['nullable', 'string', 'max:250'],
         ]);
 
-        $aplicaciones = [];
-        $total = 0;
+        // Se paga el saldo que se calcula acá: con el turno tomado primero, ningún otro pago
+        // lo cambia antes de registrarlo ({@see SaldosGastos::tomarTurno()}).
+        $pago = DB::transaction(function () use ($request, $gasto, $datos, $pagos, $saldos) {
+            $saldos->tomarTurno();
+            $aplicaciones = [];
+            $total = 0;
 
-        foreach ($gasto->cuotas()->orderBy('numero')->get() as $cuota) {
-            $pendiente = $saldos->pendienteCuota($cuota);
-            if ($pendiente <= 0) {
-                continue;
+            foreach ($gasto->cuotas()->orderBy('numero')->get() as $cuota) {
+                $pendiente = $saldos->pendienteCuota($cuota);
+                if ($pendiente <= 0) {
+                    continue;
+                }
+                $aplicaciones[] = ['cuota_id' => $cuota->id, 'importe' => Dinero::decimal($pendiente)];
+                $total += $pendiente;
             }
-            $aplicaciones[] = ['cuota_id' => $cuota->id, 'importe' => Dinero::decimal($pendiente)];
-            $total += $pendiente;
-        }
 
-        abort_if($aplicaciones === [], 422, 'Esta obligación ya no tiene saldo.');
+            abort_if($aplicaciones === [], 422, 'Esta obligación ya no tiene saldo.');
 
-        $pago = $pagos->registrar($request->user(), [
-            'clave' => $datos['clave'],
-            'importe' => Dinero::decimal($total),
-            'fecha' => $datos['fecha'],
-            'metodo' => $datos['metodo'],
-            'pagado_por' => $request->user()->id,
-            'referencia' => $datos['referencia'] ?? null,
-            'sin_comprobante' => $datos['sin_comprobante'] ?? null,
-        ], $aplicaciones);
+            return $pagos->registrar($request->user(), [
+                'clave' => $datos['clave'],
+                'importe' => Dinero::decimal($total),
+                'fecha' => $datos['fecha'],
+                'metodo' => $datos['metodo'],
+                'pagado_por' => $request->user()->id,
+                'referencia' => $datos['referencia'] ?? null,
+                'sin_comprobante' => $datos['sin_comprobante'] ?? null,
+            ], $aplicaciones);
+        });
 
         return redirect()->route('gastos.panel')->with('gastos.aviso',
             'Pagado: '.$gasto->beneficiario.' · '.$pago->moneda.' '.$pago->importe

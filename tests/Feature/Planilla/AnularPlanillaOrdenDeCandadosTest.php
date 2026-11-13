@@ -88,8 +88,9 @@ class AnularPlanillaOrdenDeCandadosTest extends TestCase
             'Entre el turno y quien anula no puede haber otro candado.');
         $this->assertLessThan($orden['gastos'], $orden['planillas']);
         $this->assertLessThan($orden['gastos_cuotas'], $orden['gastos']);
-        // Y lo primero que LEE la transacción es ese candado.
-        $this->assertTrue($this->nombra($consultas[0]['sql'], 'secuencias') && str_contains($consultas[0]['sql'], 'for update'));
+        // Y lo primero que hace la transacción es el turno: crearlo si falta y bloquearlo.
+        $this->assertTrue($this->nombra($consultas[0]['sql'], 'secuencias') && str_starts_with($consultas[0]['sql'], 'insert'));
+        $this->assertTrue($this->nombra($consultas[1]['sql'], 'secuencias') && str_contains($consultas[1]['sql'], 'for update'));
         $this->assertSame('anulada', $planilla->fresh()->estado);
     }
 }
