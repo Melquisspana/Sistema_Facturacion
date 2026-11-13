@@ -23,8 +23,12 @@
         estado actual (mandado en parte, «queda pendiente»; cerrado, «no va»). Uno anterior
         dice solo «No fue en este envío», sin motivos.
 
+        Si el envío corrige a uno anulado con «Corregir», arriba de todo, en un recuadro con
+        borde grueso, «Corrige al envío N.º X» (se lee igual en blanco y negro).
+
         Variables: $pedido (con PedidosFabrica::relaciones(conSala: true)), $envio (vigente, con
-        lineas.linea.producto), $faltan [['linea', 'cantidad']] y $ultimo (bool).
+        lineas.linea.producto), $faltan [['linea', 'cantidad']], $ultimo (bool) y $corrige
+        (n.º del envío que corrige, o null; PedidosFabrica::corrigeA).
     --}}
     <style>
         :root {
@@ -44,6 +48,8 @@
         .numero { margin: 0; text-align: right; }
         .numero span { display: block; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #e0e7ff; }
         .numero strong { font-size: 28px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+
+        .corrige { margin: 0 0 16px; padding: 12px 20px; border: 4px solid var(--rojo); border-radius: 10px; background: var(--rojo-claro); color: var(--rojo); font-size: 22px; font-weight: 800; text-align: center; }
 
         .datos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
         .datos > div { min-width: 0; padding: 8px 12px; background: var(--indigo-claro); border: 1px solid var(--indigo-borde); border-radius: 8px; }
@@ -99,6 +105,9 @@
 </div>
 
 <main class="hoja">
+    @if ($corrige)
+        <p class="corrige">Corrige al envío N.º {{ $corrige }}</p>
+    @endif
     <header class="franja">
         <div>
             <p class="empresa">{{ \App\Support\NombreEmpresa::actual() }}</p>

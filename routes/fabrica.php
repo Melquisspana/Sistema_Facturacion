@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Route;
 | Candados de BACKEND, en orden:
 |   1. auth                              -> invitado va al login.
 |   2. permission:fabrica.pedidos.mandar -> 403 para el resto, también con la URL a mano.
-|   3. Policies dentro de PedidosFabrica  -> por mandar, reabrir, deshacer solo hoy.
+|   3. Policies dentro de PedidosFabrica  -> por mandar, reabrir, deshacer o corregir solo hoy.
 |
 | `no-store`, como Rutas: «atrás» vuelve a pedir la lista y no muestra una copia vieja.
 | Sin rutas DELETE: un envío se anula, nunca se borra. Las literales van antes que las
@@ -34,5 +34,8 @@ Route::middleware(['auth', 'permission:fabrica.pedidos.mandar', 'cache.headers:n
         Route::patch('{pedido}/no-se-trae', [PedidoFabricaController::class, 'cerrar'])->name('cerrar');
         Route::patch('{pedido}/pendiente', [PedidoFabricaController::class, 'reabrir'])->name('reabrir');
         Route::patch('{pedido}/envios/{envio}/anular', [PedidoFabricaController::class, 'anularEnvio'])->name('anular-envio')
+            ->scopeBindings();
+        // «Corregir»: anula el envío como «Deshacer» y abre el pedido con lo que llevaba marcado.
+        Route::patch('{pedido}/envios/{envio}/corregir', [PedidoFabricaController::class, 'corregirEnvio'])->name('corregir-envio')
             ->scopeBindings();
     });

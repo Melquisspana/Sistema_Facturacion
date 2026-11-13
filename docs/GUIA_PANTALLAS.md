@@ -228,13 +228,13 @@ Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el 
 
 - **Pantalla completa** (12/11/2026): sin la barra lateral ni el menú del sistema (`<x-app-layout :pantalla-completa="true">`). Arriba solo la empresa, la persona y «Salir»; quien ve más que Fábrica tiene además «Volver al sistema». La lista es de nombres en botones grandes; al tocar uno se abre el pedido, con una fila arriba para pasar a otro pedido o volver a «Todos».
 - **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Imprimir y mandar»).
-- **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («No se trae», «Dejar para después», «Deshacer», «Imprimir de nuevo»).
+- **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («No se trae», «Dejar para después», «Deshacer», «Corregir», «Imprimir de nuevo»).
 - **Cantidad:** `text-2xl font-bold tabular-nums`, alineada a la derecha.
 - Sin texto con prefijo de pantalla: el botón dice lo que hace.
 - Lo que se puede deshacer no se confirma: sale el aviso con un botón «Deshacer».
-- `confirm()` solo para «Deshacer» un envío y para «Borrar lo marcado».
+- `confirm()` solo para «Deshacer» o «Corregir» un envío y para «Borrar lo marcado». «Corregir» (12/11/2026) anula el envío del día y abre el pedido con lo que llevaba ya marcado; la hoja del envío nuevo dice arriba «Corrige al envío N.º X».
 - La lista se recarga sola cuando nadie la usa (dedo, mouse, rueda o teclado); la hoja que se está llenando, nunca (guarda sola). Cada recarga renueva la sesión: para quien ve más que Fábrica, deja de recargarse antes de que la sesión venza por inactividad.
-- La hoja guarda con un solo retardo corto y, al salir, primero termina de guardar. Los errores del guardado se muestran con texto propio en castellano (por ejemplo, «Se cerró la sesión. Volvé a entrar.»), nunca el mensaje en inglés del sistema.
+- La hoja guarda con un solo retardo corto y, al salir (también con «Salir» de la barra de arriba), primero termina de guardar; si el guardado falla, se queda y avisa. Cerrar o recargar la pestaña con algo sin guardar o en vuelo pide confirmación del navegador. Los errores del guardado se muestran con texto propio en castellano (por ejemplo, «Se cerró la sesión. Volvé a entrar.»), nunca el mensaje en inglés del sistema.
 
 ### Páginas para imprimir
 
