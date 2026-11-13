@@ -263,13 +263,51 @@ class QuienLoEntregoTest extends TestCase
         $this->assertStringContainsString('Anotó: '.$this->ana->name, $html);
     }
 
-    public function test_sin_elegir_queda_el_que_tiene_el_celular(): void
+    public function test_sin_elegir_quien_no_se_guarda_nada(): void
     {
-        $dte = $this->ccf($this->salaTienda, '80.00');
+        // Antes quedaba el que tiene el celular y el que lo prestaba figuraba en todo (12/11/2026).
+        $tienda = $this->ccf($this->salaTienda, '80.00');
+        $super = $this->ccf($this->salaSuper, '310.80');
 
-        $this->marcar($this->ana, $dte, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        foreach ([[$tienda, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo']], [$tienda, ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']],
+            [$super, ['resultado' => 'entregado']], [$tienda, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => '']]] as [$dte, $datos]) {
+            $this->marcar($this->ana, $dte, $datos)->assertSessionHasErrors(['entregado_por_id' => 'Tocá quién lo entregó.']);
+        }
+        $this->assertSame(0, SalidaRutaEntrega::count());
+        $this->assertSame(0, SalidaRuta::count());
 
-        $this->assertSame($this->personaAna->id, SalidaRutaEntrega::sole()->entregado_por_id);
+        // Por JSON, 422 con el mismo mensaje.
+        $this->actingAs($this->ana)->postJson(route('rutas.por-entregar.marcar', $tienda), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['entregado_por_id' => 'Tocá quién lo entregó.']);
+
+        // Con el nombre tocado, queda ese.
+        $this->marcar($this->ana, $tienda, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->personaBeto->id])->assertSessionHasNoErrors();
+        $this->assertSame($this->personaBeto->id, SalidaRutaEntrega::sole()->entregado_por_id);
+    }
+
+    public function test_los_nombres_son_botones_cortos_y_ninguno_viene_elegido(): void
+    {
+        $this->vendedor('Ana María López Díaz');
+        $this->vendedor('Ana Lucía López Pérez');
+        $this->vendedor('Carlos Ernesto Ramos Ruiz');
+        $this->ccf($this->salaTienda, '80.00');
+        $this->caeAlbaran($this->ccf($this->salaSuper, '310.80'));
+
+        $html = $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            // Primer nombre y primer apellido; si dos quedan iguales, el nombre completo.
+            ->assertSee('>Carlos Ramos</span>', false)
+            ->assertSee('>Ana María López Díaz</span>', false)->assertSee('>Ana Lucía López Pérez</span>', false)
+            ->assertSee('>Beto Ficticio</span>', false)
+            ->assertSee('Tocá quién lo entregó')
+            ->getContent();
+
+        // Nadie viene elegido: ni el que tiene el celular. Los botones de confirmar, apagados.
+        $this->assertDoesNotMatchRegularExpression('/<input[^>]*\schecked[\s>]/', $html);
+        $this->assertStringContainsString("x-data=\"{ quien: '' }\"", $html);
+        $this->assertStringNotContainsString('name="entregado_por_id" value="'.$this->personaAna->id.'"', $html);
+        $this->assertMatchesRegularExpression('/<button\s+disabled x-bind:disabled="! quien"[^>]*>Entregado</', $html);
+        $this->assertMatchesRegularExpression('/<button\s+disabled x-bind:disabled="! quien"[^>]*>Anotar quién lo entregó</', $html);
+        $this->assertMatchesRegularExpression('/<button name="motivo_no_entrega" value="sala_cerrada"\s+disabled x-bind:disabled="! quien"/', $html);
     }
 
     public function test_solo_se_elige_un_vendedor_activo(): void

@@ -144,7 +144,7 @@ class PorEntregarController extends Controller
             'albaranMarcados' => $this->entregas->resolucionesAlbaran($marcados->filter(fn (SalidaRutaEntrega $e) => $e->dte !== null && DiaVendedor::esPortal($e->dte))),
             // Su albarán cayó sin que nadie anotara quién la entregó: se anota acá.
             'sinQuien' => $puedeMarcar ? $this->entregas->conAlbaranSinQuien()->load(['clienteSucursal:id,nombre', 'cliente:id,nombre,nombre_comercial']) : collect(),
-            // «¿Quién lo entregó?»: los vendedores activos; viene elegido el que tiene el celular.
+            // «¿Quién lo entregó?»: los vendedores activos, sin nadie elegido de antemano.
             'quienes' => $puedeMarcar ? $this->porEntregar->quienesEntregan($request->user()) : collect(),
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,
@@ -181,7 +181,7 @@ class PorEntregarController extends Controller
 
             return back()->with('status', 'Esa entrega ya estaba anotada.');
         }
-        $quien = $this->quienEntrego($request, $persona);
+        $quien = $this->quienEntrego($request);
 
         // La sala con albarán no cobra al entregar: lo impone EntregasCcf::registrar().
         $datos = $soloQuien ? ['resultado' => 'entregado']
@@ -205,17 +205,18 @@ class PorEntregarController extends Controller
 
     /**
      * «¿Quién lo entregó?»: uno de la lista de la tarjeta ({@see PorEntregar::quienesEntregan()}),
-     * validado acá y no en el formulario. Sin elegir, el que tiene el celular.
+     * validado acá y no en el formulario. Es obligatorio (12/11/2026): antes, sin elegir, quedaba
+     * el que tiene el celular y el que prestaba el suyo figuraba como que entregó todo.
      *
      * @throws ValidationException
      */
-    private function quienEntrego(Request $request, PersonalRuta $persona): PersonalRuta
+    private function quienEntrego(Request $request): PersonalRuta
     {
         $quienes = $this->porEntregar->quienesEntregan($request->user());
         $id = $request->validate(
-            ['entregado_por_id' => ['nullable', 'integer', Rule::in($quienes->modelKeys())]],
-            ['entregado_por_id.integer' => self::QUIEN_INVALIDO, 'entregado_por_id.in' => self::QUIEN_INVALIDO],
-        )['entregado_por_id'] ?? $persona->id;
+            ['entregado_por_id' => ['required', 'integer', Rule::in($quienes->modelKeys())]],
+            ['entregado_por_id.required' => 'Tocá quién lo entregó.', 'entregado_por_id.integer' => self::QUIEN_INVALIDO, 'entregado_por_id.in' => self::QUIEN_INVALIDO],
+        )['entregado_por_id'];
 
         return $quienes->firstWhere('id', (int) $id);
     }

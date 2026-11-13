@@ -21,6 +21,7 @@ use App\Models\UnidadMedida;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\QuienEntrega;
 use Tests\TestCase;
 
 /**
@@ -120,7 +121,7 @@ class PalabrasRutasTest extends TestCase
     {
         $pedido = $this->sacar($this->sala);
         $dte = $this->facturado($pedido);
-        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHas('status', 'Entrega registrada: Entregado (viaje Martes · San Miguel).');
         $entrega = SalidaRutaEntrega::sole();
         $this->actingAs($this->ana)->patch(route('rutas.mi-salida.deshacer', [$entrega->salida, $entrega]))
@@ -129,7 +130,7 @@ class PalabrasRutasTest extends TestCase
 
     public function test_sin_viaje_el_aviso_de_la_entrega_no_nombra_una_salida(): void
     {
-        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $this->ccf($this->sala)), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $this->ccf($this->sala)), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']))
             ->assertSessionHas('status', 'Entrega registrada: No entregado.');
     }
 
@@ -248,7 +249,7 @@ class PalabrasRutasTest extends TestCase
     public function test_las_entregas_del_viaje_llevan_la_fecha_completa_en_la_oficina(): void
     {
         $dte = $this->facturado($this->sacar($this->sala));
-        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHasNoErrors();
 
         $this->actingAs($this->oficina)->get(route('rutas.salidas.show', SalidaRutaEntrega::sole()->salida))->assertOk()
@@ -303,7 +304,7 @@ class PalabrasRutasTest extends TestCase
             ->assertSee(now()->format('d/m/Y'))
             ->assertDontSee('Descargar PDF');
 
-        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHasNoErrors();
         // «Deshacer» con color de enlace, también en modo oscuro (antes era gris claro sobre oscuro).
         $html = $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()->getContent();
@@ -316,7 +317,7 @@ class PalabrasRutasTest extends TestCase
         $dte = $this->ccf($this->sala);
         foreach (['2026-11-10 10:00:00', '2026-11-11 10:00:00'] as $momento) {
             $this->travelTo($momento);
-            $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])
+            $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada']))
                 ->assertSessionHasNoErrors();
         }
         $this->travelTo('2026-11-12 08:00:00');
@@ -338,10 +339,10 @@ class PalabrasRutasTest extends TestCase
 
         $dte = $this->facturado($this->sacar($this->sala));
         $conQuedan = $this->ccf($this->sala, '75.00');
-        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $conQuedan), ['resultado' => 'entregado', 'forma_cobro' => 'sin_cobro'])
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $conQuedan), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'sin_cobro']))
             ->assertSessionHasNoErrors();
         $this->travelTo('2026-11-10 11:00:00');
-        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))
             ->assertSessionHasNoErrors();
 
         // Diez días después (el viaje ya no suma): la historia, sin precios.

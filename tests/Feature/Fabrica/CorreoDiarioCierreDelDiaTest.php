@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Support\QuienEntrega;
 use Tests\TestCase;
 
 /**
@@ -208,7 +209,7 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
     private function marcar(User $usuario, array $datos = ['resultado' => 'entregado', 'forma_cobro' => 'efectivo']): void
     {
         $dte = $this->documento(142, ['cliente_sucursal_id' => $this->sala->id, 'fecha_emision' => now()->toDateString()])->dte;
-        $this->actingAs($usuario)->post(route('rutas.por-entregar.marcar', $dte), $datos)->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo($datos))->assertSessionHasNoErrors();
     }
 
     /** @return array<string, string> nombre del archivo => contenido */
