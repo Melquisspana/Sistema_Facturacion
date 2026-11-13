@@ -168,10 +168,11 @@ class VendedorMiSalidaTest extends TestCase
             // Públicas/invitados y archivos firmados de Laravel/Livewire; perfil y logout son excepciones de sesión.
             // Verificación y contraseña son la seguridad del propio perfil, sin datos de otras áreas.
             // `salud` es pública a propósito: la pide el vigilante de afuera sin sesión y no trae datos (#163).
+            // `manifiesto-web` también: el navegador lo pide para instalar la app, sin sesión y sin datos (#376).
             // «Por entregar» y «Sacar pedido» son del vendedor como «Mi salida»: sus permisos los
             // prueban PorEntregarTest y SacarPedidoSinSalidaTest.
             if (in_array('guest', $middleware, true)
-                || Str::is(['rutas.mi-salida.*', 'rutas.por-entregar.*', 'rutas.sacar-pedido.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud'], $nombre)) {
+                || Str::is(['rutas.mi-salida.*', 'rutas.por-entregar.*', 'rutas.sacar-pedido.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud', 'manifiesto-web'], $nombre)) {
                 continue;
             }
             // Dashboard es la puerta de redirección y se verifica por separado.
