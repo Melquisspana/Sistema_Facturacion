@@ -117,10 +117,16 @@ class DteObserver
         $ccfId = (int) $nc->dte_relacionado_id;
         DB::afterCommit(function () use ($ccfId) {
             try {
-                $ccf = CobroDocumento::query()->where('tipo_dte', TipoDte::CreditoFiscal->value)->where('dte_id', $ccfId)->first();
-                if ($ccf !== null && Dinero::comparar($ccf->monto_pagado ?? '0', '0') !== 0) {
-                    $ccf->recalcularPago();
-                }
+                // Como el aplicador del TXT: primero el candado del seguimiento y recién después
+                // la lectura de sus eventos. Sin él, un cobro que entra a la vez puede quedar
+                // pisado con un `monto_pagado` leído antes.
+                DB::transaction(function () use ($ccfId) {
+                    $ccf = CobroDocumento::query()->where('tipo_dte', TipoDte::CreditoFiscal->value)
+                        ->where('dte_id', $ccfId)->lockForUpdate()->first();
+                    if ($ccf !== null && Dinero::comparar($ccf->monto_pagado ?? '0', '0') !== 0) {
+                        $ccf->recalcularPago();
+                    }
+                });
             } catch (Throwable $e) {
                 report($e);
             }
