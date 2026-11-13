@@ -171,7 +171,8 @@ class ConsultasTableroRutasTest extends TestCase
 
     public function test_por_entregar_del_vendedor_no_pide_nada_de_a_uno(): void
     {
-        // «Todas»: los CCF de todos los viajes, cada uno con el viaje en el que va.
-        $this->noCreceConLosDatos('rutas.por-entregar.index', 24, fn () => $this->vendedores[0], ['ver' => 'todas']);
+        // «Todas»: los CCF de todos los viajes, cada uno con el viaje en el que va. 25: una
+        // consulta fija más desde «¿Quién lo entregó?» (la lista de quienes pueden entregar).
+        $this->noCreceConLosDatos('rutas.por-entregar.index', 25, fn () => $this->vendedores[0], ['ver' => 'todas']);
     }
 }
