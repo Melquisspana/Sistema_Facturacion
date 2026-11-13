@@ -178,17 +178,18 @@ class PedidoSala extends Model
     }
 
     /**
-     * Huella de lo que importa para mandar: el estado, las líneas (id y cantidad) y los
-     * envíos vigentes. Detecta la corrección del vendedor (cambian los id de las líneas),
-     * otra tableta que mandó primero y un envío anulado. El borrador NO entra: guardarlo
-     * no invalida la tarjeta de otra tableta. Se calcula con las relaciones ya cargadas.
+     * Huella de lo que importa para mandar: el estado, la sala, las líneas (id y cantidad) y
+     * los envíos vigentes. Detecta la corrección del vendedor (cambian los id de las líneas),
+     * la de la oficina (la sala o una cantidad, 13/11/2026: no se despacha mirando la sala
+     * vieja), otra tableta que mandó primero y un envío anulado. El borrador NO entra:
+     * guardarlo no invalida la tarjeta de otra tableta. Se calcula con las relaciones ya cargadas.
      */
     public function versionProduccion(): string
     {
         $lineas = $this->lineas->sortBy('id')->map(fn (PedidoSalaLinea $l) => [$l->id, (string) $l->cantidad])->values()->all();
         $envios = $this->envios->whereNull('anulado_en')->pluck('id')->sort()->values()->all();
 
-        return hash('sha256', json_encode([$this->estado->value, $lineas, $envios]));
+        return hash('sha256', json_encode([$this->estado->value, $this->cliente_sucursal_id, $lineas, $envios]));
     }
 
     /**

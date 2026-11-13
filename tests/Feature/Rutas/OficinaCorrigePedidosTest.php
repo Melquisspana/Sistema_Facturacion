@@ -383,6 +383,21 @@ class OficinaCorrigePedidosTest extends TestCase
         $this->assertSame(0, PedidoSalaEnvio::count());
     }
 
+    public function test_cambiar_solo_la_sala_tambien_frena_el_mandar_con_la_version_vieja(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+        // La PC de pedidos tiene abierto el pedido de la primera sala.
+        $versionFabrica = PedidoSala::with(app(PedidosFabrica::class)->relaciones())->findOrFail($pedido->id)->versionProduccion();
+
+        $this->corregir($pedido, [], ['cliente_sucursal_id' => $this->otraSala->id])->assertSessionHasNoErrors();
+
+        $this->actingAs($this->fabrica)->post(route('fabrica.pedidos.mandar', $pedido), [
+            'clave' => (string) Str::uuid(), 'version' => $versionFabrica, 'cantidades' => [$this->linea($pedido, $this->galleta) => '12'],
+        ])->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
+        $this->assertSame(0, PedidoSalaEnvio::count());
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+    }
+
     // ══════════════════════════════ anular
 
     public function test_anula_con_motivo_y_queda_en_la_auditoria(): void

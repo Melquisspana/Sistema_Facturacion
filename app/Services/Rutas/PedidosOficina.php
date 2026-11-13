@@ -51,12 +51,12 @@ class PedidosOficina
     public function __construct(private readonly Viajes $viajes) {}
 
     /**
-     * La versión del formulario: la de la PC de pedidos (estado, líneas y envíos vigentes,
-     * {@see PedidoSala::versionProduccion()}) más la sala. Con `lineas` y `envios` cargados.
+     * La versión del formulario: la misma de la PC de pedidos (estado, sala, líneas y envíos
+     * vigentes, {@see PedidoSala::versionProduccion()}). Con `lineas` y `envios` cargados.
      */
     public static function version(PedidoSala $pedido): string
     {
-        return hash('sha256', $pedido->versionProduccion().'|'.$pedido->cliente_sucursal_id);
+        return $pedido->versionProduccion();
     }
 
     /**
