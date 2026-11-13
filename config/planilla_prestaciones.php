@@ -77,8 +77,9 @@ return [
     // mes del aniversario de la fecha de ingreso, y casi siempre en otro mes después.
     // Lo pagado fuera del sistema se anota en la ficha: «Vacaciones pagadas hasta».
     //
-    // Confirmar con la contadora: los días, el recargo, el salario diario = mensual ÷ 30,
-    // el sueldo vigente a la fecha de pago y que lleven ISSS, AFP y renta.
+    // Confirmar con la contadora: los días, el recargo, el salario diario = mensual ÷ 30 y
+    // el sueldo vigente a la fecha de pago. Que lleven ISSS, AFP y renta lo confirmó Melqui
+    // (12/11/2026), y que se paguen además de las dos quincenas del mes.
     'vacaciones' => [
         'dias' => 15,
         'recargo' => '0.30',
@@ -99,14 +100,15 @@ return [
     // ({@see \App\Services\Planilla\SalarioMinimo}). Se redondea una sola vez, al centavo,
     // la mitad hacia arriba.
     //
-    // Confirmar con la contadora: todos los números de abajo, que el día de baja cuente
-    // como trabajado, que el tope también limite el mínimo de 15 días del despido y que no
-    // se sumen aguinaldo ni vacaciones proporcionales.
+    // Confirmado por la contadora, 12/11/2026: todos los números de abajo, que el tope
+    // también limite el mínimo de 15 días del despido y que no se sumen aguinaldo ni
+    // vacaciones proporcionales. Que el día de baja cuente como trabajado lo confirmó
+    // Melqui, 12/11/2026.
     'indemnizacion' => [
         // Despido sin causa. Código de Trabajo Art. 58: 30 días de salario básico por año
         // de servicio y proporcional por fracción, nunca menos de 15 días, y ningún
         // salario diario mayor que 4 salarios mínimos diarios para el cálculo.
-        // Confirmar con la contadora.
+        // Confirmado por la contadora, 12/11/2026.
         'despido' => [
             'dias_por_anio' => 30,
             'minimo_dias' => 15,
@@ -117,8 +119,8 @@ return [
         // Renuncia voluntaria. Ley Reguladora de la Prestación Económica por Renuncia
         // Voluntaria: desde 2 años de servicio continuo, 15 días de salario básico por
         // año y proporcional por fracción, con un salario diario no mayor que 2 salarios
-        // mínimos diarios. Confirmar con la contadora: artículos, el mínimo de años y el
-        // proporcional por fracción.
+        // mínimos diarios. Confirmado por la contadora, 12/11/2026, con el mínimo de años y
+        // el proporcional por fracción.
         'renuncia' => [
             'dias_por_anio' => 15,
             'minimo_dias' => 0,
@@ -126,12 +128,12 @@ return [
             'anios_minimos' => 2,
         ],
 
-        // Confirmar con la contadora.
+        // Confirmado por la contadora, 12/11/2026.
         'dias_del_mes' => 30,
         'dias_del_anio' => 365,
 
         // Ni la indemnización ni la prestación por renuncia llevan ISSS, AFP ni renta.
-        // Confirmar con la contadora. En true se calculan como en una quincena.
+        // Confirmado por la contadora, 12/11/2026. En true se calculan como en una quincena.
         'con_descuentos_ley' => false,
     ],
 

@@ -143,7 +143,6 @@ class PlanillaController extends Controller
         TotalesPlanilla $totales,
         PeriodoPlanilla $periodos,
         RegistrarAnticipo $anticipos,
-        SueldoHabitual $sueldos,
     ) {
         abort_unless($request->user()->can('planilla.gestionar'), 403);
         abort_unless($request->user()->can('planilla.salarios'), 403);
@@ -174,8 +173,10 @@ class PlanillaController extends Controller
             // El habitual vigente al inicio del período, para mostrarlo como referencia
             // bajo el campo y para proponerlo a quien se agregue a mano. Cambiar el
             // importe de la quincena NO lo toca.
-            'habituales' => $this->habitualesDe($sueldos, $planilla->detalles->pluck('empleado')->filter(), $planilla),
-            'habitualesDisponibles' => $this->habitualesDe($sueldos, $disponibles, $planilla),
+            'habituales' => $this->habitualesDe($preparar, $planilla->detalles->pluck('empleado')->filter(), $planilla),
+            'habitualesDisponibles' => $this->habitualesDe($preparar, $disponibles, $planilla),
+            // Lo que se propone al agregar a alguien a mano: sus días, si entró o se fue a mitad.
+            'propuestos' => $this->propuestosDe($preparar, $planilla->detalles->pluck('empleado')->filter()->merge($disponibles), $planilla),
             // Los anticipos con saldo de cada persona. Un descuento de anticipo tiene
             // que apuntar a UNO de estos: escribir la referencia no controla nada.
             'anticipos' => $this->anticiposDisponibles($anticipos, $preparar, $planilla, $disponibles),
@@ -188,19 +189,35 @@ class PlanillaController extends Controller
      * @return array<int, array<int, array<string, mixed>>>
      */
     /**
-     * Importe habitual vigente al inicio del período, ya formateado, por persona.
+     * Importe habitual vigente al inicio del período, ya formateado, por persona. En la
+     * planilla mensual, el sueldo del mes.
      *
      * @param  Collection<int, PlanillaEmpleado>  $empleados
      * @return array<int, string>
      */
-    private function habitualesDe(SueldoHabitual $sueldos, $empleados, Planilla $planilla): array
+    private function habitualesDe(PrepararPlanilla $preparar, $empleados, Planilla $planilla): array
     {
         $empleados = $empleados->filter()->unique('id')->values();
 
         return array_map(
             fn (int $centavos) => Dinero::decimal($centavos),
-            $sueldos->vigentesEn($empleados, $planilla->desde->toDateString())
+            $preparar->habitualesDelPeriodo($empleados, $planilla)
         );
+    }
+
+    /**
+     * El salario y los días que se proponen a cada persona en esta planilla, ya formateados.
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, array{salario: string, periodo_desde: string, periodo_hasta: string}>
+     */
+    private function propuestosDe(PrepararPlanilla $preparar, Collection $empleados, Planilla $planilla): array
+    {
+        return array_map(fn (array $p) => [
+            'salario' => $p['centavos'] === null ? '' : Dinero::decimal($p['centavos']),
+            'periodo_desde' => $p['desde'] ?? '',
+            'periodo_hasta' => $p['hasta'] ?? '',
+        ], $preparar->salariosPropuestos($empleados->unique('id')->values(), $planilla));
     }
 
     /**

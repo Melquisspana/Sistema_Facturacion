@@ -16,6 +16,8 @@
         // El habitual se muestra debajo del campo como referencia. Cambiar el importe
         // de ESTA quincena no lo toca: son cosas distintas.
         'habitual' => $habituales[$d->planilla_empleado_id] ?? '',
+        // Lo que se le propone si se quita y se vuelve a agregar: sus días, si entró o se fue a mitad.
+        'propuesto' => $propuestos[$d->planilla_empleado_id] ?? null,
         'observaciones' => $d->observaciones,
         'conceptos' => $d->conceptos->map(fn ($x) => [
             'tipo' => $x->tipo, 'concepto' => $x->concepto, 'importe' => (string) $x->importe,
@@ -36,8 +38,10 @@
 
     $disponiblesJs = $disponibles->map(fn ($e) => [
         'id' => $e->id, 'nombre' => $e->nombre, 'cargo' => $e->cargo,
-        'salario' => $habitualesDisponibles[$e->id] ?? '',
+        'salario' => $propuestos[$e->id]['salario'] ?? '',
         'habitual' => $habitualesDisponibles[$e->id] ?? '',
+        'periodo_desde' => $propuestos[$e->id]['periodo_desde'] ?? '',
+        'periodo_hasta' => $propuestos[$e->id]['periodo_hasta'] ?? '',
     ])->values();
 @endphp
 
@@ -116,15 +120,19 @@
                           const p = this.disponibles.find(d => String(d.id) === String(this.nuevo));
                           if (!p) return;
                           this.lineas.push({ planilla_empleado_id: p.id, nombre: p.nombre, cargo: p.cargo,
-                              salario: p.salario, habitual: p.habitual || '', periodo_desde: '', periodo_hasta: '',
+                              salario: p.salario, habitual: p.habitual || '', periodo_desde: p.periodo_desde || '', periodo_hasta: p.periodo_hasta || '',
+                              // La propuesta viaja con la línea: si se vuelve a quitar, no se pierde.
+                              propuesto: { salario: p.salario, periodo_desde: p.periodo_desde, periodo_hasta: p.periodo_hasta },
                               observaciones: '', conceptos: [] });
                           this.disponibles = this.disponibles.filter(d => String(d.id) !== String(this.nuevo));
                           this.nuevo = '';
                       },
                       quitar(i) {
                           const l = this.lineas[i];
+                          const p = l.propuesto || {};
                           this.disponibles.push({ id: l.planilla_empleado_id, nombre: l.nombre, cargo: l.cargo,
-                              salario: l.habitual || l.salario, habitual: l.habitual || '' });
+                              salario: p.salario || l.habitual || l.salario, habitual: l.habitual || '',
+                              periodo_desde: p.periodo_desde || '', periodo_hasta: p.periodo_hasta || '' });
                           this.lineas.splice(i, 1);
                           // Los índices se corren al quitar una fila: si no se limpian,
                           // queda abierto el detalle de otra persona.

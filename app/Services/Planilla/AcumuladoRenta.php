@@ -19,8 +19,8 @@ use Illuminate\Validation\ValidationException;
  * Lo gravado y la renta retenida en el año, que pide el recálculo de junio y diciembre.
  *
  * Sale de dos lados: lo que una persona confirmó para los meses ANTERIORES al sistema
- * ({@see PlanillaRentaAcumulado}) y las quincenas regulares confirmadas del sistema
- * posteriores a esa cifra. Las anuladas y los borradores no cuentan: ahí no se pagó.
+ * ({@see PlanillaRentaAcumulado}) y las quincenas y mensuales normales confirmadas del
+ * sistema posteriores a esa cifra; una mensual cuenta como dos quincenas. Las anuladas y los borradores no cuentan: ahí no se pagó.
  *
  * SIN CIFRA CONFIRMADA NO HAY RECÁLCULO. Solo se prescinde de ella cuando el sistema
  * tiene a la persona en todas las quincenas del año hasta esta. Si no, la planilla no
@@ -176,7 +176,7 @@ final class AcumuladoRenta
     }
 
     /**
-     * Las quincenas regulares confirmadas del año, antes de `antesDe` y, si se da,
+     * Las quincenas y mensuales normales confirmadas del año, antes de `antesDe` y, si se da,
      * después de `despuesDe`. Lo gravado de cada una es lo que cotizó menos ISSS y AFP,
      * con los importes que quedaron guardados.
      *
@@ -184,10 +184,11 @@ final class AcumuladoRenta
      */
     private function delSistema(PlanillaEmpleado $empleado, int $anio, string $antesDe, ?string $despuesDe): array
     {
-        $ids = $this->consultaDelSistema($empleado, $anio)
+        $filas = $this->consultaDelSistema($empleado, $anio)
             ->whereDate('planillas.hasta', '<', $antesDe)
             ->when($despuesDe !== null, fn ($q) => $q->whereDate('planillas.desde', '>', $despuesDe))
-            ->pluck('planilla_detalles.id');
+            ->get(['planilla_detalles.id', 'planillas.tipo_periodo']);
+        $ids = $filas->pluck('id');
 
         $gravado = 0;
         $renta = 0;
@@ -201,7 +202,8 @@ final class AcumuladoRenta
             $renta += $deLey['renta'] ?? 0;
         }
 
-        return ['gravado' => $gravado, 'renta' => $renta, 'quincenas' => $ids->count()];
+        // Una mensual paga las dos quincenas de su mes.
+        return ['gravado' => $gravado, 'renta' => $renta, 'quincenas' => $filas->sum(fn ($f) => $f->tipo_periodo === 'mensual' ? 2 : 1)];
     }
 
     private function consultaDelSistema(PlanillaEmpleado $empleado, int $anio)
@@ -210,7 +212,7 @@ final class AcumuladoRenta
             ->join('planillas', 'planillas.id', '=', 'planilla_detalles.planilla_id')
             ->where('planilla_detalles.planilla_empleado_id', $empleado->id)
             ->where('planillas.estado', 'confirmada')
-            ->where('planillas.tipo_periodo', 'quincenal')
+            ->whereIn('planillas.tipo_periodo', ['quincenal', 'mensual'])
             ->where('planillas.clase', 'regular')
             ->whereDate('planillas.desde', '>=', $anio.'-01-01')
             ->whereDate('planillas.desde', '<=', $anio.'-12-31');

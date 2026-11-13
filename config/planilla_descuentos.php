@@ -58,6 +58,19 @@ return [
                     // 1,019.06 en adelante.
                     ['desde' => '1019.06', 'porcentaje' => '30.00', 'exceso' => '1019.05', 'cuota' => '144.28'],
                 ],
+                // Tabla MENSUAL, para la planilla mensual. Fuente: Decreto Ejecutivo No. 10 del
+                // 30/04/2025, Art. 1 lit. a; la quincenal de arriba es la mitad de esta. Por
+                // confirmar con la contadora: se transcribió sin el texto oficial a la vista.
+                'tramos_mensuales' => [
+                    // Hasta 550.00: sin retención.
+                    ['desde' => '0.00', 'porcentaje' => '0.00', 'exceso' => '0.00', 'cuota' => '0.00'],
+                    // 550.01 a 895.24.
+                    ['desde' => '550.01', 'porcentaje' => '10.00', 'exceso' => '550.00', 'cuota' => '17.67'],
+                    // 895.25 a 2,038.10.
+                    ['desde' => '895.25', 'porcentaje' => '20.00', 'exceso' => '895.24', 'cuota' => '60.00'],
+                    // 2,038.11 en adelante.
+                    ['desde' => '2038.11', 'porcentaje' => '30.00', 'exceso' => '2038.10', 'cuota' => '288.57'],
+                ],
             ],
 
             // Recálculo de renta en el último pago de junio y de diciembre, por número de
@@ -72,7 +85,7 @@ return [
             // diciembre, y el tope se compara con lo gravado (sueldo menos ISSS y AFP).
             // El aguinaldo no lleva renta y las planillas fuera de calendario suman solo si
             // se les aplicaron los descuentos de ley: el sistema no se los calcula, así que
-            // lo acumulado cuenta solo las quincenas regulares (AcumuladoRenta).
+            // lo acumulado cuenta solo las quincenas y las mensuales normales (AcumuladoRenta).
             'recalculo' => [
                 6 => [
                     'tramos' => [
@@ -134,7 +147,8 @@ return [
     'ingresos_fuera_de_base' => ['Viáticos', 'Bono', 'Aguinaldo'],
 
     // Pagos que llevan otro procedimiento de renta (Decreto 10, Art. 1 lit. g). No se
-    // calculan: se avisa.
-    'ingresos_extraordinarios' => ['Bono', 'Aguinaldo'],
+    // calculan: se avisa. El bono no está: no lleva renta y ya va fuera de la base de
+    // arriba (Melqui, 12/11/2026).
+    'ingresos_extraordinarios' => ['Aguinaldo'],
 
 ];

@@ -43,8 +43,11 @@ final class GenerarPlanilla
         // abrir «Preparar», y quedaría un borrador que esa persona no puede terminar.
         abort_unless($usuario->can('planilla.salarios'), 403);
 
-        return DB::transaction(function () use ($usuario, $datos) {
-            // Lo primero de la transacción, antes de leer nada (MySQL, REPEATABLE READ).
+        // Con los candados en el orden de {@see PrepararPlanilla::bloquearFichas()}: tres
+        // intentos ante un interbloqueo, y de nuevo si cambiaron las personas en medio.
+        return $this->preparar->conCandados(function () use ($usuario, $datos) {
+            // Lo primero de la transacción, antes de leer nada (MySQL, REPEATABLE READ): las
+            // fichas de quienes van a estar en la planilla, antes que la planilla.
             $this->preparar->bloquearPersona($datos);
             $planilla = $this->preparar->abrir($usuario, $datos);
 
@@ -98,6 +101,8 @@ final class GenerarPlanilla
                 // Los motivos ya van dentro de los avisos; esto dice si «Generar» deja el borrador.
                 'por_preparar' => $this->preparar->pendientesDeRevisar($planilla, false) !== [],
             ];
+        } catch (PersonasCambiaron) {
+            throw ValidationException::withMessages(['periodo' => 'Cambiaron las personas de la planilla mientras se revisaba. Intentá de nuevo.']);
         } finally {
             DB::rollBack();
         }

@@ -32,7 +32,7 @@ use Illuminate\Validation\ValidationException;
  * confirma no puede haber deuda con nadie. La confirmación es un acto aparte.
  *
  * ISSS, AFP Y RENTA SE PROPONEN SOLOS para quien va con descuentos de ley, en la
- * quincena regular: {@see DescuentosLey} los calcula y una persona los revisa o los
+ * quincena y la mensual normales: {@see DescuentosLey} los calcula y una persona los revisa o los
  * corrige. Aguinaldo, Quincena 25 y vacaciones tienen su propia planilla
  * ({@see PrestacionAnual}), y la indemnización la suya, desde la baja
  * ({@see IndemnizacionBaja}); las horas extra no se calculan. En la
@@ -45,6 +45,13 @@ use Illuminate\Validation\ValidationException;
  */
 final class PrepararPlanilla
 {
+    /**
+     * Las fichas que tomó {@see bloquearPersona()} al abrir: null si fueron todas.
+     *
+     * @var array<int, int>|null
+     */
+    private ?array $fichasBloqueadas = null;
+
     public function __construct(
         private PeriodoPlanilla $periodos,
         private TotalesPlanilla $totales,
@@ -121,10 +128,9 @@ final class PrepararPlanilla
             $periodo['periodo'] = $periodo['desde'] = $periodo['hasta'] = $datos['fecha'];
         }
 
-        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual, $alta) {
+        return $this->conCandados(function () use ($usuario, $datos, $periodo, $individual, $alta) {
             // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
-            // Sin costo para una quincena: solo bloquea en un pago individual o un aguinaldo.
             $persona = $this->bloquearPersona($datos);
 
             // Un pago individual sin su persona bloqueada no pasaría por sus comprobaciones.
@@ -200,14 +206,82 @@ final class PrepararPlanilla
     }
 
     /**
-     * Bloquea la ficha de la persona de un pago individual (vacaciones, indemnización), y
-     * nada si no lo es.
+     * EL ORDEN DE LOS CANDADOS DE PLANILLA. Uno solo, en todos los caminos que escriben una
+     * planilla (generar, abrir, guardar líneas, confirmar y anular):
+     *
+     *   1. quien anula, en anular (como en los pagos de Gastos);
+     *   2. las fichas de TODAS las personas de la planilla, en una sola sentencia y por
+     *      id ascendente ({@see bloquearFichas()}; el aguinaldo, todas las fichas);
+     *   3. la planilla;
+     *   4. lo demás: anticipos, pagos, gastos y cuotas.
+     *
+     * Nunca una ficha después de la planilla: guardar una línea escribe un detalle que
+     * apunta a la ficha, y confirmar las bloquea antes; en distinto orden, dos pedidos
+     * podían quedar esperándose. Si con la planilla ya tomada aparece una persona que no
+     * estaba en el conjunto, se suelta todo y se empieza de nuevo ({@see conCandados()}).
+     *
+     * @param  array<int, int|string>  $ids
+     */
+    public function bloquearFichas(array $ids): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+
+        if ($ids !== []) {
+            PlanillaEmpleado::whereKey($ids)->orderBy('id')->lockForUpdate()->get(['id']);
+        }
+    }
+
+    /**
+     * Corre `$trabajo` en una transacción con tres intentos ante un interbloqueo, como los
+     * pagos, y vuelve a empezar (hasta tres veces) si cambiaron las personas de la planilla
+     * mientras se tomaban los candados ({@see PersonasCambiaron}). Dentro de otra
+     * transacción no reintenta: soltar candados solo lo puede hacer la de afuera.
+     *
+     * `$personas`, si viene, dice a quiénes bloquear y se vuelve a llamar ANTES de cada
+     * intento, fuera de la transacción: si cambiaron las personas, el intento siguiente
+     * tiene que bloquear el conjunto nuevo, no repetir el viejo. Lo que devuelve le llega a
+     * `$trabajo` como argumento.
+     *
+     * @template T
+     *
+     * @param  \Closure(mixed): T  $trabajo
+     * @param  (\Closure(): list<int>)|null  $personas
+     * @return T
+     */
+    public function conCandados(\Closure $trabajo, ?\Closure $personas = null): mixed
+    {
+        if (DB::transactionLevel() > 0) {
+            $conjunto = $personas ? $personas() : null;
+
+            return DB::transaction(fn () => $trabajo($conjunto));
+        }
+
+        for ($intento = 1; ; $intento++) {
+            $conjunto = $personas ? $personas() : null;
+
+            try {
+                return DB::transaction(fn () => $trabajo($conjunto), 3);
+            } catch (PersonasCambiaron $e) {
+                if ($intento >= 3) {
+                    throw ValidationException::withMessages(['planilla' => 'Cambiaron las personas de la planilla mientras se guardaba. Intentá de nuevo.']);
+                }
+            }
+        }
+    }
+
+    /**
+     * Bloquea las fichas de quienes van a estar en la planilla que se abre, antes que la
+     * planilla ({@see bloquearFichas()}): la persona de un pago individual (vacaciones,
+     * indemnización), todas en el aguinaldo, y en las demás quienes se le van a proponer.
+     * Devuelve la persona del pago individual.
      *
      * Dos pagos de la misma persona a la vez (dos pestañas, dos meses) se esperan: el
      * segundo ve el primero y no paga dos veces el mismo año. En MySQL (REPEATABLE READ)
      * la foto de lo que lee la transacción se toma en su primera lectura común, así que
      * este bloqueo tiene que ser LO PRIMERO de la transacción de afuera: por eso
-     * {@see GenerarPlanilla} lo llama antes de abrir.
+     * {@see GenerarPlanilla} lo llama antes de abrir. En una planilla de varios, saber a
+     * quiénes bloquear exige leerlos antes; lo que decide dinero al confirmar se lee con
+     * candado ({@see pagadoEnElMes()}).
      *
      * @param  array<string, mixed>  $datos
      */
@@ -217,6 +291,7 @@ final class PrepararPlanilla
 
         if ($clase === 'aguinaldo') {
             $this->bloquearPersonasDelAguinaldo();
+            $this->fichasBloqueadas = null;
 
             return null;
         }
@@ -226,11 +301,40 @@ final class PrepararPlanilla
             ? filter_var($datos['empleado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
             : false;
 
-        if (($clase !== VacacionesAnuales::CLASE && ! IndemnizacionBaja::es($clase)) || $id === false) {
-            return null;
+        if ($clase === VacacionesAnuales::CLASE || IndemnizacionBaja::es($clase)) {
+            $this->fichasBloqueadas = $id === false ? [] : [$id];
+
+            return $id === false ? null : PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
         }
 
-        return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
+        $this->fichasBloqueadas = $this->candidatos($datos);
+        $this->bloquearFichas($this->fichasBloqueadas);
+
+        return null;
+    }
+
+    /**
+     * Quiénes se le van a proponer a una planilla de varios, con los datos sin validar
+     * todavía: si no forman un período, nadie (lo frena la validación de {@see abrir()}).
+     *
+     * @param  array<string, mixed>  $datos
+     * @return array<int, int>
+     */
+    private function candidatos(array $datos): array
+    {
+        $clase = (string) ($datos['clase'] ?? '');
+        $tipo = (string) ($datos['tipo_periodo'] ?? '');
+        $fecha = (string) ($this->prestaciones->es($clase) ? ($datos['fecha_pago'] ?? '') : ($datos['fecha'] ?? ''));
+
+        if (! array_key_exists($clase, Planilla::CLASES) || ! array_key_exists($tipo, Planilla::TIPOS_PERIODO)
+            || preg_match('/^\d{4}-\d{2}-\d{2}$/D', $fecha) !== 1 || ! checkdate((int) substr($fecha, 5, 2), (int) substr($fecha, 8, 2), (int) substr($fecha, 0, 4))) {
+            return [];
+        }
+
+        $periodo = $this->periodos->para($this->prestaciones->es($clase) ? 'mensual' : $tipo, CarbonImmutable::parse($fecha));
+        $planilla = (new Planilla)->forceFill(['clase' => $clase, 'tipo_periodo' => $tipo, 'desde' => $periodo['desde'], 'hasta' => $periodo['hasta']]);
+
+        return $this->entranEn(PlanillaEmpleado::query(), $planilla)->orderBy('id')->pluck('id')->map(fn ($id) => (int) $id)->all();
     }
 
     /**
@@ -410,9 +514,9 @@ final class PrepararPlanilla
      * ── Quién entra ──
      *
      * Quien estuvo activo algún día del período ({@see entranEn()}). Quien causó baja el
-     * 05 entra en la quincena del 1 al 15, que es la última que trabajó, y no aparece en
-     * la siguiente. Las líneas guardadas son una foto: esto solo decide qué se PROPONE
-     * al abrir.
+     * 05 entra en la quincena del 1 al 15, que es la última que trabajó, con esos 5 días, y
+     * no aparece en la siguiente. Las líneas guardadas son una foto: esto solo decide qué
+     * se PROPONE al abrir.
      *
      * ── Idempotencia ──
      *
@@ -437,24 +541,127 @@ final class PrepararPlanilla
             return;
         }
 
+        // Alguien que no estaba cuando se tomaron las fichas: su ficha quedaría después de la
+        // planilla. Se empieza de nuevo ({@see bloquearFichas()}).
+        if ($this->fichasBloqueadas !== null && array_diff($empleados->modelKeys(), $this->fichasBloqueadas) !== []) {
+            throw new PersonasCambiaron;
+        }
+
         if ($this->prestaciones->es($planilla->clase)) {
             $this->guardarLineas($usuario, $planilla, $this->lineasDePrestacion($planilla, $empleados));
 
             return;
         }
 
-        $habituales = $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
+        $propuestos = $this->salariosPropuestos($empleados, $planilla);
 
         $lineas = $empleados->map(fn (PlanillaEmpleado $e) => [
             'planilla_empleado_id' => $e->id,
             // Sin habitual registrado se propone 0.00 y la pantalla lo marca como algo
             // que falta. No se inventa un importe: que aparezca en blanco y cante es
             // mejor que un número que nadie escribió.
-            'salario' => Dinero::decimal($habituales[$e->id] ?? 0),
+            'salario' => Dinero::decimal($propuestos[$e->id]['centavos'] ?? 0),
+            // Quien entró o se fue a mitad: el recibo dice qué días se le pagan.
+            'periodo_desde' => $propuestos[$e->id]['desde'],
+            'periodo_hasta' => $propuestos[$e->id]['hasta'],
             'conceptos' => [],
         ])->all();
 
         $this->guardarLineas($usuario, $planilla, $lineas);
+    }
+
+    /**
+     * El salario que se propone a cada persona en esta planilla: al abrirla y al agregar a
+     * alguien a mano. El habitual del período, o solo los días trabajados de quien entró o
+     * se fue a mitad ({@see diasTrabajados()}): sueldo mensual ÷ 30 × días, al centavo, la
+     * mitad hacia arriba. `centavos` null: nadie dijo cuánto gana.
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, array{centavos: ?int, desde: ?string, hasta: ?string}>
+     */
+    public function salariosPropuestos(Collection $empleados, Planilla $planilla): array
+    {
+        $habituales = $this->habitualesDelPeriodo($empleados, $planilla);
+        $propuestos = [];
+
+        foreach ($empleados as $empleado) {
+            $dias = $this->diasTrabajados($empleado, $planilla);
+
+            if ($dias === null) {
+                $propuestos[$empleado->id] = ['centavos' => $habituales[$empleado->id] ?? null, 'desde' => null, 'hasta' => null];
+
+                continue;
+            }
+
+            // El sueldo del primer día que trabajó: quien entró a mitad lo tiene desde ese día.
+            $mensual = $this->sueldos->mensualesEn(collect([$empleado]), $dias['desde'])[$empleado->id] ?? null;
+
+            $propuestos[$empleado->id] = [
+                'centavos' => $mensual === null ? null : intdiv(2 * $mensual * $dias['dias'] + 30, 60),
+                'desde' => $dias['desde'],
+                'hasta' => $dias['hasta'],
+            ];
+        }
+
+        return $propuestos;
+    }
+
+    /**
+     * El sueldo de siempre para este período, por persona: el importe por pago vigente al
+     * empezar, y en la planilla mensual normal el sueldo del mes entero (Melqui, 12/11/2026).
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, int> empleado_id => centavos
+     */
+    public function habitualesDelPeriodo(Collection $empleados, Planilla $planilla): array
+    {
+        return $this->descuentos->pagosDelMes($planilla) === 1
+            ? $this->sueldos->mensualesEn($empleados, $planilla->desde->toDateString())
+            : $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
+    }
+
+    /**
+     * Los días que trabajó en el período quien entró o se fue a mitad, o null si no entró
+     * ni se fue dentro de él. El día de ingreso y el de la baja cuentan como trabajados
+     * (Melqui, 12/11/2026).
+     *
+     * Son los días reales del calendario: el 31 cuenta como un día más y febrero cuenta los
+     * suyos, sin pasar el 28 a 30. «Se les pagan los días que trabajan, independientemente
+     * de cuántos días tenga el mes» (Melqui, 12/11/2026). Quien trabajó el período entero
+     * no pasa por acá: cobra el habitual de siempre, sin contar días.
+     *
+     * Solo en una planilla normal quincenal o mensual: las demás no pagan días.
+     *
+     * @return array{desde: string, hasta: string, dias: int, entro: ?CarbonImmutable, se_fue: ?CarbonImmutable}|null
+     */
+    public function diasTrabajados(PlanillaEmpleado $empleado, Planilla $planilla): ?array
+    {
+        if ($planilla->clase !== 'regular' || ! in_array($planilla->tipo_periodo, ['quincenal', 'mensual'], true)) {
+            return null;
+        }
+
+        $desde = CarbonImmutable::parse($planilla->desde->toDateString());
+        $hasta = CarbonImmutable::parse($planilla->hasta->toDateString());
+        $alta = $empleado->alta_el === null ? null : CarbonImmutable::parse($empleado->alta_el->toDateString());
+        $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el)->startOfDay();
+
+        $entro = $alta !== null && $alta > $desde && $alta <= $hasta ? $alta : null;
+        $seFue = $baja !== null && $baja >= $desde && $baja < $hasta ? $baja : null;
+
+        if ($entro === null && $seFue === null) {
+            return null;
+        }
+
+        $inicio = $entro ?? $desde;
+        $fin = $seFue ?? $hasta;
+
+        return [
+            'desde' => $inicio->toDateString(),
+            'hasta' => $fin->toDateString(),
+            'dias' => (int) $inicio->diffInDays($fin) + 1,
+            'entro' => $entro,
+            'se_fue' => $seFue,
+        ];
     }
 
     /**
@@ -464,8 +671,8 @@ final class PrepararPlanilla
      * una planilla que paga TIEMPO (una quincena, una mensual), también quien fue dado de
      * baja con fecha dentro del período o después: la baja apaga a la persona en el acto,
      * pero esos días los trabajó, y sin esto su última quincena no quedaba en ninguna
-     * planilla. Cuánto se le paga por esos días lo decide una persona
-     * ({@see pendientesDeRevisar()}); acá solo se decide que aparezca.
+     * planilla. Se le proponen solo esos días ({@see salariosPropuestos()}). Quien entra
+     * después de que termine el período no está en él.
      *
      * Aguinaldo, Quincena 25 y vacaciones no pagan tiempo de un período: siguen siendo de
      * quien está activo. Lo de quien se fue va en su indemnización.
@@ -481,7 +688,9 @@ final class PrepararPlanilla
             ->where(fn ($q) => $q->where('activo', true)
                 ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
             ->when($pagaTiempo, fn ($q) => $q->orWhere(fn ($q) => $q->where('activo', false)
-                ->whereDate('baja_el', '>=', $planilla->desde))));
+                ->whereDate('baja_el', '>=', $planilla->desde))))
+            ->when($pagaTiempo, fn ($q) => $q->where(fn ($q) => $q->whereNull('alta_el')
+                ->orWhereDate('alta_el', '<=', $planilla->hasta)));
     }
 
     /**
@@ -557,19 +766,33 @@ final class PrepararPlanilla
             $lineas = array_map(fn (array $l) => array_merge($l, ['periodo_desde' => null, 'periodo_hasta' => null]), $lineas);
         }
 
-        return DB::transaction(function () use ($usuario, $planilla, $lineas) {
-            // En un aguinaldo, primero las fichas y después la planilla: el mismo orden
-            // que al generarlo y al confirmarlo. Escribir cada línea espera la ficha de su
+        // Las personas que quedan y las que se van, leídas antes de la transacción (y otra vez
+        // antes de cada reintento): adentro, lo primero tienen que ser sus candados.
+        $quienes = fn (): array => array_merge(
+            array_map('intval', array_column($lineas, 'planilla_empleado_id')),
+            PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        return $this->conCandados(function (array $personas) use ($usuario, $planilla, $lineas) {
+            // Primero las fichas y después la planilla, el mismo orden que al generarla y al
+            // confirmarla ({@see bloquearFichas()}). Escribir cada línea espera la ficha de su
             // persona; con la planilla tomada antes, guardar y confirmar a la vez podían
             // quedar esperándose entre sí. Todo lo que cambia líneas pasa por acá.
             if ($planilla->clase === 'aguinaldo') {
                 $this->bloquearPersonasDelAguinaldo();
+            } else {
+                $this->bloquearFichas($personas);
             }
 
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
             // Otra vez, ya bloqueada: si se confirmó entre la primera mirada y el bloqueo,
             // borrar sus líneas se llevaría las de una planilla con deuda y anticipos aplicados.
             $this->exigirBorrador($planilla);
+
+            if ($planilla->clase !== 'aguinaldo'
+                && array_diff(PlanillaDetalle::where('planilla_id', $planilla->id)->pluck('planilla_empleado_id')->all(), $personas) !== []) {
+                throw new PersonasCambiaron;
+            }
             $this->comprobarAnticipos($planilla, $lineas);
             $previos = $this->conceptosDeLeyGuardados($planilla);
 
@@ -644,7 +867,7 @@ final class PrepararPlanilla
             $planilla->touch();
 
             return $planilla->fresh();
-        });
+        }, $quienes);
     }
 
     /**
@@ -671,7 +894,7 @@ final class PrepararPlanilla
         }
 
         $base = $this->descuentos->baseDeLinea(Dinero::centavos($linea['salario']), $otros)['base'];
-        $calculo = $this->descuentos->calcular($base, $planilla->desde->toDateString());
+        $calculo = $this->descuentos->calcular($base, $planilla->desde->toDateString(), $this->pagadoEnElMes($planilla, $empleado));
 
         // Sin parámetros vigentes no se pone nada: {@see reparosParaConfirmar()} lo frena.
         if ($calculo === null) {
@@ -723,6 +946,156 @@ final class PrepararPlanilla
         }
 
         return array_merge($deLey, $otros);
+    }
+
+    /**
+     * Lo ya pagado a esta persona en el mismo mes que esta planilla, para que el ISSS no
+     * pase del tope mensual ({@see DescuentosLey::calcular()}): las planillas confirmadas
+     * en que llevó descuentos de ley, sin esta. El mes de una quincena o una mensual es el
+     * de sus fechas; el de un pago individual (vacaciones), el de su fecha de pago.
+     *
+     * `$bloquear`, al confirmar: lecturas con candado compartido, que en MySQL ven lo último
+     * confirmado aunque la transacción ya haya leído antes (al generar en un paso).
+     *
+     * @return array{pagos: int, previos: array<int, array{base: int, pagos: int}>, cotizado: array<string, int>}
+     */
+    private function pagadoEnElMes(Planilla $planilla, PlanillaEmpleado $empleado, bool $bloquear = false): array
+    {
+        $mes = $this->mesDe($planilla);
+        $inicio = $mes->startOfMonth()->toDateString();
+        $fin = $mes->endOfMonth()->toDateString();
+        $previos = [];
+        $cotizado = [];
+
+        $filas = DB::table('planilla_detalles as d')
+            ->join('planillas as p', 'p.id', '=', 'd.planilla_id')
+            ->where('d.planilla_empleado_id', $empleado->id)
+            ->where('p.id', '!=', $planilla->id)
+            ->where('p.estado', 'confirmada')
+            ->where(fn ($q) => $q
+                ->where(fn ($q) => $q->whereDate('p.desde', '>=', $inicio)->whereDate('p.desde', '<=', $fin))
+                ->orWhere(fn ($q) => $q->whereDate('p.fecha_pago', '>=', $inicio)->whereDate('p.fecha_pago', '<=', $fin)))
+            ->when($bloquear, fn ($q) => $q->sharedLock())
+            ->get(['d.id', 'd.salario', 'p.tipo_periodo', 'p.clase', 'p.desde', 'p.fecha_pago']);
+
+        $conceptos = DB::table('planilla_conceptos')
+            ->whereIn('planilla_detalle_id', $filas->pluck('id'))
+            ->when($bloquear, fn ($q) => $q->sharedLock())
+            ->get(['planilla_detalle_id', 'tipo', 'ley', 'concepto', 'importe'])
+            ->groupBy('planilla_detalle_id');
+
+        foreach ($filas as $fila) {
+            $deLinea = collect($conceptos->get($fila->id, []))->map(fn ($c) => (array) $c);
+            $deLey = $deLinea->whereNotNull('ley');
+            $otra = (new Planilla)->forceFill(['tipo_periodo' => $fila->tipo_periodo, 'clase' => $fila->clase, 'desde' => $fila->desde, 'fecha_pago' => $fila->fecha_pago]);
+
+            if ($deLey->isEmpty() || $this->mesDe($otra)->format('Y-m') !== $mes->format('Y-m')) {
+                continue;
+            }
+
+            $previos[] = [
+                'base' => $this->descuentos->baseDeLinea(Dinero::centavos((string) $fila->salario), $deLinea->all())['base'],
+                'pagos' => $this->descuentos->pagosDelMes($otra),
+            ];
+
+            foreach ($deLey as $concepto) {
+                $cotizado[$concepto['ley']] = ($cotizado[$concepto['ley']] ?? 0) + Dinero::centavos((string) $concepto['importe']);
+            }
+        }
+
+        return ['pagos' => $this->descuentos->pagosDelMes($planilla), 'previos' => $previos, 'cotizado' => $cotizado];
+    }
+
+    /**
+     * ISSS, AFP y renta que el sistema propondría HOY para una línea guardada, por ley, con
+     * lo ya pagado en el mes a esta hora. Vacío si la línea no lleva descuentos de ley. La
+     * misma cuenta que {@see conDescuentosDeLey()}: la renta usa el ISSS y la AFP que quedan
+     * en la línea, corregidos a mano o no.
+     *
+     * @return array<string, int> ley => centavos
+     */
+    private function deLeyAhora(Planilla $planilla, PlanillaDetalle $detalle, bool $bloquear): array
+    {
+        $empleado = $detalle->empleado;
+
+        if ($empleado === null || ! $empleado->con_descuentos_ley || ! $this->descuentos->aplicaA($planilla)) {
+            return [];
+        }
+
+        $guardados = $detalle->conceptos->whereNotNull('ley')->keyBy('ley');
+        $otros = $detalle->conceptos->whereNull('ley')
+            ->map(fn (PlanillaConcepto $c) => ['tipo' => $c->tipo, 'concepto' => $c->concepto, 'importe' => (string) $c->importe])->values()->all();
+        $base = $this->descuentos->baseDeLinea(Dinero::centavos((string) $detalle->salario), $otros)['base'];
+        $calculo = $this->descuentos->calcular($base, $planilla->desde->toDateString(), $this->pagadoEnElMes($planilla, $empleado, $bloquear));
+
+        if ($calculo === null) {
+            return [];
+        }
+
+        $ahora = [];
+        $quedan = 0;
+
+        foreach ($calculo['conceptos'] as $clave => $propuesta) {
+            $centavos = $propuesta['centavos'];
+
+            if ($clave === 'renta') {
+                $centavos = $this->rentaRecalculada($planilla, $empleado, $base - $quedan)['centavos'] ?? $centavos;
+            } else {
+                $guardado = $guardados->get($clave);
+                $quedan += $guardado?->corregidoAMano() ? Dinero::centavos((string) $guardado->importe) : $centavos;
+            }
+
+            $ahora[$clave] = $centavos;
+        }
+
+        return $ahora;
+    }
+
+    /**
+     * Al confirmar, con las personas ya bloqueadas: pone al día el ISSS, la AFP y la renta
+     * que propuso el sistema y nadie tocó, por si desde que se guardó el borrador se
+     * confirmó o se anuló otro pago del mismo mes (el tope del ISSS es por mes). Lo
+     * corregido a mano no se toca: si su propuesta cambió, {@see reparosParaConfirmar()}
+     * frena para revisarlo.
+     */
+    public function actualizarDescuentosDeLey(User $usuario, Planilla $planilla): void
+    {
+        foreach ($planilla->detalles as $detalle) {
+            $ahora = $this->deLeyAhora($planilla, $detalle, true);
+            $cambio = false;
+
+            foreach ($detalle->conceptos->whereNotNull('ley') as $concepto) {
+                $calculado = Dinero::centavos((string) ($concepto->importe_calculado ?? $concepto->importe));
+
+                if ($concepto->corregidoAMano() || ! isset($ahora[$concepto->ley]) || $ahora[$concepto->ley] === $calculado) {
+                    continue;
+                }
+
+                $concepto->update(['importe' => Dinero::decimal($ahora[$concepto->ley]), 'importe_calculado' => Dinero::decimal($ahora[$concepto->ley])]);
+                $cambio = true;
+            }
+
+            if ($cambio) {
+                $totales = $this->totales->deDetalle($detalle->load('conceptos'));
+                $detalle->update([
+                    'total_ingresos' => Dinero::decimal($totales['total_ingresos']),
+                    'descuentos' => Dinero::decimal($totales['descuentos']),
+                    'a_pagar' => Dinero::decimal($totales['a_pagar']),
+                ]);
+
+                // Sin importes: la bitácora la ve quien no tiene `planilla.salarios`.
+                activity('planilla')->performedOn($planilla)->causedBy($usuario)
+                    ->withProperties(['planilla_empleado_id' => $detalle->planilla_empleado_id])
+                    ->log('puso al día al confirmar un descuento de ley por lo ya cotizado en el mes');
+            }
+        }
+    }
+
+    private function mesDe(Planilla $planilla): CarbonImmutable
+    {
+        $fecha = $planilla->esIndividual() && $planilla->fecha_pago !== null ? $planilla->fecha_pago : $planilla->desde;
+
+        return CarbonImmutable::parse($fecha->toDateString());
     }
 
     /**
@@ -799,6 +1172,18 @@ final class PrepararPlanilla
         $avisos = $this->pendientesDeRevisar($planilla, $verImportes);
         $regular = $planilla->clase === 'regular';
 
+        // Informativo: los días ya están puestos en la línea, y no frena la planilla.
+        foreach ($planilla->detalles as $detalle) {
+            $dias = $detalle->empleado === null ? null : $this->diasTrabajados($detalle->empleado, $planilla);
+
+            if ($dias !== null) {
+                $avisos[] = $detalle->nombre_snapshot.': '.implode(' y ', array_filter([
+                    $dias['entro'] === null ? null : 'entró el '.$dias['entro']->format('d/m/Y'),
+                    $dias['se_fue'] === null ? null : 'tiene baja el '.$dias['se_fue']->format('d/m/Y'),
+                ])).': se pagan '.$dias['dias'].($dias['dias'] === 1 ? ' día.' : ' días.');
+            }
+        }
+
         foreach ($this->cruces($planilla) as $cruce) {
             if (! $regular || $cruce->clase !== 'regular') {
                 $avisos[] = $cruce->nombre_snapshot.' ya está en la planilla '.$cruce->periodo.' de esas mismas fechas.';
@@ -830,11 +1215,11 @@ final class PrepararPlanilla
             if ($this->descuentos->esRecalculo($planilla)) {
                 $recalculo = $this->rentaRecalculada($planilla, $detalle->empleado, $this->gravadoDe($detalle, $base['base']));
                 $deRenta = $recalculo === null ? [] : array_merge(
-                    ['La renta de esta quincena sale del recálculo de '.($planilla->hasta->month === 6 ? 'junio' : 'diciembre').' (Decreto 10).'],
+                    ['La renta de '.($planilla->tipo_periodo === 'mensual' ? 'este mes' : 'esta quincena').' sale del recálculo de '.($planilla->hasta->month === 6 ? 'junio' : 'diciembre').' (Decreto 10).'],
                     $recalculo['avisos'],
                 );
             } else {
-                $deRenta = $this->descuentos->calcular($base['base'], $planilla->desde->toDateString())['avisos'] ?? [];
+                $deRenta = $this->descuentos->calcular($base['base'], $planilla->desde->toDateString(), $this->pagadoEnElMes($planilla, $detalle->empleado))['avisos'] ?? [];
             }
 
             foreach (array_merge($base['avisos'], $deRenta) as $aviso) {
@@ -855,9 +1240,8 @@ final class PrepararPlanilla
      * siempre. Cuenta solo lo que esta planilla puede descontar: de esa persona, en su
      * moneda y de un pago vigente ({@see motivoContraAnticipo()}).
      *
-     * UNA BAJA DENTRO DEL PERÍODO. Se propone la quincena de siempre, y cuánto se paga por
-     * los días que trabajó no lo decide el sistema: se revisa el importe antes de confirmar.
-     * Una baja con fecha posterior al período no avisa: esos días los trabajó todos.
+     * Una baja o un ingreso dentro del período ya no frenan: se proponen los días
+     * trabajados ({@see salariosPropuestos()}) y solo se avisa ({@see avisosParaConfirmar()}).
      *
      * @return array<int, string>
      */
@@ -869,7 +1253,6 @@ final class PrepararPlanilla
         }
 
         $pendientes = [];
-        $pagaTiempo = ! $this->prestaciones->es($planilla->clase);
 
         foreach ($planilla->detalles as $detalle) {
             $empleado = $detalle->empleado;
@@ -888,12 +1271,6 @@ final class PrepararPlanilla
                 // El importe solo lo ve quien ve importes.
                 $pendientes[] = $detalle->nombre_snapshot.': tiene un anticipo por descontar'
                     .($verImportes ? ' de '.$planilla->moneda.' '.Dinero::mostrar($saldo) : '').'.';
-            }
-
-            $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el);
-
-            if ($pagaTiempo && $baja !== null && $baja->toDateString() <= $planilla->hasta->toDateString()) {
-                $pendientes[] = $detalle->nombre_snapshot.': tiene baja el '.$baja->format('d/m/Y').': revisá el importe antes de confirmar.';
             }
         }
 
@@ -1010,8 +1387,10 @@ final class PrepararPlanilla
             if ($calculaLey && $hayTasas && $detalle->empleado?->con_descuentos_ley) {
                 foreach (['isss' => 'ISSS', 'afp' => 'AFP'] as $clave => $nombre) {
                     $concepto = $detalle->conceptos->firstWhere('ley', $clave);
+                    // En cero solo si el sistema propuso cero: el mes ya llegó al tope.
+                    $propuestoCero = $concepto?->importe_calculado !== null && Dinero::centavos((string) $concepto->importe_calculado) === 0;
 
-                    if ($concepto === null || Dinero::centavos((string) $concepto->importe) <= 0) {
+                    if ($concepto === null || (Dinero::centavos((string) $concepto->importe) <= 0 && ! $propuestoCero)) {
                         $reparos[] = $detalle->nombre_snapshot.': falta el importe de '.$nombre.'.';
                     }
                 }
@@ -1023,6 +1402,32 @@ final class PrepararPlanilla
                         $reparos[] = $detalle->nombre_snapshot.': '.$falta.'.';
                     }
                 }
+
+                // Corregido a mano con una propuesta que ya no es la de ahora: otro pago del
+                // mes se confirmó o se anuló después. Lo decide una persona, no el sistema.
+                $ahora = $this->deLeyAhora($planilla, $detalle, false);
+
+                foreach ($detalle->conceptos->filter->corregidoAMano() as $concepto) {
+                    if (isset($ahora[$concepto->ley]) && $ahora[$concepto->ley] !== Dinero::centavos((string) $concepto->importe_calculado)) {
+                        $reparos[] = $detalle->nombre_snapshot.': '.(['isss' => 'el ISSS', 'afp' => 'la AFP'][$concepto->ley] ?? 'la renta')
+                            .' se corrigió a mano a '.$concepto->importe.', y con lo ya cotizado en el mes ahora se propone '
+                            .Dinero::decimal($ahora[$concepto->ley]).'. Revisalo.';
+                    }
+                }
+            }
+
+            // Quien entró o se fue dentro del período después de guardar la línea: el importe
+            // guardado puede ser el de la quincena entera. Se revisa; no se pisa en silencio.
+            $dias = $detalle->empleado === null ? null : $this->diasTrabajados($detalle->empleado, $planilla);
+
+            if ($dias !== null && ($detalle->periodo_desde?->toDateString() !== $dias['desde'] || $detalle->periodo_hasta?->toDateString() !== $dias['hasta'])) {
+                $corresponde = $this->salariosPropuestos(collect([$detalle->empleado]), $planilla)[$detalle->planilla_empleado_id]['centavos'];
+
+                $reparos[] = $detalle->nombre_snapshot.': '.implode(' y ', array_filter([
+                    $dias['entro'] === null ? null : 'entró el '.$dias['entro']->format('d/m/Y'),
+                    $dias['se_fue'] === null ? null : 'tiene baja el '.$dias['se_fue']->format('d/m/Y'),
+                ])).' y su línea no lo tiene en cuenta: le corresponden '.$dias['dias'].($dias['dias'] === 1 ? ' día' : ' días')
+                    .($corresponde === null ? '' : ' ('.Dinero::decimal($corresponde).')').'. Revisá su importe y sus fechas.';
             }
 
             if ($linea['a_pagar'] < 0) {
