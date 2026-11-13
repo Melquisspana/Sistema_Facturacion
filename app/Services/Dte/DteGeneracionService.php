@@ -141,7 +141,16 @@ class DteGeneracionService
                 ->lockForUpdate()
                 ->first();
 
-            $ejercicio = $dte->fecha_emision?->year ?? HoraNegocio::ahora()->year;
+            // La fecha y la hora de emisión son las de ESTE momento, en la hora del negocio,
+            // no las de cuando se creó el borrador (regla del dueño, 12/11/2026). Se fijan
+            // acá, ya con el correlativo bloqueado, para que el orden de los números siga
+            // el de las horas. Después de generar el observer ya no deja cambiarlas: la
+            // firma, un reintento o una conversión a contingencia usan las de ahora.
+            $ahora = HoraNegocio::ahora();
+            $dte->fecha_emision = $ahora->format('Y-m-d');
+            $dte->hora_emision = $ahora->format('H:i:s');
+
+            $ejercicio = $ahora->year;
             $ultimo = Dte::withTrashed()
                 ->where('correlativo_id', $correlativo->id)
                 ->whereNotNull('ejercicio')
@@ -153,7 +162,8 @@ class DteGeneracionService
             }
 
             if ($ultimo !== null && $ejercicio < $ultimo) {
-                throw new GeneracionException('La fecha de emisión del borrador ('.$dte->fecha_emision?->format('d/m/Y').') es del ejercicio '.$ejercicio.', pero la numeración de este tipo de documento ya pasó al ejercicio '.$ultimo.'. Actualizá la fecha de emisión antes de generar.');
+                // Solo pasa si el reloj del servidor volvió atrás: la fecha es la de hoy.
+                throw new GeneracionException('La fecha de hoy según el servidor ('.$ahora->format('d/m/Y').') es del ejercicio '.$ejercicio.', pero la numeración de este tipo de documento ya pasó al ejercicio '.$ultimo.'. Revisá la fecha y la hora del servidor antes de generar.');
             }
 
             if ($ultimo !== null && $ejercicio > $ultimo) {

@@ -81,7 +81,11 @@ class FechaEmisionDteHoraLocalTest extends TestCase
         ]);
         $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 1);
         if ($generarEn !== null) {
+            // Se genera otro día: la emisión es la de ese momento, en hora de El Salvador
+            // (regla del 12/11/2026), no la del borrador.
             $this->travelTo(Carbon::parse($generarEn, 'UTC'));
+            $local = Carbon::parse($generarEn, 'UTC')->setTimezone('America/El_Salvador');
+            [$fecha, $hora] = [$local->format('Y-m-d'), $local->format('H:i:s')];
         }
         app(DteGeneracionService::class)->generar($dte, $usuario);
         $this->assertSame($fecha, $dte->fresh()->fecha_emision->format('Y-m-d'));

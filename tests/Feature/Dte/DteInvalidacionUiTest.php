@@ -457,6 +457,24 @@ class DteInvalidacionUiTest extends TestCase
         $this->assertIsArray($nc->respuesta_mh_invalidacion);       // pero sí guarda el motivo
     }
 
+    public function test_aceptacion_sin_sello_no_invalida_y_la_pantalla_lo_dice(): void
+    {
+        $this->abrirCandados();
+        $this->fakeHttp(['estado' => 'PROCESADO', 'descripcionMsg' => 'RECIBIDO']);
+        $nc = $this->ncAceptada();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertRedirect(route('facturacion.show', $nc))
+            ->assertSessionHas('error', fn (string $mensaje) => str_contains($mensaje, 'no se guardó')
+                && str_contains($mensaje, 'sello de recepción')
+                && ! str_contains($mensaje, 'podés reintentar'));
+
+        $nc->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $nc->estado);
+        $this->assertFalse($nc->tieneEventoInvalidacion());
+    }
+
     public function test_doble_invalidacion_bloqueada(): void
     {
         $this->abrirCandados();

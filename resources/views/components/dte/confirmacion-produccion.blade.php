@@ -171,7 +171,8 @@
                     @if ($dte->fecha_emision)
                         <div class="flex justify-between gap-4 px-3 py-2">
                             <dt class="text-gray-500">Fecha</dt>
-                            <dd class="text-right font-medium text-gray-800">{{ $dte->fecha_emision->format('d/m/Y') }}</dd>
+                            {{-- Un borrador sale con la fecha del día en que se genera, es decir, hoy. --}}
+                            <dd class="text-right font-medium text-gray-800">{{ ($dte->esEditable() ? \App\Support\HoraNegocio::hoy() : $dte->fecha_emision)->format('d/m/Y') }}</dd>
                         </div>
                     @endif
                     @if ($dte->total_pagar !== null)

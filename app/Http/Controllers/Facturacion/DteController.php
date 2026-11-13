@@ -1655,6 +1655,12 @@ class DteController extends Controller
                 'Hacienda RECHAZÓ la invalidación: '.$r['mensaje'].'. El documento conserva su estado ("'.$r['estado_dte'].'"). '
                 .'Si la invalidación ya no procede, podés revertirlo con una nota de crédito.'
             ),
+            // Hacienda contestó, pero no se pudo comprobar que la respuesta sea de este
+            // documento o le faltó el sello: no se guardó y no conviene reintentar a ciegas.
+            'aceptacion_sin_comprobar', 'rechazo_sin_comprobar' => redirect()->route('facturacion.show', $dte)->with(
+                'error',
+                $r['mensaje'].' Estado del documento: "'.$r['estado_dte'].'".'
+            ),
             default => redirect()->route('facturacion.show', $dte)->with(
                 'error',
                 'No se completó la invalidación ('.$r['resultado'].'): '.$r['mensaje'].'. El documento conserva su estado ("'.$r['estado_dte'].'"); podés reintentar.'

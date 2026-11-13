@@ -17,6 +17,7 @@ use App\Services\Dte\DteBorradorService;
 use App\Support\HoraNegocio;
 use Illuminate\Cache\Events\RetrievingKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
@@ -135,6 +136,46 @@ class OrdenCompraFormaAvisoTest extends TestCase
             ->sole();
         $this->assertSame('2611512345678A', $registro->properties['orden_compra']);
         $this->assertStringContainsString('caracteres que no son números', $registro->properties['avisos'][0]);
+    }
+
+    /**
+     * El CCF sale con la fecha del día en que se genera, no con la del borrador: el aviso
+     * compara la orden con esa fecha, en pantalla y al generar.
+     */
+    public function test_borrador_de_septiembre_generado_en_noviembre_avisa_por_la_orden_de_septiembre(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-10 10:00:00', HoraNegocio::zona()));
+        $dte = $this->borrador('26090123456789');
+        $this->travelTo(Carbon::parse('2026-11-12 10:00:00', HoraNegocio::zona()));
+        $usuario = $this->usuario('facturacion');
+
+        $this->actingAs($usuario)->get(route('facturacion.edit', $dte))
+            ->assertOk()
+            ->assertSee('es de 09/2026 y el CCF es del 12/11/2026');
+        $this->actingAs($usuario)
+            ->from(route('facturacion.edit', $dte))
+            ->post(route('facturacion.generar', $dte))
+            ->assertSessionHasErrors('generar');
+
+        $this->assertSame(EstadoDte::Borrador, $dte->refresh()->estado);
+    }
+
+    public function test_borrador_de_septiembre_con_orden_de_noviembre_generado_en_noviembre_no_avisa(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-10 10:00:00', HoraNegocio::zona()));
+        $dte = $this->borrador('26110123456789');
+        $this->travelTo(Carbon::parse('2026-11-12 10:00:00', HoraNegocio::zona()));
+        $usuario = $this->usuario('facturacion');
+
+        $this->actingAs($usuario)->get(route('facturacion.edit', $dte))
+            ->assertOk()
+            ->assertDontSee('Revisé la orden: generar igual');
+        $this->actingAs($usuario)
+            ->post(route('facturacion.generar', $dte))
+            ->assertRedirect(route('facturacion.show', $dte));
+
+        $this->assertSame(EstadoDte::Generado, $dte->refresh()->estado);
+        $this->assertSame('2026-11-12', $dte->fecha_emision->format('Y-m-d'));
     }
 
     public function test_sala_sin_codigo_tambien_avisa(): void

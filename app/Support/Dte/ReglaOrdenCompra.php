@@ -130,8 +130,11 @@ final class ReglaOrdenCompra
         }
 
         $sala = $dte->clienteSucursal;
+        // Un borrador sale con la fecha del día en que se genera: se compara con la de hoy,
+        // no con la de cuando se creó el borrador. Ya generado, con la suya.
+        $fecha = $dte->esEditable() ? HoraNegocio::hoy() : ($dte->fecha_emision ?? HoraNegocio::hoy());
         $avisos = filled($dte->numero_orden_compra)
-            ? self::problemasConSala($dte->numero_orden_compra, $dte->fecha_emision ?? HoraNegocio::hoy(), $sala)
+            ? self::problemasConSala($dte->numero_orden_compra, $fecha, $sala)
             : [];
 
         if ($sala !== null && blank($sala->codigo)) {

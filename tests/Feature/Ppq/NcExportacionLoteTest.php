@@ -147,6 +147,10 @@ class NcExportacionLoteTest extends TestCase
     {
         $emitidas ??= Carbon::today();
         ['estab' => $estab, 'pv' => $pv] = $this->emisorUnico();
+        // La fecha de emisión es la del día en que se genera: para tener notas de otro
+        // día, se generan ese día (a mediodía UTC, el mismo día en El Salvador).
+        $volver = now();
+        $this->travelTo($emitidas->copy()->setTime(12, 0));
 
         $producto = Producto::factory()->create([
             'nombre' => 'MANI HORNEADO',
@@ -170,10 +174,6 @@ class NcExportacionLoteTest extends TestCase
             $n = ++$this->correlativoNc;
 
             $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value]);
-            // La fecha de emisión se fija MIENTRAS es borrador: DteObserver la bloquea en
-            // cuanto el documento pasa a generado, y con razón. Así el andamiaje respeta
-            // la misma inmutabilidad que el flujo real.
-            $nc->forceFill(['fecha_emision' => $emitidas->toDateString()])->save();
             $this->borradores->acreditarLinea($nc, $lineaOriginal, 6);
 
             DteAlbaran::create([
@@ -195,6 +195,7 @@ class NcExportacionLoteTest extends TestCase
 
             $notas[] = $nc->refresh();
         }
+        $this->travelTo($volver);
 
         return $notas;
     }

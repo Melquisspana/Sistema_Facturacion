@@ -489,6 +489,11 @@ respuesta lo informa, el suyo) y, cuando viene de una consulta, el mismo ambient
 documento queda como estaba y la bitácora `dte_transmision` dice qué faltó
 (`aceptacion_sin_comprobar` / `rechazo_sin_comprobar`).
 
+La **invalidación** sigue la misma regla (`App\Support\Dte\IdentidadRespuestaHacienda`): el
+paso a Invalidado pide sello y que la respuesta sea de este documento —si trae código, el del
+documento o el del evento enviado— y, si informa ambiente, del mismo. Si no, no se guarda nada
+del evento, la bitácora `dte_invalidacion` dice qué faltó y la ficha lo avisa.
+
 **Sin sello de recepción no hay aceptación**, ni por consulta ni en la respuesta a un envío:
 un «procesado» sin sello deja el documento firmado, y el reintento de siempre —que consulta
 antes de reenviar— lo acepta cuando Hacienda contesta con el sello. Si nadie lo vuelve a tocar,

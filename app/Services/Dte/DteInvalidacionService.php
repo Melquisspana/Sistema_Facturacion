@@ -13,6 +13,7 @@ use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
 use App\Services\Rutas\FacturarPedido;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use App\Support\Dte\IdentidadRespuestaHacienda;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -161,6 +162,8 @@ class DteInvalidacionService
         }
 
         $codigoEvento = (string) $eventoJson['identificacion']['codigoGeneracion'];
+        // El documento por el que pregunta ESTE evento: con él se comprueba la respuesta.
+        $codigoDocumento = (string) ($eventoJson['documento']['codigoGeneracion'] ?? '');
 
         // 2) Firma REAL con el firmador local (JWS). En tests se hace Http::fake al firmador.
         $jws = $this->firma->firmarJson($eventoJson);
@@ -198,7 +201,7 @@ class DteInvalidacionService
             return $this->resultado($interpretado['resultado'], $interpretado['http_status'], $interpretado['mensaje'], null, $dte, false);
         }
 
-        return $this->persistir($dte, $evento, $codigoEvento, $rutaJson, $rutaJws, $interpretado);
+        return $this->persistir($dte, $evento, $codigoEvento, $codigoDocumento, $rutaJson, $rutaJws, $interpretado);
     }
 
     /**
@@ -348,10 +351,15 @@ class DteInvalidacionService
      * transiciona Aceptado → Invalidado. NUNCA toca sello_recepcion/respuesta_mh/
      * fecha_procesamiento_mh del DTE original.
      *
+     * Lo que no se puede comprobar no se guarda, igual que en la emisión: la respuesta
+     * tiene que ser de este documento y de este evento, y del mismo ambiente
+     * ({@see IdentidadRespuestaHacienda}); para aceptar, además, traer sello. Si no, el
+     * documento queda como estaba y la bitácora dice qué faltó.
+     *
      * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}  $interpretado
      * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, estado_dte: string, invalidado: bool}
      */
-    private function persistir(Dte $dte, EventoInvalidacionData $evento, string $codigoEvento, string $rutaJson, string $rutaJws, array $interpretado): array
+    private function persistir(Dte $dte, EventoInvalidacionData $evento, string $codigoEvento, string $codigoDocumento, string $rutaJson, string $rutaJws, array $interpretado): array
     {
         $aceptado = $interpretado['resultado'] === 'aceptado';
         $cuerpo = $interpretado['cuerpo'] ?? null;
@@ -372,7 +380,8 @@ class DteInvalidacionService
             'observaciones' => $interpretado['observaciones'] ?? [],
         ];
 
-        $tardia = DB::transaction(function () use ($dte, $evento, $codigoEvento, $rutaJson, $rutaJws, $rutaResp, $respuestaMh, $interpretado, $cuerpo, $aceptado, $ahora) {
+        $falta = null;
+        $tardia = DB::transaction(function () use ($dte, $evento, $codigoEvento, $codigoDocumento, $rutaJson, $rutaJws, $rutaResp, $respuestaMh, $interpretado, $cuerpo, $aceptado, $ahora, &$falta) {
             $actual = Dte::whereKey($dte->id)->lockForUpdate()->firstOrFail();
             $dte->setRawAttributes($actual->getAttributes(), true);
             if ($dte->estado === EstadoDte::Invalidado || filled($dte->sello_invalidacion)) {
@@ -384,6 +393,33 @@ class DteInvalidacionService
 
                 return true;
             }
+
+            $falta = $aceptado && blank($interpretado['sello'])
+                ? 'la respuesta no trae sello de recepción'
+                : IdentidadRespuestaHacienda::falta($dte, $codigoDocumento,
+                    is_array($cuerpo) ? ($cuerpo['codigoGeneracion'] ?? null) : null,
+                    is_array($cuerpo) ? ($cuerpo['ambiente'] ?? null) : null,
+                    [$codigoEvento]);
+            if ($falta !== null) {
+                activity('dte_invalidacion')->performedOn($dte)->withProperties([
+                    'falta' => $falta,
+                    'estado_conservado' => $dte->estado->value,
+                    'resultado_informado' => $interpretado['resultado'],
+                    'mensaje_informado' => $interpretado['mensaje'],
+                    'http_status' => $interpretado['http_status'],
+                    'sello_informado' => filled($interpretado['sello']) ? (string) $interpretado['sello'] : null,
+                    'codigo_generacion' => $dte->codigo_generacion,
+                    'codigo_generacion_evento' => $codigoEvento,
+                    'codigo_de_la_respuesta' => is_array($cuerpo) ? ($cuerpo['codigoGeneracion'] ?? null) : null,
+                    'ambiente_de_la_respuesta' => is_array($cuerpo) ? ($cuerpo['ambiente'] ?? null) : null,
+                    'ambiente_del_documento' => $dte->ambiente?->value,
+                    'respuesta_path' => $rutaResp,
+                    'usuario' => optional(Auth::user())->name,
+                ])->log('No se guardó '.($aceptado ? 'una aceptación' : 'un rechazo').' de la invalidación informada por Hacienda.');
+
+                return false;
+            }
+
             $dte->codigo_generacion_invalidacion = $codigoEvento;
             $dte->tipo_anulacion = $evento->tipoAnulacion->value;
             $dte->json_invalidacion_path = $rutaJson;
@@ -434,6 +470,14 @@ class DteInvalidacionService
                     ? 'transmitió (REAL) el evento de invalidación — Hacienda lo ACEPTÓ'
                     : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ');
         });
+
+        // Lo primero: si la respuesta no se pudo comprobar, no se guardó nada y el CCF sigue
+        // vigente, así que nada de lo que cuelga de una invalidación puede ocurrir.
+        if ($falta !== null) {
+            return $this->resultado($aceptado ? 'aceptacion_sin_comprobar' : 'rechazo_sin_comprobar', $interpretado['http_status'],
+                'Hacienda informa '.($aceptado ? 'la invalidación como aceptada' : 'un rechazo de la invalidación').', pero no se guardó: '.$falta
+                .'. El documento queda como estaba; revisalo en el portal de Hacienda y avisá a soporte antes de reintentar.', null, $dte, false);
+        }
 
         // Lo que llegó de la fábrica facturado en este CCF pasa al que lo reemplaza. Va fuera de
         // la transacción de arriba: si esto fallara, la invalidación que Hacienda ya aceptó
