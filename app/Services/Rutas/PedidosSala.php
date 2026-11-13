@@ -281,11 +281,15 @@ class PedidosSala
      */
     public function enlazarSala(PedidoSala $pedido, int $salaId, User $usuario, ?string $mismaTienda = null): PedidoSala
     {
-        // Antes de la transacción, como en guardar(): adentro, lo primero es el candado.
+        // Antes de la transacción, como en guardar(): adentro, lo primero son los candados.
+        Gate::forUser($usuario)->authorize('enlazarSala', $pedido);
         $sinPedidos = self::salasSinPedidos();
 
         return DB::transaction(function () use ($pedido, $salaId, $usuario, $sinPedidos, $mismaTienda) {
-            Gate::forUser($usuario)->authorize('enlazarSala', $pedido);
+            // Primero la sala y después el pedido, en el orden de guardar(): así un vendedor no
+            // saca a la vez otro pedido de la sala en el mismo viaje mientras se enlaza.
+            $sala = ClienteSucursal::whereKey($salaId)->where('activo', true)->lockForUpdate()->first()
+                ?? throw ValidationException::withMessages(['cliente_sucursal_id' => 'Elegí una sala activa.']);
             $pedido = PedidoSala::lockForUpdate()->findOrFail($pedido->id);
             if (! $pedido->estaVigente()) {
                 throw ValidationException::withMessages(['pedido' => 'El pedido está anulado: no se enlaza.']);
@@ -293,8 +297,6 @@ class PedidosSala
             if (! $pedido->esTiendaNueva()) {
                 throw ValidationException::withMessages(['pedido' => 'Este pedido ya tiene su sala: «'.$pedido->sala?->nombre.'».']);
             }
-            $sala = ClienteSucursal::whereKey($salaId)->where('activo', true)->first()
-                ?? throw ValidationException::withMessages(['cliente_sucursal_id' => 'Elegí una sala activa.']);
             // Una sala donde no se sacan pedidos tampoco recibe uno por la tienda nueva.
             if (in_array($sala->id, $sinPedidos, true)) {
                 throw ValidationException::withMessages(['cliente_sucursal_id' => 'En «'.$sala->nombre.'» no se sacan pedidos: elegí otra sala.']);

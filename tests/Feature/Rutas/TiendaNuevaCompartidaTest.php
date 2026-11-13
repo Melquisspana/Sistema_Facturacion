@@ -18,7 +18,11 @@ use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\PedidosSala;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
@@ -223,5 +227,37 @@ class TiendaNuevaCompartidaTest extends TestCase
             ->assertSeeInOrder(['Tienda La Chapina', 'Hay 1 pedido más de esta tienda nueva con el mismo nombre', 'Tienda La Chapina', 'Hay 1 pedido más'])
             ->assertSee('Tienda Zapote');
         $this->assertSame(2, substr_count($this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']))->getContent(), 'con el mismo nombre'));
+    }
+
+    /**
+     * Al enlazar, lo primero son los candados: la sala y después el pedido, en el orden de
+     * guardar(). Así un vendedor no saca a la vez otro pedido de la sala en el mismo viaje, y
+     * el control de «ya tiene otro pedido en ese viaje» ve lo último. La concurrencia real la
+     * confirma la CI con MySQL.
+     */
+    public function test_al_enlazar_lo_primero_son_los_candados_de_la_sala_y_el_pedido(): void
+    {
+        $sala = $this->sala();
+        $pedido = $this->tiendaNueva('Tienda La Chapina', $this->otraPersona, mas: ['salida_ruta_id' => $this->viaje()->id]);
+        $consultas = null;
+        Event::listen(TransactionBeginning::class, function () use (&$consultas) {
+            $consultas ??= [];
+        });
+        DB::listen(function (QueryExecuted $q) use (&$consultas) {
+            if ($consultas !== null) {
+                $consultas[] = $q->sql;
+            }
+        });
+
+        app(PedidosSala::class)->enlazarSala($pedido, $sala->id, $this->oficina, PedidosSala::nombreTienda('Tienda La Chapina'));
+
+        // Con comillas (SQLite) o backticks (MySQL).
+        $this->assertMatchesRegularExpression('/^select \* from ["`]cliente_sucursales["`] where ["`]cliente_sucursales["`]\.["`]id["`] = \?/', $consultas[0], 'Primero, el candado de la sala.');
+        $this->assertMatchesRegularExpression('/^select \* from ["`]pedidos_sala["`] where ["`]pedidos_sala["`]\.["`]id["`] = \?/', $consultas[1], 'Después, el del pedido.');
+        if (DB::getDriverName() === 'mysql') {
+            $this->assertStringEndsWith('for update', $consultas[0]);
+            $this->assertStringEndsWith('for update', $consultas[1]);
+        }
+        $this->assertSame($sala->id, $pedido->refresh()->cliente_sucursal_id);
     }
 }
