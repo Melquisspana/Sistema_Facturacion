@@ -46,10 +46,13 @@ use Illuminate\Support\Collection;
  * exactamente el mismo criterio de tipo y unicidad.
  *
  * Y cuando el vínculo explícito existe pero no resuelve, NO se cae a la orden de compra.
- * Hacerlo dejaría que un AC01 hallado por OC tape el hecho de que alguien vinculó un
- * albarán de crédito a este documento: el «entregado» aparecería igual y el dato mal
- * puesto no se vería nunca. Se prefiere la excepción, que es lo que manda a alguien a
- * mirarlo.
+ * Hacerlo dejaría que un AC01 hallado por OC tape el hecho de que alguien vinculó a este
+ * documento un albarán de tipo desconocido: el «entregado» aparecería igual y la duda no
+ * se vería nunca. Se prefiere la excepción, que es lo que manda a alguien a mirarlo.
+ *
+ * Los albaranes de CRÉDITO (AC02, AC04) quedan fuera del vínculo explícito
+ * ({@see AlbaranLocalizador::indices()}): que una devolución esté vinculada a su CCF es
+ * lo correcto —Cobros lo hace a propósito— y no puede tapar al AC01 de la entrega.
  */
 final class ResolucionAlbaran
 {
@@ -69,6 +72,13 @@ final class ResolucionAlbaran
      */
     public const TIPO_INDETERMINADO = 'tipo_indeterminado';
 
+    /**
+     * Un albarán vinculado a este documento también está vinculado a OTRO (por `dte_id`,
+     * Seguimiento o un renglón PPQ). Un mismo albarán no prueba dos entregas: no se elige
+     * ninguno hasta que alguien corrija el vínculo.
+     */
+    public const VINCULO_CONTRADICTORIO = 'vinculo_contradictorio';
+
     private function __construct(
         public readonly ?PpqAlbaran $albaran,
         public readonly string $estado,
@@ -83,13 +93,18 @@ final class ResolucionAlbaran
      *
      * @param  Collection<int, PpqAlbaran>|array<int, PpqAlbaran>  $albaranes
      * @param  bool  $porVinculoExplicito  si la llave fue `dte_id` en vez de la orden de compra
+     * @param  bool  $contradictorio  si alguno de esos albaranes está vinculado también a otro documento
      */
-    public static function decidir(Collection|array $albaranes, bool $porVinculoExplicito = false): self
+    public static function decidir(Collection|array $albaranes, bool $porVinculoExplicito = false, bool $contradictorio = false): self
     {
         $todos = $albaranes instanceof Collection ? $albaranes->values() : collect($albaranes)->values();
 
         if ($todos->isEmpty()) {
             return new self(null, self::SIN_CANDIDATOS, $todos, $porVinculoExplicito);
+        }
+
+        if ($contradictorio) {
+            return new self(null, self::VINCULO_CONTRADICTORIO, $todos, $porVinculoExplicito);
         }
 
         $entrega = $todos->filter(fn (PpqAlbaran $a) => $a->esDeEntrega())->values();
@@ -114,7 +129,7 @@ final class ResolucionAlbaran
     /** ¿Hay algo que una persona tenga que mirar? Faltar un albarán todavía no lo es. */
     public function esExcepcion(): bool
     {
-        return in_array($this->estado, [self::VARIOS_CANDIDATOS, self::TIPO_INDETERMINADO], true);
+        return in_array($this->estado, [self::VARIOS_CANDIDATOS, self::TIPO_INDETERMINADO, self::VINCULO_CONTRADICTORIO], true);
     }
 
     /**
@@ -128,6 +143,11 @@ final class ResolucionAlbaran
      */
     public function motivo(): ?string
     {
+        if ($this->estado === self::VINCULO_CONTRADICTORIO) {
+            return 'El albarán vinculado a este documento también está vinculado a otro, '
+                .'así que no prueba la entrega de ninguno. Revisá el vínculo.';
+        }
+
         if ($this->porVinculoExplicito) {
             return match ($this->estado) {
                 self::VARIOS_CANDIDATOS => 'Hay '.$this->candidatos->count().' albaranes de entrega vinculados a este documento: '

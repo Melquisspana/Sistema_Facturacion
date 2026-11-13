@@ -213,12 +213,29 @@ class AlbaranTipoYEvidenciaTest extends TestCase
 
     public function test_un_ac02_de_averia_vinculado_por_dte_id_no_marca_entrega(): void
     {
-        $this->assertVinculoExplicitoNoPruebaEntrega('AC02/0232/00/6836');
+        $this->assertCreditoVinculadoNoPruebaEntrega('AC02/0232/00/6836');
     }
 
     public function test_un_ac04_de_devolucion_vinculado_por_dte_id_no_marca_entrega(): void
     {
-        $this->assertVinculoExplicitoNoPruebaEntrega('AC04/0033/00/3209');
+        $this->assertCreditoVinculadoNoPruebaEntrega('AC04/0033/00/3209');
+    }
+
+    /**
+     * Un albarán de crédito vinculado al CCF no prueba la entrega, pero tampoco es un error:
+     * Cobros vincula la devolución a su CCF a propósito. No hay nada que corregir.
+     */
+    private function assertCreditoVinculadoNoPruebaEntrega(string $numero): void
+    {
+        $dte = $this->ccf();
+
+        $this->albaran($numero, 2.89, '260609990099999')->update(['dte_id' => $dte->id]);
+
+        $resolucion = $this->resolucion($dte);
+
+        $this->assertFalse($resolucion->estaVinculado());
+        $this->assertNull($resolucion->albaran);
+        $this->assertFalse($resolucion->esExcepcion());
     }
 
     public function test_un_albaran_de_tipo_desconocido_vinculado_por_dte_id_no_marca_entrega(): void
@@ -250,24 +267,35 @@ class AlbaranTipoYEvidenciaTest extends TestCase
         $this->assertStringContainsString('no es de entrega', (string) $resolucion->motivo());
     }
 
-    public function test_un_credito_vinculado_no_deja_que_la_oc_tape_el_error(): void
+    public function test_un_credito_vinculado_no_tapa_al_ac01_de_la_orden_de_compra(): void
     {
         $dte = $this->ccf();
 
         // Hay un AC01 legítimo por la orden de compra…
-        $this->albaran('AC01/0232/00/6715', 136.33);
-        // …y alguien vinculó a mano el albarán de crédito de la NC a este mismo documento.
-        $credito = $this->albaran('AC02/0232/00/6836', 2.89, '260609990099999');
-        $credito->update(['dte_id' => $dte->id]);
+        $entrega = $this->albaran('AC01/0232/00/6715', 136.33);
+        // …y la devolución quedó vinculada a este mismo documento, como la deja Cobros.
+        $this->albaran('AC04/0232/00/3209', 6.24)->update(['dte_id' => $dte->id]);
 
         $resolucion = $this->resolucion($dte);
 
-        // NO se cae a la orden de compra: si lo hiciera, el documento aparecería entregado
-        // y el vínculo mal puesto no se vería nunca.
+        // El crédito no compite por el vínculo explícito: decide el AC01 de la OC.
+        $this->assertTrue($resolucion->estaVinculado());
+        $this->assertSame($entrega->id, $resolucion->albaran->id);
+    }
+
+    public function test_un_albaran_sin_tipo_vinculado_no_deja_que_la_oc_tape_la_duda(): void
+    {
+        $dte = $this->ccf();
+
+        $this->albaran('AC01/0232/00/6715', 136.33);
+        // Un número suelto vinculado a mano: no se sabe qué es, así que se revisa.
+        $this->albaran('3211', 1.93, '260609990099999')->update(['dte_id' => $dte->id]);
+
+        $resolucion = $this->resolucion($dte);
+
         $this->assertFalse($resolucion->estaVinculado());
         $this->assertTrue($resolucion->esExcepcion());
-        $this->assertFalse($this->resolucion($dte)->estaVinculado());
-        $this->assertNotNull($this->resolucion($dte)->motivo());
+        $this->assertNotNull($resolucion->motivo());
     }
 
     public function test_el_ac01_explicito_gana_sobre_varios_candidatos_por_orden_de_compra(): void

@@ -8,17 +8,21 @@ use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
+use App\Models\PpqLote;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
+use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PorEntregar;
+use App\Services\Rutas\ResolucionAlbaran;
 use App\Services\Rutas\RitmoRutas;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
@@ -144,6 +148,115 @@ class PorEntregarTest extends TestCase
             ->assertDontSee($invalidado->numero_control)->assertDontSee($viejo->numero_control)
             ->assertDontSee($conAlbaran->numero_control)->assertDontSee($entregado->numero_control)
             ->assertDontSee($sinSala->numero_control);
+    }
+
+    public function test_un_albaran_de_credito_vinculado_al_ccf_no_tapa_su_albaran_de_entrega(): void
+    {
+        // La devolución (AC04) queda vinculada al CCF por `dte_id`; la entrega (AC01) llega
+        // por la orden de compra. El AC01 prueba la entrega: el CCF ya no está por entregar.
+        $conDevolucion = $this->ccf('Antiguo');
+        PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6715', 'numero_orden_compra' => $conDevolucion->numero_orden_compra,
+            'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0232/00/3209', 'numero_orden_compra' => $conDevolucion->numero_orden_compra,
+            'dte_id' => $conDevolucion->id, 'monto_albaran' => 6.24, 'fecha_albaran' => '2026-11-05', 'origen' => 'gmail']);
+        // Solo la devolución, sin AC01: un albarán de crédito no prueba ninguna entrega.
+        $soloDevolucion = $this->ccf('Antiguo');
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0232/00/3210', 'numero_orden_compra' => $soloDevolucion->numero_orden_compra,
+            'dte_id' => $soloDevolucion->id, 'monto_albaran' => 6.24, 'fecha_albaran' => '2026-11-05', 'origen' => 'gmail']);
+        $sinAlbaran = $this->ccf('Antiguo');
+
+        $this->assertSame([$soloDevolucion->id, $sinAlbaran->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertDontSee($conDevolucion->numero_control)
+            ->assertSee($soloDevolucion->numero_control)->assertSee($sinAlbaran->numero_control);
+    }
+
+    public function test_el_albaran_de_entrega_vinculado_en_seguimiento_lo_saca_de_por_entregar(): void
+    {
+        // El AC01 llegó sin orden de compra y Seguimiento (Cobros) lo vinculó al CCF.
+        $vinculado = $this->ccf('Antiguo');
+        $entrega = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6716', 'monto_albaran' => 100.25,
+            'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        $sinAlbaran = $this->ccf('Antiguo');
+        foreach ([$vinculado, $sinAlbaran] as $ccf) {
+            CobroDocumento::create(['cliente_id' => $ccf->cliente_id, 'dte_id' => $ccf->id, 'tipo_dte' => '03',
+                'numero_control' => $ccf->numero_control, 'fecha_emision' => '2026-11-06', 'monto' => '100.25',
+                'ppq_albaran_id' => $ccf->is($vinculado) ? $entrega->id : null]);
+        }
+
+        $this->assertSame([$sinAlbaran->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertDontSee($vinculado->numero_control)->assertSee($sinAlbaran->numero_control);
+    }
+
+    public function test_el_albaran_de_entrega_del_ppq_lo_saca_de_por_entregar(): void
+    {
+        // El CCF va en un PPQ con su AC01, que llegó sin orden de compra.
+        $enPpq = $this->ccf('Antiguo');
+        $enLoteBorrado = $this->ccf('Antiguo');
+        $lote = PpqLote::create(['referencia' => 'PPQ-PRUEBA', 'fecha' => '2026-11-06', 'estado' => 'listo']);
+        $borrado = PpqLote::create(['referencia' => 'PPQ-BORRADO', 'fecha' => '2026-11-06', 'estado' => 'listo']);
+        foreach ([[$lote, $enPpq, '6717'], [$borrado, $enLoteBorrado, '6718']] as [$delLote, $ccf, $numero]) {
+            $albaran = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/'.$numero, 'monto_albaran' => 100.25,
+                'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+            $delLote->items()->create(['dte_id' => $ccf->id, 'origen' => 'local', 'numero_control' => $ccf->numero_control,
+                'tipo_dte' => '03', 'ppq_albaran_id' => $albaran->id, 'sin_albaran' => false,
+                'numero_orden_compra' => $ccf->numero_orden_compra, 'monto_dte' => 100.25, 'monto_albaran' => 100.25]);
+        }
+        // Un lote dado de baja no prueba nada.
+        $borrado->delete();
+
+        $this->assertSame([$enLoteBorrado->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+    }
+
+    public function test_el_mismo_albaran_por_varios_caminos_cuenta_una_sola_vez(): void
+    {
+        $ccf = $this->ccf('Antiguo');
+        $entrega = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6719', 'numero_orden_compra' => $ccf->numero_orden_compra,
+            'dte_id' => $ccf->id, 'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        CobroDocumento::create(['cliente_id' => $ccf->cliente_id, 'dte_id' => $ccf->id, 'tipo_dte' => '03',
+            'numero_control' => $ccf->numero_control, 'fecha_emision' => '2026-11-06', 'monto' => '100.25', 'ppq_albaran_id' => $entrega->id]);
+        PpqLote::create(['referencia' => 'PPQ-PRUEBA', 'fecha' => '2026-11-06', 'estado' => 'listo'])->items()->create([
+            'dte_id' => $ccf->id, 'origen' => 'local', 'numero_control' => $ccf->numero_control, 'tipo_dte' => '03',
+            'ppq_albaran_id' => $entrega->id, 'sin_albaran' => false, 'numero_orden_compra' => $ccf->numero_orden_compra,
+            'monto_dte' => 100.25, 'monto_albaran' => 100.25]);
+
+        $resolucion = app(AlbaranLocalizador::class)->paraUno($ccf->id, $ccf->numero_orden_compra);
+
+        // Una sola vez, no «varios albaranes de entrega», y el modelo sale limpio.
+        $this->assertTrue($resolucion->estaVinculado());
+        $this->assertSame($entrega->id, $resolucion->albaran->id);
+        $this->assertSame([$entrega->id], $resolucion->candidatos->pluck('id')->all());
+        $this->assertFalse($resolucion->albaran->isDirty());
+        $this->assertArrayNotHasKey('otro_vinculo_dte_id', $resolucion->albaran->getAttributes());
+        $this->assertSame([], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+    }
+
+    public function test_un_albaran_vinculado_a_dos_ccf_distintos_no_prueba_la_entrega_de_ninguno(): void
+    {
+        // El AC01 está vinculado al CCF A y, por error, alguien lo eligió en el renglón PPQ del B.
+        $a = $this->ccf('Antiguo');
+        $b = $this->ccf('Antiguo');
+        $entrega = PpqAlbaran::create(['numero_albaran' => 'AC01/0232/00/6720', 'numero_orden_compra' => $a->numero_orden_compra,
+            'dte_id' => $a->id, 'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail']);
+        PpqLote::create(['referencia' => 'PPQ-PRUEBA', 'fecha' => '2026-11-06', 'estado' => 'listo'])->items()->create([
+            'dte_id' => $b->id, 'origen' => 'local', 'numero_control' => $b->numero_control, 'tipo_dte' => '03',
+            'ppq_albaran_id' => $entrega->id, 'sin_albaran' => false, 'numero_orden_compra' => $b->numero_orden_compra,
+            'monto_dte' => 100.25, 'monto_albaran' => 100.25]);
+
+        $this->assertSame([$a->id, $b->id], app(EntregasCcf::class)->porEntregar()->pluck('id')->all());
+        foreach ([$a, $b] as $ccf) {
+            $resolucion = app(AlbaranLocalizador::class)->paraUno($ccf->id, $ccf->numero_orden_compra);
+            $this->assertSame(ResolucionAlbaran::VINCULO_CONTRADICTORIO, $resolucion->estado);
+            $this->assertNull($resolucion->albaran);
+            $this->assertTrue($resolucion->esExcepcion());
+            $this->assertStringContainsString('Revisá el vínculo', (string) $resolucion->motivo());
+        }
+
+        // Buscado solo por orden de compra (como lo pide PPQ con lo que llega de Gmail): tampoco se elige.
+        [, $porOrden] = app(AlbaranLocalizador::class)->indices([], [$a->numero_orden_compra]);
+        $this->assertSame(ResolucionAlbaran::VINCULO_CONTRADICTORIO, $porOrden[$a->numero_orden_compra]->estado);
+        $this->assertNull($porOrden[$a->numero_orden_compra]->albaran);
     }
 
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void
