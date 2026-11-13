@@ -14,6 +14,7 @@ use App\Models\Ruta;
 use App\Models\RutaCobertura;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\VentasRutas;
 use App\Services\Rutas\VentasRutasExcel;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -344,7 +345,10 @@ class VentasRutasTest extends TestCase
             $this->documento(50, ['cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id]);
         }
         $datos = $this->ventas();
-        $html = view('rutas.ventas.pdf', $datos + ['empresa' => Empresa::first()])->render();
+        // Con el logo, como lo arma el controlador: la hoja sigue entrando en una página A4.
+        $html = view('rutas.ventas.pdf', $datos + ['empresa' => Empresa::first(), 'logo' => app(DtePdfService::class)->logoSrc()])->render();
+        $this->assertStringContainsString('REPORTE DE VENTAS', $html);
+        $this->assertStringContainsString('Documento interno · No es factura', $html);
         $this->assertStringContainsString('Ventas nacionales · Octubre 2026', $html);
         $this->assertStringContainsString('Totales por ruta', $html);
         $this->assertStringNotContainsString('<svg', $html);
