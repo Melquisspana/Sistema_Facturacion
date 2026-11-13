@@ -8,6 +8,21 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.13.2] - 2026-11-13
+
+Facturación y el jefe de vendedores pueden corregir o anular un pedido; la PC de pedidos no (#369). «¿Es alguna de estas?» muestra las tiendas nuevas del día (#370). Jefatura ya no ve datos técnicos (#371). Un solo «Salir» (#372). En el celular se ve lo que faltaba (#367). Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- Rutas › Pedidos: Facturación y el jefe de vendedores corrigen o anulan un pedido de sala; la PC de pedidos solo lo prepara (#369).
+- «¿Es alguna de estas?» muestra también las tiendas nuevas que otros vendedores cargaron ese día, y el alta del cliente las enlaza todas (#370).
+
+### Cambiado
+
+- Un solo «Salir»: también cierra la sesión de Cloudflare Access, y al volver a entrar con el PIN nuevo se entra directo, sin otro inicio de sesión (#372).
+- Jefatura sin datos técnicos en Inicio, Cobros, PPQ, Compras, Paquete mensual, Listas de empaque y Llegó de pedidos (#371).
+- Celular: ficha del documento, Cobros, PPQ, Paquete mensual y Compras en tarjetas (#367).
+
 ## [2026.11.13] - 2026-11-13
 
 Todo lo que necesitan los vendedores y la PC de pedidos para empezar el 14/11: la pantalla de pedidos a pantalla completa con «Imprimir y mandar» (#356) y «Corregir» (#358), «¿Quién lo entregó?» con botones y sin nadie elegido (#360), los errores probables de los vendedores (#363) y el nombre «Pedidos» en lugar de «Fábrica» (#362). Los documentos impresos toman la forma del CCF sin confundirse con él (#358, #359, #361, #366). Facturación, Seguimiento y Compras se ven bien en el celular (#364). Jefatura ve solo lo que pasó por Hacienda y abre el PDF, y «Salir» por fin sale (#365). La caché se lee una vez por pedido (#354). Sin migraciones ni cambios de permisos.
