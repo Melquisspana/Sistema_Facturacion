@@ -40,7 +40,7 @@
             <form method="POST" action="{{ route('facturacion.nota-credito.revertir', $dte) }}"
                   onsubmit="return confirm('¿Crear un borrador de nota de crédito que revierte TODO el CCF? Se copian todas las líneas con saldo disponible. No se emite ni transmite: quedará en borrador para revisión.');">
                 @csrf
-                <button class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 font-medium">
+                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 font-medium">
                     Revertir CCF completo con NC
                 </button>
             </form>
@@ -50,7 +50,7 @@
             </p>
         @else
             <button type="button" disabled title="Requiere aceptación real de Hacienda"
-                    class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-md font-medium cursor-not-allowed">
+                    class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-md font-medium cursor-not-allowed">
                 Revertir CCF completo con NC
             </button>
             <p class="mt-1 text-xs text-gray-400">
@@ -183,7 +183,7 @@
             </div>
 
             <div>
-                <button class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
+                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
                     Crear nota de crédito
                 </button>
             </div>

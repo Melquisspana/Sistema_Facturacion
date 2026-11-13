@@ -63,7 +63,7 @@
                         Incluir ventas (emitidos)
                     </label>
                     <noscript>
-                        <button class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Ver resumen</button>
+                        <button class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Ver resumen</button>
                     </noscript>
                 </div>
             </form>
@@ -126,7 +126,7 @@
                         </div>
                     </div>
                     <a href="{{ route('documentos-recibidos.index') }}"
-                       class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                       class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                         Ir a Compras
                     </a>
                 </div>
@@ -175,7 +175,7 @@
 
                 @if ($diasPendientes->isNotEmpty())
                     <details class="mt-3">
-                        <summary class="cursor-pointer text-xs font-medium {{ $cobTono['titulo'] }}">
+                        <summary class="min-h-11 sm:min-h-0 py-3 sm:py-0 cursor-pointer text-xs font-medium {{ $cobTono['titulo'] }}">
                             Ver los {{ $diasPendientes->count() }} día(s) sin revisar
                         </summary>
                         <div class="mt-2 flex flex-wrap gap-1.5">
@@ -290,7 +290,7 @@
                             <div class="flex flex-wrap items-center gap-3">
                                 <p>ZIP listo ({{ $estadoZip['terminado_en'] ?? '' }}): {{ $estadoZip['compras'] ?? 0 }} compras, {{ $estadoZip['ventas'] ?? 0 }} ventas.</p>
                                 <a href="{{ route('contabilidad.paquete.descargar', $filtros) }}"
-                                   class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                                     Descargar {{ $estadoZip['nombre_descarga'] ?? 'ZIP' }}
                                 </a>
                             </div>
@@ -360,7 +360,7 @@
                         <input type="hidden" name="fecha_hasta" value="{{ request('fecha_hasta') }}">
                         <input type="hidden" name="incluir_compras" value="{{ $incluirCompras ? 1 : 0 }}">
                         <input type="hidden" name="incluir_ventas" value="{{ $incluirVentas ? 1 : 0 }}">
-                        <button class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                        <button class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
                             Generar ZIP
                         </button>
@@ -368,14 +368,14 @@
                     {{-- Envío directo a contabilidad, con confirmación por frase exacta. --}}
                     @if ($puedeEnviar)
                         <button type="button" onclick="document.getElementById('modal-enviar-contabilidad').classList.remove('hidden')"
-                                class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                                class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
                             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.897 28.897 0 0015.293-7.155.75.75 0 000-1.114A28.897 28.897 0 003.105 2.289z"/></svg>
                             Enviar a contabilidad
                         </button>
                     @else
                         <button type="button" disabled
                                 title="{{ $bloqueaCobertura ? 'El período de compras no está completo: recuperalo desde Compras.' : ($correoContabilidad === null ? 'Falta un correo de contabilidad válido (Configuración > Contabilidad).' : 'No hay documentos en el rango para las fuentes incluidas.') }}"
-                                class="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">
+                                class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">
                             Enviar a contabilidad
                         </button>
                     @endif
@@ -438,8 +438,8 @@
                                        class="mt-1 w-full rounded-md border-gray-300 text-sm font-mono">
                                 <div class="mt-5 flex items-center justify-end gap-3">
                                     <button type="button" onclick="document.getElementById('modal-enviar-contabilidad').classList.add('hidden')"
-                                            class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancelar</button>
-                                    <button type="submit" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Enviar ahora</button>
+                                            class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancelar</button>
+                                    <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Enviar ahora</button>
                                 </div>
                             </form>
                         </div>

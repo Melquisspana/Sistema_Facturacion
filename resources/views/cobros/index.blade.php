@@ -7,11 +7,11 @@
             </div>
             <div class="flex flex-wrap items-center gap-2 text-sm">
                 <a href="{{ route('ppq.lotes.index') }}"
-                   class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-ink-600 px-3 py-1.5 font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700">
+                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md border border-gray-300 dark:border-ink-600 px-3 py-1.5 font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700">
                     Historial de PPQ
                 </a>
                 <a href="{{ route('ppq.index') }}"
-                   class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-ink-600 px-3 py-1.5 font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700">
+                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md border border-gray-300 dark:border-ink-600 px-3 py-1.5 font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700">
                     Buscar CCF / NC
                 </a>
             </div>
@@ -81,7 +81,7 @@
                                 @endforeach
                             </select>
                         </div>
-                        <button class="rounded-md bg-gray-800 px-4 py-2 text-sm text-white hover:bg-gray-700">Ver</button>
+                        <button class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-800 px-4 py-2 text-sm text-white hover:bg-gray-700">Ver</button>
                     </form>
                 @else
                     <p class="text-sm font-medium text-gray-700 dark:text-paper-100">{{ $cliente->nombre }}</p>
@@ -100,12 +100,12 @@
                                 <input id="fecha_pago" name="fecha_pago" type="date" aria-describedby="fecha-pago-ayuda" class="mt-1 rounded-md border-gray-300 text-sm">
                                 <p id="fecha-pago-ayuda" class="text-xs text-gray-500 dark:text-paper-300">solo si subís un archivo</p>
                             </div>
-                            <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revisar TXT</button>
+                            <button class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revisar TXT</button>
                         </form>
                         @if (filled(\App\Facades\Ajustes::texto('cobros.txt_correo.remitente')))
                             <form method="POST" action="{{ route('cobros.pagos.correo', $cliente) }}">
                                 @csrf
-                                <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar TXT en el correo</button>
+                                <button class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar TXT en el correo</button>
                             </form>
                         @endif
                     @endcan
@@ -150,14 +150,14 @@
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 dark:border-ink-600 px-4 py-3">
                         <nav aria-label="Meses" class="flex flex-wrap gap-1.5">
                             <a href="{{ route('cobros.index', $base + $activa) }}"
-                               @class(['rounded-full px-3 py-1 text-sm',
+                               @class(['inline-flex min-h-11 sm:min-h-0 items-center rounded-full px-3 py-1 text-sm',
                                        'bg-indigo-600 text-white' => $filtros['mes'] === '',
                                        'text-gray-600 dark:text-paper-300 hover:bg-gray-100 dark:hover:bg-ink-700' => $filtros['mes'] !== ''])>
                                 Todos los meses
                             </a>
                             @foreach ($meses as $m)
                                 <a href="{{ route('cobros.index', $base + ['mes' => $m['mes']] + $activa) }}"
-                                   @class(['rounded-full px-3 py-1 text-sm',
+                                   @class(['inline-flex min-h-11 sm:min-h-0 items-center rounded-full px-3 py-1 text-sm',
                                            'bg-indigo-600 text-white' => $filtros['mes'] === $m['mes'],
                                            'text-gray-600 dark:text-paper-300 hover:bg-gray-100 dark:hover:bg-ink-700' => $filtros['mes'] !== $m['mes']])>
                                     {{ $m['etiqueta'] }}
@@ -243,10 +243,10 @@
                                 </template>
                                 <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                                     <span class="text-sm text-gray-700 dark:text-paper-100" x-text="marcados + ' CCF marcados · $' + total">0 CCF marcados · $0.00</span>
-                                    <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
-                                    <button type="button" class="text-sm text-indigo-600 hover:underline" x-show="recientes > 0" x-cloak x-on:click="quitarRecientes()" x-text="'Quitar los de albarán reciente (' + recientes + ')'">Quitar los de albarán reciente</button>
+                                    <button type="button" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
+                                    <button type="button" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-indigo-600 hover:underline" x-show="recientes > 0" x-cloak x-on:click="quitarRecientes()" x-text="'Quitar los de albarán reciente (' + recientes + ')'">Quitar los de albarán reciente</button>
                                     @if ($cantidadListosEnFiltro > 0 || $duplicadosEnFiltro > 0)
-                                        <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="todas()">Seleccionar todas las pendientes ({{ $cantidadListosEnFiltro }} · ${{ number_format((float) $totalListosEnFiltro, 2) }}){{ $duplicadosEnFiltro > 0 ? '; '.$duplicadosEnFiltro.' posibles duplicados no incluidos' : '' }}</button>
+                                        <button type="button" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-indigo-600 hover:underline" x-on:click="todas()">Seleccionar todas las pendientes ({{ $cantidadListosEnFiltro }} · ${{ number_format((float) $totalListosEnFiltro, 2) }}){{ $duplicadosEnFiltro > 0 ? '; '.$duplicadosEnFiltro.' posibles duplicados no incluidos' : '' }}</button>
                                         @if ($cantidadListosEnFiltro > 500)
                                             <span class="text-xs text-gray-500 dark:text-paper-300">El máximo por PPQ es de 500 CCF.</span>
                                         @endif
@@ -428,8 +428,8 @@
                                 </p>
                                 @if ($puedeGestionar)
                                     <span class="text-sm text-gray-700 dark:text-paper-100" x-text="marcados + ' CCF marcados · $' + total">0 CCF marcados · $0.00</span>
-                                    <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
-                                    <button class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                                    <button type="button" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
+                                    <button class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
                                             :disabled="enviando || marcados === 0">
                                         Crear PPQ con lo marcado
                                         <span x-show="marcados > 0" x-text="'(' + marcados + ')'"></span>

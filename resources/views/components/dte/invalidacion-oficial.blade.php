@@ -342,7 +342,7 @@
         <div class="mt-4">
             <button type="button"
                     @if ($bloqueadoReal) disabled @else x-data="" x-on:click="$dispatch('open-modal', 'invalidar-dte')" @endif
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium {{ $bloqueadoReal ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-rose-600 text-white hover:bg-rose-700' }}">
+                    class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 px-4 py-2 text-sm rounded-md font-medium {{ $bloqueadoReal ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-rose-600 text-white hover:bg-rose-700' }}">
                 Invalidar oficialmente
             </button>
             @if ($bloqueadoReal)
@@ -627,24 +627,24 @@
                         {{-- ── Navegación ─────────────────────────────────────────── --}}
                         <div class="mt-6 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
                             <button type="button" x-show="paso > 1" x-cloak x-on:click="atras()"
-                                    class="inline-flex items-center px-4 py-2 text-sm rounded-md font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                    class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 text-sm rounded-md font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
                                 Atrás
                             </button>
                             <span x-show="paso === 1" x-cloak></span>
 
                             <div class="flex items-center gap-2">
                                 <button type="button" x-on:click="$dispatch('close')"
-                                        class="inline-flex items-center px-4 py-2 text-sm rounded-md font-medium bg-white text-gray-600 hover:bg-gray-50 border border-gray-200">
+                                        class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 text-sm rounded-md font-medium bg-white text-gray-600 hover:bg-gray-50 border border-gray-200">
                                     Cancelar
                                 </button>
                                 <button type="button" x-show="paso < 3" x-cloak x-on:click="siguiente()" :disabled="! puedeAvanzar"
-                                        class="inline-flex items-center px-4 py-2 text-sm rounded-md font-medium"
+                                        class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 text-sm rounded-md font-medium"
                                         :class="puedeAvanzar ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
                                     Continuar
                                 </button>
                                 {{-- Único botón rojo del asistente, y solo en el último paso. --}}
                                 <button type="submit" x-show="paso === 3" x-cloak :disabled="! puedeTransmitir"
-                                        class="inline-flex items-center px-4 py-2 text-sm rounded-md font-medium"
+                                        class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 text-sm rounded-md font-medium"
                                         :class="puedeTransmitir ? 'bg-rose-600 text-white hover:bg-rose-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
                                     Transmitir invalidación a Hacienda
                                 </button>
@@ -708,11 +708,11 @@
                             @endunless
                         </div>
                         <div class="md:col-span-3 flex flex-wrap gap-3">
-                            <button class="inline-flex items-center px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700">
+                            <button class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700">
                                 Firmar invalidación (MOCK)
                             </button>
                             <button type="submit" form="inval_dry_run_form"
-                                    class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
+                                    class="inline-flex min-h-11 sm:min-h-0 items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
                                 Dry-run visual
                             </button>
                         </div>

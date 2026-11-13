@@ -27,7 +27,7 @@
                          falló / Pendiente de correo» sobre el mismo dato. --}}
                     @can('view', $dte)
                         <div class="flex items-center gap-3 flex-wrap">
-                            <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="text-gray-600 hover:underline text-sm">Imprimir</a>
+                            <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="inline-flex min-h-11 sm:min-h-0 items-center text-gray-600 hover:underline text-sm">Imprimir</a>
                         </div>
                     @endcan
                 </div>

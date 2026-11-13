@@ -9,22 +9,22 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Lote PPQ #{{ $lote->id }} — {{ $lote->referencia }}</h2>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('ppq.lotes.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Historial</a>
+                <a href="{{ route('ppq.lotes.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Historial</a>
                 @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
-                    <a href="{{ route('ppq.index', ['lote' => $lote->id]) }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar / agregar CCF</a>
+                    <a href="{{ route('ppq.index', ['lote' => $lote->id]) }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar / agregar CCF</a>
                 @else
-                    <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
+                    <a href="{{ route('ppq.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
                 @endif
                 @if ($resumen['cantidad'] > 0)
                     {{-- El archivo de NC se genera días antes desde Documentos fiscales; acá solo el quedan (AC01 + AC02/AC04). --}}
-                    <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                    <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
                         Generar formato quedan
                     </a>
                 @endif
                 @if ($lote->esEditable())
                     @can('ppq.gestionar')
-                        <a href="{{ route('ppq.lotes.edit', $lote) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
+                        <a href="{{ route('ppq.lotes.edit', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
                     @endcan
                 @endif
             </div>
@@ -57,7 +57,7 @@
     @endphp
 
     <div class="py-8">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
             @if ($ncNuevas->isNotEmpty())
                 <div class="rounded-md bg-gray-100 p-3 text-sm text-gray-700 dark:bg-ink-700 dark:text-paper-100">
@@ -66,7 +66,7 @@
                         @can('ppq.gestionar')
                             <form method="POST" action="{{ route('ppq.lotes.agregar-nc', $lote) }}">
                                 @csrf
-                                <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Agregar NC nuevas ({{ $ncNuevas->count() }})</button>
+                                <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Agregar NC nuevas ({{ $ncNuevas->count() }})</button>
                             </form>
                         @endcan
                     @else
@@ -140,7 +140,7 @@
             </div>
 
             {{-- Metadatos del lote --}}
-            <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                 <div><dt class="text-xs text-gray-500">Estado</dt><dd class="mt-0.5"><span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $estadoReal['estado']['clase'] }}">{{ $estadoReal['estado']['label'] }}</span></dd></div>
                 <div><dt class="text-xs text-gray-500">Fecha</dt><dd class="mt-0.5 text-gray-700">{{ $lote->fecha->format('d/m/Y') }}</dd></div>
                 <div><dt class="text-xs text-gray-500">Cliente</dt><dd class="mt-0.5 text-gray-700">{{ $lote->cliente?->nombre ?? $estadoReal['cliente_derivado']?->nombre ?? '—' }}</dd></div>
@@ -153,16 +153,16 @@
             {{-- Reporte del caso que devuelve el portal: deja el PPQ presentado. --}}
             @if (in_array($estadoReal['estado']['key'], ['armado', 'anterior'], true) && !in_array($lote->estado, [\App\Enums\EstadoPpq::Enviado, \App\Enums\EstadoPpq::Pagado], true))
                 @can('ppq.gestionar')
-                    <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
+                    <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-5">
                         <form method="POST" action="{{ route('ppq.lotes.marcar-presentado', $lote) }}" class="flex flex-wrap items-end gap-3"
                               onsubmit="return confirm('¿Marcar este PPQ como presentado en el portal el ' + this.elements.fecha.value.split('-').reverse().join('/') + '? Ya no aceptará NC nuevas.');">
                             @csrf
                             <div>
                                 <label for="fecha-presentacion" class="block text-xs text-gray-500">Fecha de presentación en el portal</label>
                                 <input id="fecha-presentacion" name="fecha" type="date" required value="{{ old('fecha', today()->toDateString()) }}"
-                                       min="{{ $lote->fecha->toDateString() }}" max="{{ today()->toDateString() }}" class="mt-0.5 rounded-md border-gray-300 text-sm">
+                                       min="{{ $lote->fecha->toDateString() }}" max="{{ today()->toDateString() }}" class="mt-0.5 min-h-11 sm:min-h-0 rounded-md border-gray-300 text-sm">
                             </div>
-                            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Marcar como presentado</button>
+                            <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Marcar como presentado</button>
                         </form>
                         @error('fecha')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
                     </div>
@@ -170,25 +170,25 @@
             @endif
 
             @if ($resumen['cantidad'] > 0 && auth()->user()->can('ppq.gestionar'))
-                <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
+                <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-5">
                     <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de {{ $nombreCliente }}</h3>
                     <p class="mt-1 text-xs text-gray-500">Después de reportar el caso en el portal, subí el Excel que devuelve. Lo que {{ $nombreCliente }} registró queda presentado; los CCF que no tomó salen del lote con sus NC y vuelven a «por presentar» para el siguiente PPQ. Las NC de los CCF que quedan se mantienen.</p>
                     <form method="POST" action="{{ route('ppq.lotes.reporte-caso', $lote) }}" enctype="multipart/form-data" class="mt-3 flex flex-wrap items-end gap-3">
                         @csrf
                         <input type="file" name="reporte" accept=".xls,.xlsx" required
-                               class="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100">
+                               class="min-h-11 sm:min-h-0 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100">
                         <div>
                             <label for="caso" class="block text-xs text-gray-500">N.º de caso (del correo)</label>
-                            <input id="caso" name="caso" type="text" inputmode="numeric" class="mt-0.5 w-28 rounded-md border-gray-300 text-sm">
+                            <input id="caso" name="caso" type="text" inputmode="numeric" class="mt-0.5 min-h-11 sm:min-h-0 w-28 rounded-md border-gray-300 text-sm">
                         </div>
-                        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Cargar reporte</button>
+                        <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Cargar reporte</button>
                     </form>
                     @error('reporte')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
                 </div>
             @endif
 
             {{-- Documentos del lote: CCF primero y, en cada grupo, los más recientes arriba --}}
-            <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
+            <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl overflow-hidden">
                 <div class="px-5 py-3 border-b border-gray-200 dark:border-ink-600 flex flex-wrap items-center justify-between gap-2">
                     <h3 class="text-sm font-semibold text-gray-700">Documentos del lote</h3>
                     <span class="text-xs text-gray-500">
@@ -372,7 +372,7 @@
                  que no había forma de saber de dónde salía un pago ni quién lo había
                  quitado. Es una bitácora: solo se lee. --}}
             @if ($lote->conciliaciones->isNotEmpty())
-                <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
+                <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl overflow-hidden">
                     <div class="px-5 py-3 border-b border-gray-200">
                         <h3 class="text-sm font-semibold text-gray-700">Historial de conciliación ({{ $lote->conciliaciones->count() }})</h3>
                         <p class="mt-0.5 text-xs text-gray-500">Un archivo solo actualiza los documentos que nombra; los demás conservan su estado.</p>
@@ -422,7 +422,7 @@
                 <div class="flex justify-end">
                     <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote? Los CCF sin pagar vuelven a por presentar.')">
                         @csrf @method('DELETE')
-                        <button class="text-sm text-red-600 hover:underline">Eliminar lote</button>
+                        <button class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-red-600 hover:underline">Eliminar lote</button>
                     </form>
                 </div>
             @endif
