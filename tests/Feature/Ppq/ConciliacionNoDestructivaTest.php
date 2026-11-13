@@ -770,6 +770,46 @@ class ConciliacionNoDestructivaTest extends TestCase
         $this->assertNull($item->refresh()->conciliacion_estado);
     }
 
+    /** Una fila CF por $0 no es un pago: el renglón pendiente sigue pendiente, sin movimiento. */
+    public function test_una_fila_en_cero_no_concilia_un_renglon_pendiente(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 100.00);
+
+        $reporte = $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 0.00))
+            ->assertOk()->viewData('reporte');
+
+        $item->refresh();
+        $this->assertNull($item->conciliacion_estado);
+        $this->assertNull($item->monto_pagado);
+        $this->assertSame(0, PpqConciliacionMovimiento::count());
+        $this->assertSame(0, $reporte['totales']['cantidad_ccf_pagados']);
+        $this->assertCount(1, $reporte['ccfPendientes']);
+        $this->assertSame(0, $reporte['totales']['cantidad_no_en_ppq']);
+        $this->assertNotSame(EstadoPpq::Pagado, $lote->refresh()->estado);
+    }
+
+    /** Y sobre un renglón ya pagado, una fila en cero de otro archivo no le borra el cobro. */
+    public function test_una_fila_en_cero_no_toca_un_renglon_ya_pagado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 100.00);
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 100.00))->assertOk();
+        $this->assertSame('pagado', $item->refresh()->conciliacion_estado);
+
+        $reporte = $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '12-JUN-26', 0.00), 'pagos-2.txt')
+            ->assertOk()->viewData('reporte');
+
+        $item->refresh();
+        $this->assertSame('pagado', $item->conciliacion_estado);
+        $this->assertSame('100.00', (string) $item->monto_pagado);
+        $this->assertSame('2026-06-05', $item->fecha_pago->toDateString());
+        $this->assertSame(1, PpqConciliacionMovimiento::count());
+        $this->assertCount(1, $reporte['conservados']);
+    }
+
     /** La línea CF llega neta de las NC aceptadas del CCF: eso sí lo cubre. */
     public function test_la_linea_neta_de_las_nc_aceptadas_cubre_el_ccf(): void
     {
