@@ -35,10 +35,12 @@ class ManifiestoWebController extends Controller
             'display' => 'standalone',
             'background_color' => self::COLOR,
             'theme_color' => self::COLOR,
+            // En `/app-icons/` y no en `/icons/`: Apache trae de fábrica `Alias /icons/` hacia sus
+            // propios íconos, así que en producción `/icons/*.png` daba 404 y el celular no ofrecía instalar.
             'icons' => [
-                ['src' => '/icons/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
-                ['src' => '/icons/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
-                ['src' => '/icons/icon-maskable-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+                ['src' => '/app-icons/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+                ['src' => '/app-icons/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+                ['src' => '/app-icons/icon-maskable-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
             ],
         ], options: JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
             ->header('Content-Type', 'application/manifest+json');

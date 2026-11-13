@@ -46,6 +46,8 @@ class PwaManifestTest extends TestCase
         $this->assertTrue($iconos->contains(fn ($i) => $i['sizes'] === '512x512' && $i['purpose'] === 'maskable'));
         foreach ($iconos as $icono) {
             $this->assertSame('image/png', $icono['type']);
+            // Apache se queda con `/icons/` (su `Alias` de fábrica): ahí los íconos dan 404 en producción.
+            $this->assertStringStartsNotWith('/icons/', $icono['src']);
             $this->assertFileExists(public_path(ltrim($icono['src'], '/')));
         }
     }
@@ -65,10 +67,10 @@ class PwaManifestTest extends TestCase
     public static function iconos(): array
     {
         return [
-            'normal 192' => ['icons/icon-192.png', 192],
-            'normal 512' => ['icons/icon-512.png', 512],
-            'maskable 512' => ['icons/icon-maskable-512.png', 512],
-            'iPhone 180' => ['icons/apple-touch-icon.png', 180],
+            'normal 192' => ['app-icons/icon-192.png', 192],
+            'normal 512' => ['app-icons/icon-512.png', 512],
+            'maskable 512' => ['app-icons/icon-maskable-512.png', 512],
+            'iPhone 180' => ['app-icons/apple-touch-icon.png', 180],
         ];
     }
 
@@ -85,7 +87,7 @@ class PwaManifestTest extends TestCase
     {
         $this->assertStringContainsString('<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">', $html);
         $this->assertStringContainsString('<meta name="theme-color" content="#131417">', $html);
-        $this->assertStringContainsString('<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">', $html);
+        $this->assertStringContainsString('<link rel="apple-touch-icon" href="/app-icons/apple-touch-icon.png">', $html);
         $this->assertStringContainsString('<meta name="mobile-web-app-capable" content="yes">', $html);
         $this->assertStringContainsString('<meta name="apple-mobile-web-app-capable" content="yes">', $html);
         $this->assertStringContainsString('<meta name="apple-mobile-web-app-status-bar-style" content="black">', $html);
