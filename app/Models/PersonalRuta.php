@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\FuncionPersonalRuta;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Services\Rutas\EntregasCcf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -151,6 +152,17 @@ class PersonalRuta extends Model
     public function scopeActivos(Builder $q): Builder
     {
         return $q->where('activo', true);
+    }
+
+    /**
+     * Quienes pueden figurar como el que entregó un CCF (12/11/2026): los vendedores activos y,
+     * además, la ficha activa de quien lo anota. Es la única regla: la usan la tarjeta de «Por
+     * entregar» y {@see EntregasCcf::registrar()}, por cualquier pantalla.
+     */
+    public function scopePuedenEntregar(Builder $q, ?User $anota): Builder
+    {
+        return $q->activos()->where(fn (Builder $q) => $q->conFuncion(FuncionPersonalRuta::Vendedor)
+            ->orWhere('user_id', $anota?->id ?? 0));
     }
 
     /** Quienes declaran una función concreta. */

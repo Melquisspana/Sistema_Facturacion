@@ -43,6 +43,7 @@
             @include('rutas._pestanas', ['activa' => 'resumen'])
 
             <x-rutas.avisos />
+            @include('rutas._sin-albaran')
 
 
             {{-- ===================== Resumen: tocar un número filtra la lista ===================== --}}

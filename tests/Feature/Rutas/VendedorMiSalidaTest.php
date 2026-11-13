@@ -106,6 +106,7 @@ class VendedorMiSalidaTest extends TestCase
         $salida = $this->salida();
         $entrega = $this->entrega($salida);
         $ajeno = PersonalRuta::create(['nombre' => 'Otro']);
+        $ajeno->funciones()->create(['funcion' => 'vendedor']);
         $oficina = User::factory()->create()->assignRole('facturacion');
         // Alguien que no va en la salida no puede quedar como quien entregó.
         $this->actingAs($oficina)->patch(route('rutas.salidas.entregas.update', [$salida, $entrega]), ['resultado' => 'entregado', 'entregado_por_id' => $ajeno->id])->assertSessionHasErrors('entregado_por_id');

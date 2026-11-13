@@ -81,7 +81,12 @@
                     $portal = $resumen['portal_id'] !== null && (int) $entrega->dte?->cliente_id === $resumen['portal_id'];
                 @endphp
                 <tr class="{{ $i % 2 ? 'par' : '' }}">
-                    <td><span class="marca ok" aria-label="Entregado">E</span> {{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</td>
+                    <td><span class="marca ok" aria-label="Entregado">E</span> {{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}
+                        {{-- Lo anotó otro vendedor por él (12/11/2026): la entrega es suya igual. --}}
+                        @if ($entrega->registrado_por && (int) $entrega->registrado_por !== (int) $persona->user_id)
+                            <br><span class="aviso">Anotó: {{ $entrega->registradoPor?->name }}</span>
+                        @endif
+                    </td>
                     <td class="mono">{{ $entrega->dte?->numero_control }}</td>
                     <td>{{ $entrega->fecha_resultado?->format('H:i') }}</td>
                     <td>
@@ -107,7 +112,11 @@
         <tbody>
             @forelse ($resumen['no_entregadas'] as $i => $entrega)
                 <tr class="{{ $i % 2 ? 'par' : '' }}">
-                    <td><span class="marca no" aria-label="No se pudo">N</span> {{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</td>
+                    <td><span class="marca no" aria-label="No se pudo">N</span> {{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}
+                        @if ($entrega->registrado_por && (int) $entrega->registrado_por !== (int) $persona->user_id)
+                            <br><span class="aviso">Anotó: {{ $entrega->registradoPor?->name }}</span>
+                        @endif
+                    </td>
                     <td class="mono">{{ $entrega->dte?->numero_control }}</td>
                     <td>{{ $entrega->fecha_resultado?->format('H:i') }}</td>
                     <td>{{ $entrega->motivo_no_entrega?->label() }}{{ $entrega->nota ? ' · '.$entrega->nota : '' }}</td>

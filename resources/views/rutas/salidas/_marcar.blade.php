@@ -7,27 +7,41 @@
 
      Con $pidePago («Por entregar», 10/11/2026) se pregunta «¿Cómo te pagaron?» con las cuatro
      opciones a la vista y sin ninguna marcada: el servidor no deja entregar sin elegir. Con
-     $portal (el supermercado que cobra por el portal) no se pregunta. --}}
+     $portal (la sala con albarán: el supermercado que cobra por el portal) no se pregunta y,
+     desde el 12/11/2026, solo se anota quién la entregó: la entrega la confirma el albarán.
+
+     Con $quienes («Por entregar», 12/11/2026) va arriba «¿Quién lo entregó?»
+     (rutas.por-entregar._quien) con $quienElegido marcado, y los dos formularios mandan la
+     elección en `entregado_por_id`. --}}
 @php
     $metodo ??= 'PATCH';
     $entregadoPorId ??= null;
     $textoNo ??= 'No entregado';
     $pidePago ??= false;
     $portal ??= false;
+    $quienes ??= null;
 @endphp
+@if ($quienes)
+<div x-data="{ quien: @js((string) $quienElegido), nombres: @js($quienes->pluck('nombre', 'id')) }">
+    @include('rutas.por-entregar._quien')
+@endif
 {{-- Con la pregunta del pago, «Entregado» va a todo el ancho y «No se pudo» abajo: las cuatro formas entran sin cortarse en el celular. --}}
 <div class="mt-3 grid {{ $pidePago || $portal ? 'grid-cols-1' : 'grid-cols-2' }} gap-2">
     <form id="entregar-{{ $clave }}" method="POST" action="{{ $accion }}">
         @csrf @method($metodo)
         <input type="hidden" name="resultado" value="entregado">
-        @if ($entregadoPorId)
+        @if ($quienes)
+            <input type="hidden" name="entregado_por_id" value="{{ $quienElegido }}" x-bind:value="quien">
+        @elseif ($entregadoPorId)
             <input type="hidden" name="entregado_por_id" value="{{ $entregadoPorId }}">
         @endif
-        <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700">Entregado</button>
-        <label class="mt-1.5 flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-paper-300">
-            <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
-            Trae nota de avería
-        </label>
+        <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700">{{ $portal ? 'Anotar quién lo entregó' : 'Entregado' }}</button>
+        @unless ($portal)
+            <label class="mt-1.5 flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-paper-300">
+                <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
+                Trae nota de avería
+            </label>
+        @endunless
         @if ($portal)
             <p class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">El cobro va por el portal; la entrega se confirma sola con el albarán.</p>
         @elseif ($pidePago)
@@ -72,7 +86,7 @@
             </select>
         </details>
         @endif
-        @if ($pidePago || $portal)
+        @if ($pidePago && ! $portal)
             {{-- Una observación de la entrega, por ejemplo una devolución (casi no hay). --}}
             <label for="obs-{{ $clave }}" class="sr-only">Observación de la entrega</label>
             <input id="obs-{{ $clave }}" name="nota" maxlength="300" autocomplete="off" placeholder="Observación (opcional): devolución…"
@@ -87,6 +101,9 @@
         <form method="POST" action="{{ $accion }}" class="mt-2 space-y-1.5">
             @csrf @method($metodo)
             <input type="hidden" name="resultado" value="no_entregado">
+            @if ($quienes)
+                <input type="hidden" name="entregado_por_id" value="{{ $quienElegido }}" x-bind:value="quien">
+            @endif
             @foreach ($motivos as $valor => $texto)
                 @continue($valor === 'otro')
                 <button name="motivo_no_entrega" value="{{ $valor }}"
@@ -102,3 +119,6 @@
         </form>
     </details>
 </div>
+@if ($quienes)
+</div>
+@endif

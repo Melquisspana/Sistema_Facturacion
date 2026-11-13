@@ -31,6 +31,7 @@
             @include('rutas._pestanas', ['activa' => 'viajes'])
 
             <x-rutas.avisos />
+            @include('rutas._sin-albaran')
 
             {{-- ===================== Viajes abiertos ===================== --}}
             <section aria-labelledby="abiertos-titulo">

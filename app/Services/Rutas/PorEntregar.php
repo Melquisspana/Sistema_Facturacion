@@ -322,6 +322,33 @@ class PorEntregar
         return $vistas['viaje']->isEmpty() ? ['zona' => $vistas['zona']] : $vistas;
     }
 
+    /**
+     * «¿Quién lo entregó?» (12/11/2026): la lista de la tarjeta, por nombre. La regla es
+     * {@see PersonalRuta::scopePuedenEntregar()}: los vendedores activos y quien tiene el celular.
+     *
+     * @return Collection<int, PersonalRuta>
+     */
+    public function quienesEntregan(User $usuario): Collection
+    {
+        return PersonalRuta::query()->puedenEntregar($usuario)
+            ->orderBy('nombre')->orderBy('id')->get(['id', 'nombre']);
+    }
+
+    /**
+     * Quien entregó, si no es el que anota, va en la salida donde quedó la entrega: a la
+     * automática (y al viaje) se lo suma como acompañante; en una formal tiene que ir ya. Dentro
+     * de la transacción de {@see entregaPara()}, con la salida bloqueada.
+     *
+     * @throws ValidationException
+     */
+    public function sumarQuienEntrego(SalidaRuta $salida, PersonalRuta $quien, User $usuario): void
+    {
+        if (! $salida->esAutomatica() && ! self::participa($salida, $quien)) {
+            throw ValidationException::withMessages(['entregado_por_id' => $quien->nombre.' no va en '.$salida->conArticulo().': elegí a quien va en ella.']);
+        }
+        $this->sumar($salida, $quien, $usuario);
+    }
+
     public static function participa(SalidaRuta $salida, PersonalRuta $persona): bool
     {
         return $salida->participantes()->where('rutas_personal_id', $persona->id)->exists();

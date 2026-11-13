@@ -80,7 +80,7 @@ Tomado de Gastos y Planilla (botones de 44 px, que se tocan bien con el dedo). L
 | **Principal** | La acción que se viene a hacer. **Una sola por pantalla o formulario.** | Índigo: `inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700` |
 | **Secundario** | Cancelar, Volver, Filtrar, Imprimir, Descargar. | Blanco con borde: `inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50` |
 | **Peligro** | Eliminar, Anular, Invalidar, Revertir. | Rojo: igual que el principal con `bg-red-600 hover:bg-red-700` |
-| **Terminar** | Solo para cerrar algo que salió bien en Rutas: «Entregado» (el cierre de día y «Terminar ruta» de las salidas de antes se retiraron el 11/11/2026). Quién lo entregó se elige en la misma tarjeta del CCF con pastillas, una por persona que va en la salida. | Verde: igual que el principal con `bg-green-600 hover:bg-green-700` |
+| **Terminar** | Solo para cerrar algo que salió bien en Rutas: «Entregado» (el cierre de día y «Terminar ruta» de las salidas de antes se retiraron el 11/11/2026). Quién lo entregó se elige en la misma tarjeta del CCF con pastillas, una por persona que va en la salida. En «Por entregar» (12/11/2026) viene elegido el que tiene el celular y «cambiar» abre una pastilla por vendedor activo; en la sala con albarán el botón verde es «Anotar quién lo entregó». | Verde: igual que el principal con `bg-green-600 hover:bg-green-700` |
 
 - Sin mayúsculas sostenidas: «Guardar insumo», no «GUARDAR INSUMO».
 - El ámbar, el celeste y el rosa son para avisos y etiquetas, **nunca** para botones.
