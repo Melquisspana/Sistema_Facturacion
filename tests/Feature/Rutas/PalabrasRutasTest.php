@@ -139,11 +139,11 @@ class PalabrasRutasTest extends TestCase
     {
         $conZona = $this->sacar($this->sala);
         $this->actingAs($this->oficina)->get(route('rutas.pedidos.hoja', $conZona))->assertOk()
-            ->assertSee('<dt>Zona</dt><dd>San Miguel</dd>', false)->assertDontSee('<dt>Ruta</dt>', false);
+            ->assertSee('<span class="k">Zona:</span> San Miguel', false)->assertDontSee('<span class="k">Ruta:</span>', false);
 
         $sinZona = $this->sacar($this->sinZona);
         $this->actingAs($this->oficina)->get(route('rutas.pedidos.hoja', $sinZona))->assertOk()
-            ->assertDontSee('Sin ruta')->assertDontSee('<dt>Zona</dt>', false)->assertDontSee('<dt>Ruta</dt>', false);
+            ->assertDontSee('Sin ruta')->assertDontSee('<span class="k">Zona:</span>', false)->assertDontSee('<span class="k">Ruta:</span>', false);
     }
 
     // ---------------------------------------------------------------- B4: zona, viaje, abierto y cerrado

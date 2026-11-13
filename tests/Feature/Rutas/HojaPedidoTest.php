@@ -99,7 +99,10 @@ class HojaPedidoTest extends TestCase
 
         $respuesta = $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk();
 
-        $respuesta->assertSee('Sala de prueba Norte')
+        // La forma de los documentos impresos: «HOJA DE PEDIDO» y que no es factura.
+        $respuesta->assertSee('HOJA DE PEDIDO')
+            ->assertSee('No es factura · Sin valor tributario')
+            ->assertSee('Sala de prueba Norte')
             ->assertSee('9001')
             ->assertSee('Ruta de prueba')
             ->assertSee('Vendedor de prueba')
@@ -279,7 +282,7 @@ class HojaPedidoTest extends TestCase
         Empresa::create(['razon_social' => 'Empresa de prueba, S.A. de C.V.', 'nombre_comercial' => 'Confitería de prueba', 'activo' => true]);
 
         $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
-            ->assertSee('<p class="empresa">Confitería de prueba</p>', false)
+            ->assertSee('<div class="razon">Confitería de prueba</div>', false)
             ->assertDontSee('Sistema de prueba');
     }
 }

@@ -755,6 +755,7 @@ class PorEntregarViajeTest extends TestCase
             ->assertSee('href="'.route('rutas.por-entregar.hoja', $dte).'"', false);
 
         $this->actingAs($this->beto)->get(route('rutas.por-entregar.hoja', $dte))->assertOk()
+            ->assertSee('HOJA DE PEDIDO')->assertSee('No es factura · Sin valor tributario')
             ->assertSee('Observaciones')
             ->assertSee('Galleta de prueba: se pidieron 12, vinieron 8 (faltaron 4). Motivo: Sin existencia.')
             ->assertSee('Recibe (gerente de la sala)')->assertSee('Volver a «Por entregar»')
