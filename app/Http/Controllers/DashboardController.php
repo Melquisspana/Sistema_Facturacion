@@ -62,7 +62,7 @@ class DashboardController extends Controller
             fn () => $this->calcularStats($veFacturacion, $veOperativos, $jobsFallidos)
         );
 
-        $actividad = $veFacturacion ? $this->actividadReciente() : collect();
+        $actividad = $veFacturacion ? $this->actividadReciente($usuario->abreDocumentosComoPdf()) : collect();
 
         $worker = WorkerHeartbeat::estado();
         $modo = $esGestorDte ? $transmision->estadoOperativo() : null;
@@ -207,11 +207,13 @@ class DashboardController extends Controller
      * Se traen solo los {@see self::DOCUMENTOS_RECIENTES} más recientes: el dashboard es
      * un resumen, no el listado completo.
      */
-    private function actividadReciente(): Collection
+    private function actividadReciente(bool $soloProcesados): Collection
     {
         return Dte::query()
             ->where('ambiente', AmbienteHacienda::Produccion->value)
             ->where('estado', EstadoDte::Aceptado->value)
+            // Jefatura abre cada uno como PDF: solo lo que Hacienda procesó de verdad (DtePolicy::view).
+            ->when($soloProcesados, fn ($q) => $q->procesadoPorHacienda())
             ->with(['cliente:id,nombre', 'clienteSucursal:id,nombre'])
             ->orderByDesc('fecha_emision')
             ->orderByDesc('id')
