@@ -156,9 +156,10 @@ class VentasRutas
      * el total de Ventas. Lo pide el mapa de ventas por zona ({@see MapaVentas}).
      *
      * `compro`: la sala tuvo una venta (no una nota) en el tramo, como el contador de salas
-     * de {@see consultar()}.
+     * de {@see consultar()}. `facturas` y `facturasAnterior`: cuántos documentos de venta
+     * (no las notas) tuvo en cada tramo, para el mapa sin montos del jefe de vendedores.
      *
-     * @return array<int, array{actual: float, anterior: float, compro: bool}> sala_id (0: sin sala) => montos
+     * @return array<int, array{actual: float, anterior: float, compro: bool, facturas: int, facturasAnterior: int}> sala_id (0: sin sala) => montos
      */
     public function porSala(Carbon $desde, Carbon $hasta, Carbon $anteriorDesde, Carbon $anteriorHasta, ?int $ruta = null): array
     {
@@ -175,14 +176,20 @@ class VentasRutas
                 continue;
             }
             $sala = (int) $linea->sala_id;
-            $salas[$sala] ??= ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
+            $salas[$sala] ??= ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false, 'documentos' => ['actual' => [], 'anterior' => []]];
             $salas[$sala][$campo] += $linea->monto;
             if ($campo === 'actual' && $linea->tipo !== '05' && $linea->monto > 0) {
                 $salas[$sala]['compro'] = true;
             }
+            if ($linea->tipo !== '05') {
+                $salas[$sala]['documentos'][$campo][$linea->documento_id] = true;
+            }
         }
 
-        return array_map(fn (array $s) => ['actual' => round($s['actual'], 2), 'anterior' => round($s['anterior'], 2), 'compro' => $s['compro']], $salas);
+        return array_map(fn (array $s) => [
+            'actual' => round($s['actual'], 2), 'anterior' => round($s['anterior'], 2), 'compro' => $s['compro'],
+            'facturas' => count($s['documentos']['actual']), 'facturasAnterior' => count($s['documentos']['anterior']),
+        ], $salas);
     }
 
     /**

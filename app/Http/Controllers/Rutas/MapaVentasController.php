@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Rutas;
 
+use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Services\Rutas\MapaVentas;
 use Illuminate\Http\Request;
@@ -13,6 +14,10 @@ use Illuminate\Validation\Rule;
  * `rutas.ver` y `rutas.mapa.ver`; el mes y la zona llegan por GET y se validan acá. La vista
  * (ventas o a dónde ir) y el departamento abierto cambian en el navegador, sin volver a
  * pedir la página.
+ *
+ * El jefe de vendedores ve las mismas estadísticas sin plata: cuántas facturas en vez de
+ * cuánto se vendió (Melqui, 12/11/2026). Va por rol, no por un permiso nuevo, porque un
+ * permiso nuevo habría que crearlo a mano en producción. El servidor no le manda montos.
  */
 class MapaVentasController extends Controller
 {
@@ -32,7 +37,7 @@ class MapaVentasController extends Controller
         // Archivos estáticos con su fecha: al desplegar uno nuevo, el navegador no usa el viejo.
         $version = fn (string $archivo) => asset($archivo).'?v='.(is_file(public_path($archivo)) ? filemtime(public_path($archivo)) : '1');
 
-        $datos = $mapa->calcular($mes, $ruta);
+        $datos = $mapa->calcular($mes, $ruta, soloFacturas: $request->user()->hasRole(RolSistema::JefeVendedores->value));
 
         $html = view('rutas.mapa', [
             'datos' => $datos + [
