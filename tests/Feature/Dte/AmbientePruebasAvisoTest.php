@@ -179,7 +179,7 @@ class AmbientePruebasAvisoTest extends TestCase
         $this->assertSame('01', $nc->ambiente->value);
         $this->assertStringNotContainsString(self::AVISO, $this->pdfHtml($nc));
 
-        $this->assertImprimeElPdf($nc, $this->usuario('jefatura'));
+        $this->assertImprimeElPdf($nc, $this->usuario('contabilidad'));
     }
 
     public function test_factura_ambiente_01_no_muestra_aviso(): void

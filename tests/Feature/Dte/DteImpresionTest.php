@@ -139,7 +139,7 @@ class DteImpresionTest extends TestCase
         $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), cantidad: 4);
         $nc = $this->generar($nc);
 
-        $this->assertImprimeElPdf($nc, $this->usuario('jefatura'));
+        $this->assertImprimeElPdf($nc, $this->usuario('contabilidad'));
         // Documento original relacionado, por su N° oficial del MH.
         $this->assertStringContainsString($ccf->numero_control, $this->htmlDelPdf($nc));
     }

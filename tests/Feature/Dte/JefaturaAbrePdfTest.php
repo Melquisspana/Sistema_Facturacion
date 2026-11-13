@@ -176,6 +176,38 @@ class JefaturaAbrePdfTest extends TestCase
         $this->assertStringContainsString('inline', (string) $respuesta->headers->get('Content-Disposition'));
     }
 
+    /** El candado está en DtePolicy::view, no en la lista: por la URL tampoco abre lo no procesado. */
+    public function test_jefatura_no_abre_por_url_el_pdf_de_lo_no_procesado(): void
+    {
+        $jefatura = $this->usuario('jefatura');
+        $fuera = [
+            $this->ccf('OC-BORRADOR', EstadoDte::Borrador),
+            $this->ccf('OC-GENERADO', EstadoDte::Generado),
+            $this->ccf('OC-RECHAZADO', EstadoDte::Rechazado, null),
+            $this->ccf('OC-MOCK', EstadoDte::Aceptado, 'mock'),
+        ];
+
+        foreach ($fuera as $dte) {
+            foreach (['facturacion.pdf', 'facturacion.pdf.descargar', 'facturacion.imprimir', 'facturacion.pdf-con-orden'] as $ruta) {
+                $this->actingAs($jefatura)->get(route($ruta, $dte))->assertForbidden();
+            }
+        }
+    }
+
+    public function test_jefatura_abre_por_url_el_pdf_de_un_aceptado_y_de_un_anulado(): void
+    {
+        $jefatura = $this->usuario('jefatura');
+
+        foreach ([EstadoDte::Aceptado, EstadoDte::Invalidado] as $estado) {
+            $dte = $this->ccf('OC-'.$estado->value, $estado);
+            foreach (['facturacion.pdf', 'facturacion.pdf.descargar', 'facturacion.imprimir'] as $ruta) {
+                $this->actingAs($jefatura)->get(route($ruta, $dte))->assertOk();
+            }
+            // Pasa el candado; sin orden de compra recibida no hay nada que unir.
+            $this->actingAs($jefatura)->get(route('facturacion.pdf-con-orden', $dte))->assertNotFound();
+        }
+    }
+
     public function test_los_demas_roles_siguen_igual(): void
     {
         $aceptado = $this->ccf('OC-ACEPTADO', EstadoDte::Aceptado);

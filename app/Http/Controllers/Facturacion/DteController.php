@@ -750,14 +750,18 @@ class DteController extends Controller
         BusquedaDocumentoReemplazo $reemplazos,
         ValidadorReglasInvalidacion $reglasInvalidacion,
     ): View|RedirectResponse {
-        $this->authorize('view', $dte);
-
         // Jefatura no usa la ficha: va al PDF si Hacienda ya lo procesó, o al aviso si no.
+        // Va antes de `view`, que a ella solo le deja ver lo procesado (DtePolicy::view): el
+        // aviso no muestra nada del documento.
         if (auth()->user()->abreDocumentosComoPdf()) {
+            $this->authorize('viewAny', Dte::class);
+
             return $dte->procesadoPorHacienda()
                 ? redirect()->route('facturacion.pdf', $dte)
                 : redirect()->route('facturacion.index')->with('error', 'Ese documento todavía no está listo: Hacienda no lo ha procesado.');
         }
+
+        $this->authorize('view', $dte);
 
         $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios',
             // «Viene del pedido N» (los envíos de la fábrica que se facturaron acá).
