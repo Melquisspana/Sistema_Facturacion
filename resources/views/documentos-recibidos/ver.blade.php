@@ -75,9 +75,23 @@
                     table.fr-totales tr.fr-destacado td { border-top: 1.2pt solid #141414; padding-top: 2mm; font-weight: 700; font-size: 11.5pt; }
                     .fr-apendice { margin-top: 4mm; font-size: 9pt; }
                     .fr-pie { margin-top: 6mm; padding-top: 2mm; border-top: .5pt solid #d2d2d2; font-size: 7.5pt; color: #5c5c5c; }
+                    .fr-cel { display: none; }
                     @media (max-width: 640px) {
                         .fr-hoja { padding: 4mm; }
                         .fr-tipo { text-align: left; }
+                    }
+                    /* Celular: las líneas se apilan (cada dato con su nombre) en vez de correrse
+                       de lado. Solo en pantalla: la hoja impresa mide menos de 768 px y tiene que
+                       seguir saliendo como tabla. */
+                    @media screen and (max-width: 767px) {
+                        .fr-tabla-wrap { overflow: visible; }
+                        table.fr-tabla, table.fr-tabla tbody, table.fr-tabla tfoot, table.fr-tabla tr { display: block; }
+                        table.fr-tabla thead { display: none; }
+                        table.fr-tabla tr { padding: 1.4mm 0; border-bottom: .6pt solid #d2d2d2; }
+                        table.fr-tabla td, table.fr-tabla tfoot td { display: flex; justify-content: space-between; gap: 4mm; padding: .5mm 0; border: none; text-align: right; }
+                        table.fr-tabla td:empty { display: none; }
+                        table.fr-tabla tfoot tr { border-top: 1.2pt solid #141414; border-bottom: none; }
+                        .fr-cel { display: block; flex: none; text-align: left; font-size: 7pt; letter-spacing: .08em; text-transform: uppercase; color: #5c5c5c; font-weight: 600; }
                     }
                     @media print {
                         @page { size: letter; margin: 10mm; }
@@ -178,7 +192,7 @@
                                 @forelse ($dte['lineas'] as $linea)
                                     <tr>
                                         @foreach ($dte['columnas'] as $col)
-                                            <td @class(['fr-num' => $col['num']])>{{ $linea[$col['clave']] ?? '—' }}</td>
+                                            <td @class(['fr-num' => $col['num']])><span class="fr-cel">{{ $col['etiqueta'] }}</span>{{ $linea[$col['clave']] ?? '—' }}</td>
                                         @endforeach
                                     </tr>
                                 @empty
@@ -191,7 +205,7 @@
                                         @if ($i === 0)
                                             <td>Sumas</td>
                                         @elseif (array_key_exists($col['clave'], $dte['sumas']))
-                                            <td class="fr-num">{{ $dte['sumas'][$col['clave']] ?? '—' }}</td>
+                                            <td class="fr-num"><span class="fr-cel">{{ $col['etiqueta'] }}</span>{{ $dte['sumas'][$col['clave']] ?? '—' }}</td>
                                         @else
                                             <td></td>
                                         @endif
