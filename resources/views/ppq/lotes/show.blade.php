@@ -9,22 +9,22 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Lote PPQ #{{ $lote->id }} — {{ $lote->referencia }}</h2>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('ppq.lotes.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Historial</a>
+                <a href="{{ route('ppq.lotes.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Historial</a>
                 @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
-                    <a href="{{ route('ppq.index', ['lote' => $lote->id]) }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar / agregar CCF</a>
+                    <a href="{{ route('ppq.index', ['lote' => $lote->id]) }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar / agregar CCF</a>
                 @else
-                    <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
+                    <a href="{{ route('ppq.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
                 @endif
                 @if ($resumen['cantidad'] > 0)
                     {{-- El archivo de NC se genera días antes desde Documentos fiscales; acá solo el quedan (AC01 + AC02/AC04). --}}
-                    <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                    <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
                         Generar formato quedan
                     </a>
                 @endif
                 @if ($lote->esEditable())
                     @can('ppq.gestionar')
-                        <a href="{{ route('ppq.lotes.edit', $lote) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
+                        <a href="{{ route('ppq.lotes.edit', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
                     @endcan
                 @endif
             </div>
@@ -66,7 +66,7 @@
                         @can('ppq.gestionar')
                             <form method="POST" action="{{ route('ppq.lotes.agregar-nc', $lote) }}">
                                 @csrf
-                                <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Agregar NC nuevas ({{ $ncNuevas->count() }})</button>
+                                <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Agregar NC nuevas ({{ $ncNuevas->count() }})</button>
                             </form>
                         @endcan
                     @else
@@ -162,7 +162,7 @@
                                 <input id="fecha-presentacion" name="fecha" type="date" required value="{{ old('fecha', today()->toDateString()) }}"
                                        min="{{ $lote->fecha->toDateString() }}" max="{{ today()->toDateString() }}" class="mt-0.5 rounded-md border-gray-300 text-sm">
                             </div>
-                            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Marcar como presentado</button>
+                            <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Marcar como presentado</button>
                         </form>
                         @error('fecha')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
                     </div>
@@ -181,7 +181,7 @@
                             <label for="caso" class="block text-xs text-gray-500">N.º de caso (del correo)</label>
                             <input id="caso" name="caso" type="text" inputmode="numeric" class="mt-0.5 w-28 rounded-md border-gray-300 text-sm">
                         </div>
-                        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Cargar reporte</button>
+                        <button type="submit" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Cargar reporte</button>
                     </form>
                     @error('reporte')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
                 </div>
@@ -422,7 +422,7 @@
                 <div class="flex justify-end">
                     <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote? Los CCF sin pagar vuelven a por presentar.')">
                         @csrf @method('DELETE')
-                        <button class="text-sm text-red-600 hover:underline">Eliminar lote</button>
+                        <button class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-red-600 hover:underline">Eliminar lote</button>
                     </form>
                 </div>
             @endif
