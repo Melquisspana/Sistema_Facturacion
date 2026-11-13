@@ -269,6 +269,36 @@ class CobrosEstadoPagoNetoDeNcTest extends TestCase
         $this->assertSame(EstadoPagoCobro::Pagado, $documento->pago_estado);
     }
 
+    /**
+     * El cliente pagó neto antes de que la NC estuviera aceptada: queda «Parcial». Al aceptarse
+     * la NC el CCF pasa solo a «Pagado», sin correr el comando; si después se invalida, vuelve.
+     */
+    public function test_el_ccf_se_recalcula_al_aceptarse_y_al_invalidarse_su_nc(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '10.00', ['estado' => 'firmado', 'sello_recepcion' => null]);
+        $this->assertSame(EstadoPagoCobro::Parcial, $this->pagar($documento, '90.00')->pago_estado);
+
+        $nc->forceFill(['estado' => 'aceptado', 'sello_recepcion' => '2026SELLO'.Str::random(8)])->save();
+        $this->assertSame(EstadoPagoCobro::Pagado, $documento->refresh()->pago_estado);
+
+        $nc->forceFill(['sello_invalidacion' => 'SELLOINV'.Str::random(8)])->save();
+        $nc->forceFill(['estado' => 'invalidado'])->save();
+        $this->assertSame(EstadoPagoCobro::Parcial, $documento->refresh()->pago_estado);
+    }
+
+    /** Pagado completo y después se acepta una NC: ya no cuadra, se cobró de más. */
+    public function test_ccf_pagado_completo_con_nc_aceptada_despues_queda_en_diferencia(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '10.00', ['estado' => 'firmado', 'sello_recepcion' => null]);
+        $this->assertSame(EstadoPagoCobro::Pagado, $this->pagar($documento, '100.00')->pago_estado);
+
+        $nc->forceFill(['estado' => 'aceptado', 'sello_recepcion' => '2026SELLO'.Str::random(8)])->save();
+
+        $this->assertSame(EstadoPagoCobro::Diferencia, $documento->refresh()->pago_estado);
+    }
+
     /** Reparación de los CCF que quedaron «con diferencia» con la regla anterior. */
     public function test_comando_recalcula_los_afectados_y_es_idempotente(): void
     {

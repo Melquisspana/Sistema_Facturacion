@@ -6,11 +6,13 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Facades\Ajustes;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Ppq\NcPosterioresLotePpq;
+use App\Support\Dinero;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -99,6 +101,30 @@ class DteObserver
         if ($dte->wasChanged('estado') && $dte->estado === EstadoDte::Aceptado) {
             $this->alQuedarAceptado($dte);
         }
+        if ($dte->wasChanged('estado') && $dte->tipo_dte === TipoDte::NotaCredito && $dte->dte_relacionado_id) {
+            $this->recalcularCobroDelCcf($dte);
+        }
+    }
+
+    /**
+     * Una NC que se acepta, se invalida o se anula cambia lo que hay que cobrar de su CCF
+     * ({@see CobroDocumento::facturadoEfectivo()}): si el CCF ya tiene cobro, su estado de pago
+     * se recalcula al momento, sin esperar al comando. Va después de confirmado el cambio y
+     * nunca lo rompe: si falla, se reporta y lo arregla `cobros:recalcular-pagos`.
+     */
+    private function recalcularCobroDelCcf(Dte $nc): void
+    {
+        $ccfId = (int) $nc->dte_relacionado_id;
+        DB::afterCommit(function () use ($ccfId) {
+            try {
+                $ccf = CobroDocumento::query()->where('tipo_dte', TipoDte::CreditoFiscal->value)->where('dte_id', $ccfId)->first();
+                if ($ccf !== null && Dinero::comparar($ccf->monto_pagado ?? '0', '0') !== 0) {
+                    $ccf->recalcularPago();
+                }
+            } catch (Throwable $e) {
+                report($e);
+            }
+        });
     }
 
     /**
