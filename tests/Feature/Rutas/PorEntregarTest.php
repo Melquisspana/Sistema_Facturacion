@@ -252,6 +252,11 @@ class PorEntregarTest extends TestCase
             $this->assertTrue($resolucion->esExcepcion());
             $this->assertStringContainsString('Revisá el vínculo', (string) $resolucion->motivo());
         }
+
+        // Buscado solo por orden de compra (como lo pide PPQ con lo que llega de Gmail): tampoco se elige.
+        [, $porOrden] = app(AlbaranLocalizador::class)->indices([], [$a->numero_orden_compra]);
+        $this->assertSame(ResolucionAlbaran::VINCULO_CONTRADICTORIO, $porOrden[$a->numero_orden_compra]->estado);
+        $this->assertNull($porOrden[$a->numero_orden_compra]->albaran);
     }
 
     public function test_marcar_arma_la_salida_de_hoy_solo_con_lo_marcado_y_la_segunda_la_reutiliza(): void

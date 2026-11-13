@@ -111,17 +111,18 @@ class AlbaranLocalizador
                 ->toBase(),
         ];
 
-        $filas = PpqAlbaran::query()
-            ->select('ppq_albaranes.*')
-            ->when($otrosVinculos !== null, function (Builder $q) use ($otrosVinculos, $vinculosDelAlbaran) {
-                $q->leftJoinSub($otrosVinculos, 'otros_vinculos', 'otros_vinculos.ppq_albaran_id', '=', 'ppq_albaranes.id')
-                    ->addSelect('otros_vinculos.dte_id as otro_vinculo_dte_id');
-                foreach ($vinculosDelAlbaran as $camino => $vinculos) {
-                    $tabla = $vinculos->from;
-                    $q->selectSub((clone $vinculos)->selectRaw("MIN({$tabla}.dte_id)"), "vinculo_{$camino}_min")
-                        ->selectSub((clone $vinculos)->selectRaw("MAX({$tabla}.dte_id)"), "vinculo_{$camino}_max");
-                }
-            })
+        // También en la búsqueda solo por orden de compra: ahí se elige igual.
+        $consulta = PpqAlbaran::query()->select('ppq_albaranes.*');
+        foreach ($vinculosDelAlbaran as $camino => $vinculos) {
+            $tabla = $vinculos->from;
+            $consulta->selectSub((clone $vinculos)->selectRaw("MIN({$tabla}.dte_id)"), "vinculo_{$camino}_min")
+                ->selectSub((clone $vinculos)->selectRaw("MAX({$tabla}.dte_id)"), "vinculo_{$camino}_max");
+        }
+
+        $filas = $consulta
+            ->when($otrosVinculos !== null, fn (Builder $q) => $q
+                ->leftJoinSub($otrosVinculos, 'otros_vinculos', 'otros_vinculos.ppq_albaran_id', '=', 'ppq_albaranes.id')
+                ->addSelect('otros_vinculos.dte_id as otro_vinculo_dte_id'))
             ->where(function (Builder $q) use ($dteIds, $ordenes, $otrosVinculos) {
                 if ($dteIds !== []) {
                     $q->whereIn('ppq_albaranes.dte_id', $dteIds);
@@ -151,8 +152,9 @@ class AlbaranLocalizador
             if ($fila->otro_vinculo_dte_id !== null) {
                 $deOtrosVinculos[$fila->id][] = (int) $fila->otro_vinculo_dte_id;
             }
+            // Un albarán de crédito no prueba entregas: no compite y no entra en conflicto.
             $documentos = array_filter([$fila->dte_id, ...array_map(fn ($c) => $fila->getAttribute($c), array_slice($extra, 1))]);
-            if (count(array_unique(array_map('intval', $documentos))) > 1) {
+            if (! Albaran::esDeCredito($fila->tipo_codigo) && count(array_unique(array_map('intval', $documentos))) > 1) {
                 $contradictorios[$fila->id] = true;
             }
             foreach ($extra as $columna) {
@@ -196,17 +198,19 @@ class AlbaranLocalizador
             }
         }
 
+        // Un mismo albarán no prueba dos entregas: si alguno del grupo está vinculado a más
+        // de un documento, no se elige ninguno y se pide revisar el vínculo. Vale igual para
+        // los dos índices.
+        $enConflicto = fn (Collection $grupo) => $grupo->contains(fn (PpqAlbaran $a) => isset($contradictorios[$a->id]));
+
         $porDte = [];
         foreach ($agrupadosPorDte as $dteId => $delDte) {
-            // Un mismo albarán no prueba dos entregas: si alguno del grupo está vinculado
-            // también a otro documento, no se elige ninguno y se pide revisar el vínculo.
-            $porDte[$dteId] = ResolucionAlbaran::decidir($delDte, porVinculoExplicito: true,
-                contradictorio: $delDte->contains(fn (PpqAlbaran $a) => isset($contradictorios[$a->id])));
+            $porDte[$dteId] = ResolucionAlbaran::decidir($delDte, porVinculoExplicito: true, contradictorio: $enConflicto($delDte));
         }
 
         $porOrden = [];
         foreach ($agrupadosPorOrden as $orden => $delaOrden) {
-            $porOrden[$orden] = ResolucionAlbaran::decidir($delaOrden);
+            $porOrden[$orden] = ResolucionAlbaran::decidir($delaOrden, contradictorio: $enConflicto($delaOrden));
         }
 
         return [$porDte, $porOrden];
