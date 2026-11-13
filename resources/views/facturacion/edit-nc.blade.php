@@ -245,8 +245,11 @@
                                 <p class="mt-4 text-sm text-gray-400">El documento original no tiene líneas.</p>
                             @else
                                 <div class="relative mt-4 overflow-x-auto max-h-[70vh] overflow-y-auto border border-gray-100 rounded-md">
-                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                                        <thead class="bg-gray-50 sticky top-0 z-10">
+                                    {{-- Celular (debajo de md): cada fila se apila en el MISMO formulario, sin
+                                         duplicarlo (ccf-editor.js recorre todos los form[data-ajax]).
+                                         Desde md, la tabla de siempre. --}}
+                                    <table class="block md:table min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead class="hidden md:table-header-group bg-gray-50 sticky top-0 z-10">
                                             <tr class="text-left text-gray-500">
                                                 <th class="px-3 py-2">Producto</th>
                                                 <th class="px-3 py-2 text-right">Precio</th>
@@ -256,7 +259,7 @@
                                                 <th class="px-3 py-2">Acreditar</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-gray-100">
+                                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                                             @foreach ($lineasOriginales as $fila)
                                                 @php
                                                     $lo = $fila['linea'];
@@ -265,18 +268,18 @@
                                                     $filtro = mb_strtolower(trim(($lo->codigo ?? '').' '.($lo->codigo_barra ?? '').' '.$lo->descripcion));
                                                 @endphp
                                                 <tr x-show="filtro === '' || @js($filtro).includes(filtro.toLowerCase().trim())"
-                                                    class="hover:bg-gray-50">
-                                                    <td class="px-3 py-2">
+                                                    class="grid grid-cols-2 md:table-row hover:bg-gray-50">
+                                                    <td class="col-span-2 px-3 py-2">
                                                         <span class="font-medium">{{ $lo->descripcion }}</span>
                                                         @if ($lo->codigo)
                                                             <span class="block text-[11px] font-mono text-gray-400">{{ $lo->codigo }}</span>
                                                         @endif
                                                     </td>
-                                                    <td class="px-3 py-2 text-right font-mono">${{ number_format($lo->precio_unitario, 2) }}</td>
-                                                    <td class="px-3 py-2 text-right font-mono">{{ rtrim(rtrim($lo->cantidad, '0'), '.') }}</td>
-                                                    <td class="px-3 py-2 text-right font-mono">{{ rtrim(rtrim($fila['acreditado'], '0'), '.') ?: '0' }}</td>
-                                                    <td class="px-3 py-2 text-right font-mono">{{ rtrim(rtrim($fila['disponible'], '0'), '.') ?: '0' }}</td>
-                                                    <td class="px-3 py-2">
+                                                    <td class="px-3 py-2 md:text-right font-mono"><span class="md:hidden block text-xs font-sans text-gray-500">Precio</span>${{ number_format($lo->precio_unitario, 2) }}</td>
+                                                    <td class="px-3 py-2 md:text-right font-mono"><span class="md:hidden block text-xs font-sans text-gray-500">Original</span>{{ rtrim(rtrim($lo->cantidad, '0'), '.') }}</td>
+                                                    <td class="px-3 py-2 md:text-right font-mono"><span class="md:hidden block text-xs font-sans text-gray-500">En otras notas</span>{{ rtrim(rtrim($fila['acreditado'], '0'), '.') ?: '0' }}</td>
+                                                    <td class="px-3 py-2 md:text-right font-mono"><span class="md:hidden block text-xs font-sans text-gray-500">Disponible</span>{{ rtrim(rtrim($fila['disponible'], '0'), '.') ?: '0' }}</td>
+                                                    <td class="col-span-2 px-3 py-2">
                                                         @if (\App\Support\Dinero::comparar($tope, '0') > 0)
                                                             {{-- Idempotente por línea original: escribir la cantidad la fija
                                                                  (no la suma), y 0/vacío la retira. El botón es el respaldo
@@ -291,9 +294,9 @@
                                                                            step="0.0001" min="0" max="{{ $tope }}" inputmode="decimal" placeholder="0"
                                                                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                                                            onchange="this.form.requestSubmit()"
-                                                                           class="block w-24 border-gray-300 rounded-md shadow-sm text-sm {{ $enEstaNc !== null ? 'ring-1 ring-indigo-300 bg-indigo-50/50' : '' }}">
+                                                                           class="block min-h-11 sm:min-h-0 w-24 border-gray-300 rounded-md shadow-sm text-sm {{ $enEstaNc !== null ? 'ring-1 ring-indigo-300 bg-indigo-50/50' : '' }}">
                                                                 </div>
-                                                                <button class="px-3 py-2 {{ $enEstaNc !== null ? 'bg-gray-600 hover:bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700' }} text-white text-sm rounded-md">
+                                                                <button class="min-h-11 sm:min-h-0 px-3 py-2 {{ $enEstaNc !== null ? 'bg-gray-600 hover:bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700' }} text-white text-sm rounded-md">
                                                                     {{ $enEstaNc !== null ? 'Actualizar' : 'Acreditar' }}
                                                                 </button>
                                                             </form>
@@ -340,8 +343,11 @@
                                      que este contenedor los recorte con su propio scroll, en vez de
                                      escaparse y estirar el alto real del documento. --}}
                                 <div class="relative mt-4 overflow-x-auto max-h-[70vh] overflow-y-auto border border-gray-100 rounded-md">
-                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                                        <thead class="bg-gray-50 sticky top-0 z-10">
+                                    {{-- Celular (debajo de md): cada fila se apila en el MISMO formulario, sin
+                                         duplicarlo (ccf-editor.js recorre todos los form[data-ajax]).
+                                         Desde md, la tabla de siempre. --}}
+                                    <table class="block md:table min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead class="hidden md:table-header-group bg-gray-50 sticky top-0 z-10">
                                             <tr class="text-left text-gray-500">
                                                 <th class="px-3 py-2">Código</th>
                                                 <th class="px-3 py-2">Código barra</th>
@@ -350,14 +356,23 @@
                                                 <th class="px-3 py-2">Cantidad</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-gray-100">
+                                        <tbody class="block md:table-row-group divide-y divide-gray-100">
                                             @foreach ($productosDisponibles as $p)
                                                 <tr x-show="filtro === '' || @js($p['filtro']).includes(filtro.toLowerCase().trim())"
-                                                    class="hover:bg-gray-50">
-                                                    <td class="px-3 py-2 font-mono">{{ $p['codigo'] ?? '—' }}</td>
-                                                    <td class="px-3 py-2 font-mono text-gray-500">{{ $p['codigo_barra'] ?? '—' }}</td>
-                                                    <td class="px-3 py-2 font-medium">{{ $p['nombre'] }}</td>
-                                                    <td class="px-3 py-2 text-right">
+                                                    class="block md:table-row hover:bg-gray-50">
+                                                    <td class="hidden md:table-cell px-3 py-2 font-mono">{{ $p['codigo'] ?? '—' }}</td>
+                                                    <td class="hidden md:table-cell px-3 py-2 font-mono text-gray-500">{{ $p['codigo_barra'] ?? '—' }}</td>
+                                                    <td class="block md:table-cell px-3 py-2 font-medium">
+                                                        {{ $p['nombre'] }}
+                                                        <span class="md:hidden block text-xs font-normal text-gray-500">
+                                                            <span class="font-mono">{{ $p['codigo'] ?? '—' }}</span>
+                                                            @if ($p['codigo_barra'] ?? null) · <span class="font-mono">{{ $p['codigo_barra'] }}</span>@endif
+                                                            @unless ($p['sin_precio'])
+                                                                · <span class="font-mono">${{ $p['precio_fmt'] }}</span> {{ $p['origen_label'] }}
+                                                            @endunless
+                                                        </span>
+                                                    </td>
+                                                    <td class="hidden md:table-cell px-3 py-2 text-right">
                                                         @if ($p['sin_precio'])
                                                             <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">Sin precio</span>
                                                         @else
@@ -366,10 +381,10 @@
                                                         @endif
                                                     </td>
                                                     @if ($p['sin_precio'])
-                                                        <td class="px-3 py-2 text-xs text-gray-400">No se puede agregar sin precio.</td>
+                                                        <td class="block md:table-cell px-3 py-2 text-xs text-gray-400">No se puede agregar sin precio.</td>
                                                     @else
                                                         @php $qty = $cantidadesPorProducto[$p['id']] ?? null; @endphp
-                                                        <td class="px-3 py-2">
+                                                        <td class="block md:table-cell px-3 py-2">
                                                             {{-- Mismo endpoint idempotente del CCF: escribir la cantidad
                                                                  agrega/actualiza; 0 o vacío quita. Nunca duplica línea. --}}
                                                             <form method="POST" action="{{ route('facturacion.productos.cantidad', [$nc, $p['id']]) }}"
@@ -381,9 +396,9 @@
                                                                            value="{{ $qty ?? '' }}" step="1" min="0" inputmode="numeric" placeholder="0"
                                                                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                                                            onchange="this.form.requestSubmit()"
-                                                                           class="block w-20 border-gray-300 rounded-md shadow-sm text-sm {{ $qty ? 'ring-1 ring-indigo-300 bg-indigo-50/50' : '' }}">
+                                                                           class="block min-h-11 sm:min-h-0 w-20 border-gray-300 rounded-md shadow-sm text-sm {{ $qty ? 'ring-1 ring-indigo-300 bg-indigo-50/50' : '' }}">
                                                                 </div>
-                                                                <button class="px-3 py-2 {{ $qty ? 'bg-gray-600 hover:bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700' }} text-white text-sm rounded-md">
+                                                                <button class="min-h-11 sm:min-h-0 px-3 py-2 {{ $qty ? 'bg-gray-600 hover:bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700' }} text-white text-sm rounded-md">
                                                                     {{ $qty ? 'Actualizar' : 'Agregar' }}
                                                                 </button>
                                                             </form>

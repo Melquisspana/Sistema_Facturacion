@@ -501,8 +501,8 @@
 
                     {{-- =============== Acciones =============== --}}
                     <div class="flex flex-wrap items-center gap-3 pt-5">
-                        <x-primary-button ::disabled="! puedeGuardar">Guardar borrador y capturar productos</x-primary-button>
-                        <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
+                        <x-primary-button ::disabled="! puedeGuardar" class="min-h-11 sm:min-h-0 justify-center">Guardar borrador y capturar productos</x-primary-button>
+                        <a href="{{ route('facturacion.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-gray-500 hover:underline">Cancelar</a>
                         <p class="w-full text-xs text-gray-400">
                             Se crea un <strong>borrador</strong>: en el paso siguiente se capturan los productos y se ve
                             el resumen fiscal. No se emite, firma ni transmite nada.

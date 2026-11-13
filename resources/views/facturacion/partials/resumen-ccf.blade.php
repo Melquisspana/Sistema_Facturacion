@@ -88,18 +88,18 @@
                                     <label class="text-xs text-gray-500" for="cant-{{ $linea->id }}">{{ $presentacionLinea }}</label>
                                     <input id="cant-{{ $linea->id }}" type="number" name="cantidad"
                                            value="{{ (int) $linea->cantidad }}" step="1" min="1" inputmode="numeric"
-                                           title="{{ $presentacionLinea }}" class="block w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
+                                           title="{{ $presentacionLinea }}" class="block min-h-11 sm:min-h-0 w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
                                     <label class="sr-only" for="precio-{{ $linea->id }}">Precio por caja</label>
                                     <input id="precio-{{ $linea->id }}" type="number" name="precio_unitario"
                                            value="{{ number_format((float) $linea->precio_unitario, 2, '.', '') }}" step="0.01" min="0"
                                            title="Precio por caja" class="block w-24 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
-                                    <button class="text-gray-400 hover:text-gray-600 hover:underline text-xs">Guardar</button>
+                                    <button class="inline-flex min-h-11 sm:min-h-0 items-center px-2 sm:px-0 text-gray-400 hover:text-gray-600 hover:underline text-xs">Guardar</button>
                                 </div>
                             </form>
                             <form method="POST" action="{{ route('facturacion.lineas.destroy', [$dte, $linea]) }}"
                                   data-ajax="destroy" onsubmit="return confirm('¿Eliminar esta línea?');" class="mt-1">
                                 @csrf @method('DELETE')
-                                <button class="text-red-600 hover:underline text-xs">Eliminar</button>
+                                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-2 sm:px-0 text-red-600 hover:underline text-xs">Eliminar</button>
                             </form>
                         @else
                         <div class="mt-2 flex items-center justify-between gap-2">
@@ -111,14 +111,14 @@
                                        value="{{ (int) $linea->cantidad }}" step="1" min="1" inputmode="numeric"
                                        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                        title="Se guarda solo al cambiar la cantidad"
-                                       class="block w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
+                                       class="block min-h-11 sm:min-h-0 w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
                                 {{-- Fallback discreto: con JS se guarda solo; sin JS este botón sigue funcionando. --}}
-                                <button class="text-gray-400 hover:text-gray-600 hover:underline text-xs" title="También se guarda solo al cambiar la cantidad">Actualizar</button>
+                                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-2 sm:px-0 text-gray-400 hover:text-gray-600 hover:underline text-xs" title="También se guarda solo al cambiar la cantidad">Actualizar</button>
                             </form>
                             <form method="POST" action="{{ route('facturacion.lineas.destroy', [$dte, $linea]) }}"
                                   data-ajax="destroy" onsubmit="return confirm('¿Eliminar esta línea?');">
                                 @csrf @method('DELETE')
-                                <button class="text-red-600 hover:underline text-xs">Eliminar</button>
+                                <button class="inline-flex min-h-11 sm:min-h-0 items-center px-2 sm:px-0 text-red-600 hover:underline text-xs">Eliminar</button>
                             </form>
                         </div>
                         @endif
