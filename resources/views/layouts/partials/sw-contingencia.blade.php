@@ -24,8 +24,8 @@
         // Un segundo toque mientras sale no manda otro cierre (con el token ya vencido).
         if (form.dataset.saliendo) return;
         form.dataset.saliendo = '1';
-        // La pestaña anota que salió: «atrás» pide de nuevo las pantallas de antes (layouts/partials/salio-atras).
-        try { sessionStorage.setItem('dlg-salio', '1'); } catch (error) {}
+        // Anota la hora de salida, para todas las pestañas: «atrás» pide de nuevo las pantallas de antes (layouts/partials/salio-atras).
+        try { localStorage.setItem('dlg-salio', String(Date.now())); } catch (error) {}
         try { await cleanup(); } catch (error) { console.warn('No se pudo limpiar el aviso sin internet', error); }
         HTMLFormElement.prototype.submit.call(form);
     }, true);

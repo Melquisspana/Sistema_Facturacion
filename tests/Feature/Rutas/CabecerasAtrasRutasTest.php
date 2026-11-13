@@ -107,15 +107,21 @@ class CabecerasAtrasRutasTest extends TestCase
         $oficina = User::factory()->create(['activo' => true])->assignRole('administrador');
         $html = $this->actingAs($oficina)->get(route('dashboard'))->assertOk()->getContent();
         $cabeza = strstr($html, '</head>', true);
-        $this->assertStringContainsString("navegacion.type === 'back_forward' && salio()", $cabeza);
-        $this->assertStringContainsString('if (event.persisted && salio()) recargar();', $cabeza);
-        $this->assertStringContainsString("sessionStorage.removeItem('dlg-salio')", $cabeza);
-        $this->assertStringContainsString("sessionStorage.setItem('dlg-salio', '1')", $html);
+        $this->assertStringContainsString("navegacion.type === 'back_forward' && vieja()", $cabeza);
+        $this->assertStringContainsString('if (event.persisted && vieja()) recargar();', $cabeza);
+        $this->assertStringContainsString('dlgCargada: Date.now()', $cabeza);
+        // La hora de salida va a localStorage: la ven todas las pestañas.
+        $this->assertStringContainsString("localStorage.setItem('dlg-salio', String(Date.now()))", $html);
         $this->assertStringContainsString('if (form.dataset.saliendo) return;', $html);
 
         $this->post(route('logout'));
         $login = $this->get(route('login'))->assertOk()->getContent();
-        $this->assertStringContainsString("navegacion.type === 'back_forward' && salio()", strstr($login, '</head>', true));
-        $this->assertStringNotContainsString("sessionStorage.removeItem('dlg-salio')", $login);
+        $this->assertStringContainsString("navegacion.type === 'back_forward' && vieja()", strstr($login, '</head>', true));
+
+        // El «Salir» del vendedor también anota la hora (un jefe que vuelve al Tablero con «atrás»).
+        $vendedor = User::factory()->create(['activo' => true])->assignRole('vendedor');
+        PersonalRuta::create(['nombre' => 'Vendedor de prueba', 'user_id' => $vendedor->id]);
+        $this->actingAs($vendedor)->get(route('rutas.mi-salida.index'))->assertOk()
+            ->assertSee("localStorage.setItem('dlg-salio', String(Date.now()))", false);
     }
 }
