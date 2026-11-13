@@ -116,10 +116,13 @@ final class VincularCompra
         return null;
     }
 
-    /** El gasto que ya nació de este documento, si existe. */
+    /**
+     * El gasto VIVO que nació de este documento, si existe. Es el que ocupa el índice
+     * único: al anularse, {@see AnularGasto} lo suelta y el papel vuelve a estar libre.
+     */
     public function gastoDeLaDeuda(DocumentoRecibido $documento): ?Gasto
     {
-        $fuente = Fuente::where('documento_recibido_id', $documento->id)->where('papel', 'deuda')->first();
+        $fuente = Fuente::where('deuda_unica', $documento->id)->first();
 
         return $fuente?->gasto;
     }

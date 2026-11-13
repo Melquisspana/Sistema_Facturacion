@@ -81,6 +81,12 @@ final class AnularGasto
                 'motivo_anulacion' => $motivo,
             ]);
 
+            // El documento de Compras que originó esta deuda queda libre para registrarse
+            // bien: el índice único vigila `deuda_unica`, y un anulado ya no debe nada. El
+            // vínculo se conserva como `deuda` para que la ficha diga de dónde nació.
+            DB::table('gastos_fuentes')->where('gasto_id', $gasto->id)->whereNotNull('deuda_unica')
+                ->update(['deuda_unica' => null, 'updated_at' => now()]);
+
             // Los avisos que ya estaban en la bandeja hablan de una deuda que dejó de
             // existir: no piden nada más. Se marcan leídos, no se borran.
             if (Schema::hasTable('gastos_avisos')) {
