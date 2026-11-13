@@ -75,6 +75,15 @@ final class VincularCompra
             ->where('documento_recibido_id', $documento->id)
             ->where('direccion', 'credito')
             ->whereNull('revertido_at')
+            // Lo aplicado a un gasto ANULADO tampoco cuenta: ese gasto ya no es deuda, así
+            // que de la nota no se descontó nada y su parte vuelve al remanente. La
+            // subconsulta va sin candado (MySQL no bloquea las filas de una subconsulta):
+            // tomar los gastos de otras deudas podía cruzarse con quien los tiene tomados.
+            // Si una anulación recién confirmada no se ve, sobra crédito sin usar, nunca falta.
+            ->whereNotIn('cuota_id', DB::table('gastos_cuotas as c')
+                ->join('gastos as g', 'g.id', '=', 'c.gasto_id')
+                ->whereNotNull('g.anulado_at')
+                ->select('c.id'))
             ->when($bloquear, fn ($q) => $q->sharedLock())
             ->pluck('importe')
             ->sum(fn ($v) => Dinero::centavos((string) $v));

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Gastos;
 
 use App\Enums\PermisoSistema;
+use App\Models\DocumentoRecibido;
 use App\Models\Gastos\Aviso;
 use App\Models\Gastos\Gasto;
 use App\Models\Gastos\Pago;
@@ -17,6 +18,7 @@ use App\Services\Gastos\InformeGastos;
 use App\Services\Gastos\RegistrarAjuste;
 use App\Services\Gastos\RegistrarPago;
 use App\Services\Gastos\SaldosGastos;
+use App\Services\Gastos\VincularCompra;
 use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarEmpleado;
@@ -403,6 +405,40 @@ class AnularGastoTest extends TestCase
 
         $this->assertSame(0, Pago::count());
         $this->assertSame(0, DB::table('gastos_ajustes')->count());
+    }
+
+    /**
+     * Una nota de crédito aplicada a un gasto que después se anula vuelve a quedar
+     * disponible: el anulado ya no es deuda, así que nada de esa nota se descontó.
+     * Antes quedaba atrapada: figuraba aplicada, no cabía en el gasto bueno y revertir
+     * el ajuste respondía que el gasto estaba anulado.
+     */
+    public function test_la_nota_de_credito_aplicada_a_un_gasto_anulado_vuelve_a_quedar_disponible(): void
+    {
+        $u = $this->administrador();
+        $nota = DocumentoRecibido::create([
+            'identidad' => (string) Str::uuid(), 'origen_email' => 'proveedor@ejemplo.test',
+            'asunto' => 'NC', 'remitente' => 'Proveedor de prueba', 'fecha_correo' => now(),
+            'fecha_dte' => '2026-09-01', 'tipo_documento' => '05', 'numero_control' => 'DTE-05-0001',
+            'codigo_generacion' => strtoupper((string) Str::uuid()), 'emisor_nombre' => 'Proveedor de prueba',
+            'total' => 50.00, 'estado' => 'pendiente', 'clasificacion' => 'dte_valido',
+        ]);
+        $acreditar = fn (Gasto $gasto) => app(RegistrarAjuste::class)->registrar($u, $gasto->cuotas->first(), [
+            'clave' => (string) Str::uuid(), 'direccion' => 'credito', 'tipo' => 'nota_credito',
+            'importe' => '50.00', 'motivo' => 'Nota de crédito del proveedor.', 'documento_recibido_id' => $nota->id,
+        ]);
+        $duplicado = $this->gasto($u, ['importe' => '200.00'], [['200.00', '2026-09-10']]);
+        $bueno = $this->gasto($u, ['importe' => '200.00'], [['200.00', '2026-09-10']]);
+
+        $acreditar($duplicado);
+        $this->assertSame(0, app(VincularCompra::class)->creditoDelDocumento($nota)['disponible']);
+
+        $this->anular($u, $duplicado)->assertSessionHasNoErrors();
+
+        $this->assertSame(5000, app(VincularCompra::class)->creditoDelDocumento($nota)['disponible']);
+        $acreditar($bueno);
+        $this->assertSame(15000, app(SaldosGastos::class)->pendienteCuota($bueno->cuotas->first()));
+        $this->assertSame(0, app(VincularCompra::class)->creditoDelDocumento($nota, true)['disponible']);
     }
 
     // ─────────────────────────── La ficha ───────────────────────────
