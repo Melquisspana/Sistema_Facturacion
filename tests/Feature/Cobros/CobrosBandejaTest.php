@@ -168,7 +168,7 @@ class CobrosBandejaTest extends TestCase
         $sala = $cliente->sucursales()->create(['nombre' => 'Selectos La Unión', 'ruta_id' => Ruta::create(['nombre' => 'Oriente'])->id]);
         $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '01', 'activo' => true]);
         $establecimiento = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
-        $marlon = PersonalRuta::create(['nombre' => 'Marlon']);
+        $repartidor = PersonalRuta::create(['nombre' => 'Luis Muestra']);
         $salida = SalidaRuta::create(['ruta_id' => $sala->ruta_id, 'fecha_inicio' => '2026-11-04', 'estado' => EstadoSalidaRuta::EnCurso]);
 
         $ccf = fn (string $control) => Dte::create([
@@ -186,7 +186,7 @@ class CobrosBandejaTest extends TestCase
 
         $entrega = fn (Dte $dte, ResultadoEntrega $resultado) => SalidaRutaEntrega::create([
             'salida_ruta_id' => $salida->id, 'dte_id' => $dte->id, 'cliente_sucursal_id' => $sala->id,
-            'resultado' => $resultado, 'entregado_por_id' => $marlon->id, 'fecha_resultado' => '2026-11-04 16:54:00',
+            'resultado' => $resultado, 'entregado_por_id' => $repartidor->id, 'fecha_resultado' => '2026-11-04 16:54:00',
         ]);
         $entrega($entregadoDte, ResultadoEntrega::Entregado);
         $entrega($intentadoDte, ResultadoEntrega::NoEntregado);
@@ -199,7 +199,7 @@ class CobrosBandejaTest extends TestCase
         $this->assertSame(1, $respuesta->viewData('etapas')['falta_albaran']);
         $this->assertSame(0, $respuesta->viewData('etapas')['listos']);
         $respuesta->assertSeeText('Entregado · falta albarán');
-        $respuesta->assertSeeText('Lo entregó Marlon el 04/11.');
+        $respuesta->assertSeeText('Lo entregó Luis Muestra el 04/11.');
 
         // Cada pestaña lista solo lo suyo.
         $falta = $this->actingAs($this->usuario())
