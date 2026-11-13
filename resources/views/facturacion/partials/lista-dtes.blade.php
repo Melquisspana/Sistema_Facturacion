@@ -18,11 +18,55 @@
         'pendiente' => 'Pendiente',
         'error' => 'Fallido',
     ];
-    // Jefatura no usa la ficha: cada documento le abre su PDF (12/11/2026). En edición
-    // todavía no hay PDF; DteController::show hace lo mismo si entra por la URL.
+    // Jefatura (12/11/2026): solo lo que Hacienda ya procesó (lo filtra DteController::index)
+    // y solo lo que le sirve: fecha, tipo, cliente y sala, total y el PDF. Nada técnico.
     $soloPdf = (bool) auth()->user()?->abreDocumentosComoPdf();
 @endphp
 
+@if ($soloPdf)
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead>
+            <tr class="text-left text-gray-500">
+                <th class="px-3 py-2">Fecha</th>
+                <th class="px-3 py-2">Tipo</th>
+                <th class="px-3 py-2">Cliente / sala</th>
+                <th class="px-3 py-2 text-right">Total</th>
+                <th class="px-3 py-2 text-right"><span class="sr-only">PDF</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            @forelse ($dtes as $dte)
+                <tr>
+                    <td class="px-3 py-2 whitespace-nowrap">{{ $dte->fecha_emision?->format('d/m/Y') }}</td>
+                    <td class="px-3 py-2">
+                        {{ $dte->tipo_dte->label() }}
+                        @if ($dte->estado === \App\Enums\EstadoDte::Invalidado)
+                            <span class="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">Anulado</span>
+                        @endif
+                    </td>
+                    <td class="px-3 py-2">
+                        @if ($dte->cliente)
+                            <div class="font-medium text-gray-800">{{ $dte->cliente->nombre }}</div>
+                            @if ($dte->clienteSucursal)
+                                <div class="text-xs text-gray-500">{{ $dte->clienteSucursal->nombre }}</div>
+                            @endif
+                        @else
+                            <span class="font-medium text-gray-800">Consumidor final</span>
+                        @endif
+                    </td>
+                    <td class="px-3 py-2 text-right font-mono">${{ number_format($dte->total_pagar, 2) }}</td>
+                    <td class="px-3 py-2 text-right whitespace-nowrap">
+                        <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline">Ver PDF</a>
+                    </td>
+                </tr>
+            @empty
+                <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400">No hay documentos con esos filtros.</td></tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
+@else
 <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
         <thead>
@@ -58,7 +102,7 @@
                     {{-- Relacionado: solo NC con CCF original (nunca a sí misma) --}}
                     <td class="px-3 py-2 font-mono text-xs">
                         @if ($esNc && $dte->dte_relacionado_id && (int) $dte->dte_relacionado_id !== (int) $dte->id)
-                            <a href="{{ $soloPdf ? route('facturacion.pdf', $dte->dteRelacionado) : route('facturacion.show', $dte->dteRelacionado) }}" @if ($soloPdf) target="_blank" @endif class="text-indigo-600 hover:underline">
+                            <a href="{{ route('facturacion.show', $dte->dteRelacionado) }}" class="text-indigo-600 hover:underline">
                                 {{ $dte->dteRelacionado?->numero_control ?? $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}
                             </a>
                         @else
@@ -93,13 +137,7 @@
                     <td class="px-3 py-2">{{ $dte->numero_orden_compra ?? '—' }}</td>
                     <td class="px-3 py-2 text-right font-mono">${{ number_format($dte->total_pagar, 2) }}</td>
                     <td class="px-3 py-2 text-right whitespace-nowrap">
-                        @if (! $soloPdf)
-                            <a href="{{ route('facturacion.show', $dte) }}" class="text-gray-600 hover:underline">Ver</a>
-                        @elseif ($dte->estado === \App\Enums\EstadoDte::Borrador)
-                            <span class="text-gray-400">Todavía no está listo</span>
-                        @else
-                            <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline">Ver PDF</a>
-                        @endif
+                        <a href="{{ route('facturacion.show', $dte) }}" class="text-gray-600 hover:underline">Ver</a>
                         @can('update', $dte)
                             <a href="{{ route('facturacion.edit', $dte) }}" class="text-indigo-600 hover:underline ml-2">Editar</a>
                         @endcan
@@ -118,6 +156,7 @@
         </tbody>
     </table>
 </div>
+@endif
 
 <div class="mt-4">
     {{ $dtes->links() }}

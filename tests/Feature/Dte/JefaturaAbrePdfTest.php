@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
@@ -12,13 +13,16 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
- * Jefatura (12/11/2026): en Documentos fiscales, tocar un documento abre su PDF y no la
- * ficha de datos. Si todavía está en edición no hay PDF que mostrar: sale el aviso. Si
- * entra a la ficha por la URL, la manda al PDF (o al aviso). Los demás roles, igual.
+ * Jefatura (12/11/2026): en Documentos fiscales ve solo lo que Hacienda ya procesó
+ * (aceptados y anulados con sello real), con fecha, tipo, cliente y sala, total y el PDF.
+ * Tocar un documento abre su PDF, no la ficha; si entra a la ficha por la URL, va al PDF o
+ * al aviso de que todavía no está listo. El servidor aplica el alcance aunque cambie la URL.
+ * Los demás roles, igual que antes.
  */
 class JefaturaAbrePdfTest extends TestCase
 {
@@ -44,61 +48,117 @@ class JefaturaAbrePdfTest extends TestCase
         return User::factory()->create(['activo' => true])->assignRole($rol);
     }
 
-    private function ccf(bool $generado): Dte
+    /**
+     * Un CCF en el estado pedido. `aceptado` e `invalidado` llevan sello real salvo que
+     * `$sello` diga otra cosa (MOCK o null).
+     */
+    private function ccf(string $oc, EstadoDte $estado, ?string $sello = 'real'): Dte
     {
         $borradores = app(DteBorradorService::class);
         $dte = $borradores->crearBorrador([
             'tipo_dte' => TipoDte::CreditoFiscal,
-            'cliente_id' => Cliente::factory()->contribuyente()->create(),
+            'cliente_id' => Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente '.$oc]),
             'establecimiento_id' => $this->emisor['estab']->id,
             'punto_venta_id' => $this->emisor['pv']->id,
+            'numero_orden_compra' => $oc,
         ]);
-        if ($generado) {
-            $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
-            $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 2);
-            app(DteGeneracionService::class)->generar($dte);
+        if ($estado === EstadoDte::Borrador) {
+            return $dte->refresh();
+        }
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 2);
+        app(DteGeneracionService::class)->generar($dte);
+        $dte->refresh();
+
+        if ($estado !== EstadoDte::Generado) {
+            $dte->forceFill([
+                'estado' => $estado->value,
+                'sello_recepcion' => match ($sello) {
+                    'real' => Str::upper(Str::random(40)),
+                    'mock' => 'MOCK-'.Str::random(10),
+                    default => null,
+                },
+                'fecha_procesamiento_mh' => $sello === 'real' ? now() : null,
+            ]);
+            Dte::withoutEvents(fn () => $dte->saveQuietly());
         }
 
         return $dte->refresh();
     }
 
-    public function test_jefatura_ve_en_la_lista_el_enlace_al_pdf_y_no_a_la_ficha(): void
+    public function test_jefatura_ve_solo_lo_que_hacienda_ya_proceso_aunque_lo_pida_por_url(): void
     {
-        $dte = $this->ccf(generado: true);
+        $aceptado = $this->ccf('OC-ACEPTADO', EstadoDte::Aceptado);
+        $anulado = $this->ccf('OC-ANULADO', EstadoDte::Invalidado);
+        $fuera = [
+            $this->ccf('OC-BORRADOR', EstadoDte::Borrador),
+            $this->ccf('OC-GENERADO', EstadoDte::Generado),
+            $this->ccf('OC-RECHAZADO', EstadoDte::Rechazado, null),
+            $this->ccf('OC-MOCK', EstadoDte::Aceptado, 'mock'),
+            // Anulación interna de un generado: nunca pasó por Hacienda.
+            $this->ccf('OC-ANULADO-LOCAL', EstadoDte::Invalidado, null),
+        ];
+        $jefatura = $this->usuario('jefatura');
 
-        $this->actingAs($this->usuario('jefatura'))->get(route('facturacion.index'))
-            ->assertOk()
-            ->assertSee(route('facturacion.pdf', $dte), false)
-            ->assertDontSee('href="'.route('facturacion.show', $dte).'"', false);
+        foreach ([[], ['estado' => 'borrador'], ['estado' => 'pendientes'], ['estado' => 'rechazados_invalidados'], ['estado' => 'rechazados_archivados']] as $params) {
+            $respuesta = $this->actingAs($jefatura)->get(route('facturacion.index', $params))->assertOk()
+                ->assertSee(route('facturacion.pdf', $aceptado), false)
+                ->assertSee(route('facturacion.pdf', $anulado), false);
+            foreach ($fuera as $dte) {
+                $respuesta->assertDontSee(route('facturacion.pdf', $dte), false);
+            }
+        }
     }
 
-    public function test_jefatura_ve_que_un_borrador_todavia_no_esta_listo(): void
+    public function test_jefatura_ve_solo_fecha_tipo_cliente_total_y_el_pdf(): void
     {
-        $dte = $this->ccf(generado: false);
+        $aceptado = $this->ccf('OC-12345', EstadoDte::Aceptado);
+        $anulado = $this->ccf('OC-67890', EstadoDte::Invalidado);
 
-        $this->actingAs($this->usuario('jefatura'))->get(route('facturacion.index'))
-            ->assertOk()
-            ->assertSee('Todavía no está listo')
-            ->assertDontSee(route('facturacion.pdf', $dte), false)
-            ->assertDontSee('href="'.route('facturacion.show', $dte).'"', false);
+        $html = $this->actingAs($this->usuario('jefatura'))->get(route('facturacion.index'))->assertOk()
+            ->assertSee('Fecha')
+            ->assertSee('Cliente OC-12345')
+            ->assertSee('$'.number_format((float) $aceptado->total_pagar, 2))
+            ->assertSee($aceptado->fecha_emision->format('d/m/Y'))
+            ->assertSee('Ver PDF')
+            ->assertSee('Anulado')
+            // Nada técnico ni de la operación.
+            ->assertDontSee('Orden compra')
+            ->assertDontSee('>Correo<', false)
+            ->assertDontSee('>Estado<', false)
+            ->assertDontSee('OC-12345</td>', false)
+            ->assertDontSee($aceptado->numero_control ?? 'sin-numero-de-control')
+            ->assertDontSee('Mostrando documentos del ambiente')
+            ->assertDontSee('Rechazados archivados')
+            ->assertDontSee('name="estado"', false)
+            ->assertDontSee('href="'.route('facturacion.show', $aceptado).'"', false)
+            ->assertDontSee('href="'.route('facturacion.show', $anulado).'"', false)
+            ->getContent();
+
+        $this->assertStringContainsString(route('facturacion.pdf', $anulado), $html, 'El PDF del anulado abre igual.');
     }
 
     public function test_jefatura_que_entra_a_la_ficha_va_al_pdf(): void
     {
-        $dte = $this->ccf(generado: true);
-
-        $this->actingAs($this->usuario('jefatura'))->get(route('facturacion.show', $dte))
-            ->assertRedirect(route('facturacion.pdf', $dte));
-    }
-
-    public function test_jefatura_que_entra_a_la_ficha_de_un_borrador_ve_el_aviso(): void
-    {
-        $dte = $this->ccf(generado: false);
         $jefatura = $this->usuario('jefatura');
 
-        $this->actingAs($jefatura)->get(route('facturacion.show', $dte))
-            ->assertRedirect(route('facturacion.index'))
-            ->assertSessionHas('error');
+        foreach ([EstadoDte::Aceptado, EstadoDte::Invalidado] as $estado) {
+            $dte = $this->ccf('OC-'.$estado->value, $estado);
+            $this->actingAs($jefatura)->get(route('facturacion.show', $dte))
+                ->assertRedirect(route('facturacion.pdf', $dte));
+        }
+    }
+
+    public function test_jefatura_que_entra_a_la_ficha_de_lo_no_procesado_ve_el_aviso(): void
+    {
+        $jefatura = $this->usuario('jefatura');
+
+        foreach ([EstadoDte::Borrador, EstadoDte::Generado] as $estado) {
+            $dte = $this->ccf('OC-'.$estado->value, $estado);
+            $this->actingAs($jefatura)->get(route('facturacion.show', $dte))
+                ->assertRedirect(route('facturacion.index'))
+                ->assertSessionHas('error');
+        }
 
         $this->actingAs($jefatura)->followingRedirects()->get(route('facturacion.show', $dte))
             ->assertOk()
@@ -107,7 +167,7 @@ class JefaturaAbrePdfTest extends TestCase
 
     public function test_jefatura_abre_el_pdf_en_linea(): void
     {
-        $dte = $this->ccf(generado: true);
+        $dte = $this->ccf('OC-PDF', EstadoDte::Aceptado);
 
         $respuesta = $this->actingAs($this->usuario('jefatura'))->get(route('facturacion.pdf', $dte));
 
@@ -116,15 +176,20 @@ class JefaturaAbrePdfTest extends TestCase
         $this->assertStringContainsString('inline', (string) $respuesta->headers->get('Content-Disposition'));
     }
 
-    public function test_los_demas_roles_siguen_entrando_a_la_ficha(): void
+    public function test_los_demas_roles_siguen_igual(): void
     {
-        $dte = $this->ccf(generado: true);
+        $aceptado = $this->ccf('OC-ACEPTADO', EstadoDte::Aceptado);
+        $borrador = $this->ccf('OC-BORRADOR', EstadoDte::Borrador);
 
         foreach (['administrador', 'facturacion', 'contabilidad'] as $rol) {
-            $this->actingAs($this->usuario($rol))->get(route('facturacion.show', $dte))->assertOk();
+            $this->actingAs($this->usuario($rol))->get(route('facturacion.show', $aceptado))->assertOk();
             $this->actingAs($this->usuario($rol))->get(route('facturacion.index'))
                 ->assertOk()
-                ->assertSee('href="'.route('facturacion.show', $dte).'"', false);
+                ->assertSee('href="'.route('facturacion.show', $aceptado).'"', false)
+                ->assertSee('href="'.route('facturacion.show', $borrador).'"', false)
+                ->assertSee('Orden compra')
+                ->assertSee('Mostrando documentos del ambiente')
+                ->assertSee('Rechazados archivados');
         }
     }
 }
