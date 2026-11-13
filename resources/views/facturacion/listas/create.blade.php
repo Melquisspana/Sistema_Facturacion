@@ -25,8 +25,8 @@
                 @include('facturacion.listas._form', ['lista' => null])
 
                 <div class="flex items-center justify-end gap-3">
-                    <a href="{{ route('facturacion.listas.index') }}" class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200">Cancelar</a>
-                    <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar lista de empaque</button>
+                    <a href="{{ route('facturacion.listas.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200">Cancelar</a>
+                    <button class="min-h-11 sm:min-h-0 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar lista de empaque</button>
                 </div>
             </form>
         </div>

@@ -205,10 +205,13 @@
             </p>
             @error('items') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
 
+            {{-- Celular (debajo de md): cada producto se apila (nombre arriba; cajas y precio
+                 lado a lado, con campos de 44 px). Mismas filas de Alpine, sin duplicarlas.
+                 Desde md, la tabla de siempre. --}}
             <div class="overflow-x-auto rounded-lg border border-gray-200">
-                <table class="min-w-full text-sm">
+                <table class="block md:table min-w-full text-sm">
                     <caption class="sr-only">Productos de la lista de empaque</caption>
-                    <thead>
+                    <thead class="hidden md:table-header-group">
                         <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                             <th scope="col" class="py-2 px-3 min-w-[15rem]">Producto</th>
                             <th scope="col" class="py-2 px-3 text-right">Cajas</th>
@@ -219,13 +222,13 @@
                         </tr>
                     </thead>
                     <template x-for="grupo in grupos()" :key="grupo.titulo">
-                        <tbody class="divide-y divide-gray-100">
-                            <tr class="bg-gray-50">
-                                <th scope="colgroup" colspan="6" class="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500" x-text="grupo.titulo"></th>
+                        <tbody class="block md:table-row-group divide-y divide-gray-100">
+                            <tr class="block md:table-row bg-gray-50">
+                                <th scope="colgroup" colspan="6" class="block md:table-cell px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500" x-text="grupo.titulo"></th>
                             </tr>
                             <template x-for="l in grupo.lineas" :key="l.key">
-                                <tr :class="Number(l.estado.cajas) > 0 ? 'bg-indigo-50' : ''">
-                                    <td class="py-2 px-3 align-top">
+                                <tr class="grid grid-cols-2 md:table-row" :class="Number(l.estado.cajas) > 0 ? 'bg-indigo-50' : ''">
+                                    <td class="col-span-2 py-2 px-3 align-top">
                                         <div class="font-medium text-gray-800" x-text="l.nombre"></div>
                                         <div class="text-xs text-gray-500">
                                             <span x-text="l.etiqueta"></span>
@@ -237,17 +240,19 @@
                                         <span class="mt-0.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700" x-show="l.tipo === 'nueva' && l.conPrecioBase">precio base</span>
                                     </td>
                                     <td class="py-2 px-3 text-right align-top">
+                                        <span class="md:hidden block text-left text-xs font-normal text-gray-500">Cajas</span>
                                         <input type="number" min="0" step="1" inputmode="numeric" x-model="l.estado.cajas" placeholder="—"
                                                :aria-label="`Cajas de ${l.nombre}, ${l.etiqueta}`"
-                                               class="w-20 rounded-md border-gray-300 text-right text-sm tabular-nums">
+                                               class="min-h-11 sm:min-h-0 w-20 rounded-md border-gray-300 text-right text-sm tabular-nums">
                                     </td>
                                     <td class="py-2 px-3 text-right align-top">
+                                        <span class="md:hidden block text-left text-xs font-normal text-gray-500">Precio caja</span>
                                         <input type="number" min="0" step="0.01" :value="precioTexto(l)" @input="fijarPrecio(l, $event.target.value)"
                                                :aria-label="`Precio por caja de ${l.nombre}, ${l.etiqueta}`"
-                                               class="w-24 rounded-md border-gray-300 text-right text-sm tabular-nums">
+                                               class="min-h-11 sm:min-h-0 w-24 rounded-md border-gray-300 text-right text-sm tabular-nums">
                                         <p class="mt-0.5 ml-auto max-w-[10rem] text-right text-xs text-amber-600" x-show="avisoPrecio(l)" x-text="avisoPrecio(l)"></p>
                                     </td>
-                                    <td class="py-2 px-3 text-right align-top font-medium tabular-nums text-gray-800"
+                                    <td class="col-span-2 py-2 px-3 text-right align-top font-medium tabular-nums text-gray-800"
                                         x-text="Number(l.estado.cajas) > 0 ? dinero(precioDe(l) * l.estado.cajas) : ''"></td>
                                     <td class="hidden py-2 px-3 text-right align-top tabular-nums text-gray-600 lg:table-cell"
                                         x-text="Number(l.estado.cajas) > 0 ? peso(l.neto * l.estado.cajas) : ''"></td>
@@ -257,18 +262,20 @@
                             </template>
                         </tbody>
                     </template>
-                    <tbody x-show="grupos().length === 0">
-                        <tr>
-                            <td colspan="6" class="py-6 text-center text-sm text-gray-400"
+                    <tbody class="block md:table-row-group" x-show="grupos().length === 0">
+                        <tr class="block md:table-row">
+                            <td colspan="6" class="block md:table-cell py-6 text-center text-sm text-gray-400"
                                 x-text="soloPedido ? 'Todavía no hay cajas en este pedido.' : 'Ningún producto coincide con la búsqueda.'"></td>
                         </tr>
                     </tbody>
-                    <tfoot>
-                        <tr class="border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
+                    {{-- md:table-row-group: table-footer-group no está en el CSS de producción y el
+                         pie ya va último, así que en escritorio se ve igual. --}}
+                    <tfoot class="block md:table-row-group">
+                        <tr class="grid grid-cols-2 md:table-row border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
                             <td class="py-2 px-3">Totales</td>
-                            <td class="py-2 px-3 text-right tabular-nums" x-text="totalCajas"></td>
-                            <td class="py-2 px-3"></td>
-                            <td class="py-2 px-3 text-right tabular-nums" x-text="dinero(valorTotal)"></td>
+                            <td class="py-2 px-3 text-right tabular-nums"><span class="md:hidden font-normal text-gray-500">Cajas:</span> <span x-text="totalCajas"></span></td>
+                            <td class="hidden md:table-cell py-2 px-3"></td>
+                            <td class="col-span-2 py-2 px-3 text-right tabular-nums" x-text="dinero(valorTotal)"></td>
                             <td class="hidden py-2 px-3 text-right tabular-nums lg:table-cell" x-text="peso(netoTotal)"></td>
                             <td class="hidden py-2 px-3 text-right tabular-nums lg:table-cell" x-text="peso(brutoTotal)"></td>
                         </tr>

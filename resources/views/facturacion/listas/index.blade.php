@@ -1,6 +1,7 @@
 @php
-    $chipOn = 'rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-white';
-    $chipOff = 'rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600 hover:bg-gray-200';
+    // min-h-11 solo en el celular (sm:min-h-0 lo devuelve a su alto de siempre).
+    $chipOn = 'inline-flex min-h-11 sm:min-h-0 items-center rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-white';
+    $chipOff = 'inline-flex min-h-11 sm:min-h-0 items-center rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600 hover:bg-gray-200';
 @endphp
 
 <x-app-layout>
@@ -16,7 +17,7 @@
 
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="bg-white shadow sm:rounded-lg p-4 sm:p-6">
 
                 @if (session('status'))
                     <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
@@ -58,12 +59,12 @@
                         @endif
                         <label class="sr-only" for="q">Buscar por cliente o factura</label>
                         <input id="q" type="text" name="q" value="{{ request('q') }}" placeholder="Cliente o factura…"
-                               class="w-56 rounded-md border-gray-300 text-sm">
-                        <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Buscar</button>
+                               class="min-h-11 sm:min-h-0 w-56 rounded-md border-gray-300 text-sm">
+                        <button class="min-h-11 sm:min-h-0 rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Buscar</button>
                     </form>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="hidden md:block overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <caption class="sr-only">Listas de empaque</caption>
                         <thead>
@@ -120,6 +121,52 @@
                         </tbody>
                     </table>
                 </div>
+
+                {{-- Celular (debajo de md): una tarjeta por lista con los mismos datos. Toda la
+                     tarjeta lleva a la lista. Desde md, la tabla de arriba. --}}
+                <ul class="md:hidden divide-y divide-gray-100 border-t border-b border-gray-100">
+                    @forelse ($listas as $lista)
+                        <li>
+                            <a href="{{ route('facturacion.listas.show', $lista) }}" class="block py-3 hover:bg-gray-50">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="font-medium text-indigo-600">
+                                            #{{ $lista->id }}
+                                            @if ($lista->archivada)
+                                                <span class="ms-1 inline-flex rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">{{ $lista->esPruebaApitest() ? 'Prueba APITEST / Archivada' : 'Archivada' }}</span>
+                                            @elseif ($lista->esPruebaApitest())
+                                                <span class="ms-1 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">Prueba</span>
+                                            @endif
+                                        </p>
+                                        <p class="break-words text-gray-800">{{ $lista->cliente?->nombreLegal() ?? $lista->cliente_nombre }}</p>
+                                    </div>
+                                    @if ($lista->estaFinalizada())
+                                        <span class="shrink-0 inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Finalizada</span>
+                                    @elseif ($lista->requiereRevision())
+                                        <span class="shrink-0 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Requiere revisión</span>
+                                    @else
+                                        <span class="shrink-0 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Borrador</span>
+                                    @endif
+                                </div>
+                                <div class="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm text-gray-600">
+                                    <span class="tabular-nums">{{ $lista->fecha?->format('d/m/Y') ?? '—' }}</span>
+                                    <span class="tabular-nums">{{ $lista->items_count }} {{ $lista->items_count === 1 ? 'producto' : 'productos' }}</span>
+                                </div>
+                                @if ($lista->textoFactura())
+                                    <p class="mt-1 break-all font-mono text-xs text-gray-600">{{ $lista->textoFactura() }}</p>
+                                @endif
+                            </a>
+                        </li>
+                    @empty
+                        <li class="py-10 text-center text-gray-400">
+                            @if (request()->filled('q'))
+                                Ninguna lista coincide con «{{ request('q') }}».
+                            @else
+                                Todavía no hay listas de empaque.
+                            @endif
+                        </li>
+                    @endforelse
+                </ul>
 
                 <div class="mt-4">{{ $listas->links() }}</div>
             </div>
