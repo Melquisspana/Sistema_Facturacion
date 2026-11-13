@@ -644,7 +644,8 @@ class CloudflareAccessSsoTest extends TestCase
             ->withHeaders(['Cf-Access-Jwt-Assertion' => $this->jwt()])
             ->post('https://'.self::HOST.'/logout')
             ->assertRedirect('/cdn-cgi/access/logout')
-            ->assertHeader('Clear-Site-Data', '"cache"');
+            // Borrar todo lo guardado del sitio hacía lento el «Salir» en el celular (13/11/2026).
+            ->assertHeaderMissing('Clear-Site-Data');
 
         $this->assertGuest();
         $marca = (int) $respuesta->getCookie(CloudflareAccessSso::MARCA_SALIDA)->getValue();

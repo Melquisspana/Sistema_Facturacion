@@ -91,15 +91,31 @@ class CabecerasAtrasRutasTest extends TestCase
         }
     }
 
-    public function test_al_salir_el_navegador_borra_las_paginas_guardadas(): void
+    public function test_al_salir_no_se_borra_todo_lo_guardado_y_atras_pide_la_pagina_de_nuevo(): void
     {
+        // Clear-Site-Data «cache» tardaba segundos en el celular y «Salir» parecía trabado (13/11/2026).
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('administrador'));
-
-        $this->post(route('logout'))->assertRedirect()->assertHeader('Clear-Site-Data', '"cache"');
+        $this->post(route('logout'))->assertRedirect()->assertHeaderMissing('Clear-Site-Data');
         $this->assertGuest();
 
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('administrador'));
-        $this->post(route('logout.completo'))->assertRedirect()->assertHeader('Clear-Site-Data', '"cache"');
+        $this->post(route('logout.completo'))->assertRedirect()->assertHeaderMissing('Clear-Site-Data');
         $this->assertGuest();
+
+        // En su lugar, la pestaña recuerda que salió y, si «atrás» devuelve una pantalla de antes
+        // desde la memoria, la pide de nuevo; al entrar otra vez se olvida.
+        $oficina = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $html = $this->actingAs($oficina)->get(route('dashboard'))->assertOk()->getContent();
+        $cabeza = strstr($html, '</head>', true);
+        $this->assertStringContainsString("navegacion.type === 'back_forward' && salio()", $cabeza);
+        $this->assertStringContainsString('if (event.persisted && salio()) recargar();', $cabeza);
+        $this->assertStringContainsString("sessionStorage.removeItem('dlg-salio')", $cabeza);
+        $this->assertStringContainsString("sessionStorage.setItem('dlg-salio', '1')", $html);
+        $this->assertStringContainsString('if (form.dataset.saliendo) return;', $html);
+
+        $this->post(route('logout'));
+        $login = $this->get(route('login'))->assertOk()->getContent();
+        $this->assertStringContainsString("navegacion.type === 'back_forward' && salio()", strstr($login, '</head>', true));
+        $this->assertStringNotContainsString("sessionStorage.removeItem('dlg-salio')", $login);
     }
 }

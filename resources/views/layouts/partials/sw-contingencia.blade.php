@@ -21,6 +21,11 @@
         if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== 'post'
             || !['/logout', '/logout-completo'].includes(new URL(form.action).pathname)) return;
         event.preventDefault();
+        // Un segundo toque mientras sale no manda otro cierre (con el token ya vencido).
+        if (form.dataset.saliendo) return;
+        form.dataset.saliendo = '1';
+        // La pestaña anota que salió: «atrás» pide de nuevo las pantallas de antes (layouts/partials/salio-atras).
+        try { sessionStorage.setItem('dlg-salio', '1'); } catch (error) {}
         try { await cleanup(); } catch (error) { console.warn('No se pudo limpiar el aviso sin internet', error); }
         HTMLFormElement.prototype.submit.call(form);
     }, true);
