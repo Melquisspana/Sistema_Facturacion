@@ -18,7 +18,9 @@
         que nadie la confunda con una factura: el VERDE de la paleta del CCF (#235C42 /
         #2F6B4E, el de «aceptado») en lugar de su vino #6E2142, y en el recuadro de la derecha
         «HOJA DE DESPACHO» con «No es factura · Sin valor tributario». Sin número de envío ni
-        de pedido. La orden de compra solo aparece si el pedido la tiene.
+        de pedido. La orden de compra solo aparece si el pedido la tiene. Lo común (estilos,
+        encabezado con el recuadro y la leyenda, firmas) sale de components/documento, que
+        comparte con el PDF del día del vendedor («Documentos impresos» en la guía).
 
         No es la hoja del pedido entero (rutas/pedidos/hoja, de la oficina, con todos los
         envíos y la facturación): esta es solo de un envío y la abre la fábrica con su permiso.
@@ -41,77 +43,42 @@
         (el envío anulado que corrige, o null; PedidosFabrica::corrigeA).
     --}}
     <style>
-        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        <x-documento.estilos acento="verde" />
+
         @page { size: letter portrait; margin: 12mm; }
-        body { margin: 0; padding: 24px 16px; background: #fff; color: #20242C; font-family: "DejaVu Sans", "Segoe UI", Arial, sans-serif; font-size: 12px; line-height: 1.3; }
+        body { padding: 24px 16px; font-size: 12px; }
         .hoja { max-width: 820px; margin: 0 auto; }
-        table { width: 100%; border-collapse: collapse; }
-        .mono { font-family: "DejaVu Sans Mono", Consolas, "Courier New", monospace; }
 
-        .topline { border-top: 2px solid #2F6B4E; margin-bottom: 14px; }
-        .head { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
-        .emisor { flex: 1 1 300px; display: flex; gap: 12px; align-items: flex-start; }
-        .logo { width: 56px; height: 84px; object-fit: contain; }
-        .razon { font-size: 20px; font-weight: bold; line-height: 1.12; }
-        .emi { font-size: 11px; color: #4A4F58; margin-top: 4px; }
-
-        /* El recuadro del documento: como el del CCF, con la cabecera en verde. */
-        .dbox { flex: 0 1 330px; border: 1px solid #C9CDD4; border-radius: 6px; overflow: hidden; }
-        .dbox-h { background: #EEF5F0; border-bottom: 1px solid #BFE0CD; padding: 7px 10px; }
-        .dbox-h .lbl { display: block; font-size: 8.5px; letter-spacing: 1.2px; text-transform: uppercase; color: #6B7280; }
-        .dbox-h .ttl { display: block; font-size: 19px; font-weight: bold; letter-spacing: .5px; color: #235C42; line-height: 1.15; }
-        .dbox-h .nof { display: block; margin-top: 3px; font-size: 11.5px; font-weight: bold; color: #20242C; }
-        .dbox-t td { padding: 4px 10px; font-size: 11.5px; border-bottom: 1px solid #EEF0F2; }
-        .dbox-t tr:last-child td { border-bottom: 0; }
-        .dbox-t .k { color: #6B7280; white-space: nowrap; }
-        .dbox-t .v { text-align: right; font-weight: bold; }
-        .dbox-t tr.key td { background: #FAFBFC; }
-
-        /* Aviso de corrección: una línea sobria, como las cintas de estado del CCF. */
-        .st { margin: 12px 0 0; padding: 5px 10px; border: 1px solid #E7C98D; border-left-width: 3px; border-left-color: #C8881E; border-radius: 3px; background: #FBF6EC; color: #7A4A0C; font-size: 12px; }
-
-        /* A quién va: borde fino + cabecera gris + cuerpo. */
-        .sec { margin-top: 14px; border: 1px solid #C9CDD4; border-radius: 6px; }
-        .sec-h { background: #F2F3F5; border-bottom: 1px solid #D4D8DE; padding: 5px 10px; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #6B7280; font-weight: bold; }
-        .sec-b { padding: 9px 10px; }
         .rec-name { font-size: 15px; font-weight: bold; }
         .f { margin-top: 3px; font-size: 11.5px; }
         .f .k { color: #8A9099; }
 
-        /* Tablas de productos: encabezado oscuro como el CCF, filas con línea fina. */
-        h2 { margin: 16px 0 5px; font-size: 13px; }
         h2.queda { color: #7A4A0C; }
         h2.no-va { color: #8A2440; }
-        .items thead th { background: #20242C; color: #F3F4F6; font-size: 9.5px; text-transform: uppercase; letter-spacing: .3px; padding: 5px 7px; text-align: left; }
-        .items tbody td { padding: 4px 7px; border-bottom: 1px solid #EAECEF; font-size: 12px; vertical-align: top; }
+        .items tbody td { font-size: 12px; }
         .items tbody tr:nth-child(even) td { background: #F8F9FA; }
         .items .ci { color: #9AA0A8; width: 22px; }
         .items .cod { width: 110px; }
         .items td.cod { font-weight: bold; font-size: 11px; }
         .items .pn { font-weight: bold; }
-        .items .r { text-align: right; white-space: nowrap; }
         .items td.r { font-size: 14px; font-weight: bold; font-variant-numeric: tabular-nums; }
         .items .motivo { font-style: italic; color: #4A4F58; }
         .nota { margin: 6px 0 0; font-size: 11px; color: #6B7280; }
-
-        .firmas { margin-top: 44px; display: flex; flex-wrap: wrap; gap: 24px 40px; }
-        .firmas div { flex: 1 1 220px; }
-        .firmas .flk { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: #8A9099; }
-        .firmas .fline { display: block; height: 30px; border-bottom: 1px solid #B6BBC2; }
-
-        .pie { margin-top: 14px; font-size: 9px; color: #9AA0A8; text-align: center; }
 
         .no-print { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 820px; margin: 0 auto 16px; }
         .no-print a, .no-print button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid #C9CDD4; background: #fff; color: #20242C; font: inherit; font-weight: 600; text-decoration: none; border-radius: 6px; cursor: pointer; }
         .no-print a:hover, .no-print button:hover { background: #F8F9FA; }
         .no-print a:focus-visible, .no-print button:focus-visible { outline: 2px solid #2F6B4E; outline-offset: 2px; }
 
+        /* En el celular el recuadro baja debajo de la empresa (solo pantalla; al imprimir, al lado). */
+        @media screen and (max-width: 600px) {
+            td.head-emisor, td.head-dbox { display: block; width: auto; padding: 0 0 14px; }
+        }
+
         @media print {
             body { padding: 0; }
             .hoja { max-width: none; }
-            .items thead { display: table-header-group; }
-            .items tr { page-break-inside: avoid; }
-            .head, .sec, .firmas { page-break-inside: avoid; }
+            .head, .sec { page-break-inside: avoid; }
             .no-print { display: none; }
         }
     </style>
@@ -132,31 +99,14 @@
 </div>
 
 <main class="hoja">
-    <div class="topline"></div>
-
-    <header class="head">
-        <div class="emisor">
-            <img class="logo" src="{{ asset('images/dte/logo-pdf.png') }}" alt="">
-            <div>
-                <div class="razon">{{ $empresa }}</div>
-                <div class="emi">Fábrica · lo que sale para la sala</div>
-            </div>
-        </div>
-        <div class="dbox">
-            <div class="dbox-h">
-                <span class="lbl">Documento interno de la fábrica</span>
-                <span class="ttl">HOJA DE DESPACHO</span>
-                <span class="nof">No es factura · Sin valor tributario</span>
-            </div>
-            <table class="dbox-t">
-                <tr class="key"><td class="k">Fecha y hora</td><td class="v">{{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</td></tr>
-                <tr><td class="k">Vendedor</td><td class="v">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td></tr>
-                @if (filled($pedido->numero_orden_compra))
-                    <tr><td class="k">Orden de compra</td><td class="v mono">{{ $pedido->numero_orden_compra }}</td></tr>
-                @endif
-            </table>
-        </div>
-    </header>
+    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Fábrica · lo que sale para la sala"
+        etiqueta="Documento interno de la fábrica" titulo="HOJA DE DESPACHO">
+        <tr class="key"><td class="k">Fecha y hora</td><td class="v">{{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</td></tr>
+        <tr><td class="k">Vendedor</td><td class="v">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td></tr>
+        @if (filled($pedido->numero_orden_compra))
+            <tr><td class="k">Orden de compra</td><td class="v mono">{{ $pedido->numero_orden_compra }}</td></tr>
+        @endif
+    </x-documento.encabezado>
 
     @if ($corrige)
         <p class="st"><strong>Corrige la hoja de las {{ $corrige->created_at->format('H:i') }}</strong>: esa hoja quedó anulada y vale esta.</p>
@@ -209,10 +159,7 @@
         <p class="nota">Después de este salieron otros envíos.</p>
     @endif
 
-    <div class="firmas">
-        <div><span class="flk">Entrega (fábrica)</span><span class="fline"></span></div>
-        <div><span class="flk">Recibe</span><span class="fline"></span></div>
-    </div>
+    <x-documento.firmas :quienes="['Entrega (fábrica)', 'Recibe']" />
 
     <p class="pie">Hoja interna de despacho de {{ $empresa }}. No es factura ni documento tributario.</p>
 </main>

@@ -153,6 +153,10 @@ class CorreoDiarioPedidosTest extends TestCase
         // Firma con el nombre de Configuración › Empresa emisora, no con el del .env.
         $this->assertStringContainsString('Confitería de prueba', $html);
         $this->assertStringNotContainsString('Sistema de prueba', $html);
+        // La identidad de los documentos impresos: logo incrustado, empresa y el recuadro «Resumen diario» en azul pizarra.
+        $this->assertMatchesRegularExpression('/<img src="data:image\/png;base64,[^"]+" class="doc-logo"/', $html);
+        $this->assertMatchesRegularExpression('/Correo interno<\/span><br>\s*<span class="doc-ttl"[^>]*color: #2B4A6F[^>]*>Resumen diario<\/span>\s*<br><span class="doc-fecha"[^>]*>09\/11\/2026<\/span>/', $html);
+        $this->assertStringContainsString('border-top: 2px solid #3B5F8A', $html);
         // Las salas, por nombre; en cada una lo que pasó.
         $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 06\/11\/2026 \(3 días de atraso\): Canilla de prueba 2\.5/s', $html);
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(18:00\): Galleta de prueba 24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
