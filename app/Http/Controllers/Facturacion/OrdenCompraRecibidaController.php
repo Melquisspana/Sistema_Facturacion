@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Facturacion;
 
+use App\Enums\ModuloSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\OrdenCompraRecibida;
@@ -30,6 +31,8 @@ class OrdenCompraRecibidaController extends Controller
 
     public function index(Request $request): View
     {
+        // La pantalla está apagada por defecto (12/11/2026): 404 para todos, como un módulo.
+        abort_unless(ModuloSistema::OrdenesRecibidas->activo(), 404);
         $this->authorize('viewAny', Dte::class);
 
         $filtros = $request->validate([
@@ -67,6 +70,7 @@ class OrdenCompraRecibidaController extends Controller
     /** El PDF de la orden, tal como llegó. */
     public function pdf(OrdenCompraRecibida $orden): Response
     {
+        abort_unless(ModuloSistema::OrdenesRecibidas->activo(), 404);
         $this->authorize('viewAny', Dte::class);
 
         $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
@@ -93,8 +97,10 @@ class OrdenCompraRecibidaController extends Controller
         } catch (\RuntimeException $e) {
             Log::warning('PDF + orden: no se pudo unir', ['dte_id' => $dte->id, 'orden_id' => $orden->id, 'error' => $e->getMessage()]);
 
-            return redirect()->route('facturacion.show', $dte)->with('error',
-                'No se pudo armar «PDF + orden»: el PDF de la orden de compra no se puede unir. Abrí los dos por separado con «Ver PDF» y «Ver orden de compra».');
+            // «Ver orden de compra» solo existe con la pantalla de órdenes prendida.
+            return redirect()->route('facturacion.show', $dte)->with('error', ModuloSistema::OrdenesRecibidas->activo()
+                ? 'No se pudo armar «PDF + orden»: el PDF de la orden de compra no se puede unir. Abrí los dos por separado con «Ver PDF» y «Ver orden de compra».'
+                : 'No se pudo armar «PDF + orden»: el PDF de la orden de compra no se puede unir. Abrí el CCF con «Ver PDF».');
         }
 
         return response($contenido, 200, [

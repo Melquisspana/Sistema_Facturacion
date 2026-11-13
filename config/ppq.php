@@ -124,4 +124,12 @@ return [
         // Carpeta donde se guardan los PDF/JSON descargados de los correos.
         'storage_dir' => env('PPQ_GMAIL_STORAGE_DIR', 'ppq/gmail'),
     ],
+
+    /*
+    | La pantalla «Órdenes recibidas» (Facturación). Apagada por defecto desde el 12/11/2026:
+    | sale del menú y sus rutas responden 404. Se prende desde Configuración › Módulos
+    | (App\Enums\ModuloSistema::OrdenesRecibidas). La sincronización del correo
+    | (ordenes:sincronizar), lo que se ofrece al facturar y «PDF + orden» no dependen de esto.
+    */
+    'ordenes_recibidas_enabled' => (bool) env('ORDENES_RECIBIDAS_ENABLED', false),
 ];
