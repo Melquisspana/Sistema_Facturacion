@@ -218,4 +218,35 @@ class VistasCelularTest extends TestCase
             ->assertSee('filtro puesto')
             ->assertSee('grid grid-cols-2 py-2 md:table-row', false);
     }
+
+    public function test_documentos_fiscales_pliega_accesos_y_botones_de_crear_en_el_celular(): void
+    {
+        $this->borradorConLinea();
+
+        $this->get(route('facturacion.index', ['tipo_dte' => '03']))->assertOk()
+            // Accesos rápidos: arriba solo desde md; en el celular, dentro del panel «Filtros».
+            ->assertSee('<div class="hidden md:block">', false)
+            ->assertSee('<nav aria-label="Accesos rápidos" class="md:hidden', false)
+            ->assertSee('aria-current="page"', false)
+            ->assertSee('col-span-2 sm:col-span-1', false);
+    }
+
+    public function test_jefatura_en_el_celular_ve_tarjetas_reducidas_con_ver_pdf(): void
+    {
+        $dte = $this->borradorConLinea();
+        Dte::withoutEvents(fn () => $dte->forceFill([
+            'estado' => 'aceptado', 'numero_control' => 'DTE-03-M001P001-000000000000777',
+            'sello_recepcion' => 'SELLO-DE-PRUEBA-0001', 'fecha_procesamiento_mh' => now(), 'fecha_emision' => now()->toDateString(),
+        ])->saveQuietly());
+        $jefatura = User::factory()->create(['activo' => true])->assignRole('jefatura');
+
+        $html = $this->actingAs($jefatura)->get(route('facturacion.index'))->assertOk()
+            ->assertSee('Cliente de prueba Celular')
+            ->assertDontSee('href="'.route('facturacion.show', $dte).'"', false)
+            ->getContent();
+
+        // «Ver PDF» una vez en la tabla (desde md) y otra en la tarjeta del celular.
+        $this->assertSame(2, substr_count($html, 'href="'.route('facturacion.pdf', $dte).'"'));
+        $this->assertStringContainsString('<ul class="md:hidden', $html);
+    }
 }
