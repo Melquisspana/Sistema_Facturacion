@@ -64,7 +64,7 @@
 
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="bg-white shadow sm:rounded-lg p-4 sm:p-6">
 
                 @if (session('status'))
                     <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
@@ -107,7 +107,8 @@
 
                     // Botones de creación: los 4 sólidos, misma altura/padding/radius/texto/foco,
                     // solo cambia el color de fondo por tipo (sin variante outline).
-                    $btnBase = 'inline-flex items-center justify-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-white '
+                    // En el celular: 44 px y dos por fila (sm:min-h-0 devuelve el alto de siempre).
+                    $btnBase = 'inline-flex min-h-11 sm:min-h-0 items-center justify-center text-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-white '
                         .'rounded-lg shadow-sm transition-colors duration-150 '
                         .'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
 
@@ -121,16 +122,16 @@
 
                 {{-- La pantalla ya pide `dte.ver`: «Llegó de la fábrica» también (Jefatura y
                      Contabilidad la ven sin facturar); los botones de crear, solo con `dte.gestionar`. --}}
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-2 mb-4">
+                <div class="grid grid-cols-2 lg:flex lg:flex-wrap gap-2 mb-4">
                     @can('create', App\Models\Dte::class)
                         <a href="{{ route('facturacion.create-ccf') }}"
-                           class="{{ $btnBase }} bg-indigo-600 hover:bg-indigo-700 focus-visible:ring-indigo-500">
+                           class="{{ $btnBase }} col-span-2 sm:col-span-1 bg-indigo-600 hover:bg-indigo-700 focus-visible:ring-indigo-500">
                             Nuevo CCF
                         </a>
                     @endcan
                     {{-- Lo que mandó la fábrica hoy, con su hoja: de ahí sale el CCF. Secundario (blanco). --}}
                     <a href="{{ route('facturacion.llego-de-fabrica') }}"
-                       class="inline-flex items-center justify-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
+                       class="inline-flex min-h-11 sm:min-h-0 items-center justify-center text-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
                         Llegó de la fábrica
                     </a>
                     @can('create', App\Models\Dte::class)
@@ -160,7 +161,24 @@
                 <p class="mb-2 text-xs text-gray-400">Mostrando documentos del ambiente <strong class="text-gray-500">{{ $ambienteListado }}</strong> (el activo de esta instalación).</p>
                 @endunless
 
-                {{-- Accesos rápidos por tipo/estado (chips) --}}
+                {{-- Accesos rápidos por tipo/estado (chips). En el celular ocupaban cinco renglones
+                     de pastillas de 26 px: ahí van dentro del panel «Filtros», con 44 px. --}}
+                @php
+                    $accesos = [
+                        ['Todos', [], $estadoActual === '' && $tipoActual === ''],
+                        ['CCF', ['tipo_dte' => '03'], $tipoActual === '03'],
+                        ['Facturas consumidor final', ['tipo_dte' => '01'], $tipoActual === '01'],
+                        ['Notas de crédito', ['tipo_dte' => '05'], $tipoActual === '05'],
+                        ['Facturas de exportación', ['tipo_dte' => '11'], $tipoActual === '11'],
+                    ];
+                    if (! $soloProcesados) {
+                        $accesos[] = ['Pendientes', ['estado' => 'pendientes'], $estadoActual === 'pendientes'];
+                        $accesos[] = ['Aceptados', ['estado' => 'aceptado'], $estadoActual === 'aceptado'];
+                        $accesos[] = ['Rechazados / invalidados', ['estado' => 'rechazados_invalidados'], $estadoActual === 'rechazados_invalidados'];
+                        $accesos[] = ['Rechazados archivados', ['estado' => 'rechazados_archivados'], $estadoActual === 'rechazados_archivados'];
+                    }
+                @endphp
+                <div class="hidden md:block">
                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
                     <span class="text-xs font-medium text-gray-400 mr-0.5">Accesos rápidos:</span>
                     <a href="{{ route('facturacion.index') }}" class="{{ $estadoActual === '' && $tipoActual === '' ? $chipActivo : $chipInactivo }}">Todos</a>
@@ -176,11 +194,13 @@
                     <a href="{{ route('facturacion.index', ['estado' => 'rechazados_archivados']) }}" class="{{ $estadoActual === 'rechazados_archivados' ? $chipActivo : $chipInactivo }}">Rechazados archivados</a>
                     @endunless
                 </div>
+                </div>
 
-                {{-- Buscador siempre visible + filtros avanzados colapsables --}}
+                {{-- Buscador siempre visible + filtros avanzados colapsables. En el celular el
+                     panel arranca cerrado aunque haya filtros: el número del botón los avisa. --}}
                 <form method="GET" action="{{ route('facturacion.index') }}"
                       x-data="{
-                          open: @js($panelAbiertoInicial),
+                          open: @js($panelAbiertoInicial) && window.matchMedia('(min-width: 768px)').matches,
                           desde: @js($filtros['fecha_desde'] ?? ''),
                           hasta: @js($filtros['fecha_hasta'] ?? ''),
                       }"
@@ -195,8 +215,8 @@
                                    class="block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
                         <div class="flex gap-2 shrink-0">
-                            <button type="button" @click="open = !open"
-                                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap">
+                            <button type="button" @click="open = !open" :aria-expanded="open ? 'true' : 'false'"
+                                    class="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9M3.75 6h3.75m0 0a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0zM3.75 12h9m8.25 0h-3.75m0 0a1.5 1.5 0 103 0 1.5 1.5 0 00-3 0zM10.5 18h9m-13.5 0h-3.75m0 0a1.5 1.5 0 103 0 1.5 1.5 0 00-3 0z" />
                                 </svg>
@@ -207,7 +227,7 @@
                             </button>
                             @if ($filtrosActivos > 0)
                                 <a href="{{ route('facturacion.index') }}"
-                                   class="inline-flex items-center px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:underline whitespace-nowrap">
+                                   class="inline-flex min-h-11 sm:min-h-0 items-center px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:underline whitespace-nowrap">
                                     Limpiar
                                 </a>
                             @endif
@@ -217,6 +237,14 @@
                     {{-- Panel de filtros avanzados: cerrado por defecto, abierto si hay filtros activos --}}
                     <div x-show="open" x-cloak x-transition.duration.150ms
                          class="mt-2 rounded-lg border border-gray-200 bg-gray-50/60 p-3 space-y-2">
+
+                        {{-- Solo en el celular: los accesos rápidos, como pastillas de 44 px. --}}
+                        <nav aria-label="Accesos rápidos" class="md:hidden flex flex-wrap gap-2">
+                            @foreach ($accesos as [$texto, $params, $activo])
+                                <a href="{{ route('facturacion.index', $params) }}" @if ($activo) aria-current="page" @endif
+                                   class="{{ $activo ? $chipActivo : $chipInactivo }} min-h-11">{{ $texto }}</a>
+                            @endforeach
+                        </nav>
 
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <div>
@@ -263,15 +291,15 @@
                             </div>
                             <div class="flex gap-1.5 pb-0.5">
                                 <button type="button" @click="desde = '{{ $hoy }}'; hasta = '{{ $hoy }}'"
-                                        class="px-2.5 py-1 rounded-full text-xs border bg-white border-gray-200 text-gray-600 hover:bg-gray-100">Hoy</button>
+                                        class="inline-flex min-h-11 sm:min-h-0 items-center px-2.5 py-1 rounded-full text-xs border bg-white border-gray-200 text-gray-600 hover:bg-gray-100">Hoy</button>
                                 <button type="button" @click="desde = '{{ $semIni }}'; hasta = '{{ $semFin }}'"
-                                        class="px-2.5 py-1 rounded-full text-xs border bg-white border-gray-200 text-gray-600 hover:bg-gray-100">Esta semana</button>
+                                        class="inline-flex min-h-11 sm:min-h-0 items-center px-2.5 py-1 rounded-full text-xs border bg-white border-gray-200 text-gray-600 hover:bg-gray-100">Esta semana</button>
                                 <button type="button" @click="desde = '{{ $mesIni }}'; hasta = '{{ $mesFin }}'"
-                                        class="px-2.5 py-1 rounded-full text-xs border bg-white border-gray-200 text-gray-600 hover:bg-gray-100">Este mes</button>
+                                        class="inline-flex min-h-11 sm:min-h-0 items-center px-2.5 py-1 rounded-full text-xs border bg-white border-gray-200 text-gray-600 hover:bg-gray-100">Este mes</button>
                             </div>
                             <div class="flex gap-2 pb-0.5">
-                                <x-primary-button>Filtrar</x-primary-button>
-                                <a href="{{ route('facturacion.index') }}" class="px-3 py-2 text-sm text-gray-500 hover:underline">Limpiar</a>
+                                <x-primary-button class="min-h-11 sm:min-h-0">Filtrar</x-primary-button>
+                                <a href="{{ route('facturacion.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center px-3 py-2 text-sm text-gray-500 hover:underline">Limpiar</a>
                             </div>
                         </div>
                     </div>
