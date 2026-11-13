@@ -170,6 +170,7 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 - Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
 - En la barra lateral de la oficina el orden es Tablero, Pedidos, Ventas, Todos los viajes y Zonas, y al final **una sola** entrada, «Menú del vendedor», que abre el Inicio del celular (a quien solo puede mirar, «Por entregar»). Las tres pantallas no se repiten en la barra. *Pedido de Melqui, 11/11/2026.*
 - Quien entra sin ficha de vendedor no queda en una pantalla vacía: se le dice «Tu usuario no es vendedor» y se le ofrece «Por entregar».
+- **Instalar como app** (13/11/2026): en Android, abrir el sistema en Chrome, tocar los tres puntos y «Instalar app» (o «Agregar a pantalla principal»); en iPhone, abrirlo en Safari, tocar Compartir y «Agregar a inicio». Queda con el logo y abre sin la barra del navegador. Todo layout nuevo incluye `layouts.partials.instalar-app` en el `<head>`.
 
 ### Las palabras de Rutas
 
