@@ -75,6 +75,8 @@ Route::middleware(['auth', 'permission:rutas.pedidos.registrar', 'cache.headers:
     ->prefix('rutas/sacar-pedido')->name('rutas.sacar-pedido.')
     ->group(function () {
         Route::get('/', [MiPedidoController::class, 'index'])->name('index');
+        // La lista que aparece mientras escribe (12/11/2026). Con límite: se consulta al teclear.
+        Route::get('salas', [MiPedidoController::class, 'salas'])->name('salas')->middleware('throttle:60,1');
         // Tienda nueva: solo el nombre; la oficina la da de alta y la enlaza al facturar.
         Route::get('tienda-nueva', [MiPedidoController::class, 'createTiendaNueva'])->name('tienda-nueva.create');
         Route::post('tienda-nueva', [MiPedidoController::class, 'storeTiendaNueva'])->name('tienda-nueva.store');

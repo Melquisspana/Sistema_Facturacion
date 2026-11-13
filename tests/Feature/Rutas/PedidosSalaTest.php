@@ -19,6 +19,7 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Support\Dte\OrdenProductosOc;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -175,6 +176,22 @@ class PedidosSalaTest extends TestCase
             ->assertSee('Número de orden de compra')
             ->assertSeeText('Si ya la tenés, son de 13 a 15 números.')
             ->assertDontSeeText('14 dígitos');
+    }
+
+    /**
+     * Los productos salen en el orden de Facturación (12/11/2026, pedido del dueño): el de la
+     * orden de compra ({@see OrdenProductosOc}, por código de barras o por
+     * nombre), que usan el editor del CCF y el CCF emitido; lo que no está en ella, al final
+     * por nombre.
+     */
+    public function test_los_productos_salen_en_el_orden_de_facturacion(): void
+    {
+        Producto::factory()->create(['nombre' => 'Leche burra', 'codigo' => 'LB1', 'codigo_barra' => '7412201700024']);
+        Producto::factory()->create(['nombre' => 'Quiebradiente', 'codigo' => 'QD1', 'codigo_barra' => null]);
+        Producto::factory()->create(['nombre' => 'Alfajor de prueba', 'codigo' => 'A01', 'codigo_barra' => null]);
+
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()
+            ->assertSeeInOrder(['Leche burra', 'Quiebradiente', 'Alfajor de prueba', 'Galleta de prueba', 'Pan de prueba']);
     }
 
     public function test_guarda_el_pedido_con_auditoria(): void

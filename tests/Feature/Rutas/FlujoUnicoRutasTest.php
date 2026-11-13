@@ -143,14 +143,16 @@ class FlujoUnicoRutasTest extends TestCase
 
         // El Tablero va primero. Lo del celular es UNA sola entrada, al final (11/11/2026).
         // El jefe también sale a vender: le abre el Inicio del celular.
-        $jefe = $menu($this->jefe)->assertSeeInOrder(['Tablero', 'Pedidos', 'Todos los viajes', 'Zonas', 'Menú del vendedor'])
-            ->assertSee('href="'.route('rutas.salidas.index').'"', false)
+        // «Todos los viajes» salió del menú (12/11/2026): se abre desde Tablero › Viajes.
+        $jefe = $menu($this->jefe)->assertSeeInOrder(['Tablero', 'Pedidos', 'Zonas', 'Menú del vendedor'])
+            ->assertDontSee('Todos los viajes')
+            ->assertDontSee('href="'.route('rutas.salidas.index').'"', false)
             ->assertSee('href="'.route('rutas.rutas.index').'"', false)
             ->assertDontSee('href="'.route('rutas.sacar-pedido.index').'"', false)
             ->assertDontSee('href="'.route('rutas.por-entregar.index').'"', false);
         $this->assertMatchesRegularExpression($entrada('rutas.mi-salida.index'), $jefe->getContent());
         // La oficina no saca pedidos ni entrega: su entrada abre lo único que puede mirar, «Por entregar».
-        $oficina = $menu($this->oficina)->assertSeeInOrder(['Tablero', 'Pedidos', 'Todos los viajes', 'Zonas', 'Menú del vendedor'])
+        $oficina = $menu($this->oficina)->assertSeeInOrder(['Tablero', 'Pedidos', 'Zonas', 'Menú del vendedor'])
             ->assertDontSee('href="'.route('rutas.mi-salida.index').'"', false)
             ->assertDontSee('href="'.route('rutas.sacar-pedido.index').'"', false)
             // Ventas es solo de Administrador y Jefatura (11/11/2026): a Facturación ni le sale.
@@ -158,7 +160,7 @@ class FlujoUnicoRutasTest extends TestCase
         $this->assertMatchesRegularExpression($entrada('rutas.por-entregar.index'), $oficina->getContent());
         $this->actingAs($this->oficina)->get(route('rutas.ventas.index'))->assertForbidden();
         $menu(User::factory()->create(['activo' => true])->assignRole('jefatura'))
-            ->assertSeeInOrder(['Tablero', 'Pedidos', 'Ventas', 'Todos los viajes', 'Zonas', 'Menú del vendedor'])
+            ->assertSeeInOrder(['Tablero', 'Pedidos', 'Ventas', 'Zonas', 'Menú del vendedor'])
             ->assertSee('href="'.route('rutas.ventas.index').'"', false);
 
         foreach ([$this->jefe, $this->oficina] as $usuario) {

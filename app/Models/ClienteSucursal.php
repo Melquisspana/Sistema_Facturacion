@@ -104,6 +104,15 @@ class ClienteSucursal extends Model
     }
 
     /**
+     * La segunda línea de la sala en los buscadores de Rutas: código, pueblo y cliente. Usa
+     * `distrito` y `cliente` (cargalos antes para no consultar fila por fila).
+     */
+    public function detalleBuscador(): string
+    {
+        return collect([$this->codigo, $this->distrito?->nombre, $this->cliente?->nombre])->filter()->implode(' · ');
+    }
+
+    /**
      * Ruta HABITUAL de visita/cobro. Null es un estado válido: hay salas que no
      * entran en ninguna ruta. No implica participación en ninguna salida concreta.
      */
