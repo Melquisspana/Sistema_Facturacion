@@ -33,13 +33,8 @@ class DashboardController extends Controller
     /**
      * Documentos que se listan en "Documentos reales de producción".
      *
-     * El tope existe por LAYOUT, no por rendimiento: la tarjeta ocupa la columna
-     * izquierda y debe terminar aproximadamente a la altura de las tres tarjetas de la
-     * derecha (Acciones rápidas + Estado técnico + Diagnóstico ≈ 940 px en escritorio).
-     * Con filas de dos líneas —cliente fiscal y sala debajo, ~56 px— doce filas llenan
-     * esa altura sin desbordarla cuando algún nombre largo envuelve. El recorte se hace
-     * en la CONSULTA: los documentos más antiguos no se traen ni se renderizan (el
-     * listado completo vive en Facturación, que no se toca).
+     * Doce documentos mantienen acotado el resumen tanto en tabla como en tarjetas.
+     * El recorte se hace en la consulta; el listado completo vive en Facturación.
      */
     private const DOCUMENTOS_RECIENTES = 12;
 
@@ -47,14 +42,17 @@ class DashboardController extends Controller
     {
         $usuario = $request->user();
         $esAdmin = (bool) $usuario->hasRole('administrador');
-        // Estado técnico/diagnóstico y modo DTE: solo quien puede emitir (admin/facturación).
+        // Quien emite (admin/facturación) recibe el aviso cuando el sistema falla.
         $esGestorDte = (bool) $usuario->can('dte.emitir');
         // Tarjetas operativas (compras pendientes, listas recientes): cualquier lector.
         $veOperativos = (bool) $usuario->can('documentos-recibidos.ver');
         $veFacturacion = (bool) $usuario->can('viewAny', Dte::class);
 
-        $jobsFallidos = (int) DB::table('failed_jobs')->count();
-        $jobsPendientes = (int) DB::table('jobs')->count();
+        // Lo técnico (cola, trabajos fallidos, estado técnico y diagnóstico completo) es
+        // solo de quien administra el sistema (13/11/2026): a los demás no se les
+        // calcula lo que no se les muestra.
+        $jobsFallidos = $esAdmin ? (int) DB::table('failed_jobs')->count() : 0;
+        $jobsPendientes = $esAdmin ? (int) DB::table('jobs')->count() : 0;
 
         $stats = Cache::remember(
             "dashboard.stats.{$usuario->id}",
@@ -64,16 +62,17 @@ class DashboardController extends Controller
 
         $actividad = $veFacturacion ? $this->actividadReciente($usuario->abreDocumentosComoPdf()) : collect();
 
-        $worker = WorkerHeartbeat::estado();
-        $modo = $esGestorDte ? $transmision->estadoOperativo() : null;
-        $estadoTecnico = $esGestorDte ? $this->estadoTecnico($modo, $worker, $jobsPendientes, $jobsFallidos) : null;
+        $estadoTecnico = null;
+        if ($esAdmin) {
+            $estadoTecnico = $this->estadoTecnico($transmision->estadoOperativo(), WorkerHeartbeat::estado(), $jobsPendientes, $jobsFallidos);
+        }
 
         // Diagnóstico real (BD, worker, backup, firmador, transmisión, correlativos
-        // P002, storage, migraciones): reemplaza el semáforo anterior, que solo miraba
-        // estadoOperativo()+worker+jobsFallidos (y este último apenas como advertencia).
-        // Nunca hace red: ver DiagnosticoSistemaService.
-        $diagnostico = $diagnosticoService->evaluar();
-        $estadoGeneral = match ($diagnostico['nivel']) {
+        // P002, storage, migraciones). Nunca hace red: ver DiagnosticoSistemaService.
+        // Solo para quien emite: Administrador lo ve entero; Facturación, solo el aviso
+        // cuando algo es crítico. Jefatura, Contabilidad y el resto no lo ven.
+        $diagnostico = $esGestorDte ? $diagnosticoService->evaluar() : null;
+        $estadoGeneral = match ($diagnostico['nivel'] ?? null) {
             'critico' => 'critico',
             'advertencia' => 'advertencia',
             default => 'ok',
@@ -86,8 +85,8 @@ class DashboardController extends Controller
             'estadoTecnico' => $estadoTecnico,
             'estadoGeneral' => $estadoGeneral,
             'textoEstadoGeneral' => $this->textoEstadoGeneral($estadoGeneral),
-            'motivoEstadoGeneral' => $this->motivoEstadoGeneral($diagnostico),
-            'diagnostico' => $esGestorDte ? $diagnostico : null,
+            'motivoEstadoGeneral' => $diagnostico ? $this->motivoEstadoGeneral($diagnostico) : null,
+            'diagnostico' => $esAdmin ? $diagnostico : null,
             'esAdmin' => $esAdmin,
             'esGestorDte' => $esGestorDte,
             'veOperativos' => $veOperativos,
@@ -165,24 +164,33 @@ class DashboardController extends Controller
     private function calcularStats(bool $veFacturacion, bool $veOperativos, int $jobsFallidos): array
     {
         $inicioMes = now()->startOfMonth()->toDateString();
+        $hoy = now()->toDateString();
+        $manana = now()->addDay()->toDateString();
         $ambienteProduccion = AmbienteHacienda::Produccion->value;
 
-        $dteAceptadosMes = $ventasMes = null;
+        $dteAceptadosMes = $ventasMes = $ventasHoy = null;
         if ($veFacturacion) {
             $dteAceptadosMes = Dte::where('estado', EstadoDte::Aceptado->value)
                 ->where('ambiente', $ambienteProduccion)
                 ->where('fecha_emision', '>=', $inicioMes)->count();
 
-            $ventasMes = (float) Dte::where('estado', EstadoDte::Aceptado->value)
+            // Ventas del mes y, en la MISMA consulta, lo vendido hoy (mismo filtro, solo
+            // las filas de hoy): el dato nuevo no suma ninguna consulta.
+            $ventas = Dte::where('estado', EstadoDte::Aceptado->value)
                 ->where('ambiente', $ambienteProduccion)
                 ->whereIn('tipo_dte', [TipoDte::Factura->value, TipoDte::CreditoFiscal->value, TipoDte::FacturaExportacion->value])
                 ->where('fecha_emision', '>=', $inicioMes)
-                ->sum('total_pagar');
+                ->selectRaw('COALESCE(SUM(total_pagar), 0) AS mes, COALESCE(SUM(CASE WHEN fecha_emision >= ? AND fecha_emision < ? THEN total_pagar ELSE 0 END), 0) AS hoy', [$hoy, $manana])
+                ->toBase()
+                ->first();
+            $ventasMes = (float) ($ventas->mes ?? 0);
+            $ventasHoy = (float) ($ventas->hoy ?? 0);
         }
 
         return [
             'dte_aceptados_mes' => $dteAceptadosMes,
             'ventas_mes' => $ventasMes,
+            'ventas_hoy' => $ventasHoy,
             'documentos_pendientes' => $veOperativos ? DocumentoRecibido::where('estado', 'pendiente')->count() : null,
             'listas_recientes' => $veOperativos
                 ? Exportacion::where('created_at', '>=', $inicioMes)

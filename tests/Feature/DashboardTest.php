@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
+use App\Http\Controllers\DashboardController;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\DocumentoRecibido;
@@ -13,10 +14,12 @@ use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
 use App\Models\User;
+use App\Services\Sistema\DiagnosticoSistemaService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEnlaceStorage;
@@ -431,8 +434,8 @@ class DashboardTest extends TestCase
 
     public function test_solo_administrador_ve_tarjeta_de_jobs_fallidos(): void
     {
-        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->assertSee('Jobs fallidos');
-        $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk()->assertDontSee('Jobs fallidos');
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->assertSee('Trabajos fallidos');
+        $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk()->assertDontSee('Estado técnico');
     }
 
     public function test_solo_gestor_dte_ve_el_estado_tecnico(): void
@@ -569,10 +572,26 @@ class DashboardTest extends TestCase
         // El caso real reportado: solo "Atención inmediata" sin decir POR QUÉ obligaba a
         // adivinar cuál de los 10 checks disparó la alerta. Sin backup de hoy, el badge
         // debe nombrar el check crítico.
-        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+        $respuesta = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Atención inmediata')
             ->assertSee('1 problema crítico: Backup del día');
+
+        $this->assertSame(1, substr_count($respuesta->getContent(), 'Atención inmediata'));
+    }
+
+    public function test_jerarquia_mensual_y_accesos_moviles_usan_clases_de_produccion(): void
+    {
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('/<p class="[^"]*text-3xl[^"]*">\$[\d,.]+<\/p>/', $html);
+        preg_match('/<nav aria-labelledby="titulo-accesos">(.*?)<\/nav>/s', $html, $accesos);
+        $this->assertStringContainsString('grid grid-cols-2 gap-2 sm:grid-cols-4', $accesos[1]);
+        preg_match_all('/<a[^>]*class="([^"]*)"/', $accesos[1], $botones);
+        $this->assertNotEmpty($botones[1]);
+        foreach ($botones[1] as $clases) {
+            $this->assertStringContainsString('min-h-11', $clases);
+        }
     }
 
     public function test_varios_criticos_se_enumeran_en_el_motivo(): void
@@ -624,6 +643,95 @@ class DashboardTest extends TestCase
 
         $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
             ->assertOk()->assertDontSee('Atención inmediata');
+    }
+
+    public function test_ventas_de_hoy_reutilizan_la_consulta_mensual(): void
+    {
+        $this->travelTo(now()->startOfMonth()->addDays(10)->setTime(12, 0));
+        $this->dte(['ambiente' => '01', 'total_pagar' => 125]);
+        $this->dte(['ambiente' => '01', 'total_pagar' => 75, 'fecha_emision' => now()->subDay()]);
+        $this->dte(['ambiente' => '01', 'total_pagar' => 30, 'fecha_emision' => now()->addDay()]);
+        $this->dte(['ambiente' => '00', 'total_pagar' => 900]);
+        $this->dte(['ambiente' => '01', 'estado' => EstadoDte::Rechazado->value, 'total_pagar' => 800]);
+        $this->dte(['ambiente' => '01', 'tipo_dte' => TipoDte::NotaCredito->value, 'total_pagar' => 20]);
+
+        // Se mide solo el cálculo compartido: antes eran dos agregados DTE y dos
+        // operativos; hoy sigue siendo exactamente la misma cantidad.
+        $metodo = new \ReflectionMethod(DashboardController::class, 'calcularStats');
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $stats = $metodo->invoke(app(DashboardController::class), true, true, 0);
+        $consultas = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertCount(4, $consultas);
+        $this->assertSame(230.0, $stats['ventas_mes']);
+        $this->assertSame(125.0, $stats['ventas_hoy']);
+        $this->travelBack();
+    }
+
+    public function test_jefatura_no_consulta_ni_muestra_datos_tecnicos(): void
+    {
+        $usuario = $this->usuario('jefatura');
+        $this->mock(DiagnosticoSistemaService::class)
+            ->shouldNotReceive('evaluar');
+        $consultas = [];
+        DB::listen(function ($q) use (&$consultas) {
+            $consultas[] = $q->sql;
+        });
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertDontSee('Estado técnico')->assertDontSee('Estado del sistema')
+            ->assertDontSee('Diagnóstico')->assertDontSee('Trabajos fallidos');
+        foreach ($consultas as $sql) {
+            $this->assertDoesNotMatchRegularExpression('/from ["`]?failed_jobs|from ["`]?jobs["`]?/i', $sql);
+        }
+    }
+
+    public function test_accesos_rapidos_y_tarjetas_respetan_permisos_individuales(): void
+    {
+        $usuario = User::factory()->create(['activo' => true]);
+        foreach (['dte.ver', 'dte.gestionar', 'ppq.ver', 'rutas.ver'] as $permiso) {
+            Permission::findOrCreate($permiso, 'web');
+        }
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertDontSee('titulo-accesos')->assertDontSee('Por cobrar')->assertDontSee('Por entregar');
+        $usuario->givePermissionTo('dte.ver', 'ppq.ver', 'rutas.ver');
+        $this->get(route('dashboard'))->assertOk()
+            ->assertSee('Llegó de pedidos')->assertSee('Facturas por cobrar')
+            ->assertSee('Por cobrar')->assertSee('Por entregar')
+            ->assertSee(route('rutas.por-entregar.index'), false)
+            ->assertDontSee('Nuevo CCF')->assertDontSee('Nueva Factura');
+        $usuario->givePermissionTo('dte.gestionar');
+        $this->get(route('dashboard'))->assertOk()->assertSee('Nuevo CCF')->assertSee('Nueva Factura');
+    }
+
+    public function test_documentos_tienen_tarjetas_moviles_con_las_mismas_acciones(): void
+    {
+        $dte = $this->dte(['ambiente' => '01', 'sello_recepcion' => 'SELLO'.Str::random(30), 'fecha_procesamiento_mh' => now()]);
+        foreach (['administrador', 'jefatura'] as $rol) {
+            $html = $this->actingAs($this->usuario($rol))->get(route('dashboard'))->assertOk()->getContent();
+            $this->assertStringContainsString('hidden md:block overflow-x-auto', $html);
+            $this->assertMatchesRegularExpression('/<ul class="md:hidden[^>]*>/', $html);
+            preg_match('/<ul class="md:hidden[^>]*>(.*?)<\/ul>/s', $html, $tarjetas);
+            $url = route($rol === 'jefatura' ? 'facturacion.pdf' : 'facturacion.show', $dte);
+            $this->assertStringContainsString($url, $tarjetas[1]);
+            $this->assertStringContainsString('min-h-11', $tarjetas[1]);
+            $this->assertStringContainsString('CLIENTE DASHBOARD SA', $tarjetas[1]);
+            if ($rol === 'jefatura') {
+                $this->assertStringNotContainsString($dte->numero_control, $tarjetas[1]);
+                $this->assertStringNotContainsString('Aceptado', $tarjetas[1]);
+            }
+        }
+    }
+
+    public function test_ver_compras_no_habilita_accesos_a_listas_de_empaque(): void
+    {
+        $usuario = User::factory()->create(['activo' => true]);
+        $usuario->givePermissionTo('documentos-recibidos.ver', 'dte.ver');
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertSee('Compras pendientes')
+            ->assertDontSee('href="'.route('facturacion.listas.index').'"', false)
+            ->assertDontSee('Nueva lista de empaque');
     }
 
     // ---------- Rutas existentes siguen funcionando ----------
