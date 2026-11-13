@@ -414,7 +414,7 @@
                             @csrf
                             <button type="submit" @disabled(! $correoConta)
                                     title="{{ $correoConta ? $accionConta.': envía el PDF y el JSON oficial a '.$correoConta : 'No hay un correo de contabilidad configurado.' }}"
-                                    class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    class="inline-flex min-h-11 sm:min-h-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
                                 {{ $accionConta }}
                             </button>
                         </form>
@@ -901,7 +901,7 @@
             @endcan
 
             <div>
-                <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">← Volver al listado</a>
+                <a href="{{ route('facturacion.index') }}" class="inline-flex min-h-11 sm:min-h-0 items-center text-sm text-gray-500 hover:underline">← Volver al listado</a>
             </div>
         </div>
     </div>
