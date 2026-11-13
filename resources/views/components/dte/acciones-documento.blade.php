@@ -58,15 +58,15 @@
     <div class="bg-white shadow sm:rounded-lg p-4 border border-gray-200">
         <div class="flex flex-wrap items-center gap-2">
             <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank"
-               class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+               class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Ver {{ $pdfEtiqueta }}
             </a>
             <a href="{{ route('facturacion.pdf.descargar', $dte) }}"
-               class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+               class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Descargar PDF
             </a>
             <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank"
-               class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+               class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Imprimir
             </a>
 
@@ -75,11 +75,11 @@
                  cliente y a contabilidad siguen siendo solo el CCF. --}}
             @if ($ordenRecibida)
                 <a href="{{ route('facturacion.pdf-con-orden', $dte) }}" target="_blank"
-                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     PDF + orden
                 </a>
                 <a href="{{ route('facturacion.ordenes-recibidas.pdf', $ordenRecibida) }}" target="_blank"
-                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     Ver orden de compra
                 </a>
             @endif
@@ -93,7 +93,7 @@
                  envío. Ver DteCorreoClienteRapidoTest. --}}
             @if ($puedeCorreo)
                 <a href="#correo-cliente"
-                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     Correo del cliente
                 </a>
             @endif
@@ -112,7 +112,7 @@
                  en los borradores, que es justo cuando aplica. --}}
             @can('update', $dte)
                 <a href="{{ route('facturacion.edit', $dte) }}"
-                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                   class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     Editar
                 </a>
             @endcan
@@ -137,7 +137,7 @@
                     <form method="POST" action="{{ route('facturacion.duplicar', $dte) }}" class="inline-flex"
                           onsubmit="return confirm('¿Duplicar este CCF como un borrador nuevo? Este documento no se modifica.');">
                         @csrf
-                        <button class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        <button class="inline-flex min-h-11 sm:min-h-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                             Duplicar
                         </button>
                     </form>
