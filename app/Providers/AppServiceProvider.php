@@ -25,6 +25,7 @@ use App\Services\Gastos\InstalacionGastos;
 use App\Services\Planilla\ProteccionPlanilla;
 use App\Services\Rutas\FuentePedidos;
 use App\Services\Rutas\FuentePedidosSala;
+use App\Support\MemoDePedido;
 use App\Support\PasswordRules;
 use App\Support\Sistema\NotificacionesRespaldo;
 use App\Support\WorkerHeartbeat;
@@ -51,7 +52,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         // Lecturas de caché que se hacen una sola vez por pedido o por trabajo de la cola.
-        $this->app->scoped(\App\Support\MemoDePedido::class);
+        $this->app->scoped(MemoDePedido::class);
 
         // Centro de Configuración. Singleton porque el resolver memoriza el mapa de
         // overrides mientras la huella de caché no cambie: compartir la instancia

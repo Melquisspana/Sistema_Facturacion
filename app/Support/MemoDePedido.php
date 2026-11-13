@@ -2,12 +2,13 @@
 
 namespace App\Support;
 
+use App\Providers\AppServiceProvider;
 use Closure;
 
 /**
  * Guarda en memoria lecturas de caché para no repetirlas dentro del mismo pedido HTTP.
  *
- * Se registra como `scoped` en {@see \App\Providers\AppServiceProvider}: el contenedor lo
+ * Se registra como `scoped` en {@see AppServiceProvider}: el contenedor lo
  * descarta al terminar cada pedido y, en la cola, entre un trabajo y el siguiente
  * (`forgetScopedInstances`). Así un worker de larga vida nunca arrastra un valor viejo.
  */
