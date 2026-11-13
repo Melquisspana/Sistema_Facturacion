@@ -465,7 +465,12 @@
                                                 <span class="block text-xs text-gray-500 dark:text-paper-300 md:hidden">Formato de NC</span>
                                                 @if ($lote)
                                                     {{-- Generado o descargado; nunca «enviado»: la entrega va fuera del sistema. --}}
-                                                    <a href="{{ route('ppq.nc-exportaciones.show', $lote) }}" class="font-mono text-indigo-600 hover:underline">{{ $lote->referencia }}</a>
+                                                    {{-- Jefatura no entra al formato de NC (403): la referencia va sin enlace. --}}
+                                                    @unlessrole('jefatura')
+                                                        <a href="{{ route('ppq.nc-exportaciones.show', $lote) }}" class="font-mono text-indigo-600 hover:underline">{{ $lote->referencia }}</a>
+                                                    @else
+                                                        <span class="font-mono">{{ $lote->referencia }}</span>
+                                                    @endunlessrole
                                                     <span class="block text-xs text-gray-500 dark:text-paper-300">Archivo {{ mb_strtolower($lote->estado->label()) }}; su entrega al cliente no consta aquí</span>
                                                 @else
                                                     <span class="text-xs text-gray-500 dark:text-paper-300">No incluida en ningún formato</span>

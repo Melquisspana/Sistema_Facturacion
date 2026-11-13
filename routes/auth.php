@@ -16,6 +16,11 @@ Route::middleware('guest')->group(function () {
 
     Route::post('login', [AuthenticatedSessionController::class, 'store']);
 
+    // Quien salió a propósito vuelve a entrar con su cuenta de Cloudflare Access: borra la
+    // marca de «salió» y CloudflareAccessSso abre la sesión en el pedido siguiente.
+    Route::post('entrar-con-mi-cuenta', [AuthenticatedSessionController::class, 'entrarConCuenta'])
+        ->name('login.cuenta');
+
     Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
 

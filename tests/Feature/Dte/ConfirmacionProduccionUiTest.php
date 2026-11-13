@@ -598,7 +598,7 @@ class ConfirmacionProduccionUiTest extends TestCase
         $this->candadosTransmisionAbiertos();
         $ccf = $this->documento(TipoDte::CreditoFiscal);
 
-        foreach (['jefatura', 'contabilidad'] as $rol) {
+        foreach (['contabilidad'] as $rol) { // Jefatura abre el PDF, no la ficha: JefaturaAbrePdfTest
             $this->actingAs($this->usuario($rol))
                 ->get(route('facturacion.show', $ccf))
                 ->assertOk()

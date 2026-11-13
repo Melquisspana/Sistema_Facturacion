@@ -242,7 +242,7 @@ class NcExportacionPendientesPaginacionTest extends TestCase
         $cliente = $this->cliente();
         $nota = $this->nc($cliente);
 
-        $this->bandeja($cliente, [], $this->usuario(RolSistema::Jefatura))
+        $this->bandeja($cliente, [], $this->usuario(RolSistema::Contabilidad))
             ->assertOk()
             ->assertSee($nota->numero_control)
             ->assertDontSee('name="dtes[]"', false)

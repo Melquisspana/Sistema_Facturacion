@@ -446,9 +446,8 @@ class NavigationTest extends TestCase
             // alcanza desde «Productos» (es su segunda pestaña) y los clientes de
             // exportación desde la ficha del cliente, así que ninguno necesita fila.
             'facturacion.listas.index',
-            // Órdenes de compra recibidas por correo (06/11/2026): mismo permiso que los
-            // documentos (dte.ver), dentro de Ventas y facturación.
-            'facturacion.ordenes-recibidas.index',
+            // SALE 'facturacion.ordenes-recibidas.index' (12/11/2026): la pantalla viene
+            // apagada (Configuración › Módulos). Ver OrdenesRecibidasApagadaTest.
         ];
 
         return [

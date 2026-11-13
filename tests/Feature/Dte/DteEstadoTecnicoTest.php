@@ -110,7 +110,7 @@ class DteEstadoTecnicoTest extends TestCase
     {
         $ccf = $this->ccfFirmado();
 
-        $this->actingAs($this->usuario('jefatura'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Estado técnico DTE')

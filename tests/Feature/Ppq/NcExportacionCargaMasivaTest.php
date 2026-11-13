@@ -68,7 +68,7 @@ class NcExportacionCargaMasivaTest extends TestCase
         parent::setUp();
         // Descargar archiva una copia: en pruebas va a un disco fingido.
         Storage::fake((string) config('dte.storage.disk', 'local'));
-        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
+        foreach (['administrador', 'facturacion', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         foreach (['ppq.ver', 'ppq.gestionar'] as $permiso) {

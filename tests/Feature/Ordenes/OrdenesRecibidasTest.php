@@ -3,6 +3,7 @@
 namespace Tests\Feature\Ordenes;
 
 use App\Enums\EstadoDte;
+use App\Enums\ModuloSistema;
 use App\Enums\PermisoSistema;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -122,6 +123,12 @@ class OrdenesRecibidasTest extends TestCase
         return $dte->refresh();
     }
 
+    /** La pantalla viene apagada (12/11/2026); estas pruebas la miran prendida. */
+    private function pantallaPrendida(): void
+    {
+        config([ModuloSistema::OrdenesRecibidas->claveConfig() => true]);
+    }
+
     private function paginas(string $pdf): int
     {
         return (new Fpdi)->setSourceFile(StreamReader::createByString($pdf));
@@ -131,6 +138,7 @@ class OrdenesRecibidasTest extends TestCase
 
     public function test_la_lista_muestra_sin_facturar_y_enlaza_las_facturadas(): void
     {
+        $this->pantallaPrendida();
         $sala = $this->sala('0232', 'Sala de prueba norte');
         $pendiente = $this->orden('261102320010394', $sala);
         $facturada = $this->orden('2611023200103', $sala);
@@ -198,6 +206,7 @@ class OrdenesRecibidasTest extends TestCase
 
     public function test_filtra_por_mes(): void
     {
+        $this->pantallaPrendida();
         $this->orden('261102320010394', null, '2026-11-05');
         $this->orden('261002320010001', null, '2026-10-20');
 
@@ -214,6 +223,7 @@ class OrdenesRecibidasTest extends TestCase
 
     public function test_sin_permiso_de_facturacion_no_entra_ni_abre_el_pdf(): void
     {
+        $this->pantallaPrendida();
         $orden = $this->orden('261102320010394');
         $sinPermiso = $this->usuario(['ppq.ver']);
 
@@ -269,7 +279,9 @@ class OrdenesRecibidasTest extends TestCase
         $this->actingAs($usuario)->get(route('facturacion.show', $dte))
             ->assertOk()
             ->assertSee('PDF + orden')
-            ->assertSee(route('facturacion.pdf-con-orden', $dte));
+            ->assertSee(route('facturacion.pdf-con-orden', $dte))
+            // Con la pantalla apagada (por defecto) no se enlaza su PDF, que da 404.
+            ->assertDontSee('Ver orden de compra');
 
         $union = $this->actingAs($usuario)->get(route('facturacion.pdf-con-orden', $dte))
             ->assertOk()
@@ -292,6 +304,7 @@ class OrdenesRecibidasTest extends TestCase
 
     public function test_si_la_orden_no_se_puede_unir_avisa_y_ofrece_abrirlas_aparte(): void
     {
+        $this->pantallaPrendida();
         $sala = $this->sala('0232');
         $this->orden('261102320010394', $sala, pdf: '%PDF-1.7 no es un pdf de verdad');
         $dte = $this->ccf('261102320010394', $sala);

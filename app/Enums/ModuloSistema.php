@@ -33,6 +33,8 @@ enum ModuloSistema: string
     case Asistencia = 'asistencia';
     case Planilla = 'planilla';
     case PlanillaPagos = 'planilla_pagos';
+    // Solo la pantalla de Facturación; el correo y los avisos siguen (12/11/2026).
+    case OrdenesRecibidas = 'ordenes_recibidas';
 
     /** Clave del Centro de Configuración. */
     public function clave(): string
@@ -49,6 +51,7 @@ enum ModuloSistema: string
             self::Asistencia => 'asistencia.enabled',
             self::Planilla => 'planilla.enabled',
             self::PlanillaPagos => 'planilla.pagos_enabled',
+            self::OrdenesRecibidas => 'ppq.ordenes_recibidas_enabled',
         };
     }
 
@@ -61,6 +64,7 @@ enum ModuloSistema: string
             self::Asistencia => 'ASISTENCIA_ENABLED',
             self::Planilla => 'PLANILLA_ENABLED',
             self::PlanillaPagos => 'PLANILLA_PAGOS_ENABLED',
+            self::OrdenesRecibidas => 'ORDENES_RECIBIDAS_ENABLED',
         };
     }
 
@@ -78,6 +82,7 @@ enum ModuloSistema: string
             self::Asistencia => 'Asistencia',
             self::Planilla => 'Planilla',
             self::PlanillaPagos => 'Pagos de planilla',
+            self::OrdenesRecibidas => 'Órdenes recibidas',
         };
     }
 
@@ -90,6 +95,7 @@ enum ModuloSistema: string
             self::Asistencia => 'Marcaciones con el lector de huella y jornadas, dentro de Personal.',
             self::Planilla => 'Planillas de sueldos y fichas de las personas, dentro de Personal.',
             self::PlanillaPagos => 'Lo pagado de cada planilla y los anticipos; necesita Planilla encendida. Los pagos quedan registrados en Gastos.',
+            self::OrdenesRecibidas => 'La lista de órdenes de compra que llegaron por correo, en Ventas y facturación. El correo se sigue leyendo aunque esté apagada.',
         };
     }
 
@@ -102,6 +108,7 @@ enum ModuloSistema: string
             self::Asistencia => 'Desaparece Asistencia de Personal y los lectores de huella dejan de registrar marcaciones: el servidor les responde «no encontrado».',
             self::Planilla => 'Desaparece Planilla de Personal y sus pantallas responden «no encontrado».',
             self::PlanillaPagos => 'La planilla deja de llevar lo pagado: no se ven las pantallas de pagos ni de anticipos, y la hoja impresa muestra el total a pagar de cada persona.',
+            self::OrdenesRecibidas => 'Desaparece «Órdenes recibidas» del menú y su pantalla y el PDF de cada orden responden «no encontrado». Las órdenes se siguen leyendo del correo, se ofrecen al facturar y salen en «PDF + orden».',
         };
     }
 

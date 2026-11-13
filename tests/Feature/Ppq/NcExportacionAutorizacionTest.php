@@ -103,7 +103,7 @@ class NcExportacionAutorizacionTest extends TestCase
         return [
             'administrador' => [RolSistema::Administrador],
             'facturación' => [RolSistema::Facturacion],
-            'jefatura' => [RolSistema::Jefatura],
+            // Jefatura tiene ppq.ver pero no el formato de NC (12/11/2026): JefaturaSinFormatoNcTest.
             'contabilidad' => [RolSistema::Contabilidad],
         ];
     }
@@ -143,8 +143,8 @@ class NcExportacionAutorizacionTest extends TestCase
         $cliente = $this->clienteConPerfil();
         $lote = $this->lote($cliente);
 
-        // Jefatura es SOLO lectura: no tiene ppq.gestionar, pero sí puede bajar el archivo.
-        $usuario = $this->usuario(RolSistema::Jefatura);
+        // Contabilidad es SOLO lectura: no tiene ppq.gestionar, pero sí puede bajar el archivo.
+        $usuario = $this->usuario(RolSistema::Contabilidad);
         $this->assertFalse($usuario->can(PermisoSistema::PpqGestionar->value));
 
         $this->actingAs($usuario)
@@ -217,7 +217,7 @@ class NcExportacionAutorizacionTest extends TestCase
     {
         $cliente = $this->clienteConPerfil();
 
-        $this->actingAs($this->usuario(RolSistema::Jefatura))
+        $this->actingAs($this->usuario(RolSistema::Contabilidad))
             ->get(route('ppq.nc-exportaciones.index', ['cliente_id' => $cliente->id]))
             ->assertOk()
             ->assertDontSee('Generar formato con las marcadas');

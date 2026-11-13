@@ -115,7 +115,7 @@ class DteColaCorreosUiTest extends TestCase
         $this->jobPendiente(10);
         $dte = $this->ccf();
 
-        $this->actingAs($this->usuario('jefatura'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.show', $dte))
             ->assertOk()
             ->assertDontSee('start-queue.bat');

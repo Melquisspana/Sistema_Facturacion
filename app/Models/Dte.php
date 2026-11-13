@@ -350,6 +350,32 @@ class Dte extends Model
     }
 
     /**
+     * Scope: lo que Hacienda ya procesó de verdad: aceptados y los anulados que antes se
+     * aceptaron (con sello real). Fuera borradores, generados, firmados, enviados sin
+     * respuesta, rechazados y la anulación interna de un generado (sin sello). Es lo único
+     * que ve Jefatura en Documentos fiscales (12/11/2026).
+     */
+    public function scopeProcesadoPorHacienda(Builder $q): Builder
+    {
+        return $q->whereIn('estado', [EstadoDte::Aceptado->value, EstadoDte::Invalidado->value])
+            ->whereNotNull('sello_recepcion')
+            ->where('sello_recepcion', '!=', '')
+            ->whereRaw('UPPER(sello_recepcion) NOT LIKE ?', ['MOCK%'])
+            ->whereNotNull('fecha_procesamiento_mh');
+    }
+
+    /** Lo mismo que {@see scopeProcesadoPorHacienda()} para un documento ya cargado. */
+    public function procesadoPorHacienda(): bool
+    {
+        $sello = (string) $this->sello_recepcion;
+
+        return in_array($this->estado, [EstadoDte::Aceptado, EstadoDte::Invalidado], true)
+            && $sello !== ''
+            && ! str_starts_with(strtoupper($sello), 'MOCK')
+            && $this->fecha_procesamiento_mh !== null;
+    }
+
+    /**
      * Sala a la que CORRESPONDE una nota por avería. Puede no ser la sala receptora del
      * documento (esa es clienteSucursal, la del CCF relacionado): cuando la avería se
      * acredita contra un CCF de otra sala del mismo cliente, el producto dañado sigue

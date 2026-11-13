@@ -18,8 +18,86 @@
         'pendiente' => 'Pendiente',
         'error' => 'Fallido',
     ];
+    // Jefatura (12/11/2026): solo lo que Hacienda ya procesó (lo filtra DteController::index)
+    // y solo lo que le sirve: fecha, tipo, cliente y sala, total y el PDF. Nada técnico.
+    $soloPdf = (bool) auth()->user()?->abreDocumentosComoPdf();
 @endphp
 
+@if ($soloPdf)
+<div class="hidden md:block overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead>
+            <tr class="text-left text-gray-500">
+                <th class="px-3 py-2">Fecha</th>
+                <th class="px-3 py-2">Tipo</th>
+                <th class="px-3 py-2">Cliente / sala</th>
+                <th class="px-3 py-2 text-right">Total</th>
+                <th class="px-3 py-2 text-right"><span class="sr-only">PDF</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            @forelse ($dtes as $dte)
+                <tr>
+                    <td class="px-3 py-2 whitespace-nowrap">{{ $dte->fecha_emision?->format('d/m/Y') }}</td>
+                    <td class="px-3 py-2">
+                        {{ $dte->tipo_dte->label() }}
+                        @if ($dte->estado === \App\Enums\EstadoDte::Invalidado)
+                            <span class="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">Anulado</span>
+                        @endif
+                    </td>
+                    <td class="px-3 py-2">
+                        @if ($dte->cliente)
+                            <div class="font-medium text-gray-800">{{ $dte->cliente->nombre }}</div>
+                            @if ($dte->clienteSucursal)
+                                <div class="text-xs text-gray-500">{{ $dte->clienteSucursal->nombre }}</div>
+                            @endif
+                        @else
+                            <span class="font-medium text-gray-800">Consumidor final</span>
+                        @endif
+                    </td>
+                    <td class="px-3 py-2 text-right font-mono">${{ number_format($dte->total_pagar, 2) }}</td>
+                    <td class="px-3 py-2 text-right whitespace-nowrap">
+                        <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline">Ver PDF</a>
+                    </td>
+                </tr>
+            @empty
+                <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400">No hay documentos con esos filtros.</td></tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
+
+{{-- Jefatura en el celular: una tarjeta por documento con lo mismo que su tabla
+     (fecha, tipo, cliente y sala, total) y «Ver PDF» como botón de 44 px. --}}
+<ul class="md:hidden divide-y divide-gray-100">
+    @forelse ($dtes as $dte)
+        <li class="py-4">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="font-semibold text-gray-900">
+                        {{ $dte->tipo_dte->label() }}
+                        @if ($dte->estado === \App\Enums\EstadoDte::Invalidado)
+                            <span class="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">Anulado</span>
+                        @endif
+                    </p>
+                    <p class="break-words font-medium text-gray-800">{{ $dte->cliente?->nombre ?? 'Consumidor final' }}</p>
+                    @if ($dte->cliente && $dte->clienteSucursal)
+                        <p class="text-xs text-gray-500">{{ $dte->clienteSucursal->nombre }}</p>
+                    @endif
+                </div>
+                <span class="shrink-0 font-mono font-semibold text-gray-900">${{ number_format($dte->total_pagar, 2) }}</span>
+            </div>
+            <div class="mt-2 flex items-center justify-between gap-3 text-sm">
+                <span class="text-gray-600">{{ $dte->fecha_emision?->format('d/m/Y') }}</span>
+                <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank"
+                   class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-indigo-700 hover:bg-gray-50">Ver PDF</a>
+            </div>
+        </li>
+    @empty
+        <li class="py-6 text-center text-gray-400">No hay documentos con esos filtros.</li>
+    @endforelse
+</ul>
+@else
 <div class="hidden md:block overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
         <thead>
@@ -187,6 +265,7 @@
         <li class="py-6 text-center text-gray-400">No hay documentos con esos filtros.</li>
     @endforelse
 </ul>
+@endif
 
 <div class="mt-4">
     {{ $dtes->links() }}

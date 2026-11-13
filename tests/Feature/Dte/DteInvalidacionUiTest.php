@@ -142,7 +142,7 @@ class DteInvalidacionUiTest extends TestCase
     {
         $nc = $this->ncAceptada();
 
-        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        foreach (['facturacion', 'contabilidad'] as $rol) { // Jefatura abre el PDF, no la ficha: JefaturaAbrePdfTest
             $this->actingAs($this->usuario($rol))
                 ->get(route('facturacion.show', $nc))
                 ->assertOk()
@@ -303,7 +303,7 @@ class DteInvalidacionUiTest extends TestCase
         $nc = $this->ncAceptada();
 
         // Ni jefatura, ni facturación, ni contabilidad pueden invalidar (solo admin).
-        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        foreach (['facturacion', 'contabilidad'] as $rol) { // Jefatura abre el PDF, no la ficha: JefaturaAbrePdfTest
             $this->actingAs($this->usuario($rol))
                 ->post(route('facturacion.invalidacion.dry-run', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
                 ->assertForbidden();
@@ -400,7 +400,7 @@ class DteInvalidacionUiTest extends TestCase
         Http::fake();
         $nc = $this->ncAceptada();
 
-        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        foreach (['facturacion', 'contabilidad'] as $rol) { // Jefatura abre el PDF, no la ficha: JefaturaAbrePdfTest
             $this->actingAs($this->usuario($rol))
                 ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
                 ->assertForbidden();

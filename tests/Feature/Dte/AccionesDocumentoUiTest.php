@@ -748,7 +748,7 @@ class AccionesDocumentoUiTest extends TestCase
         Http::fake();
         $ccf = $this->documentoAceptado(TipoDte::CreditoFiscal);
 
-        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        foreach (['facturacion', 'contabilidad'] as $rol) { // Jefatura abre el PDF, no la ficha: JefaturaAbrePdfTest
             $usuario = $this->usuario($rol);
 
             $this->actingAs($usuario)

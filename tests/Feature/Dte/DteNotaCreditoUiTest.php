@@ -132,7 +132,7 @@ class DteNotaCreditoUiTest extends TestCase
     {
         $ccf = $this->ccfAceptado();
 
-        $this->actingAs($this->usuario('jefatura'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Crear nota de crédito');
