@@ -65,7 +65,7 @@ class NcExportacionArchivoTest extends TestCase
 
     // ------------------------------------------------------------------ utilidades
 
-    private function usuario(RolSistema $rol = RolSistema::Jefatura): User
+    private function usuario(RolSistema $rol = RolSistema::Contabilidad): User
     {
         return User::factory()->create()->assignRole($rol->value);
     }

@@ -162,7 +162,7 @@ class DteGenerarJsonUiTest extends TestCase
     {
         $ccf = $this->ccfGenerado();
 
-        $this->actingAs($this->usuario('jefatura'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Generar JSON oficial preliminar');

@@ -155,8 +155,9 @@ enum PermisoSistema: string
     // Solo Administrador y Jefatura (Melqui, 11/11/2026).
     case RutasVentasVer = 'rutas.ventas.ver';
     // El mapa de ventas por zona del tablero (09/11/2026): lo vendido en el mes por
-    // departamento y distrito, dónde falta y por dónde pasan las rutas. Lleva montos y el
-    // jefe de vendedores los ve (decisión de Melqui), pero no le abre la pantalla de Ventas.
+    // departamento y distrito, dónde falta y por dónde pasan las rutas. Lleva montos, salvo
+    // para el jefe de vendedores, que ve cuántas facturas (12/11/2026, por rol en
+    // MapaVentasController). No le abre la pantalla de Ventas.
     case RutasMapaVer = 'rutas.mapa.ver';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
     // `gestionar` da de alta y desactiva. Va aparte de `rutas.gestionar` porque el
@@ -262,7 +263,7 @@ enum PermisoSistema: string
                 self::RutasEntregasRegistrar,
                 self::RutasPedidosRegistrar,
                 self::RutasPedidosVer,
-                // El mapa del tablero, con montos (09/11/2026). Ventas sigue cerrada.
+                // El mapa del tablero, sin montos: cuántas facturas (12/11/2026). Ventas sigue cerrada.
                 self::RutasMapaVer,
             ]),
 

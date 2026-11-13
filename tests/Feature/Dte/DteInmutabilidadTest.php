@@ -179,7 +179,7 @@ class DteInmutabilidadTest extends TestCase
 
     public function test_policy_lectores_no_editan_pero_ven(): void
     {
-        $consulta = $this->usuario('jefatura');
+        $consulta = $this->usuario('contabilidad');
         $contador = $this->usuario('contabilidad');
         $borrador = $this->crearDte('borrador');
 
@@ -187,5 +187,7 @@ class DteInmutabilidadTest extends TestCase
         $this->assertTrue(Gate::forUser($contador)->allows('view', $borrador));
         $this->assertFalse(Gate::forUser($consulta)->allows('update', $borrador));
         $this->assertFalse(Gate::forUser($contador)->allows('create', Dte::class));
+        // Jefatura solo ve lo que Hacienda ya procesó (12/11/2026): JefaturaAbrePdfTest.
+        $this->assertFalse(Gate::forUser($this->usuario('jefatura'))->allows('view', $borrador));
     }
 }

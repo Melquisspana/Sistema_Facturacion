@@ -44,7 +44,9 @@
                 </a>
             @endcan
 
+            {{-- Jefatura no lo usa (12/11/2026); NcExportacionController le da 403. --}}
             @can('ppq.ver')
+                @unlessrole('jefatura')
                 @if (\App\Models\ClientePerfilDocumento::where('activo', true)->whereNotNull('formato_export')->exists())
                     <a href="{{ route('ppq.nc-exportaciones.index') }}"
                        class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -55,6 +57,7 @@
                         Generar formato de NC
                     </a>
                 @endif
+                @endunlessrole
             @endcan
         </div>
     </x-slot>
@@ -66,6 +69,11 @@
                 @if (session('status'))
                     <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
                         {{ session('status') }}
+                    </div>
+                @endif
+                @if (session('error'))
+                    <div role="alert" class="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {{ session('error') }}
                     </div>
                 @endif
 
@@ -145,7 +153,12 @@
                      desarrollo/APITEST, 01 en el servidor de producción), con todos sus estados
                      (borrador incluido). Nunca mezcla ambos ambientes en la misma vista. El otro
                      ambiente vive escondido en Auditoría; a propósito no hay botón para verlo aquí. --}}
+                @php $soloProcesados = (bool) auth()->user()?->abreDocumentosComoPdf(); @endphp
+                {{-- Jefatura (12/11/2026): solo ve lo que Hacienda ya procesó; sin ambiente,
+                     estados ni filtros que no usa. El servidor aplica el mismo alcance. --}}
+                @unless ($soloProcesados)
                 <p class="mb-2 text-xs text-gray-400">Mostrando documentos del ambiente <strong class="text-gray-500">{{ $ambienteListado }}</strong> (el activo de esta instalación).</p>
+                @endunless
 
                 {{-- Accesos rápidos por tipo/estado (chips) --}}
                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
@@ -155,11 +168,13 @@
                     <a href="{{ route('facturacion.index', ['tipo_dte' => '01']) }}" class="{{ $tipoActual === '01' ? $chipActivo : $chipInactivo }}">Facturas consumidor final</a>
                     <a href="{{ route('facturacion.index', ['tipo_dte' => '05']) }}" class="{{ $tipoActual === '05' ? $chipActivo : $chipInactivo }}">Notas de crédito</a>
                     <a href="{{ route('facturacion.index', ['tipo_dte' => '11']) }}" class="{{ $tipoActual === '11' ? $chipActivo : $chipInactivo }}">Facturas de exportación</a>
+                    @unless ($soloProcesados)
                     <a href="{{ route('facturacion.index', ['estado' => 'pendientes']) }}" class="{{ $estadoActual === 'pendientes' ? $chipActivo : $chipInactivo }}">Pendientes</a>
                     <a href="{{ route('facturacion.index', ['estado' => 'aceptado']) }}" class="{{ $estadoActual === 'aceptado' ? $chipActivo : $chipInactivo }}">Aceptados</a>
                     <a href="{{ route('facturacion.index', ['estado' => 'rechazados_invalidados']) }}" class="{{ $estadoActual === 'rechazados_invalidados' ? $chipActivo : $chipInactivo }}">Rechazados / invalidados</a>
                     {{-- Único acceso a los rechazados archivados: el resto del listado los excluye. --}}
                     <a href="{{ route('facturacion.index', ['estado' => 'rechazados_archivados']) }}" class="{{ $estadoActual === 'rechazados_archivados' ? $chipActivo : $chipInactivo }}">Rechazados archivados</a>
+                    @endunless
                 </div>
 
                 {{-- Buscador siempre visible + filtros avanzados colapsables --}}
@@ -213,6 +228,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @unless ($soloProcesados)
                             <div>
                                 <x-input-label for="estado" value="Estado" />
                                 <select id="estado" name="estado" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm py-1.5">
@@ -222,6 +238,7 @@
                                     @endforeach
                                 </select>
                             </div>
+                            @endunless
                             <div>
                                 <x-input-label for="cliente_id" value="Cliente" />
                                 <select id="cliente_id" name="cliente_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm py-1.5">

@@ -7,7 +7,9 @@ use App\Services\Auth\CloudflareAccessJwtService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie as CookieFacade;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -30,10 +32,26 @@ use Symfony\Component\HttpFoundation\Response;
  *    ni asigna roles).
  *
  * El header Cf-Access-Authenticated-User-Email NUNCA se usa para autenticar.
+ *
+ * Quien salió a propósito no vuelve a entrar solo (12/11/2026). Access manda el JWT en cada
+ * pedido mientras su cookie viva (y la renueva en silencio con Google aun después de
+ * /cdn-cgi/access/logout), así que salir de Laravel duraba un pedido: la sesión se abría otra
+ * vez. «Salir» deja la cookie {@see MARCA_SALIDA} y, mientras esté, acá no se abre sesión: el
+ * login muestra el formulario y «Entrar con mi cuenta», que la borra. Entrar con usuario y
+ * contraseña también la borra. Así, en la PC de la fábrica, otra persona puede entrar con lo suyo.
  */
 class CloudflareAccessSso
 {
+    /** Cookie propia de «salió a propósito». Larga, HttpOnly y fuera de la sesión (que se invalida). */
+    public const MARCA_SALIDA = 'salio_a_proposito';
+
     public function __construct(private readonly CloudflareAccessJwtService $jwtService) {}
+
+    /** La marca que deja «Salir»: Secure, dominio y SameSite de la cookie de sesión. */
+    public static function marcaSalida(): Cookie
+    {
+        return CookieFacade::forever(self::MARCA_SALIDA, '1');
+    }
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -43,6 +61,11 @@ class CloudflareAccessSso
 
         // Sesión local ya iniciada: no revalidar el JWT en cada request.
         if (Auth::check()) {
+            return $next($request);
+        }
+
+        // Salió a propósito: entra con usuario y contraseña o con «Entrar con mi cuenta».
+        if ($request->hasCookie(self::MARCA_SALIDA)) {
             return $next($request);
         }
 
@@ -85,8 +108,11 @@ class CloudflareAccessSso
         return $next($request);
     }
 
-    /** ¿El SSO aplica a este request? (config completa + host exacto + HTTPS). */
-    private function aplicaAlRequest(Request $request): bool
+    /**
+     * ¿El SSO aplica a este request? (config completa + host exacto + HTTPS). También lo
+     * pregunta el login, para ofrecer «Entrar con mi cuenta» solo donde sirve.
+     */
+    public function aplicaAlRequest(Request $request): bool
     {
         if (! (bool) config('cloudflare_access.enabled', false)) {
             return false;

@@ -131,7 +131,11 @@
                                             <td class="p-2 text-xs">
                                                 <span class="inline-flex px-2 py-0.5 rounded-full text-[11px] {{ $situaciones[$n['situacion']][1] }}">{{ $situaciones[$n['situacion']][0] }}</span>
                                                 @if ($n['lote'])
-                                                    <a href="{{ route('ppq.nc-exportaciones.show', $n['lote']) }}" class="block font-mono text-indigo-600 hover:underline">{{ $n['lote']->referencia }}</a>
+                                                    @unlessrole('jefatura')
+                                                        <a href="{{ route('ppq.nc-exportaciones.show', $n['lote']) }}" class="block font-mono text-indigo-600 hover:underline">{{ $n['lote']->referencia }}</a>
+                                                    @else
+                                                        <span class="block font-mono">{{ $n['lote']->referencia }}</span>
+                                                    @endunlessrole
                                                     @if ($n['lote']->presentada())
                                                         <span class="block {{ $gris }}">cargado el {{ $n['lote']->presentada_en->format('d/m/Y') }}</span>
                                                     @endif

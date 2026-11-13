@@ -25,8 +25,13 @@
 
     // ---------- Formatos ----------
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const plata = (v) => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const plataCorta = (v) => '$' + Math.round(v).toLocaleString('en-US');
+    // Para el jefe de vendedores el servidor no manda plata (D.medida = 'facturas'): `ventas` y
+    // `anterior` son cuántas facturas, y así se escriben.
+    const enFacturas = D.medida === 'facturas';
+    const facturas = (v) => Math.round(v || 0) + (Math.round(v || 0) === 1 ? ' factura' : ' facturas');
+    const plata = (v) => (enFacturas ? facturas(v) : '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const plataCorta = (v) => (enFacturas ? Math.round(v).toLocaleString('en-US') : '$' + Math.round(v).toLocaleString('en-US'));
+    const cero = enFacturas ? 'sin facturas' : '$0';
     const fecha = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '');
     const hace = (n) => (n === 0 ? 'hoy' : n === 1 ? 'ayer' : 'hace ' + n + ' días');
     const plural = (n, uno, varios) => n + ' ' + (n === 1 ? uno : varios);
@@ -314,7 +319,7 @@
     const CORTO = { 'San Salvador': 'S. Salvador', 'San Vicente': 'S. Vicente', 'San Miguel': 'S. Miguel' };
     const nombreEn = (z) => (angosto && CORTO[z.nombre] ? CORTO[z.nombre] : z.nombre);
     const conCifra = (z) => !z.fuera && z.salas > 0 && (st.vista === 'ventas' ? z.ventas > 0 : z.atrasadas + z.leToca > 0);
-    const textoMenor = (z) => (!z.salas ? 'sin salas' : st.vista === 'ventas' ? '$0' : 'al día');
+    const textoMenor = (z) => (!z.salas ? 'sin salas' : st.vista === 'ventas' ? cero : 'al día');
     const partesPastilla = (z) => [['mv-p-mal', z.atrasadas], ['mv-p-ojo', z.leToca]].filter((q) => q[1] > 0);
     const anchoPastilla = (z) => partesPastilla(z).reduce((a, q) => a + 19 + anchoTexto(String(q[1]), 700, 12), 7);
 
@@ -421,9 +426,9 @@
         const menor = Math.min(...v);
         const mayor = Math.max(...v);
         const rampa = !v.length ? ''
-            : plataCorta(menor) === plataCorta(mayor) ? m('', 'var(--v-hi)', 'Vendió ' + plataCorta(mayor))
+            : plataCorta(menor) === plataCorta(mayor) ? m('', 'var(--v-hi)', enFacturas ? facturas(mayor) : 'Vendió ' + plataCorta(mayor))
                 : '<span class="mv-rampa"><span>menos · ' + plataCorta(menor) + '</span><i></i><span>' + plataCorta(mayor) + ' · más</span></span>';
-        $('mapa-leyenda').innerHTML = rampa + m('', 'var(--cero)', D.enCurso ? '$0 este mes' : '$0 en el mes') + sinSalas + fuera;
+        $('mapa-leyenda').innerHTML = rampa + m('', 'var(--cero)', cero + (D.enCurso ? ' este mes' : ' en el mes')) + sinSalas + fuera;
     };
 
     const titulos = () => {
@@ -522,7 +527,7 @@
         // Con plata del mes o del anterior se muestran los números, aunque ya no queden salas.
         if (z.salas || z.ventas || z.anterior) {
             const frente = z.ventas > 0
-                ? (pct === null ? 'vendido en el mes; sin ventas para comparar ' + esc(D.contra) : 'vendido en el mes, ' + esc(D.contra))
+                ? (pct === null ? (enFacturas ? 'en el mes' : 'vendido en el mes') + '; sin ventas para comparar ' + esc(D.contra) : (enFacturas ? 'en el mes, ' : 'vendido en el mes, ') + esc(D.contra))
                 : (D.enCurso ? 'Este mes todavía no compró nadie.' : 'En el mes no compró nadie.') + (z.anterior ? ' ' + esc(D.antes) + ': ' + plata(z.anterior) + '.' : '');
             dinero = '<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1"><span class="text-3xl font-bold tabular-nums text-gray-800">' + plata(z.ventas) + '</span>'
                 + (pct !== null && z.ventas > 0 ? '<span class="rounded-full px-2 py-0.5 text-xs font-semibold ' + (pct >= 0 ? PASTILLA.bien : PASTILLA.mal) + '">' + (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(0) + ' %</span>' : '')

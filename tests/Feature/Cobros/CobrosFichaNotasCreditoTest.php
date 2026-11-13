@@ -96,7 +96,7 @@ class CobrosFichaNotasCreditoTest extends TestCase
 
     private function ficha(CobroDocumento $documento)
     {
-        return $this->actingAs(User::factory()->create()->assignRole(RolSistema::Jefatura->value))
+        return $this->actingAs(User::factory()->create()->assignRole(RolSistema::Contabilidad->value))
             ->get(route('cobros.documentos.show', $documento));
     }
 

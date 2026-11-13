@@ -357,7 +357,7 @@ class DtePdfPreliminarTest extends TestCase
     {
         $ccf = $this->ccfGenerado();
 
-        $this->actingAs($this->usuario('jefatura'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.pdf', $ccf))
             ->assertOk();
     }

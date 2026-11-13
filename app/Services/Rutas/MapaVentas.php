@@ -44,6 +44,11 @@ use Illuminate\Support\Str;
  * pocas consultas agregadas, sin importar cuántas salas, zonas o rutas haya.
  *
  * {@see listas()} dice lo mismo en palabras y ya ordenado: quién vendió más y a dónde ir primero.
+ *
+ * Sin montos (`soloFacturas`, el jefe de vendedores desde el 12/11/2026): `ventas` y
+ * `anterior` dicen cuántas facturas (CCF y facturas, no las notas) en vez de cuánta plata, y
+ * `medida` lo avisa. La plata no sale de acá, así que no llega a la página. Las listas, los
+ * colores y la tabla se ordenan igual, por esa cifra.
  */
 class MapaVentas
 {
@@ -83,8 +88,9 @@ class MapaVentas
 
     /**
      * @param  string  $mes  'Y-m', ya validado
+     * @param  bool  $soloFacturas  sin montos: `ventas` y `anterior` cuentan facturas
      * @return array{
-     *     mes: string, hoy: string, enCurso: bool, ruta: ?int,
+     *     mes: string, hoy: string, enCurso: bool, ruta: ?int, medida: string,
      *     periodo: array{desde: string, hasta: string, anteriorDesde: string, anteriorHasta: string},
      *     totales: array{ventas: float, anterior: float, salas: int, compraron: int, faltan: int, atrasadas: int},
      *     sinUbicacion: array{salas: int, ventas: float, sinSala: float},
@@ -93,7 +99,7 @@ class MapaVentas
      *     distritos: array<string, array>,
      * }
      */
-    public function calcular(string $mes, ?int $rutaId = null): array
+    public function calcular(string $mes, ?int $rutaId = null, bool $soloFacturas = false): array
     {
         $hoy = HoraNegocio::hoy();
         $desde = Carbon::createFromFormat('!Y-m', $mes, HoraNegocio::zona())->startOfMonth();
@@ -112,7 +118,7 @@ class MapaVentas
         // sin sala (consumidor final) suma al total y no tiene lugar en el mapa. Las salas de
         // las otras rutas también se leen: dicen qué zonas tienen salas y por dónde pasan.
         $ventas = $this->ventas->porSala($desde, $hasta, $anteriorDesde, $anteriorHasta, $rutaId);
-        $sinSala = $ventas[0] ?? ['actual' => 0.0, 'anterior' => 0.0];
+        $sinSala = $ventas[0] ?? ['actual' => 0.0, 'anterior' => 0.0, 'facturas' => 0, 'facturasAnterior' => 0];
         unset($ventas[0]);
         $salas = ClienteSucursal::withTrashed()
             ->leftJoin('distritos', 'distritos.id', '=', 'cliente_sucursales.distrito_id')
@@ -200,11 +206,11 @@ class MapaVentas
         // siempre; como sala solo cuenta la activa que ya existía en el tramo o la que compró
         // en él: una que se desactivó no es una sala «sin compra», y una dada de alta después
         // no estaba. Cuándo se desactivó una sala no queda guardado: para eso vale cómo está hoy.
-        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'faltan' => 0, 'atrasadas' => 0];
-        $sinUbicacion = ['salas' => 0, 'ventas' => 0.0];
+        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'facturas' => $sinSala['facturas'], 'facturasAnterior' => $sinSala['facturasAnterior'], 'salas' => 0, 'compraron' => 0, 'faltan' => 0, 'atrasadas' => 0];
+        $sinUbicacion = ['salas' => 0, 'ventas' => 0.0, 'facturas' => 0];
         $entero = fn ($id) => $id === null ? null : (int) $id;
         foreach ($salas as $sala) {
-            $venta = $ventas[$sala->id] ?? ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
+            $venta = $ventas[$sala->id] ?? ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false, 'facturas' => 0, 'facturasAnterior' => 0];
             // La última visita: el último pedido o CCF del ritmo, el último CCF o la última entrega.
             $ritmo = $ritmos[$sala->id];
             $ultima = collect([
@@ -243,6 +249,8 @@ class MapaVentas
                 'dias' => $dias,
                 'actual' => $venta['actual'],
                 'anterior' => $venta['anterior'],
+                'facturas' => $venta['facturas'],
+                'facturasAnterior' => $venta['facturasAnterior'],
                 'compro' => $venta['compro'],
                 'estado' => $estado,
                 // Días para la fecha esperada; negativo = días de atraso.
@@ -253,6 +261,8 @@ class MapaVentas
             $totales['salas'] += (int) $cuenta;
             $totales['ventas'] += $fila['actual'];
             $totales['anterior'] += $fila['anterior'];
+            $totales['facturas'] += $fila['facturas'];
+            $totales['facturasAnterior'] += $fila['facturasAnterior'];
             $totales['compraron'] += (int) $fila['compro'];
             $totales['faltan'] += (int) ($cuenta && in_array($estado, [Ritmo::PRONTO, Ritmo::ATRASADA], true));
             $totales['atrasadas'] += (int) ($cuenta && $estado === Ritmo::ATRASADA);
@@ -260,6 +270,7 @@ class MapaVentas
             if (! $ubicada) {
                 $sinUbicacion['salas'] += (int) $cuenta;
                 $sinUbicacion['ventas'] += $fila['actual'];
+                $sinUbicacion['facturas'] += $fila['facturas'];
 
                 continue;
             }
@@ -267,10 +278,13 @@ class MapaVentas
             self::sumar($zonasDep[$sala->departamento], $fila);
         }
 
-        $cerrar = fn (array $zona) => self::cerrar($zona, $rutas->pluck('id')->all(), $hasta, $rutaId);
+        $cerrar = fn (array $zona) => self::cerrar($zona, $rutas->pluck('id')->all(), $hasta, $rutaId, $soloFacturas);
+        [$ventasTotal, $anteriorTotal] = $soloFacturas ? [$totales['facturas'], $totales['facturasAnterior']] : [round($totales['ventas'], 2), round($totales['anterior'], 2)];
+        unset($totales['facturas'], $totales['facturasAnterior']);
 
         return [
             'mes' => $desde->format('Y-m'),
+            'medida' => $soloFacturas ? 'facturas' : 'monto',
             'hoy' => $hoy->toDateString(),
             'enCurso' => $enCurso,
             'ruta' => $rutaId,
@@ -280,8 +294,10 @@ class MapaVentas
                 'anteriorDesde' => $anteriorDesde->toDateString(),
                 'anteriorHasta' => $anteriorHasta->toDateString(),
             ],
-            'totales' => ['ventas' => round($totales['ventas'], 2), 'anterior' => round($totales['anterior'], 2)] + $totales,
-            'sinUbicacion' => ['salas' => $sinUbicacion['salas'], 'ventas' => round($sinUbicacion['ventas'], 2), 'sinSala' => round($sinSala['actual'], 2)],
+            'totales' => ['ventas' => $ventasTotal, 'anterior' => $anteriorTotal] + $totales,
+            'sinUbicacion' => $soloFacturas
+                ? ['salas' => $sinUbicacion['salas'], 'ventas' => $sinUbicacion['facturas'], 'sinSala' => $sinSala['facturas']]
+                : ['salas' => $sinUbicacion['salas'], 'ventas' => round($sinUbicacion['ventas'], 2), 'sinSala' => round($sinSala['actual'], 2)],
             'rutas' => $rutas->map(fn (Ruta $r) => ['id' => $r->id, 'nombre' => $r->nombre])->all(),
             'departamentos' => array_map($cerrar, $zonasDep),
             // Solo los distritos con salas (de cualquier ruta), ventas o alguna ruta: el resto
@@ -298,13 +314,15 @@ class MapaVentas
 
     private static function zona(string $nombre, string $departamento): array
     {
-        return ['nombre' => $nombre, 'dep' => $departamento, 'ventas' => 0.0, 'anterior' => 0.0, 'salas' => 0, 'todas' => 0, 'compraron' => 0, 'faltan' => 0, 'leToca' => 0, 'atrasadas' => 0, 'sinRitmo' => 0, 'entrega' => null, 'rutas' => [], 'lista' => []];
+        return ['nombre' => $nombre, 'dep' => $departamento, 'ventas' => 0.0, 'anterior' => 0.0, 'facturas' => 0, 'facturasAnterior' => 0, 'salas' => 0, 'todas' => 0, 'compraron' => 0, 'faltan' => 0, 'leToca' => 0, 'atrasadas' => 0, 'sinRitmo' => 0, 'entrega' => null, 'rutas' => [], 'lista' => []];
     }
 
     private static function sumar(array &$zona, array $fila): void
     {
         $zona['ventas'] += $fila['actual'];
         $zona['anterior'] += $fila['anterior'];
+        $zona['facturas'] += $fila['facturas'];
+        $zona['facturasAnterior'] += $fila['facturasAnterior'];
         if (! $fila['cuenta']) {
             return;
         }
@@ -329,24 +347,27 @@ class MapaVentas
      *
      * @param  array<int, int>  $orden  ids de las rutas activas, por nombre
      * @param  Carbon  $hasta  el último día del tramo, el mismo de los días sin compra
+     * @param  bool  $soloFacturas  `ventas` y `anterior` cuentan facturas; la plata no sale
      */
-    private static function cerrar(array $zona, array $orden, Carbon $hasta, ?int $rutaId): array
+    private static function cerrar(array $zona, array $orden, Carbon $hasta, ?int $rutaId, bool $soloFacturas): array
     {
         $lista = $zona['lista'];
         usort($lista, fn ($a, $b) => ($b['estado'] === Ritmo::ATRASADA) <=> ($a['estado'] === Ritmo::ATRASADA)
             ?: $a['faltan'] <=> $b['faltan']
             ?: strcmp($a['nombre'], $b['nombre']));
-        unset($zona['lista']);
+        [$ventas, $anterior] = $soloFacturas ? [$zona['facturas'], $zona['facturasAnterior']] : [round($zona['ventas'], 2), round($zona['anterior'], 2)];
+        $fuera = $rutaId !== null && ! isset($zona['rutas'][$rutaId]) && $zona['salas'] === 0
+            && round($zona['ventas'], 2) == 0 && round($zona['anterior'], 2) == 0;
+        unset($zona['lista'], $zona['facturas'], $zona['facturasAnterior']);
 
         return array_merge($zona, [
-            'ventas' => round($zona['ventas'], 2),
-            'anterior' => round($zona['anterior'], 2),
+            'ventas' => $ventas,
+            'anterior' => $anterior,
             'entregaDias' => $zona['entrega'] === null ? null : max(0, (int) Carbon::parse($zona['entrega'], HoraNegocio::zona())->diffInDays($hasta)),
             'rutas' => array_values(array_filter($orden, fn (int $id) => isset($zona['rutas'][$id]))),
             'faltan' => $zona['leToca'] + $zona['atrasadas'],
             'porVisitar' => array_slice($lista, 0, self::POR_VISITAR),
-            'fuera' => $rutaId !== null && ! isset($zona['rutas'][$rutaId]) && $zona['salas'] === 0
-                && round($zona['ventas'], 2) == 0 && round($zona['anterior'], 2) == 0,
+            'fuera' => $fuera,
         ]);
     }
 

@@ -19,7 +19,11 @@
         $roja = $pastilla.'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300';
         $ambar = $pastilla.'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300';
 
-        $plata = fn (float $monto) => '$'.number_format($monto, 2);
+        // El jefe de vendedores no ve plata: el servidor le manda cuántas facturas (`medida`).
+        $sinMontos = ($datos['medida'] ?? 'monto') === 'facturas';
+        $plata = $sinMontos
+            ? fn (float $n) => (int) round($n).((int) round($n) === 1 ? ' factura' : ' facturas')
+            : fn (float $monto) => '$'.number_format($monto, 2);
         $t = $datos['totales'];
         $variacion = $t['anterior'] != 0 ? ($t['ventas'] - $t['anterior']) / $t['anterior'] * 100 : null;
         // Contra qué se compara: «frente al 1 al 9 de octubre» (mes en curso) o «frente a septiembre».
@@ -218,7 +222,7 @@
                 <h2 id="mapa-resumen" class="sr-only">Resumen del mes</h2>
                 <div class="mv-resumen">
                     <div class="{{ $caja }} p-4">
-                        <span class="block text-sm text-gray-600">Vendido en {{ $mes }}</span>
+                        <span class="block text-sm text-gray-600">{{ $sinMontos ? 'Facturas de' : 'Vendido en' }} {{ $mes }}</span>
                         <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-800">{{ $plata($t['ventas']) }}</span>
                         <span class="mt-0.5 block text-sm text-gray-500">
                             @if ($variacion === null)
@@ -458,7 +462,7 @@
                                             <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                                                 <tr>
                                                     <th scope="col" class="px-3 py-2">Lugar</th>
-                                                    <th scope="col" class="px-3 py-2 text-right">Vendido</th>
+                                                    <th scope="col" class="px-3 py-2 text-right">{{ $sinMontos ? 'Facturas' : 'Vendido' }}</th>
                                                     <th scope="col" class="px-3 py-2 text-right" title="{{ ucfirst($frente) }}">Cambio</th>
                                                     <th scope="col" class="px-3 py-2 text-right">Salas</th>
                                                     <th scope="col" class="px-3 py-2 text-right">Compraron</th>
@@ -497,7 +501,11 @@
                     </details>
 
                     <p class="text-xs text-gray-500">
-                        Las ventas son las nacionales sin IVA, como en Ventas: la exportación no entra y las notas de crédito restan en el mes del CCF que corrigen.
+                        @if ($sinMontos)
+                            Las ventas se cuentan en facturas: los CCF y facturas nacionales del mes. La exportación y las notas de crédito no entran.
+                        @else
+                            Las ventas son las nacionales sin IVA, como en Ventas: la exportación no entra y las notas de crédito restan en el mes del CCF que corrigen.
+                        @endif
                         <strong class="font-semibold">Atrasada:</strong> ya pasó la fecha en que le tocaba visita, según cada cuánto compra esa sala.
                         <strong class="font-semibold">Por visitar:</strong> le toca en estos días. Sin tres visitas, una sala todavía no tiene ritmo.
                         La última entrega sale de las entregas de Rutas.

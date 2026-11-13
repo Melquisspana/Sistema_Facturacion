@@ -140,6 +140,13 @@ class DteController extends Controller
             'fecha_hasta' => self::fechaDeFiltro($request->input('fecha_hasta')),
         ];
 
+        // Jefatura ve solo lo que Hacienda ya procesó (aceptados y anulados), sin filtro de
+        // estado: lo impone el servidor aunque cambie la URL (12/11/2026).
+        $soloProcesados = $request->user()->abreDocumentosComoPdf();
+        if ($soloProcesados) {
+            $filtros['estado'] = null;
+        }
+
         $dtes = Dte::query()
             ->select('dtes.*')
             // Listado OPERATIVO: muestra el ambiente ACTIVO de ESTA instalación (config
@@ -153,6 +160,7 @@ class DteController extends Controller
             // con el filtro dedicado (estado=rechazados_archivados) o desde Auditoría. El
             // acceso por URL directa a la ficha nunca se filtra.
             ->when($filtros['estado'] !== 'rechazados_archivados', fn ($qb) => $qb->noArchivados())
+            ->when($soloProcesados, fn ($qb) => $qb->procesadoPorHacienda())
             // Estado del ÚLTIMO envío de correo por documento (badge del listado), como
             // subquery para no caer en N+1. Solo lectura.
             ->addSelect(['ultimo_envio_estado' => DteEnvio::select('estado')
@@ -741,7 +749,18 @@ class DteController extends Controller
         PreflightEmisionProduccionExportacion $preflightExportacion,
         BusquedaDocumentoReemplazo $reemplazos,
         ValidadorReglasInvalidacion $reglasInvalidacion,
-    ): View {
+    ): View|RedirectResponse {
+        // Jefatura no usa la ficha: va al PDF si Hacienda ya lo procesó, o al aviso si no.
+        // Va antes de `view`, que a ella solo le deja ver lo procesado (DtePolicy::view): el
+        // aviso no muestra nada del documento.
+        if (auth()->user()->abreDocumentosComoPdf()) {
+            $this->authorize('viewAny', Dte::class);
+
+            return $dte->procesadoPorHacienda()
+                ? redirect()->route('facturacion.pdf', $dte)
+                : redirect()->route('facturacion.index')->with('error', 'Ese documento todavía no está listo: Hacienda no lo ha procesado.');
+        }
+
         $this->authorize('view', $dte);
 
         $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios',

@@ -222,7 +222,7 @@ class NcExportacionHistorialTest extends TestCase
         $cliente = $this->cliente();
         $lote = $this->lote($cliente, [$this->nc($cliente, '10.00')]);
 
-        $this->actingAs($this->usuario(RolSistema::Jefatura))
+        $this->actingAs($this->usuario(RolSistema::Contabilidad))
             ->get(route('ppq.nc-exportaciones.show', $lote))
             ->assertOk();
 
@@ -252,7 +252,7 @@ class NcExportacionHistorialTest extends TestCase
         $lote = $this->lote($cliente, [$this->nc($cliente, '10.00'), $this->nc($cliente, '20.50')]);
         $nueva = $this->nc($cliente, '3.00'); // pendiente, emitida después
 
-        $this->actingAs($this->usuario(RolSistema::Jefatura))
+        $this->actingAs($this->usuario(RolSistema::Contabilidad))
             ->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertOk();
 

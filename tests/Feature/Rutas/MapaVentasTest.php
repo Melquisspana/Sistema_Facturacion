@@ -674,7 +674,7 @@ class MapaVentasTest extends TestCase
         $this->get(route('rutas.mapa'))->assertRedirect(route('login'));
     }
 
-    public function test_el_jefe_ve_los_montos_del_mapa_pero_no_la_pantalla_de_ventas(): void
+    public function test_el_jefe_ve_el_mapa_pero_no_la_pantalla_de_ventas(): void
     {
         $this->ventasDeEjemplo();
         $jefe = $this->usuario('jefe_vendedores');
@@ -682,7 +682,68 @@ class MapaVentasTest extends TestCase
         $this->assertTrue($jefe->can('rutas.mapa.ver'));
         $this->assertFalse($jefe->can('rutas.ventas.ver'));
         $this->actingAs($jefe)->get(route('rutas.ventas.index'))->assertForbidden();
-        $this->actingAs($jefe)->get(route('rutas.mapa'))->assertOk()->assertSee('"ventas":90', false);
+        $this->actingAs($jefe)->get(route('rutas.mapa'))->assertOk()->assertSee('"medida":"facturas"', false);
+    }
+
+    /**
+     * Con solo facturas (12/11/2026), donde iba el monto va cuántas facturas: CCF y facturas
+     * nacionales del tramo, sin las notas. Noviembre del 1 al 9: un CCF de Norte y uno de la
+     * sala sin lugar; octubre del 1 al 9: uno de Norte y uno de Sur.
+     */
+    public function test_con_solo_facturas_cuenta_documentos_y_no_trae_plata(): void
+    {
+        $this->ventasDeEjemplo();
+
+        $mapa = app(MapaVentas::class)->calcular('2026-11', null, soloFacturas: true);
+
+        $this->assertSame('facturas', $mapa['medida']);
+        $this->assertSame(1, $mapa['distritos']['06-14']['ventas']);
+        $this->assertSame(1, $mapa['distritos']['06-14']['anterior']);
+        $this->assertSame(0, $mapa['distritos']['06-15']['ventas']);
+        $this->assertSame(1, $mapa['distritos']['06-15']['anterior']);
+        $this->assertSame(1, $mapa['departamentos']['06']['ventas']);
+        $this->assertSame(2, $mapa['totales']['ventas']);
+        $this->assertSame(2, $mapa['totales']['anterior']);
+        $this->assertSame(['salas' => 1, 'ventas' => 1, 'sinSala' => 0], $mapa['sinUbicacion']);
+        // Lo demás no cambia: salas, compraron, atrasadas.
+        $this->assertSame(2, $mapa['totales']['compraron']);
+        $this->assertSame(3, $mapa['totales']['salas']);
+        $this->assertStringNotContainsString('facturasAnterior', json_encode($mapa));
+
+        // Las listas ordenan y miden la barra por facturas.
+        $listas = app(MapaVentas::class)->listas($mapa);
+        $this->assertSame(['06'], $listas['pais']['ventas']['con']);
+        $this->assertSame(1.0, $listas['pais']['ventas']['maximo']);
+
+        // Sin el modo, el mapa sigue en plata.
+        $this->assertSame('monto', $this->mapa()['medida']);
+        $this->assertSame(90.0, $this->mapa()['distritos']['06-14']['ventas']);
+    }
+
+    /**
+     * El jefe de vendedores no ve plata en el Mapa: ni en el resumen, ni en la lista, ni en la
+     * tabla, ni en los datos que se le mandan al navegador. Administrador y Jefatura, igual
+     * que antes.
+     */
+    public function test_el_jefe_de_vendedores_ve_facturas_y_el_servidor_no_le_manda_montos(): void
+    {
+        $this->ventasDeEjemplo();
+
+        $html = $this->actingAs($this->usuario('jefe_vendedores'))->get(route('rutas.mapa'))->assertOk()
+            ->assertSee('2 facturas')
+            ->assertSee('"medida":"facturas"', false)
+            ->getContent();
+        $this->assertDoesNotMatchRegularExpression('/\$\s?\d/', $html, 'Ningún monto con signo de dólar.');
+        foreach (['90.00', '115.00', '"ventas":90', '"anterior":50', '"ventas":115', '"anterior":110', '"ventas":25'] as $plata) {
+            $this->assertStringNotContainsString($plata, $html, "El jefe de vendedores no debería recibir «{$plata}».");
+        }
+
+        foreach (['administrador', 'jefatura'] as $rol) {
+            $this->actingAs($this->usuario($rol))->get(route('rutas.mapa'))->assertOk()
+                ->assertSee('$115.00')
+                ->assertSee('"ventas":90', false)
+                ->assertSee('"medida":"monto"', false);
+        }
     }
 
     /**
@@ -694,10 +755,11 @@ class MapaVentasTest extends TestCase
         $this->documento($this->norte, '2026-11-03', 100);
         $this->documento($this->norte, '2026-11-04', 7654.32, ['tipo_dte' => '11'], ['venta_gravada' => 0, 'venta_exportacion' => 7654.32]);
 
-        foreach (['jefe_vendedores', 'facturacion'] as $rol) {
+        // El jefe de vendedores ve el Mapa en facturas (12/11/2026): un CCF, la FEX no cuenta.
+        foreach (['jefe_vendedores' => '"ventas":1,', 'facturacion' => '"ventas":100'] as $rol => $enMapa) {
             $usuario = $this->usuario($rol);
             $resumen = $this->actingAs($usuario)->get(route('rutas.dashboard'))->assertOk()->assertSee('$100.00')->getContent();
-            $mapa = $this->actingAs($usuario)->get(route('rutas.mapa'))->assertOk()->assertSee('"ventas":100', false)->getContent();
+            $mapa = $this->actingAs($usuario)->get(route('rutas.mapa'))->assertOk()->assertSee($enMapa, false)->getContent();
             // Ni el monto de la exportación ni la suma con lo nacional (7,754.32).
             foreach (['7654', '7,654', '7754', '7,754'] as $cifra) {
                 $this->assertStringNotContainsString($cifra, $resumen);

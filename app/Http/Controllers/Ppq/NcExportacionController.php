@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Ppq;
 
 use App\Enums\EstadoNcExportacion;
+use App\Enums\RolSistema;
 use App\Exceptions\CopiaArchivadaInservibleException;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
@@ -11,9 +12,12 @@ use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\Exportadores\ExportadorNc;
 use App\Services\Ppq\NcExportacionService;
 use App\Services\RegistroDescargas;
+use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
@@ -37,9 +41,24 @@ use Throwable;
  *
  * No emite, no firma, no transmite y no toca ningún valor fiscal: solo lee documentos ya
  * aceptados por Hacienda y los vuelca al formato que pide el cliente.
+ *
+ * Jefatura no lo usa (Melqui, 12/11/2026): 403 en todas las acciones, aunque tenga `ppq.ver`
+ * para Facturas por cobrar. Va por rol y no quitándole `ppq.ver`, que se lleva lo demás, ni
+ * con un permiso nuevo, que habría que crear a mano en producción.
  */
-class NcExportacionController extends Controller
+class NcExportacionController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function (Request $request, Closure $next) {
+                abort_if($request->user()?->hasRole(RolSistema::Jefatura->value), 403);
+
+                return $next($request);
+            }),
+        ];
+    }
+
     /** Claves de filtro aceptadas. Todas OPCIONALES: ninguna restringe el lote. */
     private const FILTROS = ['desde', 'hasta', 'tipo', 'sala', 'q'];
 

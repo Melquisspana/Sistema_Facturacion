@@ -8,26 +8,24 @@ use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\DteLinea;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use App\Services\Dte\DteStateMachine;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RepresentacionPdfDte;
 use Tests\TestCase;
 
 class DteNotaCreditoUiTest extends TestCase
 {
-    use \Tests\Concerns\RepresentacionPdfDte;
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
+    use RepresentacionPdfDte;
 
     private DteBorradorService $borradores;
 
@@ -132,7 +130,7 @@ class DteNotaCreditoUiTest extends TestCase
     {
         $ccf = $this->ccfAceptado();
 
-        $this->actingAs($this->usuario('jefatura'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Crear nota de crédito');
