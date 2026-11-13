@@ -68,6 +68,11 @@
                         {{ session('status') }}
                     </div>
                 @endif
+                @if (session('error'))
+                    <div role="alert" class="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {{ session('error') }}
+                    </div>
+                @endif
 
                 @php
                     // El badge de estado del DTE vive en <x-estado-dte-badge> (mismo componente

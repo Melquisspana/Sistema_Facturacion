@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\RolSistema;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Observers\UserObserver;
 use App\Services\Planilla\NombreUnico;
@@ -107,5 +108,15 @@ class User extends Authenticatable
     public function tieneFichaEnPersonal(): bool
     {
         return Schema::hasTable('planilla_empleados') && $this->planillaEmpleado()->exists();
+    }
+
+    /**
+     * Jefatura solo mira los documentos: en Documentos fiscales cada uno le abre su PDF,
+     * nunca la ficha de datos (Melqui, 12/11/2026). Va por rol y no por permiso porque un
+     * permiso nuevo habría que crearlo a mano en producción; lo que puede ver no cambia.
+     */
+    public function abreDocumentosComoPdf(): bool
+    {
+        return $this->hasRole(RolSistema::Jefatura->value);
     }
 }

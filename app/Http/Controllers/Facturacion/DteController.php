@@ -741,8 +741,15 @@ class DteController extends Controller
         PreflightEmisionProduccionExportacion $preflightExportacion,
         BusquedaDocumentoReemplazo $reemplazos,
         ValidadorReglasInvalidacion $reglasInvalidacion,
-    ): View {
+    ): View|RedirectResponse {
         $this->authorize('view', $dte);
+
+        // Jefatura no usa la ficha: va al PDF, o al aviso si el documento sigue en edición.
+        if (auth()->user()->abreDocumentosComoPdf()) {
+            return $dte->estado === EstadoDte::Borrador
+                ? redirect()->route('facturacion.index')->with('error', 'Ese documento todavía no está listo: sigue en edición. El PDF sale cuando se genere.')
+                : redirect()->route('facturacion.pdf', $dte);
+        }
 
         $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios',
             // «Viene del pedido N» (los envíos de la fábrica que se facturaron acá).

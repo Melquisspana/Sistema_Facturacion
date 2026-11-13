@@ -18,6 +18,9 @@
         'pendiente' => 'Pendiente',
         'error' => 'Fallido',
     ];
+    // Jefatura no usa la ficha: cada documento le abre su PDF (12/11/2026). En edición
+    // todavía no hay PDF; DteController::show hace lo mismo si entra por la URL.
+    $soloPdf = (bool) auth()->user()?->abreDocumentosComoPdf();
 @endphp
 
 <div class="overflow-x-auto">
@@ -55,7 +58,7 @@
                     {{-- Relacionado: solo NC con CCF original (nunca a sí misma) --}}
                     <td class="px-3 py-2 font-mono text-xs">
                         @if ($esNc && $dte->dte_relacionado_id && (int) $dte->dte_relacionado_id !== (int) $dte->id)
-                            <a href="{{ route('facturacion.show', $dte->dteRelacionado) }}" class="text-indigo-600 hover:underline">
+                            <a href="{{ $soloPdf ? route('facturacion.pdf', $dte->dteRelacionado) : route('facturacion.show', $dte->dteRelacionado) }}" @if ($soloPdf) target="_blank" @endif class="text-indigo-600 hover:underline">
                                 {{ $dte->dteRelacionado?->numero_control ?? $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}
                             </a>
                         @else
@@ -90,7 +93,13 @@
                     <td class="px-3 py-2">{{ $dte->numero_orden_compra ?? '—' }}</td>
                     <td class="px-3 py-2 text-right font-mono">${{ number_format($dte->total_pagar, 2) }}</td>
                     <td class="px-3 py-2 text-right whitespace-nowrap">
-                        <a href="{{ route('facturacion.show', $dte) }}" class="text-gray-600 hover:underline">Ver</a>
+                        @if (! $soloPdf)
+                            <a href="{{ route('facturacion.show', $dte) }}" class="text-gray-600 hover:underline">Ver</a>
+                        @elseif ($dte->estado === \App\Enums\EstadoDte::Borrador)
+                            <span class="text-gray-400">Todavía no está listo</span>
+                        @else
+                            <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline">Ver PDF</a>
+                        @endif
                         @can('update', $dte)
                             <a href="{{ route('facturacion.edit', $dte) }}" class="text-indigo-600 hover:underline ml-2">Editar</a>
                         @endcan
