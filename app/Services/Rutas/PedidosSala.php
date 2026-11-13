@@ -40,8 +40,8 @@ class PedidosSala
 
     /**
      * «Revisá: Galleta lleva 1,000 y esta sala suele llevar 10.» El 1000 en vez de 10: lo que
-     * pasa de {@see self::VECES_HABITUAL} veces lo que la sala suele llevar de ese producto
-     * ({@see EstimadoPedidos}, con sus pedidos hasta ayer: no se compara consigo mismo). Solo
+     * pasa de {@see self::VECES_HABITUAL} veces lo que la sala suele llevar de ese producto (la
+     * mediana de {@see EstimadoPedidos}, con sus pedidos hasta ayer: no se compara consigo mismo). Solo
      * con 3 pedidos o más y en lo que suele pedir. Solo avisa: el pedido ya se guardó (puede
      * ser cierto) y quien lo sacó lo corrige mientras pueda.
      *
@@ -61,7 +61,8 @@ class PedidosSala
         return $pedido->lineas()->with('producto:id,nombre')->orderBy('id')->get()
             ->map(function (PedidoSalaLinea $linea) use ($habitual) {
                 $suele = $habitual->get($linea->producto_id);
-                $tope = $suele === null ? null : max((float) $suele['cantidad'], (float) $suele['ultima_cantidad']) * self::VECES_HABITUAL;
+                // Contra la mediana, no la última vez: una vez rara no sube el umbral.
+                $tope = $suele === null ? null : (float) $suele['cantidad'] * self::VECES_HABITUAL;
 
                 return $tope !== null && (float) $linea->cantidad > $tope
                     ? 'Revisá: '.$linea->producto?->nombre.' lleva '.$linea->cantidadLegible().' y esta sala suele llevar '.PedidoSalaLinea::legible($suele['cantidad']).'.'

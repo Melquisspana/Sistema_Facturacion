@@ -249,6 +249,18 @@ class SacarPedidoSinSalidaTest extends TestCase
             ->assertSessionHasNoErrors()->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Revisá'));
     }
 
+    public function test_el_aviso_compara_con_la_mediana_aunque_la_ultima_vez_haya_llevado_mas(): void
+    {
+        // 10, 10 y 100: lo habitual es 10. Un 100 nuevo avisa aunque la última vez llevó 100.
+        foreach (['2026-10-20' => '10', '2026-10-27' => '10', '2026-11-03' => '100'] as $fecha => $cantidad) {
+            PedidoSala::create(['cliente_sucursal_id' => $this->sala->id, 'sacado_por_id' => $this->persona->id, 'registrado_por' => $this->vendedor->id,
+                'fecha' => $fecha, 'estado' => EstadoPedidoSala::Enviado])->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => $cantidad]);
+        }
+
+        $this->sacar($this->sala, [$this->galleta->id => '100'])->assertSessionHasNoErrors()
+            ->assertSessionHas('status', fn (string $s) => str_contains($s, 'Revisá: Galleta de prueba lleva 100 y esta sala suele llevar 10.'));
+    }
+
     public function test_validaciones_del_pedido_intactas(): void
     {
         $inactivo = Producto::factory()->create(['activo' => false]);
