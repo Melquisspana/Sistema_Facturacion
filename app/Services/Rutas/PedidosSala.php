@@ -7,11 +7,13 @@ use App\Facades\Ajustes;
 use App\Http\Requests\Rutas\PedidoSalaRequest;
 use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
+use App\Models\PedidoSalaLinea;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
 use App\Models\User;
 use App\Support\Dte\OrdenProductosOc;
 use App\Support\HoraNegocio;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +33,41 @@ use Illuminate\Validation\ValidationException;
  */
 class PedidosSala
 {
-    public function __construct(private readonly Viajes $viajes) {}
+    public function __construct(private readonly Viajes $viajes, private readonly EstimadoPedidos $estimado) {}
+
+    /** Desde cuántas veces lo habitual de la sala una cantidad se avisa como «mucho más». */
+    public const VECES_HABITUAL = 3;
+
+    /**
+     * «Revisá: Galleta lleva 1,000 y esta sala suele llevar 10.» El 1000 en vez de 10: lo que
+     * pasa de {@see self::VECES_HABITUAL} veces lo que la sala suele llevar de ese producto
+     * ({@see EstimadoPedidos}, con sus pedidos hasta ayer: no se compara consigo mismo). Solo
+     * con 3 pedidos o más y en lo que suele pedir. Solo avisa: el pedido ya se guardó (puede
+     * ser cierto) y quien lo sacó lo corrige mientras pueda.
+     *
+     * @return list<string>
+     */
+    public function avisosCantidad(PedidoSala $pedido): array
+    {
+        if ($pedido->cliente_sucursal_id === null) {
+            return [];
+        }
+        $estimado = $this->estimado->paraSala($pedido->cliente_sucursal_id, CarbonImmutable::parse(HoraNegocio::fechaHoy())->subDay());
+        if ($estimado->confianza() === PedidoEstimado::POCO_DATO) {
+            return [];
+        }
+        $habitual = collect($estimado->lineas)->keyBy('producto_id');
+
+        return $pedido->lineas()->with('producto:id,nombre')->orderBy('id')->get()
+            ->map(function (PedidoSalaLinea $linea) use ($habitual) {
+                $suele = $habitual->get($linea->producto_id);
+                $tope = $suele === null ? null : max((float) $suele['cantidad'], (float) $suele['ultima_cantidad']) * self::VECES_HABITUAL;
+
+                return $tope !== null && (float) $linea->cantidad > $tope
+                    ? 'Revisá: '.$linea->producto?->nombre.' lleva '.$linea->cantidadLegible().' y esta sala suele llevar '.PedidoSalaLinea::legible($suele['cantidad']).'.'
+                    : null;
+            })->filter()->values()->all();
+    }
 
     /** Quien saca el pedido: la ficha de Rutas activa del usuario. */
     public static function persona(User $usuario): ?PersonalRuta

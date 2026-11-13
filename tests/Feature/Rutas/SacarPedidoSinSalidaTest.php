@@ -226,6 +226,29 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->assertSame(2, SalidaRuta::count());
     }
 
+    public function test_avisa_si_una_cantidad_es_mucho_mas_que_lo_habitual_de_la_sala(): void
+    {
+        // Tres pedidos anteriores de 10 galletas: ya hay con qué comparar.
+        foreach (['2026-10-20', '2026-10-27', '2026-11-03'] as $fecha) {
+            PedidoSala::create(['cliente_sucursal_id' => $this->sala->id, 'sacado_por_id' => $this->persona->id, 'registrado_por' => $this->vendedor->id,
+                'fecha' => $fecha, 'estado' => EstadoPedidoSala::Enviado])->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => '10']);
+        }
+        $chocolate = Producto::factory()->create(['nombre' => 'Chocolate de prueba', 'codigo' => 'C01']);
+
+        // 1000 en vez de 10: se guarda (puede ser cierto) y avisa. Lo que nunca pidió no avisa.
+        $this->sacar($this->sala, [$this->galleta->id => '1000', $chocolate->id => '500'])->assertSessionHasNoErrors()
+            ->assertSessionHas('status', fn (string $s) => str_contains($s, 'Revisá: Galleta de prueba lleva 1,000 y esta sala suele llevar 10.')
+                && ! str_contains($s, 'Chocolate'));
+        $this->assertSame(4, PedidoSala::count());
+
+        // Hasta el triple de lo habitual no avisa, y la sala sin historia tampoco.
+        $pedido = PedidoSala::latest('id')->first();
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '30']])
+            ->assertSessionHasNoErrors()->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Revisá'));
+        $this->sacar($this->otraSala, [$this->galleta->id => '1000'])
+            ->assertSessionHasNoErrors()->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Revisá'));
+    }
+
     public function test_validaciones_del_pedido_intactas(): void
     {
         $inactivo = Producto::factory()->create(['activo' => false]);
