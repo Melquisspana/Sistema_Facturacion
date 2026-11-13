@@ -22,6 +22,7 @@ use App\Support\NombreEmpresa;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Illuminate\Validation\ValidationException;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -204,7 +205,7 @@ class PantallaFabricaTest extends TestCase
             ->assertSee('Carlos Inventado')->assertSee('09/11/2026 09:00')->assertSee('Entregar por la puerta de atrás')
             ->assertSee('Galleta de prueba')->assertSee('Todo')->assertSee('Nada')->assertSee('Por qué no va (opcional)')
             ->assertSee('Imprimir y mandar')->assertSee('Dejar para después')
-            ->assertSee('action="'.route('fabrica.pedidos.cerrar', $pedido).'"', false)->assertSee('No se trae')
+            ->assertSee('action="'.route('fabrica.pedidos.cerrar', $pedido).'"', false)->assertSee('No mandar nada de este pedido')
             ->assertDontSee('7.77')
             ->getContent();
 
@@ -226,7 +227,134 @@ class PantallaFabricaTest extends TestCase
         $this->mandar($parcial, [$this->galleta->id => '10'], ['sigue' => '1'])->assertSessionHasNoErrors();
 
         $this->get(route('fabrica.pedidos.show', $parcial))->assertOk()
-            ->assertSee('Lo que falta no se trae')->assertSee('Imprimir y mandar');
+            ->assertSee('No mandar lo que falta')->assertSee('Imprimir y mandar');
+    }
+
+    private function version(PedidoSala $pedido): string
+    {
+        return PedidoSala::query()->with(app(PedidosFabrica::class)->relaciones())->findOrFail($pedido->id)->versionProduccion();
+    }
+
+    // ══════════════════════════════ 6. «No mandar nada de este pedido» (13/11/2026)
+
+    public function test_el_boton_rojo_abre_una_confirmacion_con_motivos_y_no_dice_no_se_trae(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertSee('No mandar nada de este pedido')
+            ->assertSee('Nada de este pedido va a salir. ¿Por qué?')
+            ->assertSeeInOrder(['No hay producto', 'El cliente canceló', 'Pedido repetido', 'Otro'])
+            ->assertSee('Sí, no mandar nada')
+            ->assertDontSee('No se trae')->assertDontSee('no se trae')
+            ->getContent();
+
+        // Un diálogo accesible propio (no el confirm() del navegador), en rojo de peligro.
+        $this->assertStringContainsString('role="dialog"', $html);
+        $this->assertStringContainsString('aria-modal="true"', $html);
+        $this->assertStringContainsString("\$dispatch('open-modal', 'no-mandar')", $html);
+        $this->assertMatchesRegularExpression('/<button type="button"[^>]*open-modal[^>]*class="[^"]*bg-red-600/s', $html);
+        // Separado de «Dejar para después» e «Imprimir y mandar»: fuera de esa barra y de su formulario.
+        $finDelFormulario = strpos($html, '</form>', strpos($html, 'Imprimir y mandar</button>'));
+        $this->assertGreaterThan($finDelFormulario, strpos($html, 'No mandar nada de este pedido'));
+        // El motivo va en un solo campo, armado con lo que se toca; sin él el botón no deja.
+        $this->assertStringContainsString('name="motivo"', $html);
+        $this->assertStringContainsString('maxlength="200"', $html);
+    }
+
+    public function test_si_ya_salio_una_parte_dice_lo_que_falta(): void
+    {
+        $parcial = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '4']);
+        $this->mandar($parcial, [$this->galleta->id => '10'], ['sigue' => '1'])->assertSessionHasNoErrors();
+
+        $this->get(route('fabrica.pedidos.show', $parcial))->assertOk()
+            ->assertSee('No mandar lo que falta')
+            ->assertSee('Lo que falta de este pedido no va a salir. ¿Por qué?')
+            ->assertSee('Sí, no mandar lo que falta')
+            ->assertDontSee('No mandar nada de este pedido')->assertDontSee('Sí, no mandar nada');
+    }
+
+    public function test_sin_motivo_el_servidor_no_deja_y_no_cierra(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+
+        foreach ([[], ['motivo' => null], ['motivo' => ''], ['motivo' => '    ']] as $sinMotivo) {
+            $this->from(route('fabrica.pedidos.show', $pedido))
+                ->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido)] + $sinMotivo)
+                ->assertRedirect(route('fabrica.pedidos.show', $pedido))
+                ->assertSessionHasErrors(['motivo' => 'Elegí por qué no se manda.']);
+        }
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido), 'motivo' => str_repeat('a', 201)])
+            ->assertSessionHasErrors(['motivo' => 'El motivo puede tener hasta 200 caracteres.']);
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido), 'motivo' => ['No hay producto']])
+            ->assertSessionHasErrors('motivo');
+
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+        $this->assertFalse(Activity::where('description', PedidosFabrica::AUDITORIA_NO_SE_TRAE)->exists());
+
+        // El servicio tampoco cierra sin motivo, aunque lo llame otro código.
+        try {
+            app(PedidosFabrica::class)->cerrar($pedido, $this->version($pedido), $this->fabrica, '   ');
+            $this->fail('Cerró sin motivo.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('motivo', $e->errors());
+        }
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+
+        // Tras el error, el diálogo vuelve abierto con el aviso.
+        $this->from(route('fabrica.pedidos.show', $pedido))->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido)]);
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('Elegí por qué no se manda.')->assertSee('show: true', false);
+    }
+
+    public function test_con_motivo_cierra_queda_en_la_auditoria_y_en_hechos_y_se_deshace(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido), 'motivo' => '  El cliente canceló  '])
+            ->assertSessionHasNoErrors()->assertRedirect(route('fabrica.pedidos.index'))
+            ->assertSessionHas('status', 'No se manda nada del pedido de Súper Ficticio Centro.')
+            ->assertSessionHas('deshacer', ['tipo' => 'cierre', 'pedido' => $pedido->id]);
+        $this->assertSame(EstadoPedidoSala::NoSeTrae, $pedido->refresh()->estado);
+        $this->assertSame('El cliente canceló', Activity::where('description', PedidosFabrica::AUDITORIA_NO_SE_TRAE)->sole()->properties['motivo']);
+
+        // «Deshacer» el mismo día sigue igual.
+        $this->get(route('fabrica.pedidos.index'))->assertSee('Deshacer</button>', false)
+            ->assertSee('action="'.route('fabrica.pedidos.reabrir', $pedido).'"', false);
+        $this->get(route('fabrica.pedidos.index', ['ver' => 'hechos']))->assertOk()
+            ->assertSee('Cerrados con faltantes o que no se mandaron')
+            ->assertSeeInOrder(['Súper Ficticio Centro', 'Por qué no se mandó:', 'El cliente canceló', 'Volver a pendiente']);
+        $this->patch(route('fabrica.pedidos.reabrir', $pedido))->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+
+        // Lo que falta de uno ya mandado en parte: queda «Mandado» y su motivo en la auditoría.
+        $parcial = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '4'], $this->otraSala);
+        $this->mandar($parcial, [$this->galleta->id => '10'], ['sigue' => '1'])->assertSessionHasNoErrors();
+        $this->patch(route('fabrica.pedidos.cerrar', $parcial), ['version' => $this->version($parcial), 'motivo' => 'Pedido repetido'])
+            ->assertSessionHas('status', 'Lo que falta del pedido de Tienda Inventada Norte no se manda.');
+        $this->assertSame(EstadoPedidoSala::Enviado, $parcial->refresh()->estado);
+        $this->assertSame('Pedido repetido', Activity::where('description', PedidosFabrica::AUDITORIA_LO_QUE_FALTA)->sole()->properties['motivo']);
+        $this->get(route('fabrica.pedidos.index', ['ver' => 'hechos']))->assertSeeInOrder(['Tienda Inventada Norte', 'Por qué no se mandó:', 'Pedido repetido']);
+    }
+
+    public function test_los_otros_pedidos_van_en_un_solo_renglon_con_desplazamiento_propio(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '1']);
+        for ($i = 1; $i <= 10; $i++) {
+            $this->pedido([$this->galleta->id => '1'], Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de prueba '.$i, 'codigo' => (string) (9100 + $i)]));
+        }
+
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
+        $this->assertSame(1, preg_match('/<nav aria-label="Otros pedidos" class="([^"]*)"/', $html, $nav));
+        $this->assertStringNotContainsString('flex-wrap', $nav[1]);
+        $fila = $this->bloque($html, 'Otros pedidos');
+        // «Todos» queda fijo al principio, fuera de lo que se desliza; el resto en un renglón propio.
+        $this->assertSame(1, preg_match('/^(.*?)<div class="([^"]*overflow-x-auto[^"]*)"(.*)$/s', $fila, $partes));
+        $this->assertStringContainsString('Todos', $partes[1]);
+        $this->assertStringNotContainsString('Todos', $partes[3]);
+        $this->assertStringContainsString('min-w-0', $partes[2]);
+        $this->assertStringNotContainsString('flex-wrap', $partes[2]);
+        $this->assertSame(10, substr_count($partes[3], 'shrink-0 whitespace-nowrap'));
+        $this->assertSame(11, substr_count($fila, 'min-h-12'));
     }
 
     // ══════════════════════════════ 5. imprimir y mandar

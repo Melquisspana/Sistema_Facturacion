@@ -47,6 +47,11 @@ class PedidosFabrica
 
     public const FACTURADO = 'Ya se facturó: avisale a la oficina.';
 
+    /** «No mandar nada de este pedido» / «No mandar lo que falta» pide siempre el motivo. */
+    public const SIN_MOTIVO = 'Elegí por qué no se manda.';
+
+    public const MOTIVO_LARGO = 'El motivo puede tener hasta 200 caracteres.';
+
     /**
      * Lo que dice la auditoría cuando un pedido puede quedar cerrado con algo que no va. El
      * resumen diario ({@see ResumenDiarioPedidos}) lee estos registros para saber qué se
@@ -159,7 +164,7 @@ class PedidosFabrica
      * últimos días que todavía se pueden reabrir (los que no se traen y los mandados con
      * faltantes).
      *
-     * @return array{envios: Collection<int, PedidoSalaEnvio>, cerrados: Collection<int, PedidoSala>}
+     * @return array{envios: Collection<int, PedidoSalaEnvio>, cerrados: Collection<int, PedidoSala>, motivos: array<int, string>}
      */
     public function hechos(): array
     {
@@ -182,7 +187,36 @@ class PedidosFabrica
             ->filter(fn (PedidoSala $p) => $p->estado === EstadoPedidoSala::NoSeTrae || $p->faltaAlgo())
             ->values();
 
-        return ['envios' => $envios, 'cerrados' => $cerrados];
+        return ['envios' => $envios, 'cerrados' => $cerrados, 'motivos' => $this->motivosDeCierre($cerrados->modelKeys())];
+    }
+
+    /**
+     * Por qué no se mandó cada pedido cerrado con «No mandar…»: [pedido_id => motivo]. Cuenta
+     * solo si lo último que lo cerró fue ese cierre; si después se reabrió y salió con un
+     * envío, ya no. Los cierres de antes del 13/11/2026 no tienen motivo y no aparecen.
+     *
+     * @param  iterable<int>  $ids
+     * @return array<int, string>
+     */
+    public function motivosDeCierre(iterable $ids): array
+    {
+        $ids = collect($ids)->map(fn ($id) => (int) $id)->unique()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+        $cierres = [self::AUDITORIA_NO_SE_TRAE, self::AUDITORIA_LO_QUE_FALTA];
+
+        return Activity::query()
+            ->where('log_name', 'pedido_sala')
+            ->where('subject_type', (new PedidoSala)->getMorphClass())
+            ->whereIn('subject_id', $ids->all())
+            ->whereIn('description', [...self::AUDITORIA_MANDO, ...$cierres])
+            ->orderBy('id')
+            ->get(['id', 'subject_id', 'description', 'properties'])
+            ->keyBy('subject_id')
+            ->filter(fn (Activity $a) => in_array($a->description, $cierres, true) && filled($a->properties['motivo'] ?? null))
+            ->map(fn (Activity $a) => (string) $a->properties['motivo'])
+            ->all();
     }
 
     /**
@@ -290,7 +324,8 @@ class PedidosFabrica
             $this->exigirLineasDelPedido($pedido, array_keys($this->normalizar($datos['cantidades'])), array_keys($motivos));
             $this->exigirNoDeMas($pedido, $cantidades);
             if ($cantidades === []) {
-                throw ValidationException::withMessages(['cantidades' => 'No marcaste nada para mandar. Si no va nada, tocá «No se trae».']);
+                throw ValidationException::withMessages(['cantidades' => 'No marcaste nada para mandar. Si no va nada, tocá «'
+                    .($pedido->estado === EstadoPedidoSala::Parcial ? 'No mandar lo que falta' : 'No mandar nada de este pedido').'».']);
             }
 
             $anterior = $pedido->estado;
@@ -344,12 +379,22 @@ class PedidosFabrica
     }
 
     /**
-     * «No se trae» (sin envíos vigentes) o «Lo que falta no se trae» (con envíos): cierra el
-     * pedido. Sin motivo. Si ya estaba cerrado no hace nada y devuelve null.
+     * «No mandar nada de este pedido» (sin envíos vigentes: queda «No se trae») o «No mandar
+     * lo que falta» (con envíos: queda «Mandado»): cierra el pedido. El motivo es obligatorio
+     * (13/11/2026) y queda en la auditoría del cierre; de ahí lo leen «Hechos hoy» y el correo
+     * diario ({@see motivosDeCierre()}). Si ya estaba cerrado no hace nada y devuelve null.
      */
-    public function cerrar(PedidoSala $pedido, string $version, User $usuario): ?EstadoPedidoSala
+    public function cerrar(PedidoSala $pedido, string $version, User $usuario, string $motivo): ?EstadoPedidoSala
     {
-        return DB::transaction(function () use ($pedido, $version, $usuario) {
+        $motivo = trim($motivo);
+        if ($motivo === '') {
+            throw ValidationException::withMessages(['motivo' => self::SIN_MOTIVO]);
+        }
+        if (mb_strlen($motivo) > 200) {
+            throw ValidationException::withMessages(['motivo' => self::MOTIVO_LARGO]);
+        }
+
+        return DB::transaction(function () use ($pedido, $version, $usuario, $motivo) {
             $pedido = $this->bloquear($pedido);
             if (in_array($pedido->estado, [EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae], true)) {
                 return null;
@@ -366,7 +411,7 @@ class PedidosFabrica
             }
             $pedido->update(['estado' => $this->estadoSegun($pedido, cerrar: true), 'armando_desde' => null, 'armando_por' => null, 'armando_sigue' => false]);
 
-            $propiedades = ['estado_anterior' => $anterior->value, 'estado_nuevo' => $pedido->estado->value];
+            $propiedades = ['estado_anterior' => $anterior->value, 'estado_nuevo' => $pedido->estado->value, 'motivo' => $motivo];
             if ($pedido->estado === EstadoPedidoSala::NoSeTrae) {
                 activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)->withProperties($propiedades)
                     ->log(self::AUDITORIA_NO_SE_TRAE);

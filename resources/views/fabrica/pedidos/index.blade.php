@@ -97,7 +97,7 @@
                 </section>
 
                 <section aria-labelledby="cerrados" class="space-y-3">
-                    <h2 id="cerrados" class="text-lg font-semibold text-gray-800">Cerrados con faltantes o que no se traen</h2>
+                    <h2 id="cerrados" class="text-lg font-semibold text-gray-800">Cerrados con faltantes o que no se mandaron</h2>
                     <p class="text-sm text-gray-500">De los últimos {{ \App\Services\Rutas\PedidosFabrica::DIAS_CERRADOS }} días.</p>
                     @if ($hechos['cerrados']->isEmpty())
                         <div class="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-gray-500">No hay pedidos cerrados con faltantes.</div>
@@ -110,6 +110,9 @@
                                         <x-rutas.estado-badge :estado="$pedido->estado" />
                                     </div>
                                     <p class="mt-1 text-sm text-gray-600">Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->zonaNombre() }}</p>
+                                    @isset($hechos['motivos'][$pedido->id])
+                                        <p class="mt-1 text-sm text-gray-800"><span class="font-semibold">Por qué no se mandó:</span> {{ $hechos['motivos'][$pedido->id] }}</p>
+                                    @endisset
                                     <ul class="mt-2 space-y-1 text-sm text-gray-700">
                                         @foreach ($pedido->lineas->filter->tienePendiente() as $linea)
                                             <li>Faltó <span class="font-semibold tabular-nums">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</span> × {{ $linea->producto?->nombre }}{{ $linea->motivo_no_enviado ? ' · '.$linea->motivo_no_enviado : '' }}</li>

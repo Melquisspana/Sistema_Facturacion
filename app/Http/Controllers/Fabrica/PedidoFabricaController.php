@@ -111,15 +111,26 @@ class PedidoFabricaController extends Controller
             ->with('deshacer', ['tipo' => 'envio', 'pedido' => $pedido->id, 'envio' => $envio->id]);
     }
 
-    /** «No se trae» o «Lo que falta no se trae». */
+    /**
+     * «No mandar nada de este pedido» o «No mandar lo que falta», con su motivo (obligatorio
+     * desde el 13/11/2026: uno de los que se tocan o el que escribió). Sin motivo vuelve al
+     * pedido con el aviso y no cierra nada.
+     */
     public function cerrar(Request $request, PedidoSala $pedido): RedirectResponse
     {
-        $version = $request->validate(['version' => ['required', 'string', 'size:64']], [
-            'version.required' => 'Esta pantalla quedó vieja. Volvé a abrir el pedido.',
-            'version.string' => 'Esta pantalla quedó vieja. Volvé a abrir el pedido.',
-            'version.size' => 'Esta pantalla quedó vieja. Volvé a abrir el pedido.',
-        ])['version'];
-        $estado = $this->fabrica->cerrar($pedido, $version, $request->user());
+        $vieja = 'Esta pantalla quedó vieja. Volvé a abrir el pedido.';
+        $datos = $request->validate([
+            'version' => ['required', 'string', 'size:64'],
+            'motivo' => ['required', 'string', 'max:200'],
+        ], [
+            'version.required' => $vieja,
+            'version.string' => $vieja,
+            'version.size' => $vieja,
+            'motivo.required' => PedidosFabrica::SIN_MOTIVO,
+            'motivo.string' => PedidosFabrica::SIN_MOTIVO,
+            'motivo.max' => PedidosFabrica::MOTIVO_LARGO,
+        ]);
+        $estado = $this->fabrica->cerrar($pedido, $datos['version'], $request->user(), $datos['motivo']);
 
         if ($estado === null) {
             return redirect()->route('fabrica.pedidos.index')->with('status', 'Ese pedido ya estaba resuelto.');
@@ -128,8 +139,8 @@ class PedidoFabricaController extends Controller
 
         return redirect()->route('fabrica.pedidos.index')
             ->with('status', $estado === EstadoPedidoSala::NoSeTrae
-                ? 'El pedido de '.$sala.' no se trae.'
-                : 'Pedido de '.$sala.' cerrado: lo que falta no se trae.')
+                ? 'No se manda nada del pedido de '.$sala.'.'
+                : 'Lo que falta del pedido de '.$sala.' no se manda.')
             ->with('deshacer', ['tipo' => 'cierre', 'pedido' => $pedido->id]);
     }
 
