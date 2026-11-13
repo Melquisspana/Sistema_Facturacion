@@ -227,6 +227,7 @@ Tomado de las fichas de Gastos y Rutas.
 Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el dedo o con el mouse de una laptop. Agregado el 09/11/2026.
 
 - **Pantalla completa** (12/11/2026): sin la barra lateral ni el menú del sistema (`<x-app-layout :pantalla-completa="true">`). Arriba solo la empresa, la persona y «Salir»; quien ve más que Fábrica tiene además «Volver al sistema». La lista es de nombres en botones grandes; al tocar uno se abre el pedido, con una fila arriba para pasar a otro pedido o volver a «Todos».
+- **Monitor** (12/11/2026): la fábrica la usa en un monitor de escritorio. Desde `lg` la pantalla usa el ancho: la lista va a `max-w-full` con cuatro columnas de nombres (`lg:grid-cols-4`); el pedido abierto, a `max-w-7xl`, con los datos de la sala en una franja (`lg:grid-cols-6`) y **un producto por renglón** en una grilla (`lg:grid lg:grid-cols-12`: nombre y código | «Pidió» | «Va», «Todo», «Nada»), con «Por qué no va» abajo solo si hace falta; «Hechos hoy» en dos columnas. Debajo de `lg`, uno abajo del otro, como en la tableta. Los botones siguen de 48 px. En el CSS de producción no hay `xl:grid-cols-4`, `lg:max-w-*` ni `lg:py-*`: se usa lo que sí está.
 - **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Imprimir y mandar»).
 - **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («No se trae», «Dejar para después», «Deshacer», «Corregir», «Imprimir de nuevo»).
 - **Cantidad:** `text-2xl font-bold tabular-nums`, alineada a la derecha.

@@ -39,7 +39,8 @@
                  const quieto = Date.now() - ultimo;
                  if (! enviando && quieto > 20000 && (limite === null || (recuerda && quieto < limite))) location.reload();
              }, 30000)">
-        <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8">
+        {{-- En monitor usa todo el ancho (max-w-full): cuatro columnas de nombres desde lg. --}}
+        <div class="max-w-full mx-auto space-y-4 px-4 sm:px-6 lg:px-8">
             <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedidos</h1>
             <x-rutas.avisos />
 
@@ -74,7 +75,7 @@
                     @if ($lista->isNotEmpty())
                         <section aria-label="{{ $titulo }}" class="space-y-3">
                             <h2 class="text-lg font-semibold text-gray-800">{{ $titulo }}</h2>
-                            <ul class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            <ul class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                                 @foreach ($lista as $pedido)
                                     <li>@include('fabrica.pedidos._tarjeta', ['pedido' => $pedido, 'atrasado' => $atrasado, 'hoy' => $hoy])</li>
                                 @endforeach
@@ -88,7 +89,7 @@
                     @if ($hechos['envios']->isEmpty())
                         <div class="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-gray-500">Hoy todavía no salió nada.</div>
                     @else
-                        @include('rutas.pedidos._envios', ['envios' => $hechos['envios'], 'conSala' => true, 'conDeshacer' => true, 'conImprimir' => true])
+                        @include('rutas.pedidos._envios', ['envios' => $hechos['envios'], 'conSala' => true, 'conDeshacer' => true, 'conImprimir' => true, 'enColumnas' => true])
                     @endif
                 </section>
 
@@ -98,7 +99,7 @@
                     @if ($hechos['cerrados']->isEmpty())
                         <div class="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-gray-500">No hay pedidos cerrados con faltantes.</div>
                     @else
-                        <ul class="space-y-3">
+                        <ul class="space-y-3 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
                             @foreach ($hechos['cerrados'] as $pedido)
                                 <li class="rounded-lg border border-gray-200 bg-white p-4">
                                     <div class="flex flex-wrap items-center justify-between gap-2">

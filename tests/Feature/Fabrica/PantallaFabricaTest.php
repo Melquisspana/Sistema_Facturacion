@@ -355,6 +355,22 @@ class PantallaFabricaTest extends TestCase
         $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Envío 1')->assertDontSee('Imprimir de nuevo');
     }
 
+    public function test_en_monitor_cada_producto_es_un_renglon_y_la_lista_usa_el_ancho(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->canilla->id => '6']);
+        $this->pedido([$this->galleta->id => '3'], $this->otraSala);
+
+        // Un renglón por producto: nombre y código | Pidió | Va, Todo, Nada; el motivo abajo.
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertSee('max-w-7xl mx-auto', false)
+            ->assertSee('lg:grid lg:grid-cols-12', false)
+            ->assertSeeInOrder(['Galleta de prueba', 'G01', 'Pidió 12', 'Va', 'Todo', 'Nada', 'Por qué no va'])
+            ->assertSee('sm:grid-cols-2 lg:grid-cols-6', false);
+
+        $this->get(route('fabrica.pedidos.index'))->assertOk()
+            ->assertSee('max-w-full mx-auto', false)->assertSee('lg:grid-cols-4', false);
+    }
+
     // ══════════════════════════════ 7. la zona de la tienda nueva
 
     public function test_la_tienda_nueva_muestra_la_zona_del_viaje(): void

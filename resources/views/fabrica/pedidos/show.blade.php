@@ -15,7 +15,13 @@
 
      «Salir» de la barra de arriba también espera los guardados (si uno falla, se queda y
      avisa), y cerrar o recargar la pestaña con algo sin guardar o en vuelo pide
-     confirmación del navegador. --}}
+     confirmación del navegador.
+
+     En monitor (lg, 1024 px o más; 12/11/2026): la hoja usa el ancho (max-w-7xl), los datos
+     de la sala van en una franja de una línea y cada producto es UN renglón de la grilla:
+     nombre y código | «Pidió» | «Va», «Todo», «Nada»; «Por qué no va» abajo, solo si
+     hace falta. Debajo de lg se ve como antes, uno abajo del otro (entre 768 y 1023 px la
+     hoja ahora llega a todo el ancho: no hay `lg:max-w-*` en el CSS de producción). --}}
 <x-app-layout :pantalla-completa="true">
     @php
         $faltan = $pedido->lineas->filter->tienePendiente();
@@ -27,7 +33,7 @@
     @endphp
 
     <div class="py-6 sm:py-8">
-        <div class="max-w-3xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
+        <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8"
              x-data="{
                  enviando: false, saliendo: false, sucio: false, guardando: false, cerrando: false, cola: Promise.resolve(),
                  estado: '', error: false, aviso: false, espera: null,
@@ -136,7 +142,7 @@
 
             <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
                 <h1 id="titulo-pedido" class="text-2xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
-                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2">
+                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2 lg:grid-cols-6">
                     @if ($pedido->direccionSala())
                         <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Dirección</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
                     @endif
@@ -145,7 +151,7 @@
                     <div><dt class="text-sm text-gray-500">Lo sacó</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
                     <div><dt class="text-sm text-gray-500">Fecha y hora</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
                     @if ($pedido->notas)
-                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
+                        <div class="sm:col-span-2 lg:col-span-4"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
                     @endif
                 </dl>
             </section>
@@ -173,12 +179,17 @@
                                 }
                                 $mandado = $linea->mandado();
                             @endphp
-                            <li class="p-4 sm:p-5" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
-                                <p class="text-xl font-semibold text-gray-800">{{ $linea->producto?->nombre }}</p>
-                                <p class="mt-0.5 text-sm text-gray-500">
+                            <li class="items-center p-4 sm:p-5 lg:grid lg:grid-cols-12 lg:gap-3 lg:p-4" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
+                                <p class="min-w-0 text-xl font-semibold text-gray-800 lg:col-span-5">
+                                    {{ $linea->producto?->nombre }}
+                                    @if ($linea->producto?->codigo)
+                                        <span class="ms-1 font-mono text-sm font-normal text-gray-500">{{ $linea->producto->codigo }}</span>
+                                    @endif
+                                </p>
+                                <p class="mt-0.5 text-sm text-gray-500 lg:col-span-2 lg:mt-0">
                                     Pidió {{ $linea->cantidadLegible() }}{{ bccomp($mandado, '0', 4) === 1 ? ' · ya salió '.\App\Models\PedidoSalaLinea::legible($mandado) : '' }}
                                 </p>
-                                <div class="mt-3 flex flex-wrap items-center gap-3">
+                                <div class="mt-3 flex flex-wrap items-center gap-3 lg:col-span-5 lg:mt-0">
                                     <label for="va-{{ $linea->id }}" class="text-lg font-semibold text-gray-700">Va<span class="sr-only"> de {{ $linea->producto?->nombre }}</span></label>
                                     <input id="va-{{ $linea->id }}" name="cantidades[{{ $linea->id }}]" x-model="va" value="{{ $va }}"
                                            inputmode="decimal" autocomplete="off"
@@ -188,8 +199,8 @@
                                     <button type="button" @click="va = '0'; $nextTick(() => guardar())"
                                             class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Nada</button>
                                 </div>
-                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1" />
-                                <div class="mt-3" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
+                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1 lg:col-span-12 lg:mt-0" />
+                                <div class="mt-3 lg:col-span-12 lg:mt-0" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
                                     <label for="motivo-{{ $linea->id }}" class="block text-sm font-medium text-gray-700">Por qué no va (opcional)</label>
                                     <input id="motivo-{{ $linea->id }}" name="motivos[{{ $linea->id }}]" maxlength="200" autocomplete="off"
                                            value="{{ $motivo }}"

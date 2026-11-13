@@ -8,14 +8,16 @@
      anular; si ya se facturó, en vez de los botones dice que avise a la oficina);
      $conFacturacion (bool, solo la oficina: «Por facturar», «Borrador abierto» o
      «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto);
-     $conImprimir (bool, solo la fábrica: «Imprimir de nuevo» la hoja de cada envío vigente). --}}
+     $conImprimir (bool, solo la fábrica: «Imprimir de nuevo» la hoja de cada envío vigente);
+     $enColumnas (bool, solo la fábrica: en monitor, dos columnas de envíos). --}}
 @php
     $conSala ??= false;
     $conDeshacer ??= false;
     $conFacturacion ??= false;
     $conImprimir ??= false;
+    $enColumnas ??= false;
 @endphp
-<ul class="space-y-3">
+<ul class="space-y-3 {{ $enColumnas ? 'lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0' : '' }}">
     @foreach ($envios as $envio)
         @php $anulado = ! $envio->estaVigente(); @endphp
         <li class="rounded-lg border border-gray-200 bg-white p-4">
