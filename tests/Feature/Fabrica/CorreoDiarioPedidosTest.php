@@ -137,7 +137,7 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->mandar($centro, [$this->galleta->id => '24', $this->canilla->id => '0'], [$this->canilla->id => 'Sin harina']);
 
         $norte = $this->pedido($this->sala('Tienda Inventada Norte'), [$this->galleta->id => '3']);
-        app(PedidosFabrica::class)->cerrar($norte, $this->version($norte), $this->fabrica);
+        app(PedidosFabrica::class)->cerrar($norte, $this->version($norte), $this->fabrica, 'El cliente canceló');
 
         $this->pedido($this->sala('Abarrotes Inventados'), [$this->canilla->id => '2.5'], '2026-11-06');
 
@@ -160,7 +160,8 @@ class CorreoDiarioPedidosTest extends TestCase
         // Las salas, por nombre; en cada una lo que pasó.
         $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 06\/11\/2026 \(3 días de atraso\): Canilla de prueba 2\.5/s', $html);
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(18:00\): Galleta de prueba 24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
-        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*No se trae.*Galleta de prueba: 3/s', $html);
+        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*No se trae.*Galleta de prueba: 3.*Por qué no se mandó: El cliente canceló/s', $html);
+        $this->assertSame(1, substr_count($html, 'Por qué no se mandó'), 'solo el pedido cerrado con «No mandar»');
         $this->assertTrue(strpos($html, 'Abarrotes Inventados') < strpos($html, 'Súper Ficticio Centro'));
         $this->assertTrue(strpos($html, 'Súper Ficticio Centro') < strpos($html, 'Tienda Inventada Norte'));
     }
@@ -177,13 +178,13 @@ class CorreoDiarioPedidosTest extends TestCase
 
         // Martes: «Lo que falta no se trae», sin envío ese día.
         $this->travelTo('2026-11-10 10:00:00');
-        app(PedidosFabrica::class)->cerrar($pedido, $this->version($pedido), $this->fabrica);
+        app(PedidosFabrica::class)->cerrar($pedido, $this->version($pedido), $this->fabrica, 'No hay producto');
 
         $this->travelTo('2026-11-10 18:00:00');
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
 
         $html = $this->enviado()->render();
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Faltó.*Canilla de prueba: 6 — Sin harina.*Por qué no se mandó: No hay producto/s', $html);
         $this->assertStringNotContainsString('Sigue por mandar', $html);
     }
 
@@ -207,7 +208,7 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->travelTo('2026-11-09 18:30:00');
         app(PedidosFabrica::class)->anularEnvio($centro, $centro->envios()->sole(), $this->fabrica);
         $this->travelTo('2026-11-09 18:40:00');
-        app(PedidosFabrica::class)->cerrar($sur, $this->version($sur), $this->fabrica);
+        app(PedidosFabrica::class)->cerrar($sur, $this->version($sur), $this->fabrica, 'No hay producto');
 
         $this->travelTo('2026-11-10 18:00:00');
         $this->artisan('pedidos:correo-diario')->assertSuccessful();

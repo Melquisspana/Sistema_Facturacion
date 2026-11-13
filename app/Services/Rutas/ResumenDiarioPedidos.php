@@ -164,14 +164,14 @@ class ResumenDiarioPedidos
      * Lo que pasó entre `$desde` y `$hasta` (en la hora de la base, app.timezone), agrupado
      * por sala y ordenado por su nombre.
      *
-     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, deshecho: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>}>}
+     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, deshecho: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, motivos_cierre: list<string>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>}>}
      */
     public function contenido(Carbon $desde, Carbon $hasta): array
     {
         $salas = [];
         $sala = function (PedidoSala $pedido) use (&$salas): string {
             $nombre = $pedido->nombreSala();
-            $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'por_mandar' => []];
+            $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'motivos_cierre' => [], 'por_mandar' => []];
 
             return $nombre;
         };
@@ -221,7 +221,12 @@ class ResumenDiarioPedidos
             ->orderBy('id')
             ->get();
 
+        // Por qué no se mandó, si se cerró con «No mandar…» (13/11/2026): uno por pedido.
+        $motivos = $this->fabrica->motivosDeCierre($cerrados->modelKeys());
         foreach ($cerrados as $pedido) {
+            if (isset($motivos[$pedido->id])) {
+                $salas[$sala($pedido)]['motivos_cierre'][] = $motivos[$pedido->id];
+            }
             if ($pedido->estado === EstadoPedidoSala::NoSeTrae) {
                 foreach ($pedido->lineas as $linea) {
                     $salas[$sala($pedido)]['no_se_trae'][] = [

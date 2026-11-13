@@ -3,7 +3,8 @@
     total y cuántas facturas; exportación aparte y solo si hubo; nunca cada CCF ni el mes) y
     de quién van adjuntos los PDF del día, diciendo hasta qué hora cuenta. Si la cuenta o un PDF falló, lo dice. Después,
     los pedidos de sala desde el correo anterior. Por sala: lo
-    que salió, lo que se deshizo, lo que faltó, lo que no se trae y lo que sigue por mandar. Listas y no tablas: el nombre de un
+    que salió, lo que se deshizo, lo que faltó, lo que no se trae (con el motivo de «No mandar…»,
+    desde el 13/11/2026) y lo que sigue por mandar. Listas y no tablas: el nombre de un
     producto con «|» rompería una tabla de markdown. Todo lo que escribió alguien pasa por
     $literal: sin eso, un motivo con `[texto](url)` sería un enlace en el correo.
 
@@ -90,6 +91,10 @@ Hoy ningún vendedor marcó entregas.
 @endforeach
 
 @endif
+@foreach ($datos['motivos_cierre'] ?? [] as $motivo)
+Por qué no se mandó: {{ $literal($motivo) }}
+
+@endforeach
 @if (count($datos['por_mandar']) > 0)
 **Sigue por mandar**
 

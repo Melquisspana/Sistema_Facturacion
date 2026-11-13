@@ -21,7 +21,14 @@
      van en una franja de una línea y cada producto es un renglón de dos mitades (lg):
      nombre, código y «Pidió» | «Va», «Todo», «Nada»; «Por qué no va» abajo, solo si hace
      falta. Desde xl los renglones van en dos columnas: un pedido de 12 se ve casi entero
-     en 1600×900 sin bajar. Debajo de lg se ve como antes, uno abajo del otro. --}}
+     en 1600×900 sin bajar. Debajo de lg se ve como antes, uno abajo del otro.
+
+     13/11/2026: la fila de otros pedidos va en UN renglón en todo tamaño: «Todos» fijo al
+     principio y el resto se desliza de lado dentro de su propia caja (overflow-x-auto con
+     min-w-0), sin que la página se corra. Y «No se trae» pasó a «No mandar nada de este
+     pedido» («No mandar lo que falta» si ya salió una parte): rojo, lejos de «Imprimir y
+     mandar», con un diálogo (x-modal) que pide el motivo; el servidor tampoco cierra sin
+     él. Se deshace igual que antes, desde la lista. --}}
 <x-app-layout :pantalla-completa="true">
     @php
         $faltan = $pedido->lineas->filter->tienePendiente();
@@ -126,18 +133,22 @@
                  },
              }"
              @pagehide.window="alSalir()" @beforeunload.window="avisarSiFalta($event)" @submit.window.capture="cerrarSesion($event)">
-            <nav aria-label="Otros pedidos" class="flex flex-wrap gap-3">
+            <nav aria-label="Otros pedidos" class="flex items-start gap-3">
                 <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
-                   class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
-                @foreach ($otros as $otro)
-                    <a href="{{ route('fabrica.pedidos.show', $otro) }}" @click.prevent="salir($el.href)"
-                       class="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 {{ $otro->armando_desde ? 'border-indigo-300 bg-indigo-50' : 'border-gray-300 bg-white' }}">
-                        {{ $otro->nombreSala() }}
-                        @if ($otro->armando_desde)
-                            <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
-                        @endif
-                    </a>
-                @endforeach
+                   class="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
+                @if ($otros->isNotEmpty())
+                    <div class="flex min-w-0 flex-1 gap-3 overflow-x-auto pb-2">
+                        @foreach ($otros as $otro)
+                            <a href="{{ route('fabrica.pedidos.show', $otro) }}" @click.prevent="salir($el.href)"
+                               class="inline-flex min-h-12 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-xl border px-4 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 {{ $otro->armando_desde ? 'border-indigo-300 bg-indigo-50' : 'border-gray-300 bg-white' }}">
+                                {{ $otro->nombreSala() }}
+                                @if ($otro->armando_desde)
+                                    <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
+                                @endif
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
             </nav>
 
             <p x-show="aviso" x-cloak role="alert"
@@ -242,17 +253,19 @@
                 </div>
             </form>
 
-            {{-- «No se trae» del pedido entero (o lo que falta): un toque, sin confirmación, y
-                 en la lista sale el aviso con «Deshacer», como antes en la tarjeta. --}}
-            <div class="flex flex-wrap gap-3">
-                <form method="POST" action="{{ route('fabrica.pedidos.cerrar', $pedido) }}" @submit.prevent="enviar($el)">
-                    @csrf @method('PATCH')
-                    <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
-                    <button :disabled="enviando || saliendo"
-                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
-                        {{ $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial ? 'Lo que falta no se trae' : 'No se trae' }}
-                    </button>
-                </form>
+            {{-- «No mandar nada de este pedido» (o lo que falta): rojo de peligro y aparte, debajo
+                 de la barra de «Dejar para después» e «Imprimir y mandar». Abre un diálogo que
+                 pide el motivo; en la lista sale el aviso con «Deshacer», como antes. --}}
+            @php
+                $parcial = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+                $opciones = ['No hay producto', 'El cliente canceló', 'Pedido repetido'];
+                $motivoViejo = (string) old('motivo', '');
+            @endphp
+            <div class="flex flex-wrap gap-3 border-t border-gray-200 pt-6">
+                <button type="button" x-on:click="$dispatch('open-modal', 'no-mandar')" :disabled="enviando || saliendo"
+                        class="inline-flex min-h-12 items-center justify-center rounded-xl bg-red-600 px-5 py-4 text-lg font-semibold text-white hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50">
+                    {{ $parcial ? 'No mandar lo que falta' : 'No mandar nada de este pedido' }}
+                </button>
 
                 @if ($conBorrador)
                     <form method="POST" action="{{ route('fabrica.pedidos.borrador.borrar', $pedido) }}"
@@ -263,6 +276,55 @@
                     </form>
                 @endif
             </div>
+
+            {{-- La confirmación: sin `confirm()` del navegador. El motivo es uno de los que se
+                 tocan u «Otro» con texto; va en un solo campo `motivo`. Sin motivo, el botón no
+                 deja y el servidor tampoco. Si el servidor lo rechaza, vuelve abierto con el aviso. --}}
+            <x-modal name="no-mandar" :show="$errors->has('motivo')" maxWidth="lg" focusable>
+                <div role="dialog" aria-modal="true" aria-labelledby="titulo-no-mandar" class="p-5 sm:p-6"
+                     x-data="{
+                         eleccion: @js(in_array($motivoViejo, $opciones, true) ? $motivoViejo : ($motivoViejo !== '' ? 'Otro' : '')),
+                         otro: @js(in_array($motivoViejo, $opciones, true) ? '' : $motivoViejo),
+                         motivo() { return (this.eleccion === 'Otro' ? this.otro : this.eleccion).trim(); },
+                     }">
+                    <h2 id="titulo-no-mandar" class="text-xl font-bold text-gray-800">
+                        {{ $parcial ? 'Lo que falta de este pedido no va a salir.' : 'Nada de este pedido va a salir.' }} ¿Por qué?
+                    </h2>
+                    <form method="POST" action="{{ route('fabrica.pedidos.cerrar', $pedido) }}" class="mt-4"
+                          @submit.prevent="if (motivo() !== '') enviar($el)">
+                        @csrf @method('PATCH')
+                        <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
+                        <input type="hidden" name="motivo" :value="motivo()">
+                        <fieldset>
+                            <legend class="sr-only">Por qué no se manda</legend>
+                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                @foreach ([...$opciones, 'Otro'] as $opcion)
+                                    <label class="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-lg font-semibold text-gray-800"
+                                           :class="eleccion === @js($opcion) ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white hover:bg-gray-50'">
+                                        <input type="radio" name="eleccion" value="{{ $opcion }}" x-model="eleccion" class="h-5 w-5 border-gray-300 text-red-600">
+                                        {{ $opcion }}
+                                    </label>
+                                @endforeach
+                            </div>
+                        </fieldset>
+                        <div class="mt-3" x-show="eleccion === 'Otro'" x-cloak>
+                            <label for="motivo-otro" class="block text-sm font-medium text-gray-700">Escribí el motivo</label>
+                            <input id="motivo-otro" x-model="otro" maxlength="200" autocomplete="off"
+                                   class="mt-1 min-h-12 w-full rounded-xl border-gray-300 text-lg">
+                        </div>
+                        <x-input-error :messages="$errors->get('motivo')" class="mt-2" />
+
+                        <div class="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
+                            <button type="button" x-on:click="$dispatch('close-modal', 'no-mandar')"
+                                    class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Cancelar</button>
+                            <button :disabled="motivo() === '' || enviando || saliendo"
+                                    class="inline-flex min-h-12 items-center justify-center rounded-xl bg-red-600 px-5 py-4 text-lg font-bold text-white hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50">
+                                {{ $parcial ? 'Sí, no mandar lo que falta' : 'Sí, no mandar nada' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </x-modal>
         </div>
     </div>
 </x-app-layout>

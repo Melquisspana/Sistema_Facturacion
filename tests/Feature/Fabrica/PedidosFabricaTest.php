@@ -145,8 +145,8 @@ class PedidosFabricaTest extends TestCase
         $this->assertTrue(strpos($html, 'pedido-'.$hoy2->id) < strpos($html, 'pedido-'.$hoy1->id));
         $respuesta->assertSee('Mandado en parte');
         $this->get(route('fabrica.pedidos.show', $hoy1))->assertOk()->assertSee('Carlos Inventado')
-            ->assertSee('Imprimir y mandar')->assertSee('No se trae')->assertDontSee('7.77');
-        $this->get(route('fabrica.pedidos.show', $parcial))->assertOk()->assertSee('Lo que falta no se trae');
+            ->assertSee('Imprimir y mandar')->assertSee('No mandar nada de este pedido')->assertDontSee('7.77');
+        $this->get(route('fabrica.pedidos.show', $parcial))->assertOk()->assertSee('No mandar lo que falta');
     }
 
     public function test_desde_que_dia_aparecen_segun_el_ajuste(): void
@@ -272,7 +272,7 @@ class PedidosFabricaTest extends TestCase
         $this->assertTrue(Activity::where('description', 'mandó una parte del pedido')->exists());
         $this->get(route('fabrica.pedidos.index'))->assertSee('Por mandar (1)')->assertSee('Mandado en parte');
         $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('Canilla de prueba')->assertDontSee('Galleta de prueba')
-            ->assertSee('Lo que falta no se trae');
+            ->assertSee('No mandar lo que falta');
 
         // Al día siguiente llegan las canillas: envío 2 y queda «Mandado».
         $this->travelTo('2026-11-10 08:00:00');
@@ -396,7 +396,7 @@ class PedidosFabricaTest extends TestCase
         $pedido->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => '12']);
         $this->post(route('fabrica.pedidos.mandar', $pedido), ['clave' => (string) Str::uuid(), 'version' => $vieja, 'cantidades' => [$id => '12']])
             ->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
-        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $vieja])->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $vieja, 'motivo' => 'No hay producto'])->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
 
         // Otra tableta mandó primero una parte.
         $vieja = $this->version($pedido);
@@ -407,7 +407,7 @@ class PedidosFabricaTest extends TestCase
         // Se anuló un envío.
         $vieja = $this->version($pedido);
         $this->patch(route('fabrica.pedidos.anular-envio', [$pedido, PedidoSalaEnvio::sole()]))->assertSessionHasNoErrors();
-        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $vieja])->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $vieja, 'motivo' => 'No hay producto'])->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
         $this->assertSame(1, PedidoSalaEnvio::count());
         $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
 
@@ -416,29 +416,29 @@ class PedidosFabricaTest extends TestCase
         $pedido->update(['estado' => EstadoPedidoSala::Anulado]);
         $this->post(route('fabrica.pedidos.mandar', $pedido), ['clave' => (string) Str::uuid(), 'version' => $vieja, 'cantidades' => [$this->linea($pedido, $this->galleta) => '1']])
             ->assertSessionHasErrors(['pedido' => PedidosFabrica::ANULADO]);
-        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $vieja])->assertSessionHasErrors(['pedido' => PedidosFabrica::ANULADO]);
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $vieja, 'motivo' => 'No hay producto'])->assertSessionHasErrors(['pedido' => PedidosFabrica::ANULADO]);
     }
 
     public function test_no_se_trae_y_lo_que_falta_no_se_trae(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '12']);
-        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido)])
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido), 'motivo' => 'No hay producto'])
             ->assertRedirect(route('fabrica.pedidos.index'))
-            ->assertSessionHas('status', 'El pedido de Súper Ficticio Centro no se trae.')
+            ->assertSessionHas('status', 'No se manda nada del pedido de Súper Ficticio Centro.')
             ->assertSessionHas('deshacer', ['tipo' => 'cierre', 'pedido' => $pedido->id]);
         $this->assertSame(EstadoPedidoSala::NoSeTrae, $pedido->refresh()->estado);
         $this->assertTrue(Activity::where('description', 'marcó que el pedido no se trae')->exists());
 
         // Repetirlo no cambia nada; mandar sobre él da un error legible.
-        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido)])->assertSessionHas('status', 'Ese pedido ya estaba resuelto.');
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido), 'motivo' => 'No hay producto'])->assertSessionHas('status', 'Ese pedido ya estaba resuelto.');
         $this->assertSame(1, Activity::where('description', 'marcó que el pedido no se trae')->count());
         $this->mandar($pedido, [$this->galleta->id => '1'])->assertSessionHasErrors(['pedido' => PedidosFabrica::CERRADO]);
 
         // En un pedido parcial queda «Mandado» con el faltante.
         $parcial = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '4'], '2026-11-09', $this->otraSala);
         $this->mandar($parcial, [$this->galleta->id => '10'], ['sigue' => '1'])->assertSessionHasNoErrors();
-        $this->patch(route('fabrica.pedidos.cerrar', $parcial), ['version' => $this->version($parcial)])
-            ->assertSessionHas('status', 'Pedido de Tienda Inventada Norte cerrado: lo que falta no se trae.');
+        $this->patch(route('fabrica.pedidos.cerrar', $parcial), ['version' => $this->version($parcial), 'motivo' => 'No hay producto'])
+            ->assertSessionHas('status', 'Lo que falta del pedido de Tienda Inventada Norte no se manda.');
         $this->assertSame(EstadoPedidoSala::Enviado, $parcial->refresh()->estado);
         $cierre = Activity::where('description', 'cerró el pedido: lo que falta no se trae')->sole();
         // assertEquals: MySQL reordena las claves de la columna JSON.
@@ -449,7 +449,7 @@ class PedidosFabricaTest extends TestCase
     public function test_volver_a_pendiente(): void
     {
         $noSeTrae = $this->pedido([$this->galleta->id => '12']);
-        $this->patch(route('fabrica.pedidos.cerrar', $noSeTrae), ['version' => $this->version($noSeTrae)]);
+        $this->patch(route('fabrica.pedidos.cerrar', $noSeTrae), ['version' => $this->version($noSeTrae), 'motivo' => 'No hay producto']);
         $this->get(route('fabrica.pedidos.index', ['ver' => 'hechos']))->assertSee('Volver a pendiente');
         $this->patch(route('fabrica.pedidos.reabrir', $noSeTrae))->assertSessionHas('status', 'El pedido de Súper Ficticio Centro volvió a pendiente.');
         $this->assertSame(EstadoPedidoSala::Registrado, $noSeTrae->refresh()->estado);
@@ -732,7 +732,7 @@ class PedidosFabricaTest extends TestCase
         $this->assertSame('sin harina', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
 
         // «Lo que falta no se trae»: el motivo oficial sigue siendo el del envío 1.
-        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido)])->assertSessionHasNoErrors();
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido), 'motivo' => 'No hay producto'])->assertSessionHasNoErrors();
         $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
         $this->assertSame('sin harina', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
 
@@ -740,7 +740,7 @@ class PedidosFabricaTest extends TestCase
         $otro = $this->pedido([$this->galleta->id => '6'], '2026-11-10', $this->otraSala);
         $g = $this->linea($otro, $this->galleta);
         $this->patchJson(route('fabrica.pedidos.borrador', $otro), ['cantidades' => [$g => '2'], 'motivos' => [$g => 'marcado y abandonado']])->assertOk();
-        $this->patch(route('fabrica.pedidos.cerrar', $otro), ['version' => $this->version($otro)])->assertSessionHasNoErrors();
+        $this->patch(route('fabrica.pedidos.cerrar', $otro), ['version' => $this->version($otro), 'motivo' => 'No hay producto'])->assertSessionHasNoErrors();
         $this->assertSame(EstadoPedidoSala::NoSeTrae, $otro->refresh()->estado);
         $this->assertNull($otro->lineas()->whereKey($g)->value('motivo_no_enviado'));
     }
