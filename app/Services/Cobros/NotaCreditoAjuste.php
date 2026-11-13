@@ -50,6 +50,20 @@ class NotaCreditoAjuste
                 ->orWhere('monto', '!=', $ajuste->monto)));
     }
 
+    /**
+     * La misma deducción informada en otros archivos: mismo cliente, misma referencia y mismo
+     * importe (el mismo criterio con el que el aplicador del TXT hereda la nota). Sin
+     * referencia no hay forma de saber que es la misma, así que no tiene hermanos.
+     */
+    public function hermanos(CobroAjuste $ajuste): Builder
+    {
+        return CobroAjuste::query()->where('id', '!=', $ajuste->id)
+            ->where('cliente_id', $ajuste->cliente_id)
+            ->where('monto', $ajuste->monto)
+            ->when(blank($ajuste->referencia_calleja), fn ($q) => $q->whereRaw('1 = 0'),
+                fn ($q) => $q->where('referencia_calleja', $ajuste->referencia_calleja));
+    }
+
     public function candidatas(CobroAjuste $ajuste): Builder
     {
         return $this->notasDelCliente($ajuste->cliente_id)
@@ -71,6 +85,14 @@ class NotaCreditoAjuste
         return DB::transaction(function () use ($ajuste, $original, $datos, $usuario) {
             $ajuste = $this->bloquear($ajuste);
             $this->validarPendiente($ajuste);
+            // La misma deducción llegada en otro archivo ya tiene su nota vigente: una segunda
+            // descontaría dos veces. Se vincula esa (Vincular NC), no se crea otra.
+            $notaHermana = $this->notasDelCliente($ajuste->cliente_id)
+                ->whereIn('id', $this->hermanos($ajuste)->whereNotNull('nc_dte_id')->select('nc_dte_id'))->first();
+            if ($notaHermana !== null) {
+                throw ValidationException::withMessages(['cobro_ajuste_id' => 'Esta deducción ya tiene la nota de crédito '
+                    .($notaHermana->numero_control ?? '#'.$notaHermana->id).' desde otro archivo de pagos: vinculá esa en lugar de crear otra.']);
+            }
             if ((int) $ajuste->cliente_id !== (int) $original->cliente_id
                 || (int) ($datos['cliente_id'] ?? $original->cliente_id) !== (int) $ajuste->cliente_id
                 || ($datos['modalidad'] ?? null) !== 'pronto_pago'
@@ -117,6 +139,10 @@ class NotaCreditoAjuste
             // Lanzar acá revierte la transacción entera: ni borrador ni vínculo.
             $this->frenarSiNoAlcanza($original, Dinero::redondear($nc->monto_total_operacion ?? '0'));
             $ajuste->update(['nc_dte_id' => $nc->id]);
+            // Los otros archivos que informaron esta misma deducción quedan con la misma nota,
+            // en vez de seguir pidiendo una propia.
+            $this->hermanos($ajuste)->whereNull('nc_dte_id')->where('estado', '!=', 'descartado')
+                ->get()->each(fn (CobroAjuste $hermano) => $hermano->update(['nc_dte_id' => $nc->id]));
 
             return $nc;
         });
