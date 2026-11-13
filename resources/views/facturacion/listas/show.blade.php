@@ -181,7 +181,7 @@
                         </div>
                         <div>
                             <dt class="inline text-xs uppercase tracking-wide text-gray-400">Factura:</dt>
-                            <dd class="inline font-mono text-gray-800">{{ ($soloNegocio && $facturas->isNotEmpty() ? $facturas->map(fn ($dte) => 'n.º '.$dte->correlativoCorto())->implode(' · ') : $lista->textoFactura()) ?: '—' }}</dd>
+                            <dd class="inline font-mono text-gray-800">{{ ($soloNegocio ? $lista->facturaCorta() : $lista->textoFactura()) ?: '—' }}</dd>
                         </div>
                         <div>
                             <dt class="inline text-xs uppercase tracking-wide text-gray-400">FDA de la empresa:</dt>

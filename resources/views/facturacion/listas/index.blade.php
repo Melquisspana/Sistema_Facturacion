@@ -4,9 +4,7 @@
     $chipOff = 'inline-flex min-h-11 sm:min-h-0 items-center rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600 hover:bg-gray-200';
     // Jefatura (13/11/2026): la factura por su número corto, no por el número de control.
     $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
-    $textoFactura = fn ($lista) => $soloNegocio && $lista->facturas()->isNotEmpty()
-        ? $lista->facturas()->map(fn ($dte) => 'n.º '.$dte->correlativoCorto())->implode(' · ')
-        : $lista->textoFactura();
+    $textoFactura = fn ($lista) => $soloNegocio ? $lista->facturaCorta() : $lista->textoFactura();
 @endphp
 
 <x-app-layout>

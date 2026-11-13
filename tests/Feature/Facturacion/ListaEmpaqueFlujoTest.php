@@ -491,4 +491,27 @@ class ListaEmpaqueFlujoTest extends TestCase
             ->assertSee('DTE-11-M001P001-000000000000042')
             ->assertSeeText('Aceptado');
     }
+
+    /** Sin factura vinculada, el texto histórico tecleado tampoco le muestra el número de control. */
+    public function test_jefatura_ve_corto_el_numero_historico_sin_factura_vinculada(): void
+    {
+        ['perfil' => $perfil] = $this->clienteHabilitado();
+        $conNumero = $this->lista($perfil, ['factura' => 'DTE-11-M001P001-000000000000058']);
+        $sinNumero = $this->lista($perfil, ['factura' => 'pendiente de facturar']);
+        $jefa = $this->usuario('jefatura');
+
+        $this->actingAs($jefa)->get(route('facturacion.listas.index'))->assertOk()
+            ->assertSee('n.º 58')
+            ->assertSee('Sin factura vinculada')
+            ->assertDontSee('DTE-11-M001P001-000000000000058')
+            ->assertDontSee('pendiente de facturar');
+        $this->actingAs($jefa)->get(route('facturacion.listas.show', $conNumero))->assertOk()
+            ->assertSee('n.º 58')
+            ->assertDontSee('DTE-11-M001P001-000000000000058');
+        $this->actingAs($jefa)->get(route('facturacion.listas.show', $sinNumero))->assertOk()
+            ->assertSee('Sin factura vinculada');
+
+        $this->actingAs($this->usuario())->get(route('facturacion.listas.show', $conNumero))->assertOk()
+            ->assertSee('DTE-11-M001P001-000000000000058');
+    }
 }
