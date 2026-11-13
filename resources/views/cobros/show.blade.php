@@ -1,8 +1,11 @@
 <x-app-layout>
+    {{-- Jefatura (13/11/2026): sin número de control, orden de compra, código de generación,
+         sello ni el quedan; el número corto y lo del cobro. Su archivo le da 403. --}}
+    @php $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf(); @endphp
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">
-                {{ $documento->numero_control }}
+                {{ $soloNegocio ? ($documento->esNc() ? 'NC ' : 'CCF ').$documento->correlativoCorto() : $documento->numero_control }}
             </h2>
             <a href="{{ route('cobros.index', ['cliente_id' => $documento->cliente_id]) }}"
                class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Facturas por cobrar</a>
@@ -43,12 +46,14 @@
                         <div><dt class="text-gray-500 dark:text-paper-300">Origen</dt><dd>{{ $documento->origen->label() }}</dd></div>
                         <div><dt class="text-gray-500 dark:text-paper-300">Emitida</dt><dd>{{ $documento->fecha_emision?->format('d/m/Y') ?? '—' }}</dd></div>
                         <div><dt class="text-gray-500 dark:text-paper-300">Días desde la emisión</dt><dd class="font-mono">{{ $documento->diasDesdeEmision() ?? '—' }}</dd></div>
+                        @unless ($soloNegocio)
                         <div><dt class="text-gray-500 dark:text-paper-300">Código de generación</dt><dd class="font-mono text-xs break-all">{{ $documento->codigo_generacion ?? '—' }}</dd></div>
                         <div><dt class="text-gray-500 dark:text-paper-300">Sello de recepción</dt><dd class="font-mono text-xs break-all">{{ $documento->sello_recepcion ?? '—' }}</dd></div>
                         {{-- Establecimiento y punto de venta: sin ellos, el mismo correlativo de
                              dos series distintas parecería el mismo documento. --}}
                         <div><dt class="text-gray-500 dark:text-paper-300">Establecimiento / punto de venta</dt>
                             <dd class="font-mono">{{ $documento->establecimiento_codigo ?? '—' }} / {{ $documento->punto_venta_codigo ?? '—' }}</dd></div>
+                        @endunless
                         <div><dt class="text-gray-500 dark:text-paper-300">Monto</dt><dd class="font-mono">{{ number_format((float) $documento->monto, 2) }}</dd></div>
                     </dl>
                 </div>
@@ -89,11 +94,11 @@
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-gray-500">Presentación (quedan)</dt>
+                        <dt class="text-gray-500">{{ $soloNegocio ? 'Presentación' : 'Presentación (quedan)' }}</dt>
                         <dd>
                             <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->presentacion_estado->clase() }}">{{ $documento->presentacion_estado->label() }}</span>
                             <span class="block mt-1 text-xs text-gray-500">{{ $documento->presentacion_estado->detalle() }}</span>
-                            @if ($documento->solicitud)
+                            @if ($documento->solicitud && ! $soloNegocio)
                                 <a href="{{ route('cobros.solicitudes.show', $documento->solicitud) }}" class="block mt-1 font-mono text-indigo-600 hover:underline break-all">{{ $documento->solicitud->referencia }}</a>
                             @endif
                             @if ($documento->fechaProgramadaPago())
@@ -141,7 +146,11 @@
                         <p class="text-amber-700 dark:text-amber-300">Albarán reciente: puede no estar en el portal de {{ $documento->cliente?->nombre ?? 'su cliente' }} todavía.</p>
                     @endif
                     @if ($avisosAlbaran['pedir_nota'])
-                        <p class="text-amber-700 dark:text-amber-300">Pedir la nota de devolución a {{ $documento->cliente?->nombre ?? 'su cliente' }} · CCF {{ $documento->numero_control }} · OC {{ $entregaFicha->numero_orden_compra }} · sala {{ $entregaFicha->sala_codigo }}.</p>
+                        @if ($soloNegocio)
+                            <p class="text-amber-700 dark:text-amber-300">Pedir la nota de devolución a {{ $documento->cliente?->nombre ?? 'su cliente' }} · CCF {{ $documento->correlativoCorto() }} · sala {{ $entregaFicha->sala_codigo }}.</p>
+                        @else
+                            <p class="text-amber-700 dark:text-amber-300">Pedir la nota de devolución a {{ $documento->cliente?->nombre ?? 'su cliente' }} · CCF {{ $documento->numero_control }} · OC {{ $entregaFicha->numero_orden_compra }} · sala {{ $entregaFicha->sala_codigo }}.</p>
+                        @endif
                     @endif
                 </div>
             @endif
@@ -159,7 +168,7 @@
                                 <span class="text-right font-medium text-gray-700 dark:text-paper-100">${{ number_format((float) $devolucion->monto_albaran, 2) }}</span>
                                 @if ($ncPorAlbaran->has($devolucion->numero_albaran))
                                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 break-all">
-                                        NC {{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->numero_control }}
+                                        NC {{ $soloNegocio ? $ncPorAlbaran[$devolucion->numero_albaran]->dte->correlativoCorto() : $ncPorAlbaran[$devolucion->numero_albaran]->dte->numero_control }}
                                         ({{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->estado->label() }})
                                     </span>
                                 @else
@@ -308,7 +317,9 @@
                                     <th scope="col" class="p-2 text-left font-medium">Sala</th>
                                     <th scope="col" class="p-2 text-left font-medium">Fecha</th>
                                     <th scope="col" class="p-2 text-right font-medium">Monto</th>
-                                    <th scope="col" class="p-2 text-left font-medium">Orden de compra</th>
+                                    @unless ($soloNegocio)
+                                        <th scope="col" class="p-2 text-left font-medium">Orden de compra</th>
+                                    @endunless
                                     <th scope="col" class="p-2 text-right font-medium"><span class="sr-only">Elegir</span></th>
                                 </tr>
                             </thead>
@@ -320,7 +331,9 @@
                                         <td class="p-2 font-mono"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Sala</span>{{ $candidato['sala'] }}</td>
                                         <td class="p-2"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Fecha</span>{{ $candidato['fecha'] }}</td>
                                         <td class="p-2 md:text-right font-mono"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Monto</span>{{ $candidato['monto'] === null ? '—' : number_format((float) $candidato['monto'], 2) }}</td>
-                                        <td class="p-2 font-mono text-xs break-all md:break-normal"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Orden de compra</span>{{ $candidato['orden_compra'] }}</td>
+                                        @unless ($soloNegocio)
+                                            <td class="p-2 font-mono text-xs break-all md:break-normal"><span class="md:hidden block text-xs font-sans text-gray-500 dark:text-paper-300">Orden de compra</span>{{ $candidato['orden_compra'] }}</td>
+                                        @endunless
                                         <td class="col-span-2 p-2 text-right">
                                             @if (! empty($candidato['tomado_por']))
                                                 <span class="text-xs text-rose-700">ya vinculado a {{ $candidato['tomado_por'] }}</span>
@@ -415,7 +428,7 @@
                     @else
                         <div class="overflow-x-auto">
                             <table class="block w-full min-w-0 text-sm md:table md:min-w-full">
-                                <caption class="sr-only">Notas de crédito vinculadas a {{ $documento->numero_control }}</caption>
+                                <caption class="sr-only">Notas de crédito vinculadas a {{ $soloNegocio ? 'CCF '.$documento->correlativoCorto() : $documento->numero_control }}</caption>
                                 <thead class="hidden bg-gray-50 dark:bg-ink-900 text-gray-600 dark:text-paper-300 md:table-header-group">
                                     <tr>
                                         <th scope="col" class="p-2 text-left font-medium">Nota</th>
@@ -441,7 +454,7 @@
                                         @endphp
                                         <tr class="block py-3 md:table-row md:py-0">
                                             <td class="block p-2 md:table-cell">
-                                                <span class="block break-all font-mono text-gray-800 dark:text-paper-100 md:whitespace-nowrap md:break-normal">{{ $nc->numero_control ?? $nc->numero_interno ?? '#'.$nc->id }}</span>
+                                                <span class="block break-all font-mono text-gray-800 dark:text-paper-100 md:whitespace-nowrap md:break-normal">{{ $soloNegocio ? 'NC '.$nc->correlativoCorto() : ($nc->numero_control ?? $nc->numero_interno ?? '#'.$nc->id) }}</span>
                                                 <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $nc->fecha_emision?->format('d/m/Y') ?? 'sin fecha' }}</span>
                                             </td>
                                             <td class="block p-2 md:table-cell">

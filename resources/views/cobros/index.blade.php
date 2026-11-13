@@ -1,4 +1,6 @@
 <x-app-layout>
+    {{-- Jefatura (13/11/2026): sin número de control ni orden de compra; el número corto. --}}
+    @php $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf(); @endphp
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -61,7 +63,7 @@
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4 text-sm">
                     <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Notas de devolución sin vincular ({{ $devolucionesSinVincular->total() }})</h3>
                     @foreach ($devolucionesSinVincular as $devolucion)
-                        <p class="mt-1 font-mono">{{ $devolucion->numero_albaran }} · OC {{ $devolucion->numero_orden_compra ?? '—' }} · sala {{ $devolucion->sala_codigo ?? '—' }} · {{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }} · {{ $devolucion->monto_albaran === null ? 'sin importe' : '$'.number_format((float) $devolucion->monto_albaran, 2) }}</p>
+                        <p class="mt-1 font-mono">{{ $devolucion->numero_albaran }}{{ $soloNegocio ? '' : ' · OC '.($devolucion->numero_orden_compra ?? '—') }} · sala {{ $devolucion->sala_codigo ?? '—' }} · {{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }} · {{ $devolucion->monto_albaran === null ? 'sin importe' : '$'.number_format((float) $devolucion->monto_albaran, 2) }}</p>
                         <p class="text-amber-700 dark:text-amber-300">{{ $devolucion->motivo_sin_vincular }}</p>
                     @endforeach
                     {{ $devolucionesSinVincular->links() }}
@@ -326,7 +328,7 @@
                                                     @endif
                                                 </td>
                                                 <td class="col-span-2 px-2 py-3">
-                                                    <a href="{{ route('cobros.documentos.show', $doc) }}" title="{{ $doc->numero_control }}"
+                                                    <a href="{{ route('cobros.documentos.show', $doc) }}" @unless ($soloNegocio) title="{{ $doc->numero_control }}" @endunless
                                                        class="font-mono text-base font-semibold text-indigo-600 dark:text-indigo-300 hover:underline">{{ $doc->correlativoCorto() }}</a>
                                                     @if ($doc->esNc())
                                                         <span class="ml-1 rounded px-1 text-[10px] bg-indigo-100 text-indigo-700">NC</span>
