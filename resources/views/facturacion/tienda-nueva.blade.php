@@ -10,7 +10,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h1 class="text-xl font-semibold leading-tight text-gray-800">Tienda nueva: {{ $pedido->sala_nueva_nombre }}</h1>
             <a href="{{ route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]) }}"
-               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a Llegó de la fábrica</a>
+               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a Llegó de pedidos</a>
         </div>
     </x-slot>
 

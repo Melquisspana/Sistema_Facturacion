@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Fabrica;
 
+use App\Enums\AreaSistema;
 use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
+use App\Enums\RolSistema;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
@@ -132,6 +134,16 @@ class PantallaFabricaTest extends TestCase
         }
     }
 
+    public function test_el_rol_y_el_area_se_llaman_pedidos_sin_cambiar_sus_claves(): void
+    {
+        // Lo que se ve dice «Pedidos»; el rol, el área y el permiso guardados siguen igual.
+        $this->assertSame('Pedidos', RolSistema::Fabrica->label());
+        $this->assertSame('fabrica', RolSistema::Fabrica->value);
+        $this->assertSame('Pedidos', AreaSistema::Fabrica->label());
+        $this->assertSame('fabrica', AreaSistema::Fabrica->value);
+        $this->assertSame('Pedidos', RolSistema::opciones()['fabrica']);
+    }
+
     public function test_quien_tiene_otras_areas_ve_volver_al_sistema(): void
     {
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('administrador'));
@@ -251,6 +263,8 @@ class PantallaFabricaTest extends TestCase
             ->assertSee('<title>Hoja de despacho · Súper Ficticio Centro</title>', false)
             ->assertSeeInOrder(['HOJA DE DESPACHO', 'No es factura · Sin valor tributario'])
             ->assertDontSee('Envío 1')->assertDontSee('envío n.º')->assertDontSee('Envío de la fábrica')
+            // Esa PC es de pedidos (12/11/2026): la hoja ya no nombra a la fábrica.
+            ->assertSee('Documento interno de pedidos')->assertSee('Entrega (pedidos)')->assertDontSee('fábrica')
             ->assertSee('Súper Ficticio Centro')->assertSee('Calle de Prueba 123')->assertSee('Ruta Inventada')->assertSee('OC-555')
             ->assertSee('Carlos Inventado')->assertSee('09/11/2026 09:00')
             ->assertSeeInOrder(['Lo que va', 'G01', 'Galleta de prueba', '24', 'Queda pendiente', 'C01', 'Canilla de prueba', '6', 'No salió del horno'])

@@ -189,7 +189,7 @@ class FacturarPedidoTest extends TestCase
     {
         $pedido = $this->pedido([$this->quesadilla->id => '5']);
         $this->post(route('facturacion.pedidos.facturar', $pedido))
-            ->assertSessionHasErrors(['pedido' => 'Todavía no llegó nada de la fábrica para este pedido.']);
+            ->assertSessionHasErrors(['pedido' => 'Todavía no se despachó nada de este pedido.']);
 
         $this->envio($pedido, [$this->quesadilla->id => '5']);
         $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
@@ -532,15 +532,15 @@ class FacturarPedidoTest extends TestCase
         $this->get(route('facturacion.edit', $dte))->assertOk()
             ->assertSee('Viene del pedido N.º '.$pedido->id)
             ->assertSee(route('rutas.pedidos.show', $pedido), false)
-            ->assertDontSee('Revisá contra lo que llegó de la fábrica');
+            ->assertDontSee('Revisá contra lo que llegó de pedidos');
 
         $this->post(route('facturacion.productos.cantidad', [$dte, $this->galleta]), ['cantidad' => 12])->assertSessionHasNoErrors();
         $this->post(route('facturacion.productos.cantidad', [$dte, $this->canilla]), ['cantidad' => 2])->assertSessionHasNoErrors();
 
         $this->get(route('facturacion.edit', $dte))->assertOk()
-            ->assertSee('Revisá contra lo que llegó de la fábrica')
+            ->assertSee('Revisá contra lo que llegó de pedidos')
             ->assertSee('Galleta de prueba: van 12 y llegaron 10.')
-            ->assertSee('Canilla de prueba no vino de la fábrica en este pedido.');
+            ->assertSee('Canilla de prueba no vino en lo despachado de este pedido.');
 
         // Un CCF hecho por «Nuevo CCF» no dice nada de pedidos.
         $this->post(route('facturacion.store-ccf'), ['tipo_dte' => '03', 'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $this->sala->id])
@@ -549,7 +549,7 @@ class FacturarPedidoTest extends TestCase
         $this->assertNotSame($dte->id, $suelto->id);
         $this->get(route('facturacion.edit', $suelto))->assertOk()
             ->assertDontSee('Viene del pedido')
-            ->assertDontSee('Revisá contra lo que llegó de la fábrica');
+            ->assertDontSee('Revisá contra lo que llegó de pedidos');
     }
 
     public function test_despues_de_un_rechazo_el_formulario_no_avisa_que_la_oc_ya_tiene_ccf(): void
@@ -602,10 +602,10 @@ class FacturarPedidoTest extends TestCase
             ->assertOk()->json('resumen_html');
 
         $html = $cantidad(12);
-        $this->assertStringContainsString('Revisá contra lo que llegó de la fábrica', $html);
+        $this->assertStringContainsString('Revisá contra lo que llegó de pedidos', $html);
         $this->assertStringContainsString('Galleta de prueba: van 12 y llegaron 10.', $html);
 
-        $this->assertStringNotContainsString('Revisá contra lo que llegó de la fábrica', $cantidad(10));
+        $this->assertStringNotContainsString('Revisá contra lo que llegó de pedidos', $cantidad(10));
     }
 
     public function test_cancelar_vuelve_a_donde_se_estaba_y_va_antes_que_crear_borrador(): void

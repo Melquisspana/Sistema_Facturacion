@@ -14,7 +14,7 @@
         // celeste facturado (en camino), verde entregado. Clases completas para Tailwind.
         $pasos = [
             $T::SACADO => ['Sacados', 'Sacado', 'border border-gray-200 bg-gray-50 text-gray-700', 'bg-gray-100 text-gray-700'],
-            $T::EN_FABRICA => ['En fábrica', 'En fábrica', 'bg-amber-50 text-amber-800', 'bg-amber-100 text-amber-800'],
+            $T::EN_FABRICA => ['En despacho', 'En despacho', 'bg-amber-50 text-amber-800', 'bg-amber-100 text-amber-800'],
             $T::FACTURADO => ['Facturados', 'Facturado', 'bg-sky-50 text-sky-700', 'bg-sky-100 text-sky-700'],
             $T::ENTREGADO => ['Entregados', 'Entregado', 'bg-green-50 text-green-700', 'bg-green-100 text-green-700'],
             $T::NO_SE_TRAE => ['No se trae', 'No se trae', '', 'bg-gray-100 text-gray-600'],
@@ -71,7 +71,7 @@
                                             @endforeach
                                         </div>
                                         @if ($viaje['noSeTrae'] > 0)
-                                            <p class="text-xs text-gray-500">Y {{ $plural($viaje['noSeTrae'], 'pedido que la fábrica no trae', 'pedidos que la fábrica no trae') }}.</p>
+                                            <p class="text-xs text-gray-500">Y {{ $plural($viaje['noSeTrae'], 'pedido que no se trae', 'pedidos que no se traen') }}.</p>
                                         @endif
                                         {{-- Lo que también lo deja abierto: CCF marcados en el viaje que no son de sus pedidos. --}}
                                         @if ($viaje['sueltos'] > 0)

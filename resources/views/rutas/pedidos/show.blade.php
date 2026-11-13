@@ -141,9 +141,9 @@
 
             {{-- Cada envío por separado, para compararlo con el sugerido y la OC. --}}
             <section class="{{ $caja }}" aria-labelledby="envios-titulo">
-                <h2 id="envios-titulo" class="text-base font-semibold text-gray-800">Lo que mandó la fábrica</h2>
+                <h2 id="envios-titulo" class="text-base font-semibold text-gray-800">Lo que se despachó</h2>
                 @if ($pedido->envios->isEmpty())
-                    <p class="mt-1 text-sm text-gray-500">La fábrica todavía no mandó nada.</p>
+                    <p class="mt-1 text-sm text-gray-500">Todavía no se despachó nada.</p>
                 @else
                     <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios, 'conFacturacion' => true])</div>
                 @endif

@@ -56,7 +56,7 @@ enum AreaSistema: string
             self::Facturacion => 'Facturación',
             self::Gastos => 'Gastos y pagos',
             self::Planta => 'Producción',
-            self::Fabrica => 'Fábrica',
+            self::Fabrica => 'Pedidos',
             self::Rutas => 'Rutas',
             self::Asistencia => 'Personal',
         };

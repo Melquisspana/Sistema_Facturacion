@@ -246,7 +246,7 @@ class PedidosSala
         });
     }
 
-    public const EN_FABRICA = 'La fábrica ya marcó este pedido; ya no se puede corregir. Avisá a la oficina.';
+    public const EN_FABRICA = 'Este pedido ya está en despacho; ya no se puede corregir. Avisá a la oficina.';
 
     /**
      * Freno del vendedor: si la fábrica ya empezó (algún envío, aunque esté anulado, un
@@ -282,7 +282,7 @@ class PedidosSala
     {
         return match (true) {
             ! $pedido->estaVigente() => null,
-            $pedido->fabricaEmpezo() => 'Ya está en la fábrica: si cambió algo, avisá a la oficina.',
+            $pedido->fabricaEmpezo() => 'Ya está en despacho: si cambió algo, avisá a la oficina.',
             self::sacoElSiguiente($pedido) => 'Ya sacaste otro pedido: este lo corrige la oficina.',
             default => null,
         };

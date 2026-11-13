@@ -10,7 +10,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Llegó de la fábrica</h1>
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Llegó de pedidos</h1>
             {{-- x-secondary-button es solo <button>: un enlace lleva sus clases, como en el resto de Rutas. --}}
             <a href="{{ route('facturacion.index') }}"
                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a facturación</a>
@@ -60,7 +60,7 @@
                 @if ($sinFacturar)
                     Todo lo que llegó y sigue sin facturar, de cualquier día.
                 @else
-                    Lo que mandó la fábrica el {{ $dia }}{{ $esHoy ? ' (hoy)' : '' }}.
+                    Lo que se despachó el {{ $dia }}{{ $esHoy ? ' (hoy)' : '' }}.
                 @endif
                 Con la hoja y la OC, tocá «Facturar»: sale el borrador del CCF con todo lo que llegó y ahí bajás lo que la OC no pide.
             </p>
@@ -70,7 +70,7 @@
                     @if ($sinFacturar)
                         No queda nada sin facturar.
                     @else
-                        No llegó nada de la fábrica este día.
+                        No llegó nada de pedidos este día.
                         @unless ($esHoy)
                             <a href="{{ route('facturacion.llego-de-fabrica') }}" class="text-indigo-600 underline">Ver hoy</a>
                         @endunless

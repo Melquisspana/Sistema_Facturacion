@@ -4,7 +4,7 @@
 
      Ocultar no autoriza: las rutas llevan `permission:fabrica.pedidos.mandar`. --}}
 <nav class="space-y-6 px-3 py-5">
-    <x-sidebar-group titulo="Fábrica" icono="salidas">
+    <x-sidebar-group titulo="Pedidos" icono="salidas">
         @can('fabrica.pedidos.mandar')
             <x-sidebar-link :href="route('fabrica.pedidos.index')" :active="request()->routeIs('fabrica.pedidos.*')">Pedidos</x-sidebar-link>
         @endcan

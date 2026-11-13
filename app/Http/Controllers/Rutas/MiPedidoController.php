@@ -98,7 +98,7 @@ class MiPedidoController extends Controller
             }
 
             return redirect()->route('rutas.sacar-pedido.index')->with('error', $sacado->fabricaEmpezo()
-                ? 'El pedido de «'.$sucursal->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.'
+                ? 'El pedido de «'.$sucursal->nombre.'» ya está en despacho. Si cambió algo, avisá a la oficina.'
                 : 'El pedido de «'.$sucursal->nombre.'» ya está sacado.');
         }
 
@@ -159,7 +159,7 @@ class MiPedidoController extends Controller
         // Con una pantalla vieja (o volviendo de un error al guardar): un aviso, no un 403.
         if ($pedido->estaVigente() && $pedido->fabricaEmpezo() && PedidosSala::loSaco($request->user(), $pedido)) {
             return redirect()->route('rutas.sacar-pedido.index')
-                ->with('error', 'El pedido de «'.$pedido->nombreSala().'» ya está en la fábrica. Si cambió algo, avisá a la oficina.');
+                ->with('error', 'El pedido de «'.$pedido->nombreSala().'» ya está en despacho. Si cambió algo, avisá a la oficina.');
         }
         // Ya sacó el de la sala siguiente: desde ahí lo corrige la oficina.
         if ($pedido->estaVigente() && PedidosSala::loSaco($request->user(), $pedido) && PedidosSala::sacoElSiguiente($pedido)) {

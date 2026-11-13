@@ -262,7 +262,7 @@ class PalabrasRutasTest extends TestCase
     {
         $primero = $this->sacar($this->sala);
         $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.index'))->assertOk()
-            ->assertSee('Corregir')->assertDontSee('este lo corrige la oficina')->assertDontSee('Ya está en la fábrica');
+            ->assertSee('Corregir')->assertDontSee('este lo corrige la oficina')->assertDontSee('Ya está en despacho');
 
         $segundo = $this->sacar($this->otraSala);
         $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.index'))->assertOk()
@@ -272,7 +272,7 @@ class PalabrasRutasTest extends TestCase
 
         $segundo->update(['armando_desde' => now()]);
         $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.index'))->assertOk()
-            ->assertSeeInOrder(['Tienda de prueba Oriente', 'Ya está en la fábrica: si cambió algo, avisá a la oficina.']);
+            ->assertSeeInOrder(['Tienda de prueba Oriente', 'Ya está en despacho: si cambió algo, avisá a la oficina.']);
     }
 
     // ---------------------------------------------------------------- B8: textos sueltos

@@ -193,7 +193,7 @@ class TableroViajes
         $trabado = match (true) {
             ! $abierto => null,
             in_array($paso, [self::SACADO, self::EN_FABRICA], true) && $dias >= self::DIAS_TRABADO_FABRICA => 'Sacado hace '.$dias.' días y todavía '
-                .($pedido->estaPorMandar() ? 'no sale de la fábrica.' : 'no se factura.'),
+                .($pedido->estaPorMandar() ? 'no se despacha.' : 'no se factura.'),
             $paso === self::FACTURADO && $dias >= self::DIAS_TRABADO_ENTREGA => 'Facturado hace '.$dias.' días y todavía no se entrega.',
             default => null,
         };

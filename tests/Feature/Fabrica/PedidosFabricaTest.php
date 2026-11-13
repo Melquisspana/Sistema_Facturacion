@@ -286,7 +286,7 @@ class PedidosFabricaTest extends TestCase
         // La oficina ve los dos envíos por separado.
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'));
         $this->get(route('rutas.pedidos.show', $pedido))->assertOk()
-            ->assertSee('Lo que mandó la fábrica')
+            ->assertSee('Lo que se despachó')
             ->assertSeeInOrder(['Envío 1', '24', 'Galleta de prueba', 'Envío 2', '6', 'Canilla de prueba'])
             ->assertSee('lo marcó Fábrica Inventada')
             ->assertSee('Pidió')->assertSee('Mandado')->assertSee('Falta')->assertSee('Motivo');

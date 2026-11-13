@@ -125,7 +125,7 @@
 
 <div class="no-print">
     @can('viewAny', App\Models\Dte::class)
-        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de la fábrica»</a>
+        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de pedidos»</a>
     @endcan
     @if ($volverPorEntregar ?? false)
         <a href="{{ route('rutas.por-entregar.index') }}">Volver a «Por entregar»</a>
@@ -136,7 +136,7 @@
 </div>
 
 <main class="hoja">
-    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Lo que salió de la fábrica"
+    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Lo que se despachó"
         etiqueta="Documento interno de Rutas" titulo="HOJA DE PEDIDO">
         <tr class="key"><td class="k">Pedido n.º</td><td class="v">{{ $pedido->id }}</td></tr>
         <tr><td class="k">Fecha del pedido</td><td class="v">{{ $pedido->fecha->format('d/m/Y') }}</td></tr>
@@ -147,7 +147,7 @@
     @if ($estado === \App\Enums\EstadoPedidoSala::Anulado)
         <p class="st rojo" role="alert"><strong>Este pedido está anulado: no se factura.</strong></p>
     @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado)
-        <p class="st" role="alert"><strong>La fábrica todavía no mandó nada de este pedido.</strong></p>
+        <p class="st" role="alert"><strong>Todavía no se despachó nada de este pedido.</strong></p>
     @endif
 
     <table class="bloques"><tr>
