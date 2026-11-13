@@ -687,19 +687,98 @@ class DteInvalidacionRealTest extends TestCase
         $this->assertSame('rechazado', $props['resultado_mh']);
     }
 
-    public function test_error_de_conexion_no_registra_activity_log(): void
+    private function fakeHttpSinRespuesta(): void
     {
         Http::fake([
             '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200),
             '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
             '*anulardte*' => fn () => throw new ConnectionException('timeout'),
         ]);
+    }
+
+    /**
+     * Hacienda no contesta: puede haberla tomado igual. No se toca el documento (sin sello no
+     * hay invalidación), pero el intento queda anotado y se avisa que hay que verificar en el
+     * portal antes de reintentar.
+     */
+    public function test_invalidacion_sin_respuesta_queda_anotada_sin_tocar_el_documento(): void
+    {
+        $this->fakeHttpSinRespuesta();
         $dte = $this->ncAceptada();
+        $antes = $dte->refresh()->getAttributes();
 
         $r = $this->servicio()->transmitir($dte, $this->evento(), true, true);
 
         $this->assertSame('error_conexion', $r['resultado']);
-        $this->assertNull(Activity::where('log_name', 'dte_invalidacion')->latest('id')->first());
+        $this->assertFalse($r['invalidado']);
+        $this->assertStringContainsString('verificá en el portal de Hacienda antes de reintentar', $r['mensaje']);
+        $this->assertSame($antes, $dte->refresh()->getAttributes(), 'Sin respuesta no se marca nada en el documento.');
+
+        $log = Activity::where('log_name', 'dte_invalidacion')->latest('id')->first();
+        $this->assertNotNull($log, 'El intento sin respuesta queda anotado.');
+        $this->assertSame($dte->id, $log->subject_id);
+        $this->assertSame(DteInvalidacionService::SIN_RESPUESTA, $log->description);
+        $this->assertNotEmpty($log->properties->get('codigo_generacion_evento'));
+        $this->assertStringNotContainsString('FAKE-TOKEN', (string) json_encode($log->properties));
+    }
+
+    /**
+     * Tras un envío sin respuesta, un reintento rechazado puede ser Hacienda diciendo «ese ya
+     * lo invalidaste»: queda para revisión, no como un rechazo común, y el documento sigue
+     * sin marcarse invalidado (no hay sello).
+     */
+    public function test_reintento_rechazado_tras_envio_sin_respuesta_queda_para_revision(): void
+    {
+        $envios = 0;
+        Http::fake([
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200),
+            '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
+            '*anulardte*' => function () use (&$envios) {
+                if (++$envios === 1) {
+                    throw new ConnectionException('timeout');
+                }
+
+                return Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Error en el documento'], 400);
+            },
+        ]);
+        $dte = $this->ncAceptada();
+        $this->assertSame('error_conexion', $this->servicio()->transmitir($dte, $this->evento(), true, true)['resultado']);
+
+        $r = $this->servicio()->transmitir($dte->refresh(), $this->evento(), true, true);
+
+        $this->assertSame('rechazado', $r['resultado']);
+        $this->assertTrue($r['revisar']);
+        $this->assertFalse($r['invalidado']);
+        $this->assertStringContainsString('portal de Hacienda', $r['mensaje']);
+        $dte->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $dte->estado);
+        $this->assertNull($dte->sello_invalidacion);
+
+        $log = Activity::where('log_name', 'dte_invalidacion')->latest('id')->first();
+        $this->assertTrue($log->properties->get('revisar'));
+    }
+
+    public function test_rechazo_que_dice_ya_invalidado_queda_para_revision(): void
+    {
+        $this->fakeHttp(['_http' => 400, 'estado' => 'RECHAZADO', 'descripcionMsg' => 'DOCUMENTO YA INVALIDADO']);
+        $dte = $this->ncAceptada();
+
+        $r = $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $this->assertSame('rechazado', $r['resultado']);
+        $this->assertTrue($r['revisar']);
+        $this->assertSame(EstadoDte::Aceptado, $dte->refresh()->estado);
+    }
+
+    public function test_rechazo_comun_no_queda_para_revision(): void
+    {
+        $this->fakeHttp(['_http' => 400, 'estado' => 'RECHAZADO', 'descripcionMsg' => '[identificacion.fecEmi] DATO NO COINCIDE CON DTE']);
+        $dte = $this->ncAceptada();
+
+        $r = $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $this->assertSame('rechazado', $r['resultado']);
+        $this->assertFalse($r['revisar']);
     }
 
     // ---------- Identidad de la respuesta (mismo criterio que la emisión) ----------

@@ -811,6 +811,9 @@ class DteController extends Controller
                 'puede_transmitir' => auth()->user()->can('transmitirInvalidacion', $dte),
                 'mock_activo' => (bool) config('dte.invalidacion.mock', false),
                 'ya_invalidado' => $dte->tieneEventoInvalidacion(),
+                // Último envío sin respuesta, o rechazo que puede ser «ya invalidado»: la ficha
+                // pide verificar en el portal de Hacienda antes de reintentar.
+                'aviso_hacienda' => $dte->tieneEventoInvalidacion() ? null : $invalidacionService->avisoPendiente($dte),
                 'protegido' => $dte->estaProtegidoComoEvidencia(),
                 'bloqueado_por_notas' => $notasQueBloquean->isNotEmpty(),
                 'notas_vigentes' => $notasQueBloquean,
@@ -1662,6 +1665,11 @@ class DteController extends Controller
                 ->with('error', 'No se pudo transmitir la invalidación: '.$e->getMessage());
         }
 
+        // Rechazo que puede ser «ya estaba invalidado»: no se ofrece revertir ni reintentar.
+        if ($r['revisar'] ?? false) {
+            return redirect()->route('facturacion.show', $dte)->with('error', $r['mensaje'].' Estado del documento: "'.$r['estado_dte'].'".');
+        }
+
         // El servicio ya conservó el estado en rechazo/fallo y solo pasó a Invalidado si
         // Hacienda aceptó. Nunca crea una NC automáticamente: la reversión es una acción aparte.
         return match ($r['resultado']) {
@@ -1680,9 +1688,15 @@ class DteController extends Controller
                 'error',
                 $r['mensaje'].' Estado del documento: "'.$r['estado_dte'].'".'
             ),
-            default => redirect()->route('facturacion.show', $dte)->with(
+            // El token no llegó a procesarse: se puede reintentar sin más.
+            'token_invalido' => redirect()->route('facturacion.show', $dte)->with(
                 'error',
                 'No se completó la invalidación ('.$r['resultado'].'): '.$r['mensaje'].'. El documento conserva su estado ("'.$r['estado_dte'].'"); podés reintentar.'
+            ),
+            // Sin respuesta definitiva: Hacienda pudo haberla tomado; el mensaje dice qué verificar.
+            default => redirect()->route('facturacion.show', $dte)->with(
+                'error',
+                'No se completó la invalidación ('.$r['resultado'].'): '.$r['mensaje'].' El documento conserva su estado ("'.$r['estado_dte'].'").'
             ),
         };
     }

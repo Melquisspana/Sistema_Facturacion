@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
@@ -52,6 +53,15 @@ use Throwable;
  */
 class DteInvalidacionService
 {
+    /**
+     * Descripción fija de la bitácora para un envío que Hacienda pudo haber tomado sin que
+     * llegara la respuesta. Se busca por este texto (no por el JSON de propiedades) para que la
+     * consulta valga igual en MySQL y en SQLite.
+     */
+    public const SIN_RESPUESTA = 'Invalidación enviada sin respuesta de Hacienda';
+
+    private const AVISO_PORTAL = 'verificá en el portal de Hacienda antes de reintentar';
+
     public function __construct(
         private readonly SerializadorInvalidacionMh $serializador,
         private readonly DteSchemaValidator $validador,
@@ -110,7 +120,7 @@ class DteInvalidacionService
      * Transmisión REAL del evento de invalidación a `/fesv/anulardte` (apitest o
      * producción, según el ambiente propio del DTE y sus candados).
      *
-     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, estado_dte: string, invalidado: bool}
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, estado_dte: string, invalidado: bool, revisar: bool}
      *
      * @throws DteInvalidacionException
      */
@@ -190,15 +200,27 @@ class DteInvalidacionService
             $resp = Http::timeout((int) config('dte.transmision.timeout', 8))
                 ->acceptJson()->withHeaders($headers)->post($this->urlAnulacion($dte), $payload);
         } catch (Throwable $e) {
-            // Error transitorio: no se persiste nada en BD (se puede reintentar).
-            return $this->resultado('error_conexion', null, 'No se pudo conectar con anulardte: '.$e->getMessage(), null, $dte, false);
+            // Sin respuesta: Hacienda pudo haberla tomado igual. El documento no se toca (sin
+            // sello no hay invalidación), pero el intento queda anotado para la ficha.
+            $this->anotarSinRespuesta($dte, $codigoEvento, $rutaJson, 'error_conexion', null);
+
+            return $this->resultado('error_conexion', null, 'No se pudo conectar con anulardte: '.$e->getMessage()
+                .'. Hacienda pudo haberla recibido: '.self::AVISO_PORTAL.'.', null, $dte, false);
         }
 
         $interpretado = $this->interpretar($resp);
 
         // 6) Solo respuestas DEFINITIVAS (aceptado/rechazado) persisten en BD.
         if (! in_array($interpretado['resultado'], ['aceptado', 'rechazado'], true)) {
-            return $this->resultado($interpretado['resultado'], $interpretado['http_status'], $interpretado['mensaje'], null, $dte, false);
+            // Un 401/403 no llegó a procesarse; cualquier otra respuesta sin estado reconocible
+            // (un 5xx, un cuerpo raro) deja la misma duda que el silencio.
+            if ($interpretado['resultado'] === 'token_invalido') {
+                return $this->resultado($interpretado['resultado'], $interpretado['http_status'], $interpretado['mensaje'], null, $dte, false);
+            }
+            $this->anotarSinRespuesta($dte, $codigoEvento, $rutaJson, $interpretado['resultado'], $interpretado['http_status']);
+
+            return $this->resultado($interpretado['resultado'], $interpretado['http_status'], $interpretado['mensaje']
+                .' Hacienda pudo haberla recibido: '.self::AVISO_PORTAL.'.', null, $dte, false);
         }
 
         return $this->persistir($dte, $evento, $codigoEvento, $codigoDocumento, $rutaJson, $rutaJws, $interpretado);
@@ -381,7 +403,8 @@ class DteInvalidacionService
         ];
 
         $falta = null;
-        $tardia = DB::transaction(function () use ($dte, $evento, $codigoEvento, $codigoDocumento, $rutaJson, $rutaJws, $rutaResp, $respuestaMh, $interpretado, $cuerpo, $aceptado, $ahora, &$falta) {
+        $revisar = false;
+        $tardia = DB::transaction(function () use ($dte, $evento, $codigoEvento, $codigoDocumento, $rutaJson, $rutaJws, $rutaResp, $respuestaMh, $interpretado, $cuerpo, $aceptado, $ahora, &$falta, &$revisar) {
             $actual = Dte::whereKey($dte->id)->lockForUpdate()->firstOrFail();
             $dte->setRawAttributes($actual->getAttributes(), true);
             if ($dte->estado === EstadoDte::Invalidado || filled($dte->sello_invalidacion)) {
@@ -444,6 +467,7 @@ class DteInvalidacionService
             } else {
                 // Rechazado: se guarda la respuesta (motivo) SIN sello y SIN cambiar estado.
                 $dte->save();
+                $revisar = $this->rechazoParaRevisar($dte, $interpretado);
             }
 
             // Auditoría de la transmisión REAL (simétrica al log del mock): quién, qué DTE,
@@ -465,10 +489,12 @@ class DteInvalidacionService
                     'origen' => app()->runningInConsole() ? 'consola' : 'web',
                     'usuario' => optional(Auth::user())->name,
                     'fecha' => $ahora->toIso8601String(),
+                    'revisar' => $revisar,
                 ])
                 ->log($aceptado
                     ? 'transmitió (REAL) el evento de invalidación — Hacienda lo ACEPTÓ'
-                    : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ');
+                    : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ'
+                        .($revisar ? ' (para revisar: puede estar ya invalidado)' : ''));
         });
 
         // Lo primero: si la respuesta no se pudo comprobar, no se guardó nada y el CCF sigue
@@ -492,6 +518,13 @@ class DteInvalidacionService
                 $dte->estado === EstadoDte::Invalidado || filled($dte->sello_invalidacion));
         }
 
+        if ($revisar) {
+            return $this->resultado($interpretado['resultado'], $interpretado['http_status'],
+                'Hacienda rechazó la invalidación ('.$interpretado['mensaje'].'), pero puede que ya esté invalidada: hubo un envío anterior '
+                .'sin respuesta o el rechazo lo dice. El documento queda como estaba hasta tener el sello; revisalo en el portal de Hacienda.',
+                null, $dte->refresh(), false, true);
+        }
+
         return $this->resultado(
             $interpretado['resultado'],
             $interpretado['http_status'],
@@ -500,6 +533,65 @@ class DteInvalidacionService
             $dte->refresh(),
             $aceptado,
         );
+    }
+
+    /**
+     * Lo que la ficha tiene que avisar según el último intento real anotado: `sin_respuesta`
+     * (se envió y Hacienda no contestó) o `revisar` (la rechazó, pero puede estar ya
+     * invalidada). Null si el último intento no deja dudas. Solo lectura.
+     */
+    public function avisoPendiente(Dte $dte): ?string
+    {
+        $ultimo = Activity::query()
+            ->where('log_name', 'dte_invalidacion')
+            ->whereMorphedTo('subject', $dte)
+            ->latest('id')
+            ->first();
+
+        return match (true) {
+            $ultimo === null => null,
+            $ultimo->description === self::SIN_RESPUESTA => 'sin_respuesta',
+            (bool) $ultimo->properties->get('revisar') => 'revisar',
+            default => null,
+        };
+    }
+
+    /**
+     * Deja en la bitácora un envío del que Hacienda no dio respuesta definitiva. No toca el
+     * documento: lo que importa es que la ficha lo diga y que un rechazo posterior no se lea
+     * como un rechazo común ({@see rechazoParaRevisar()}).
+     */
+    private function anotarSinRespuesta(Dte $dte, string $codigoEvento, string $rutaJson, string $resultado, ?int $httpStatus): void
+    {
+        activity('dte_invalidacion')->performedOn($dte)->withProperties([
+            'codigo_generacion_evento' => $codigoEvento,
+            'resultado' => $resultado,
+            'http_status' => $httpStatus,
+            'json_path' => $rutaJson,
+            'ambiente' => $dte->ambiente->value,
+            'usuario' => optional(Auth::user())->name,
+        ])->log(self::SIN_RESPUESTA);
+    }
+
+    /**
+     * Un rechazo se aparta para revisión cuando puede ser Hacienda diciendo que el documento ya
+     * está invalidado: hubo antes un envío sin respuesta, o el propio rechazo lo dice. No se
+     * marca invalidado (no hay sello): solo se avisa que hay que mirarlo en el portal.
+     *
+     * @param  array{mensaje: string, observaciones?: array<int, string>}  $interpretado
+     */
+    private function rechazoParaRevisar(Dte $dte, array $interpretado): bool
+    {
+        $texto = $interpretado['mensaje'].' '.implode(' ', $interpretado['observaciones'] ?? []);
+        if (preg_match('/\b(invalidad|anulad)[oa]s?\b/iu', $texto) === 1) {
+            return true;
+        }
+
+        return Activity::query()
+            ->where('log_name', 'dte_invalidacion')
+            ->whereMorphedTo('subject', $dte)
+            ->where('description', self::SIN_RESPUESTA)
+            ->exists();
     }
 
     /**
@@ -557,9 +649,11 @@ class DteInvalidacionService
     }
 
     /**
-     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, estado_dte: string, invalidado: bool}
+     * `revisar`: Hacienda la rechazó, pero puede que ya esté invalidada; hay que mirarla en el portal.
+     *
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, estado_dte: string, invalidado: bool, revisar: bool}
      */
-    private function resultado(string $resultado, ?int $httpStatus, string $mensaje, ?string $sello, Dte $dte, bool $invalidado): array
+    private function resultado(string $resultado, ?int $httpStatus, string $mensaje, ?string $sello, Dte $dte, bool $invalidado, bool $revisar = false): array
     {
         return [
             'resultado' => $resultado,
@@ -568,6 +662,7 @@ class DteInvalidacionService
             'sello' => $sello,
             'estado_dte' => $dte->estado->value,
             'invalidado' => $invalidado,
+            'revisar' => $revisar,
         ];
     }
 
