@@ -26,14 +26,16 @@
     // Accesos rápidos: los mismos permisos que la barra lateral y que cada ruta.
     $accesos = array_values(array_filter([
         $veFacturacion && $usuarioActual?->can('create', \App\Models\Dte::class) ? ['Nuevo CCF', route('facturacion.create-ccf'), true] : null,
-        $veFacturacion && $usuarioActual?->can('create', \App\Models\Dte::class) ? ['Nueva Factura', route('facturacion.create-factura'), false] : null,
         $veFacturacion ? ['Llegó de pedidos', route('facturacion.llego-de-fabrica'), false] : null,
         $veFacturacion ? ['Documentos fiscales', route('facturacion.index'), false] : null,
         $usuarioActual?->can('ppq.ver') ? ['Facturas por cobrar', route('cobros.index'), false] : null,
         $usuarioActual?->can('rutas.ver') ? ['Rutas', route('rutas.dashboard'), false] : null,
         $veOperativos ? ['Compras', route('documentos-recibidos.index'), false] : null,
-        $veFacturacion && $usuarioActual?->can('exportaciones.ver') && $usuarioActual?->can('exportaciones.gestionar') ? ['Nueva lista de empaque', route('facturacion.listas.create'), false] : null,
     ]));
+    // Pedido de Melqui (13/11/2026): fuera «Nueva Factura», «Nueva lista de empaque» y la tarjeta
+    // «Compras pendientes», que ya no se usan. Quedan seis accesos: dos columnas en el
+    // celular y tres en la computadora.
+    $verListas = $veFacturacion && $veOperativos && $usuarioActual?->can('exportaciones.ver');
 @endphp
 <x-app-layout>
     <x-slot name="header">
@@ -70,42 +72,30 @@
             @endif
 
             {{-- El mes es la cifra principal; hoy y los DTE son secundarios. --}}
-            @if ($veFacturacion || $veOperativos)
+            @if ($veFacturacion)
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    @if ($veFacturacion)
-                        <section aria-labelledby="titulo-ventas" class="rounded-xl bg-indigo-600 p-5 text-white shadow-sm sm:p-6 lg:col-span-2">
-                            <h2 id="titulo-ventas" class="text-sm font-medium opacity-80">Ventas del mes</h2>
-                            <p class="mt-1 break-words text-3xl font-bold tabular-nums tracking-tight">${{ number_format($stats['ventas_mes'], 2) }}</p>
-                            <dl class="mt-5 grid grid-cols-2 gap-4 border-t border-indigo-400 pt-4">
-                                <div>
-                                    <dt class="text-xs opacity-80">Vendido hoy</dt>
-                                    <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums">${{ number_format($stats['ventas_hoy'] ?? 0, 2) }}</dd>
-                                </div>
-                                <div>
-                                    <dt class="text-xs opacity-80">DTE aceptados (mes)</dt>
-                                    <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums">{{ number_format($stats['dte_aceptados_mes']) }}</dd>
-                                </div>
-                            </dl>
-                        </section>
-                    @endif
+                    <section aria-labelledby="titulo-ventas" class="rounded-xl bg-indigo-600 p-5 text-white shadow-sm sm:p-6 {{ $verListas ? 'lg:col-span-2' : 'lg:col-span-3' }}">
+                        <h2 id="titulo-ventas" class="text-sm font-medium opacity-80">Ventas del mes</h2>
+                        <p class="mt-1 break-words text-3xl font-bold tabular-nums tracking-tight">${{ number_format($stats['ventas_mes'], 2) }}</p>
+                        <dl class="mt-5 grid grid-cols-2 gap-4 border-t border-indigo-400 pt-4">
+                            <div>
+                                <dt class="text-xs opacity-80">Vendido hoy</dt>
+                                <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums">${{ number_format($stats['ventas_hoy'] ?? 0, 2) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs opacity-80">DTE aceptados (mes)</dt>
+                                <dd class="mt-0.5 break-words text-xl font-semibold tabular-nums">{{ number_format($stats['dte_aceptados_mes']) }}</dd>
+                            </div>
+                        </dl>
+                    </section>
 
-                    @if ($veOperativos)
-                        <div class="grid grid-cols-2 gap-4 {{ $veFacturacion ? '' : 'lg:col-span-3 lg:grid-cols-2' }}">
-                            <a href="{{ route('documentos-recibidos.index', ['vista' => 'pendientes', 'rango' => 'todos']) }}"
-                               class="{{ $caja }} block p-4 hover:border-indigo-300">
-                                <span class="block text-sm text-gray-500">Compras pendientes</span>
-                                <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['documentos_pendientes']) }}</span>
-                                <span class="mt-1 block text-sm font-medium text-indigo-600">Ver compras</span>
-                            </a>
-                            @if ($veFacturacion && $usuarioActual->can('exportaciones.ver'))
-                                <a href="{{ route('facturacion.listas.index') }}"
-                                   class="{{ $caja }} block p-4 hover:border-indigo-300">
-                                    <span class="block text-sm text-gray-500">Listas de empaque (mes)</span>
-                                    <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['listas_recientes']) }}</span>
-                                    <span class="mt-1 block text-sm font-medium text-indigo-600">Ver listas</span>
-                                </a>
-                            @endif
-                        </div>
+                    @if ($verListas)
+                        <a href="{{ route('facturacion.listas.index') }}"
+                           class="{{ $caja }} block p-5 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <span class="block text-sm text-gray-500">Listas de empaque (mes)</span>
+                            <span class="mt-1 block text-3xl font-semibold tabular-nums text-gray-900">{{ number_format($stats['listas_recientes']) }}</span>
+                            <span class="mt-2 block text-sm font-medium text-indigo-600">Ver listas &rarr;</span>
+                        </a>
                     @endif
                 </div>
             @endif
@@ -134,7 +124,7 @@
             @if ($accesos !== [])
                 <nav aria-labelledby="titulo-accesos">
                     <h2 id="titulo-accesos" class="mb-2 text-sm font-semibold text-gray-700">Accesos rápidos</h2>
-                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-2 lg:grid-cols-3">
                         @foreach ($accesos as [$texto, $url, $principal])
                             <a href="{{ $url }}"
                                class="{{ $principal ? $acceso.' bg-indigo-600 font-semibold text-white hover:bg-indigo-700' : $accesoSecundario }}">{{ $texto }}</a>

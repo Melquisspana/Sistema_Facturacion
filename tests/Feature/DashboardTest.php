@@ -117,8 +117,8 @@ class DashboardTest extends TestCase
         $resp->assertSee('DTE aceptados (mes)');
         $resp->assertSeeInOrder(['DTE aceptados (mes)', '2']); // 2 DTE aceptados creados arriba
         $resp->assertSee('350.00'); // suma de ventas del mes (100 + 250)
-        $resp->assertSee('Compras pendientes');
-        $resp->assertSeeInOrder(['Compras pendientes', '1']); // solo 1 en estado pendiente
+        // «Compras pendientes» salió del Inicio: ya no se usa (Melqui, 13/11/2026).
+        $resp->assertDontSee('Compras pendientes');
     }
 
     public function test_actividad_reciente_muestra_el_dte_con_enlace_para_abrir(): void
@@ -419,8 +419,10 @@ class DashboardTest extends TestCase
         $resp = $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk();
 
         $resp->assertSee('Nuevo CCF');
-        $resp->assertSee('Nueva Factura');
         $resp->assertSee(route('facturacion.create-ccf'), false);
+        // Fuera del Inicio porque no se usan (Melqui, 13/11/2026); siguen en el menú.
+        $resp->assertDontSee('Nueva Factura');
+        $resp->assertDontSee('Nueva lista de empaque');
     }
 
     public function test_consulta_no_ve_acciones_de_creacion(): void
@@ -586,7 +588,7 @@ class DashboardTest extends TestCase
 
         $this->assertMatchesRegularExpression('/<p class="[^"]*text-3xl[^"]*">\$[\d,.]+<\/p>/', $html);
         preg_match('/<nav aria-labelledby="titulo-accesos">(.*?)<\/nav>/s', $html, $accesos);
-        $this->assertStringContainsString('grid grid-cols-2 gap-2 sm:grid-cols-4', $accesos[1]);
+        $this->assertStringContainsString('grid grid-cols-2 gap-2 lg:grid-cols-3', $accesos[1]);
         preg_match_all('/<a[^>]*class="([^"]*)"/', $accesos[1], $botones);
         $this->assertNotEmpty($botones[1]);
         foreach ($botones[1] as $clases) {
@@ -655,8 +657,8 @@ class DashboardTest extends TestCase
         $this->dte(['ambiente' => '01', 'estado' => EstadoDte::Rechazado->value, 'total_pagar' => 800]);
         $this->dte(['ambiente' => '01', 'tipo_dte' => TipoDte::NotaCredito->value, 'total_pagar' => 20]);
 
-        // Se mide solo el cálculo compartido: antes eran dos agregados DTE y dos
-        // operativos; hoy sigue siendo exactamente la misma cantidad.
+        // Se mide solo el cálculo compartido: dos agregados DTE y uno operativo (las listas
+        // de empaque). «Compras pendientes» salió del Inicio el 13/11/2026: una consulta menos.
         $metodo = new \ReflectionMethod(DashboardController::class, 'calcularStats');
         DB::enableQueryLog();
         DB::flushQueryLog();
@@ -664,7 +666,7 @@ class DashboardTest extends TestCase
         $consultas = DB::getQueryLog();
         DB::disableQueryLog();
 
-        $this->assertCount(4, $consultas);
+        $this->assertCount(3, $consultas);
         $this->assertSame(230.0, $stats['ventas_mes']);
         $this->assertSame(125.0, $stats['ventas_hoy']);
         $this->travelBack();
@@ -700,9 +702,9 @@ class DashboardTest extends TestCase
             ->assertSee('Llegó de pedidos')->assertSee('Facturas por cobrar')
             ->assertSee('Por cobrar')->assertSee('Por entregar')
             ->assertSee(route('rutas.por-entregar.index'), false)
-            ->assertDontSee('Nuevo CCF')->assertDontSee('Nueva Factura');
+            ->assertDontSee('Nuevo CCF');
         $usuario->givePermissionTo('dte.gestionar');
-        $this->get(route('dashboard'))->assertOk()->assertSee('Nuevo CCF')->assertSee('Nueva Factura');
+        $this->get(route('dashboard'))->assertOk()->assertSee('Nuevo CCF');
     }
 
     public function test_documentos_tienen_tarjetas_moviles_con_las_mismas_acciones(): void
@@ -729,7 +731,7 @@ class DashboardTest extends TestCase
         $usuario = User::factory()->create(['activo' => true]);
         $usuario->givePermissionTo('documentos-recibidos.ver', 'dte.ver');
         $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
-            ->assertSee('Compras pendientes')
+            ->assertSee('href="'.route('documentos-recibidos.index').'"', false)
             ->assertDontSee('href="'.route('facturacion.listas.index').'"', false)
             ->assertDontSee('Nueva lista de empaque');
     }

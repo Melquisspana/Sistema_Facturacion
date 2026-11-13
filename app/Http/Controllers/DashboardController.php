@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
-use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Exportacion;
 use App\Services\Dte\DteTransmisionService;
@@ -156,8 +155,7 @@ class DashboardController extends Controller
      * desde una instalación en modo pruebas/APITEST nunca debe ver esos números
      * inflados con documentos de prueba, ni tampoco perder de vista un documento real
      * de producción (como el DTE #145) solo porque la instalación local está en '00'.
-     * `documentos_pendientes`/`listas_recientes` no son DTE (DocumentoRecibido/
-     * Exportacion no tienen concepto de ambiente MH), así que no aplica filtrarlos.
+     * `listas_recientes` no es DTE (Exportacion no tiene concepto de ambiente MH), así que no aplica filtrarla.
      *
      * @return array<string, mixed>
      */
@@ -191,7 +189,6 @@ class DashboardController extends Controller
             'dte_aceptados_mes' => $dteAceptadosMes,
             'ventas_mes' => $ventasMes,
             'ventas_hoy' => $ventasHoy,
-            'documentos_pendientes' => $veOperativos ? DocumentoRecibido::where('estado', 'pendiente')->count() : null,
             'listas_recientes' => $veOperativos
                 ? Exportacion::where('created_at', '>=', $inicioMes)
                     ->where('archivada', false)
