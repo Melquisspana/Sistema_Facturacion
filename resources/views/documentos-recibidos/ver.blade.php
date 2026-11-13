@@ -10,6 +10,11 @@
     @php
         $titulo = $dte['titulo'] ?? ($documento->tipo_documento ? $documento->tipoLabel() : 'Compra');
         $numero = $dte['numero_control'] ?? $documento->numero_control;
+        // Jefatura (13/11/2026): número corto, sin código de generación ni sello.
+        $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
+        if ($soloNegocio && $numero) {
+            $numero = 'n.º …'.\App\Support\OrdenCompra::ultimosDigitos($numero);
+        }
         $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
     @endphp
 
@@ -144,11 +149,13 @@
                         </div>
                     </div>
 
+                    @unless ($soloNegocio)
                     <div class="fr-ident">
                         <div><span class="fr-et">Número de control</span><span class="fr-mono">{{ $dte['numero_control'] ?? '—' }}</span></div>
                         <div><span class="fr-et">Código de generación</span><span class="fr-mono">{{ $dte['codigo_generacion'] ?? '—' }}</span></div>
                         <div><span class="fr-et">Sello de recepción de Hacienda</span><span class="fr-mono">{{ $dte['sello'] ?? '—' }}</span></div>
                     </div>
+                    @endunless
 
                     <div class="fr-parte">
                         <span class="fr-et">{{ $dte['etiqueta_receptor'] }}</span>

@@ -177,6 +177,9 @@
             {{-- Filtros rápidos de rango --}}
             @php
                 $rangos = ['mes_actual' => 'Este mes', 'mes_pasado' => 'Mes pasado', 'ultimos_7' => 'Últimos 7 días', 'todos' => 'Todos'];
+                // Jefatura (13/11/2026): sin número de control completo, código de generación ni
+                // JSON (DocumentoRecibidoController le da 403 al JSON); el número corto y el PDF.
+                $soloNegocio = (bool) auth()->user()?->abreDocumentosComoPdf();
             @endphp
             <div class="flex flex-wrap items-center gap-2">
                 @foreach ($rangos as $clave => $titulo)
@@ -219,6 +222,7 @@
                             <option value="11" @selected($filtros['tipo_documento'] === '11')>Factura de exportación</option>
                         </select>
                     </div>
+                    @unless ($soloNegocio)
                     <div>
                         <label class="block text-xs font-medium text-gray-600">Número de control</label>
                         <input type="text" name="numero_control" value="{{ $filtros['numero_control'] }}" placeholder="DTE-03-…" class="mt-1 w-full rounded-md border-gray-300 text-sm">
@@ -227,6 +231,7 @@
                         <label class="block text-xs font-medium text-gray-600">Código de generación</label>
                         <input type="text" name="codigo_generacion" value="{{ $filtros['codigo_generacion'] }}" placeholder="UUID…" class="mt-1 w-full rounded-md border-gray-300 text-sm">
                     </div>
+                    @endunless
                     <div>
                         <label class="block text-xs font-medium text-gray-600">Monto mínimo</label>
                         <input type="number" step="0.01" name="monto_min" value="{{ $filtros['monto_min'] }}" class="mt-1 w-full rounded-md border-gray-300 text-sm">
@@ -287,7 +292,7 @@
                                 <th class="py-3 px-3">Fecha DTE</th>
                                 <th class="py-3 px-3">Emisor</th>
                                 <th class="py-3 px-3">Tipo</th>
-                                <th class="py-3 px-3">Número de control</th>
+                                <th class="py-3 px-3">{{ $soloNegocio ? 'Número' : 'Número de control' }}</th>
                                 <th class="py-3 px-3 text-right">Total</th>
                                 <th class="py-3 px-3 text-center">Estado</th>
                                 <th class="py-3 px-3 text-right">Contabilidad y acciones</th>
@@ -337,7 +342,7 @@
                                             </div>
                                         @endif
                                     </td>
-                                    <td class="py-2 px-3 font-mono text-xs text-gray-600 break-all md:break-normal"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">Número de control</span>{{ $doc->numero_control ?? '—' }}</td>
+                                    <td class="py-2 px-3 font-mono text-xs text-gray-600 break-all md:break-normal"><span class="md:hidden block text-xs font-sans font-normal text-gray-500">{{ $soloNegocio ? 'Número' : 'Número de control' }}</span>{{ $soloNegocio ? ($doc->numero_control ? '…'.\App\Support\OrdenCompra::ultimosDigitos($doc->numero_control) : '—') : ($doc->numero_control ?? '—') }}</td>
                                     <td class="py-2 px-3 md:text-right text-gray-700">
                                         <span class="md:hidden block text-xs font-sans font-normal text-gray-500">Total</span>
                                         @if ($doc->total !== null)
@@ -400,7 +405,9 @@
                                                         <span class="cursor-not-allowed text-xs text-gray-300" title="Este documento no tiene PDF guardado.">Abrir PDF</span>
                                                     @endif
 
-                                                    @if ($doc->tiene_json)
+                                                    @if ($soloNegocio)
+                                                        {{-- Sin JSON para Jefatura. --}}
+                                                    @elseif ($doc->tiene_json)
                                                         <a href="{{ route('documentos-recibidos.archivo', [$doc, 'json']) }}"
                                                            class="text-xs font-medium text-gray-600 underline hover:text-gray-900">Abrir JSON</a>
                                                     @else

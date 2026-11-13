@@ -296,4 +296,35 @@ class ComprasVerDteTest extends TestCase
 
         $this->assertSame(1, substr_count($html, 'title="No es un DTE válido'));
     }
+
+    /** Jefatura (13/11/2026): proveedor, fechas, total y el PDF; sin código, número de control completo ni JSON. */
+    public function test_jefatura_ve_la_compra_sin_codigo_ni_json(): void
+    {
+        $doc = $this->compra(['factura.pdf' => '%PDF-1.4', 'dte.json' => json_encode($this->ccf())]);
+        $jefatura = $this->usuario('jefatura');
+
+        $this->actingAs($jefatura)->get(route('documentos-recibidos.index', ['rango' => 'todos']))->assertOk()
+            ->assertSee($doc->emisor_nombre)
+            ->assertSee('$100.00')
+            ->assertSee('…'.substr($doc->numero_control, -4))
+            ->assertDontSee($doc->numero_control)
+            ->assertDontSee('name="codigo_generacion"', false)
+            ->assertDontSee('Abrir JSON')
+            ->assertSee('Abrir PDF');
+        $this->actingAs($jefatura)->get(route('documentos-recibidos.ver', $doc))->assertOk()
+            ->assertSee('DISTRIBUIDORA FICTICIA S.A. DE C.V.')
+            ->assertSee('$112.00')
+            ->assertDontSee('DTE-03-F0000001-000000000000123')
+            ->assertDontSee('11111111-2222-3333-4444-555555555555')
+            ->assertDontSee('2026SELLOFICTICIO0000000000000000001');
+        $this->actingAs($jefatura)->get(route('documentos-recibidos.archivo', [$doc, 'json']))->assertForbidden();
+        $this->actingAs($jefatura)->get(route('documentos-recibidos.archivo', [$doc, 'pdf']))->assertOk();
+
+        $admin = $this->usuario('administrador');
+        $this->actingAs($admin)->get(route('documentos-recibidos.index', ['rango' => 'todos']))->assertOk()
+            ->assertSee($doc->numero_control)
+            ->assertSee('name="codigo_generacion"', false)
+            ->assertSee('Abrir JSON');
+        $this->actingAs($admin)->get(route('documentos-recibidos.archivo', [$doc, 'json']))->assertOk();
+    }
 }
