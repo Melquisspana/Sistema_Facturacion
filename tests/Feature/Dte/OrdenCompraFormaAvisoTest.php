@@ -271,6 +271,9 @@ class OrdenCompraFormaAvisoTest extends TestCase
         $admin = $this->usuario('administrador');
         $contar = function () use ($admin, &$lecturas): int {
             $lecturas = 0;
+            // Pedido nuevo: la huella se lee una vez por pedido (MemoDePedido) y en la prueba
+            // el contenedor no se renueva entre pedidos como en el servidor.
+            app()->forgetScopedInstances();
             $this->actingAs($admin)->get(route('auditoria.ordenes_compra'))->assertOk();
 
             return $lecturas;
