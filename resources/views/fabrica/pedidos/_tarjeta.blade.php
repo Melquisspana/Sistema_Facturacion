@@ -27,4 +27,8 @@
     @if ($atrasado)
         <span class="mt-1 block text-sm font-semibold text-amber-800">Del {{ $pedido->fecha->format('d/m/Y') }} · hace {{ $dias === 1 ? '1 día' : $dias.' días' }}</span>
     @endif
+    {{-- El vendedor dejó notas (por ejemplo, cambios por avería): se leen al abrir el pedido. --}}
+    @if (filled($pedido->notas))
+        <span class="mt-2 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Con notas del vendedor</span>
+    @endif
 </a>
