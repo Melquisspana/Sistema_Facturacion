@@ -82,6 +82,16 @@ class PedidoSalaPolicy
             && $this->view($usuario, $pedido) && $usuario->can(PermisoSistema::DteGestionar->value);
     }
 
+    public function imprimirWeb(User $usuario, PedidoSala $pedido): bool
+    {
+        return $usuario->can(PermisoSistema::FabricaPedidosMandar->value) && $pedido->estaVigente();
+    }
+
+    public function recoger(User $usuario, PedidoSala $pedido): bool
+    {
+        return $pedido->origen === OrigenPedidoSala::Web && $this->imprimirWeb($usuario, $pedido);
+    }
+
     /** Mandar todo o una parte, armar la hoja y «No se trae». */
     public function mandar(User $usuario, PedidoSala $pedido): bool
     {

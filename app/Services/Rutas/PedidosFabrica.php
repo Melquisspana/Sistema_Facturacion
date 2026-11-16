@@ -3,6 +3,7 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoPedidoSala;
+use App\Enums\OrigenPedidoSala;
 use App\Facades\Ajustes;
 use App\Http\Requests\Fabrica\MandarPedidoRequest;
 use App\Models\PedidoSala;
@@ -104,7 +105,7 @@ class PedidosFabrica
         // la del cliente) y el código de cada producto. Va en el mismo renglón y no repetido:
         // dos `select` de la misma relación se combinan y gana el último.
         return array_merge([
-            'pedidoWeb:id,pedido_sala_id,cliente_nombre,entrega_tipo',
+            'pedidoWeb', 'pedidoWeb.dte:id,estado,tipo_dte',
             $conSala ? 'sala:id,cliente_id,nombre,direccion' : 'sala:id,nombre',
             // `salida.ruta`: la zona del viaje, que se muestra si el pedido no tiene la suya
             // (la tienda nueva, {@see PedidoSala::zonaNombre()}).
@@ -174,7 +175,7 @@ class PedidosFabrica
         $envios = PedidoSalaEnvio::query()
             ->whereDate('fecha', $hoy)
             // `dte`: el botón «Deshacer» se apaga si ya se facturó, sin una consulta por envío.
-            ->with(['pedido.sala:id,nombre', 'registradoPor:id,name', 'anuladoPor:id,name', 'lineas.linea.producto:id,nombre', 'dte:id,estado,deleted_at'])
+            ->with(['pedido.sala:id,nombre', 'pedido.pedidoWeb', 'registradoPor:id,name', 'anuladoPor:id,name', 'lineas.linea.producto:id,nombre', 'dte:id,estado,deleted_at'])
             ->orderByDesc('id')
             ->get();
 
@@ -237,6 +238,9 @@ class PedidosFabrica
             Gate::forUser($usuario)->authorize('mandar', $pedido);
             $this->cargarBloqueado($pedido);
 
+            if ($pedido->origen === OrigenPedidoSala::Web) {
+                throw ValidationException::withMessages(['pedido' => 'Los pedidos web se mandan completos, sin borrador.']);
+            }
             $cantidades = $this->normalizar($datos['cantidades'] ?? []);
             $motivos = $datos['motivos'] ?? [];
             $this->exigirLineasDelPedido($pedido, array_keys($cantidades), array_keys($motivos));
@@ -324,6 +328,22 @@ class PedidosFabrica
             $motivos = $datos['motivos'] ?? [];
             $this->exigirLineasDelPedido($pedido, array_keys($this->normalizar($datos['cantidades'])), array_keys($motivos));
             $this->exigirNoDeMas($pedido, $cantidades);
+            if ($pedido->origen === OrigenPedidoSala::Web) {
+                $web = $pedido->pedidoWeb()->lockForUpdate()->firstOrFail();
+                $web->setRelation('dte', $web->dte()->lockForUpdate()->first());
+                if (! $web->facturaLista()) {
+                    throw ValidationException::withMessages(['pedido' => 'Esperando factura. La caja no sale sin su factura aceptada.']);
+                }
+                foreach ($pedido->lineas as $linea) {
+                    if (bccomp($cantidades[$linea->id] ?? '0', (string) $linea->cantidad, 4) !== 0) {
+                        throw ValidationException::withMessages(['pedido' => 'Los pedidos web se mandan completos. Revisá las cantidades.']);
+                    }
+                }
+                if (! empty($datos['sigue'])) {
+                    throw ValidationException::withMessages(['pedido' => 'Los pedidos web se mandan completos, en un solo envío.']);
+                }
+                $web->update(['lista_en' => now(), 'estado_por_informar' => $web->entrega_tipo === 'recoger' ? 'lista' : 'en_ruta']);
+            }
             if ($cantidades === []) {
                 throw ValidationException::withMessages(['cantidades' => 'No marcaste nada para mandar. Si no va nada, tocá «'
                     .($pedido->estado === EstadoPedidoSala::Parcial ? 'No mandar lo que falta' : 'No mandar nada de este pedido').'».']);
@@ -387,6 +407,9 @@ class PedidosFabrica
      */
     public function cerrar(PedidoSala $pedido, string $version, User $usuario, string $motivo): ?EstadoPedidoSala
     {
+        if ($pedido->origen === OrigenPedidoSala::Web) {
+            throw ValidationException::withMessages(['pedido' => 'Los pedidos web se resuelven en la oficina']);
+        }
         $motivo = trim($motivo);
         if ($motivo === '') {
             throw ValidationException::withMessages(['motivo' => self::SIN_MOTIVO]);
@@ -554,6 +577,9 @@ class PedidosFabrica
      */
     private function anularBloqueado(PedidoSala $pedido, PedidoSalaEnvio $envio, User $usuario): ?PedidoSalaEnvio
     {
+        if ($pedido->origen === OrigenPedidoSala::Web) {
+            throw ValidationException::withMessages(['pedido' => 'Los pedidos web se resuelven en la oficina']);
+        }
         $lineas = $pedido->lineas()->orderBy('id')->lockForUpdate()->get();
         $envio = $pedido->envios()->whereKey($envio->id)->lockForUpdate()->firstOrFail()->setRelation('pedido', $pedido);
         if (! $envio->estaVigente()) {
@@ -602,6 +628,29 @@ class PedidosFabrica
         }
 
         return $cerrar || ! $pedido->faltaAlgo() ? EstadoPedidoSala::Enviado : EstadoPedidoSala::Parcial;
+    }
+
+    public function paraRecoger(): Builder
+    {
+        return PedidoSala::query()->where('origen', OrigenPedidoSala::Web)
+            ->whereHas('pedidoWeb', fn ($q) => $q->where('entrega_tipo', 'recoger')->whereNotNull('lista_en')->whereNull('entregado_en'))
+            ->with('pedidoWeb')->orderBy('id');
+    }
+
+    public function recogido(PedidoSala $pedido, User $usuario): void
+    {
+        DB::transaction(function () use ($pedido, $usuario) {
+            $pedido = $this->bloquear($pedido);
+            Gate::forUser($usuario)->authorize('recoger', $pedido);
+            $web = $pedido->pedidoWeb()->lockForUpdate()->firstOrFail();
+            abort_unless($web->entrega_tipo === 'recoger' && $web->lista_en !== null, 404);
+            if ($web->entregado_en !== null) {
+                return;
+            }
+            $web->update(['entregado_en' => now(), 'estado_por_informar' => 'entregado']);
+            activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+                ->withProperties(['estado' => 'entregado'])->log('recogieron el pedido web');
+        }, 3);
     }
 
     /** El PRIMER statement de cada transacción (ver la nota de la clase). */

@@ -1,3 +1,6 @@
+@if ($pedido->origen === \App\Enums\OrigenPedidoSala::Web)
+    @include('fabrica.pedidos.show-web')
+@else
 {{-- La hoja «Qué va a <sala>»: un renglón por producto con algo pendiente, con lo que falta
      YA cargado. Cada cambio (también la casilla) se guarda solo en el servidor (fetch, con
      un solo retardo corto; lo que falta guardar sale antes de dejar la hoja) y el pedido
@@ -328,3 +331,5 @@
         </div>
     </div>
 </x-app-layout>
+
+@endif

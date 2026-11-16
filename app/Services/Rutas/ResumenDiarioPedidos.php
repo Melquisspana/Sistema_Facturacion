@@ -4,6 +4,7 @@ namespace App\Services\Rutas;
 
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Enums\EstadoPedidoSala;
+use App\Enums\OrigenPedidoSala;
 use App\Facades\Ajustes;
 use App\Mail\Pedidos\ResumenDiarioPedidosCorreo;
 use App\Models\PedidoSala;
@@ -170,7 +171,7 @@ class ResumenDiarioPedidos
     {
         $salas = [];
         $sala = function (PedidoSala $pedido) use (&$salas): string {
-            $nombre = $pedido->nombreSala();
+            $nombre = $pedido->nombreSala().($pedido->origen === OrigenPedidoSala::Web ? ' (web)' : '');
             $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'motivos_cierre' => [], 'por_mandar' => []];
 
             return $nombre;

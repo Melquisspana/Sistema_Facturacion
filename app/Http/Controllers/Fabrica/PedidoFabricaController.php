@@ -4,16 +4,19 @@ namespace App\Http\Controllers\Fabrica;
 
 use App\Enums\AreaSistema;
 use App\Enums\EstadoPedidoSala;
+use App\Enums\OrigenPedidoSala;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Fabrica\BorradorPedidoRequest;
 use App\Http\Requests\Fabrica\MandarPedidoRequest;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
+use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\PedidosFabrica;
 use App\Support\HoraNegocio;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -28,13 +31,14 @@ class PedidoFabricaController extends Controller
 
     public function index(Request $request): View
     {
-        $ver = $request->validate(['ver' => ['nullable', 'in:por-mandar,hechos']])['ver'] ?? 'por-mandar';
+        $ver = $request->validate(['ver' => ['nullable', 'in:por-mandar,hechos,para-recoger']])['ver'] ?? 'por-mandar';
         $hoy = HoraNegocio::fechaHoy();
 
         $porMandar = $ver === 'por-mandar' ? $this->fabrica->porMandar()->get() : null;
 
         return view('fabrica.pedidos.index', [
             'ver' => $ver,
+            'paraRecoger' => $this->fabrica->paraRecoger()->get(),
             'cuantosPorMandar' => $porMandar?->count() ?? $this->fabrica->porMandar()->count(),
             'atrasados' => $porMandar?->filter(fn (PedidoSala $p) => $p->fecha->toDateString() < $hoy)->values() ?? collect(),
             'deHoy' => $porMandar?->filter(fn (PedidoSala $p) => $p->fecha->toDateString() >= $hoy)->values() ?? collect(),
@@ -69,7 +73,7 @@ class PedidoFabricaController extends Controller
      */
     public function imprimir(Request $request, PedidoSala $pedido, PedidoSalaEnvio $envio): View
     {
-        abort_unless($envio->estaVigente(), 404);
+        abort_unless($pedido->origen !== OrigenPedidoSala::Web && $envio->estaVigente(), 404);
         $pedido->load($this->fabrica->relaciones(conSala: true));
         $envio->load('lineas.linea.producto:id,nombre,codigo');
         // Recién mandado, el aviso y el «Deshacer» siguen para cuando vuelva a la lista.
@@ -77,6 +81,30 @@ class PedidoFabricaController extends Controller
 
         return view('fabrica.pedidos.imprimir', ['pedido' => $pedido, 'envio' => $envio, 'corrige' => $this->fabrica->corrigeA($pedido, $envio)]
             + $this->fabrica->faltanteAlEnvio($pedido, $envio));
+    }
+
+    public function imprimirWeb(Request $request, PedidoSala $pedido, PedidoSalaEnvio $envio, DtePdfService $pdf): Response|View
+    {
+        Gate::authorize('imprimirWeb', $pedido);
+        abort_unless($pedido->origen === OrigenPedidoSala::Web && $envio->pedido_sala_id === $pedido->id && $envio->estaVigente(), 404);
+        $web = $pedido->pedidoWeb()->with('dte')->firstOrFail();
+        abort_unless($web->facturaLista(), 409, 'Esperando factura');
+        $request->session()->reflash();
+        if ($web->regalo) {
+            return view('fabrica.pedidos.tarjeta-regalo', ['regalo' => $web->regalo]);
+        }
+        $barra = view('fabrica.pedidos._imprimir-web')->render();
+        $html = $pdf->html($web->dte);
+
+        return response(str_replace('</body>', $barra.'</body>', $html));
+    }
+
+    public function recogido(Request $request, PedidoSala $pedido): RedirectResponse
+    {
+        $this->fabrica->recogido($pedido, $request->user());
+
+        return redirect()->route('fabrica.pedidos.index', ['ver' => 'para-recoger'])
+            ->with('status', 'El pedido ya fue recogido.');
     }
 
     /** Lo marcado en la hoja, sin recargar. Responde JSON (los errores, 422 con su texto). */
@@ -107,8 +135,8 @@ class PedidoFabricaController extends Controller
             default => 'Salió el pedido de '.$sala.'.',
         };
 
-        return redirect()->route('fabrica.pedidos.imprimir', [$pedido, $envio])->with('status', $mensaje)
-            ->with('deshacer', ['tipo' => 'envio', 'pedido' => $pedido->id, 'envio' => $envio->id]);
+        return redirect()->route($pedido->origen === OrigenPedidoSala::Web ? 'fabrica.pedidos.imprimir-web' : 'fabrica.pedidos.imprimir', [$pedido, $envio])->with('status', $mensaje)
+            ->with('deshacer', $pedido->origen === OrigenPedidoSala::Web ? null : ['tipo' => 'envio', 'pedido' => $pedido->id, 'envio' => $envio->id]);
     }
 
     /**

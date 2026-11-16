@@ -13,6 +13,9 @@
     <span class="flex flex-wrap items-start justify-between gap-2">
         <span class="min-w-0 text-2xl font-bold text-gray-800">{{ $pedido->nombreSala() }}</span>
         <span class="flex flex-wrap items-center gap-2">
+            @if ($pedido->origen === \App\Enums\OrigenPedidoSala::Web)
+                @include('fabrica.pedidos._web-badges')
+            @endif
             @if ($pedido->armando_desde)
                 <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
             @endif
@@ -22,7 +25,11 @@
         </span>
     </span>
     <span class="mt-1 block text-sm text-gray-600">
+        @if ($pedido->origen === \App\Enums\OrigenPedidoSala::Web)
+            {{ $pedido->pedidoWeb->entrega_tipo === 'recoger' ? 'Para recoger' : 'Con ruta · '.$pedido->zonaNombre() }} · {{ collect($pedido->pedidoWeb->cajitas_detalle)->sum('cantidad') }} cajitas · {{ $pedido->pedidoWeb->pagado_en->format('H:i') }}
+        @else
         {{ $pedido->zonaNombre() }} · {{ $cuantos === 1 ? '1 producto' : $cuantos.' productos' }} · {{ $pedido->created_at->format('H:i') }}
+        @endif
     </span>
     @if ($atrasado)
         <span class="mt-1 block text-sm font-semibold text-amber-800">Del {{ $pedido->fecha->format('d/m/Y') }} · hace {{ $dias === 1 ? '1 día' : $dias.' días' }}</span>

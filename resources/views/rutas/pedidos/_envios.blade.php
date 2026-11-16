@@ -47,7 +47,7 @@
             @if (($conImprimir && ! $anulado) || $puedeAnular)
                 <div class="mt-3 flex flex-wrap gap-3">
                     @if ($conImprimir && ! $anulado)
-                        <a href="{{ route('fabrica.pedidos.imprimir', [$envio->pedido_sala_id, $envio]) }}"
+                        <a href="{{ route($envio->pedido->origen === \App\Enums\OrigenPedidoSala::Web ? 'fabrica.pedidos.imprimir-web' : 'fabrica.pedidos.imprimir', [$envio->pedido_sala_id, $envio]) }}"
                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Imprimir de nuevo</a>
                     @endif
                     @if ($puedeAnular)

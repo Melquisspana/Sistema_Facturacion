@@ -251,6 +251,10 @@ Para la pantalla de la PC de pedidos (`/fabrica/pedidos`), que se usa de pie, co
 
 ### Páginas para imprimir
 
+Los pedidos web (16/11/2026) llevan WEB y 🎁 Regalo en la lista; al abrirlos se ve cada cajita sin precios, dirección ni teléfono. Se mandan completos y sin borrador; «Esperando factura» queda deshabilitado hasta tener factura aceptada. «Para recoger» reúne los armados sin entregar con «Ya lo recogieron» táctil. La recogida no se deshace desde fábrica: el seguimiento remoto solo avanza; las correcciones se resuelven en oficina.
+
+En la web se imprime únicamente la factura oficial 01. Para regalos se imprime únicamente una tarjeta carta con acento rosa (`#853452` / `#A54368`, `x-documento.estilos acento="rosa"`), nombre, mensaje y firma de la marca. Por ser una tarjeta personal, no lleva recuadro ni leyenda tributaria, precios ni datos del comprador.
+
 Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`), la hoja de lo que se despachó (`rutas/pedidos/hoja`) y la hoja de cada envío que imprime la PC de pedidos (`fabrica/pedidos/imprimir`, que se imprime sola al abrir). Agregado el 09/11/2026.
 
 - Documento aparte: su propio `<html>`, sus estilos en un `<style>` y sin el bundle de la aplicación ni la barra. No lleva modo oscuro.
@@ -278,6 +282,7 @@ Desde el 12/11/2026 (lo pidió el dueño): la mayoría de los documentos que se 
 | Documento | Acento | Nombre en el recuadro |
 |---|---|---|
 | CCF y demás DTE (`facturacion/pdf`) | Vino `#6E2142` | El tipo de DTE (sin leyenda) |
+| Tarjeta de regalo web (`fabrica/pedidos/tarjeta-regalo`) | Rosa `#853452` / `#A54368` | Un regalo para…; tarjeta personal sin recuadro ni leyenda tributaria |
 | Hoja de despacho de pedidos (`fabrica/pedidos/imprimir`) | Verde `#235C42` / `#2F6B4E` | HOJA DE DESPACHO |
 | PDF del día del vendedor (`rutas/mi-salida/dia-pdf`) y correo del resumen diario | Azul pizarra `#2B4A6F` / `#3B5F8A` | RESUMEN DEL DÍA · Resumen diario |
 | Hoja del pedido de la oficina y de «Por entregar» (`rutas/pedidos/hoja`), la que firma el gerente | Ocre `#7A5212` / `#9A6B1F` | HOJA DE PEDIDO |

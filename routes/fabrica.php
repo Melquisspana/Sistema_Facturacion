@@ -31,6 +31,8 @@ Route::middleware(['auth', 'permission:fabrica.pedidos.mandar', 'cache.headers:n
         // La hoja para imprimir de un envío de ese pedido (solo lectura).
         Route::get('{pedido}/envios/{envio}/imprimir', [PedidoFabricaController::class, 'imprimir'])->name('imprimir')
             ->scopeBindings();
+        Route::get('{pedido}/envios/{envio}/imprimir-web', [PedidoFabricaController::class, 'imprimirWeb'])->name('imprimir-web')->scopeBindings();
+        Route::patch('{pedido}/recogido', [PedidoFabricaController::class, 'recogido'])->name('recogido');
         Route::patch('{pedido}/no-se-trae', [PedidoFabricaController::class, 'cerrar'])->name('cerrar');
         Route::patch('{pedido}/pendiente', [PedidoFabricaController::class, 'reabrir'])->name('reabrir');
         Route::patch('{pedido}/envios/{envio}/anular', [PedidoFabricaController::class, 'anularEnvio'])->name('anular-envio')
