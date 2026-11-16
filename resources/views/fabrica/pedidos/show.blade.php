@@ -3,7 +3,7 @@
      un solo retardo corto; lo que falta guardar sale antes de dejar la hoja) y el pedido
      queda «Armando»: se puede dejar para después y seguir con otro. La hoja NO se recarga
      sola. Pantalla táctil de fábrica (docs/GUIA_PANTALLAS.md, «Pantalla táctil»):
-     botones de min-h-12 con py-4/py-5 y letra text-xl/2xl; funciona igual con el mouse.
+     botones de min-h-12 y letra text-lg/xl/2xl; funciona igual con el mouse.
 
      El motivo es opcional y nunca `required`: lo que decide es el servidor.
 
@@ -17,11 +17,11 @@
      avisa), y cerrar o recargar la pestaña con algo sin guardar o en vuelo pide
      confirmación del navegador.
 
-     En monitor (12/11/2026): la hoja usa todo el ancho (max-w-full), los datos de la sala
-     van en una franja de una línea y cada producto es un renglón de dos mitades (lg):
-     nombre, código y «Pidió» | «Va», «Todo», «Nada»; «Por qué no va» abajo, solo si hace
-     falta. Desde xl los renglones van en dos columnas: un pedido de 12 se ve casi entero
-     en 1600×900 sin bajar. Debajo de lg se ve como antes, uno abajo del otro.
+     Compacta en monitor (15/11/2026): nombre y «Pidió» en línea, sin el código que no se
+     usa en fábrica; controles sin encogerse y 8 px de relleno vertical por producto.
+     Datos de la sala en línea y navegación más baja, conservando los 48 px táctiles.
+     Desde xl, dos columnas: 12 productos caben en 1366×768 hasta la barra de envío,
+     salvo nombres largos, notas o motivos que necesiten más espacio.
 
      13/11/2026: la fila de otros pedidos va en UN renglón en todo tamaño: «Todos» fijo al
      principio y el resto se desliza de lado dentro de su propia caja (overflow-x-auto con
@@ -135,12 +135,12 @@
              @pagehide.window="alSalir()" @beforeunload.window="avisarSiFalta($event)" @submit.window.capture="cerrarSesion($event)">
             <nav aria-label="Otros pedidos" class="flex items-start gap-3">
                 <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
-                   class="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
+                   class="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 px-5 py-2 text-lg font-semibold text-white hover:bg-indigo-700">Todos</a>
                 @if ($otros->isNotEmpty())
                     <div class="flex min-w-0 flex-1 gap-3 overflow-x-auto pb-2">
                         @foreach ($otros as $otro)
                             <a href="{{ route('fabrica.pedidos.show', $otro) }}" @click.prevent="salir($el.href)"
-                               class="inline-flex min-h-12 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-xl border px-4 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 {{ $otro->armando_desde ? 'border-indigo-300 bg-indigo-50' : 'border-gray-300 bg-white' }}">
+                               class="inline-flex min-h-12 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-xl border px-4 py-2 text-lg font-semibold text-gray-800 hover:bg-gray-50 {{ $otro->armando_desde ? 'border-indigo-300 bg-indigo-50' : 'border-gray-300 bg-white' }}">
                                 {{ $otro->nombreSala() }}
                                 @if ($otro->armando_desde)
                                     <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
@@ -158,18 +158,18 @@
 
             <x-rutas.avisos />
 
-            <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
-                <h1 id="titulo-pedido" class="text-2xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
-                <dl class="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-base sm:grid-cols-2 lg:grid-cols-6">
+            <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white px-4 py-2">
+                <h1 id="titulo-pedido" class="text-xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
+                <dl class="mt-1 flex flex-wrap gap-x-3 gap-y-2 text-base">
                     @if ($pedido->direccionSala())
-                        <div class="sm:col-span-2"><dt class="text-sm text-gray-500">Dirección</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
+                        <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Dirección:</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
                     @endif
-                    <div><dt class="text-sm text-gray-500">Zona</dt><dd class="text-gray-800">{{ $pedido->zonaNombre() }}</dd></div>
-                    <div><dt class="text-sm text-gray-500">Orden de compra</dt><dd class="font-mono text-gray-800">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
-                    <div><dt class="text-sm text-gray-500">Lo sacó</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
-                    <div><dt class="text-sm text-gray-500">Fecha y hora</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
+                    <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Zona:</dt><dd class="text-gray-800">{{ $pedido->zonaNombre() }}</dd></div>
+                    <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Orden de compra:</dt><dd class="font-mono text-gray-800">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
+                    <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Lo sacó:</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
+                    <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Fecha y hora:</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
                     @if ($pedido->notas)
-                        <div class="sm:col-span-2 lg:col-span-4"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
+                        <div class="w-full"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
                     @endif
                 </dl>
             </section>
@@ -198,20 +198,17 @@
                                 }
                                 $mandado = $linea->mandado();
                             @endphp
-                            {{-- En monitor, dos mitades: el producto con lo que pidió | Va, Todo y Nada en una sola línea. --}}
-                            <li class="items-center border-b border-gray-100 p-4 sm:p-5 lg:grid lg:grid-cols-2 lg:gap-3 lg:p-4" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
-                                <div class="min-w-0">
+                            {{-- En monitor, nombre y «Pidió» junto a Va, Todo y Nada; errores y motivo debajo. --}}
+                            <li class="items-center border-b border-gray-100 px-4 py-2 sm:px-5 lg:flex lg:flex-wrap lg:gap-3" x-data="{ va: @js((string) $va), pendiente: @js($pendiente) }">
+                                <div class="min-w-0 flex-1 flex flex-wrap items-baseline gap-x-3">
                                     <p class="text-xl font-semibold text-gray-800">
                                         {{ $linea->producto?->nombre }}
-                                        @if ($linea->producto?->codigo)
-                                            <span class="ms-1 font-mono text-sm font-normal text-gray-500">{{ $linea->producto->codigo }}</span>
-                                        @endif
                                     </p>
-                                    <p class="mt-0.5 text-base text-gray-600 lg:font-semibold">
+                                    <p class="text-base text-gray-600 lg:font-semibold">
                                         Pidió {{ $linea->cantidadLegible() }}{{ bccomp($mandado, '0', 4) === 1 ? ' · ya salió '.\App\Models\PedidoSalaLinea::legible($mandado) : '' }}
                                     </p>
                                 </div>
-                                <div class="mt-3 flex flex-wrap items-center gap-2 lg:mt-0">
+                                <div class="mt-3 flex flex-wrap shrink-0 items-center gap-2 lg:mt-0">
                                     <label for="va-{{ $linea->id }}" class="text-lg font-semibold text-gray-700">Va<span class="sr-only"> de {{ $linea->producto?->nombre }}</span></label>
                                     <input id="va-{{ $linea->id }}" name="cantidades[{{ $linea->id }}]" x-model="va" value="{{ $va }}"
                                            inputmode="decimal" autocomplete="off"
@@ -221,8 +218,8 @@
                                     <button type="button" @click="va = '0'; $nextTick(() => guardar())"
                                             class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Nada</button>
                                 </div>
-                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1 lg:col-span-2 lg:mt-0" />
-                                <div class="mt-3 lg:col-span-2 lg:mt-0" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
+                                <x-input-error :messages="$errors->get('cantidades.'.$linea->id)" class="mt-1 w-full lg:mt-0" />
+                                <div class="mt-3 w-full lg:mt-0" x-show="parseFloat(va || 0) < parseFloat(pendiente)" x-cloak>
                                     <label for="motivo-{{ $linea->id }}" class="block text-sm font-medium text-gray-700">Por qué no va (opcional)</label>
                                     <input id="motivo-{{ $linea->id }}" name="motivos[{{ $linea->id }}]" maxlength="200" autocomplete="off"
                                            value="{{ $motivo }}"
