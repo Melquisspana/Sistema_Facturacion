@@ -7,7 +7,9 @@
      (App\Services\Rutas\PorEntregar). Una sala sin zona se entrega igual. Lo marcado hoy
      queda abajo, con «Deshacer». Desde el 12/11/2026 toda tarjeta pregunta «¿Quién lo
      entregó?» (viene el que tiene el celular); la sala con albarán solo anota quién y espera
-     el albarán, y la que ya tiene albarán sin quién se anota abajo. --}}
+     el albarán, y la que ya tiene albarán sin quién se anota abajo. Desde el 16/11/2026 van
+     también los pedidos web con ruta, con su tarjeta (rutas.por-entregar._web): ya están
+     pagados, así que solo «¿Quién lo entregó?» y «Entregado». --}}
 @extends('layouts.vendedor')
 
 @section('titulo', 'Por entregar')
@@ -20,7 +22,7 @@
     @endphp
 
     <h1 class="text-3xl font-bold">Por entregar</h1>
-    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $total }} CCF de los últimos {{ \App\Services\Rutas\EntregasCcf::DIAS_POR_ENTREGAR }} días. Los más viejos van primero.</p>
+    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $total - $cuantosWeb }} CCF de los últimos {{ \App\Services\Rutas\EntregasCcf::DIAS_POR_ENTREGAR }} días{{ $cuantosWeb > 0 ? ' y '.$cuantosWeb.($cuantosWeb === 1 ? ' pedido web' : ' pedidos web') : '' }}. Los más viejos van primero.</p>
     @if ($cobroHoy)
         <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">El efectivo de hoy se entrega a la oficina con el PDF del día («Terminar el día»).</p>
     @endif
@@ -68,13 +70,16 @@
 
     @foreach ($visibles as $grupo)
         <section aria-labelledby="ruta-{{ $grupo['clave'] }}">
-            <h2 id="ruta-{{ $grupo['clave'] }}" class="mt-6 text-xl font-semibold">{{ $grupo['nombre'] }} <span class="text-sm font-normal text-gray-500 dark:text-paper-300">· {{ $grupo['dtes']->count() }} CCF</span></h2>
+            <h2 id="ruta-{{ $grupo['clave'] }}" class="mt-6 text-xl font-semibold">{{ $grupo['nombre'] }} <span class="text-sm font-normal text-gray-500 dark:text-paper-300">· {{ $grupo['dtes']->count() }} {{ $grupo['dtes']->contains(fn ($d) => $d->pedidoWeb !== null) ? 'entregas' : 'CCF' }}</span></h2>
             @foreach ($grupo['dtes'] as $dte)
                 @php
                     $camino = $enCamino->get($dte->id);
                     $planificada = $camino?->salida->estado === \App\Enums\EstadoSalidaRuta::Planificada;
                 @endphp
                 <div class="{{ $caja }} mt-3 px-4 py-3">
+                    @if ($dte->pedidoWeb)
+                        @include('rutas.por-entregar._web', ['web' => $dte->pedidoWeb])
+                    @else
                     {{-- Como en la maqueta: la sala es el título; el cliente, en letra chica. --}}
                     <h3 class="text-lg font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</h3>
                     <p class="truncate text-xs text-gray-500 dark:text-paper-300">{{ $dte->cliente?->nombre_comercial ?: $dte->cliente?->nombre }}</p>
@@ -118,7 +123,7 @@
                             PDF del CCF<span class="sr-only"> {{ $dte->numero_control }}</span>
                         </a>
                     </div>
-
+                    @endif
                     @if ($planificada)
                         <p class="mt-3 text-sm text-gray-600 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}, que quedó programada y ya no sale: pedile a la oficina que la cancele.</p>
                     @elseif ($trabados->has($dte->id))
@@ -128,6 +133,20 @@
                         @if ($camino)
                             <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">Va en {{ $camino->salida->conArticulo() }}: se marca ahí.</p>
                         @endif
+                        @if ($dte->pedidoWeb)
+                        {{-- Ya pagado: quién lo entregó (como toda tarjeta, sin nadie elegido) y
+                             «Entregado», sin forma de pago, avería ni «No se pudo». Verde: es
+                             «Terminar» en la guía de pantallas. --}}
+                        <div x-data="{ quien: '' }">
+                            @include('rutas.por-entregar._quien', ['clave' => 'web-'.$dte->id])
+                            <form method="POST" action="{{ route('rutas.por-entregar.marcar', $dte) }}" class="mt-2">
+                                @csrf
+                                <input type="hidden" name="resultado" value="entregado">
+                                <input type="hidden" name="entregado_por_id" value="" x-bind:value="quien">
+                                <button disabled x-bind:disabled="! quien" class="min-h-11 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:cursor-not-allowed disabled:opacity-50">Entregado</button>
+                            </form>
+                        </div>
+                        @else
                         @include('rutas.salidas._marcar', [
                             'accion' => route('rutas.por-entregar.marcar', $dte),
                             'metodo' => 'POST',
@@ -138,6 +157,7 @@
                             'portal' => $portal !== null && (int) $dte->cliente_id === $portal,
                             'quienes' => $quienes,
                         ])
+                        @endif
                     @endif
                 </div>
             @endforeach
@@ -178,7 +198,18 @@
             <h2 id="marcados-hoy" class="mt-8 text-xl font-semibold">Marcados hoy</h2>
             @foreach ($marcados as $entrega)
                 <div class="{{ $caja }} mt-3 px-4 py-3">
-                    <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</h3>
+                    @php
+                        $web = $entrega->dte?->pedidoWeb;
+                    @endphp
+                    @if ($web)
+                        {{-- El pedido web: su nombre y WEB; en vez del monto, «Ya pagado». --}}
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $web->pedidoSala?->nombreSala() ?? 'Pedido web' }}</h3>
+                            <x-planta.badge color="red">WEB</x-planta.badge>
+                        </div>
+                    @else
+                        <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</h3>
+                    @endif
                     @if ($entrega->salida->esViaje())
                         <p class="truncate text-xs text-gray-500 dark:text-paper-300">Viaje {{ $entrega->salida->nombreViaje() }}</p>
                     @endif
@@ -188,7 +219,11 @@
                                 <span aria-hidden="true">{{ $corto($entrega->dte) }}</span>
                                 <span class="sr-only">{{ $entrega->dte?->numero_control }}</span>
                             </p>
-                            <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                            @if ($web)
+                                <p class="text-sm font-medium text-green-700 dark:text-green-400">Ya pagado</p>
+                            @else
+                                <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                            @endif
                         </div>
                         <div class="text-right">
                             @if ($entrega->resultado === \App\Enums\ResultadoEntrega::Entregado)

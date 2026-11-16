@@ -253,6 +253,8 @@ Para la pantalla de la PC de pedidos (`/fabrica/pedidos`), que se usa de pie, co
 
 Los pedidos web (16/11/2026) llevan WEB y 🎁 Regalo en la lista; al abrirlos se ve cada cajita sin precios, dirección ni teléfono. Se mandan completos y sin borrador; «Esperando factura» queda deshabilitado hasta tener factura aceptada. «Para recoger» reúne los armados sin entregar con «Ya lo recogieron» táctil. La recogida no se deshace desde fábrica: el seguimiento remoto solo avanza; las correcciones se resuelven en oficina.
 
+El pedido web con ruta (16/11/2026) entra a «Por entregar» de su zona con su propia tarjeta: «Pedido web · Nombre I.» con WEB, la dirección y el teléfono, «Entregar a: …» y «Regalo: el paquete va sin precios» si es regalo, las cajitas y «Ya pagado» en verde en lugar del monto y la forma de pago. Lleva «¿Quién lo entregó?» y solo el botón verde «Entregado»: sin PDF, hoja, avería ni «No se pudo». En «Marcados hoy» y en el PDF del día va con su nombre y «Ya pagado», con «Deshacer» como las salas.
+
 En la web se imprime únicamente la factura oficial 01. Para regalos se imprime únicamente una tarjeta carta con acento rosa (`#853452` / `#A54368`, `x-documento.estilos acento="rosa"`), nombre, mensaje y firma de la marca. Por ser una tarjeta personal, no lleva recuadro ni leyenda tributaria, precios ni datos del comprador.
 
 Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`), la hoja de lo que se despachó (`rutas/pedidos/hoja`) y la hoja de cada envío que imprime la PC de pedidos (`fabrica/pedidos/imprimir`, que se imprime sola al abrir). Agregado el 09/11/2026.

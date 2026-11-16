@@ -72,7 +72,9 @@ class ClienteRequest extends FormRequest
         $documento = $this->input('tipo_documento');
 
         $reglas = [
-            'cobro_en_entrega' => ['nullable', Rule::enum(FormaCobroEntrega::class)],
+            // «Ya pagado» es solo del pedido web: como forma habitual de un cliente, sus salas se
+            // entregarían sin cobro.
+            'cobro_en_entrega' => ['nullable', Rule::enum(FormaCobroEntrega::class)->except(FormaCobroEntrega::YaPagado)],
             'codigo' => [
                 'nullable', 'string', 'max:50',
                 Rule::unique('clientes', 'codigo')->whereNull('deleted_at')->ignore($clienteId),

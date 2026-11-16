@@ -9,6 +9,7 @@ use App\Enums\OrigenRegistroEntrega;
 use App\Enums\PermisoSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
+use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
@@ -48,6 +49,10 @@ use Symfony\Component\HttpFoundation\Response;
  * viaje, haya salido de un pedido o no); «Todas» es la lista completa por zona. Al entregar
  * dice cómo le pagaron, salvo en el supermercado que cobra por el portal. La zona de una sala
  * es su ruta o la que cubre su lugar ({@see Viajes::zonaId()}); sin zona se entrega igual.
+ *
+ * Desde el 16/11/2026 también van los pedidos web con ruta ({@see EntregasCcf::pendientesWeb()}),
+ * en la zona de su pedido: ya están pagados, así que solo se dice quién lo entregó y
+ * «Entregado», con el mismo permiso y la misma política. Su factura no se ofrece en PDF.
  */
 class PorEntregarController extends Controller
 {
@@ -55,6 +60,9 @@ class PorEntregarController extends Controller
 
     /** Lo que necesita el nombre del viaje ({@see SalidaRuta::nombreViaje()}), cargado una vez para todos. */
     private const NOMBRE_DEL_VIAJE = ['salida.ruta:id,nombre', 'salida.pedidos:id,salida_ruta_id,ruta_id,estado', 'salida.pedidos.ruta:id,nombre'];
+
+    /** El nombre del pedido web de una entrega («Pedido web · Nombre I.», {@see PedidoSala::nombreSala()}). */
+    private const NOMBRE_WEB = ['dte.pedidoWeb:id,dte_id,pedido_sala_id', 'dte.pedidoWeb.pedidoSala', 'dte.pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre'];
 
     public function __construct(private readonly EntregasCcf $entregas, private readonly PorEntregar $porEntregar, private readonly Viajes $viajes) {}
 
@@ -70,13 +78,13 @@ class PorEntregarController extends Controller
         $puedeMarcar = $persona !== null && $request->user()->can(PermisoSistema::RutasEntregasRegistrar->value);
 
         // Lo que el vendedor marcó hoy queda abajo, con «Deshacer», y sale de la lista.
-        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre', ...self::NOMBRE_DEL_VIAJE])
+        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', ...self::NOMBRE_WEB, 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre', ...self::NOMBRE_DEL_VIAJE])
             ->where('registrado_por', $request->user()->id)->whereNotNull('resultado')->sinFacturadosDespues()
             ->whereDate('fecha_resultado', HoraNegocio::fechaHoy())
             ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))
             ->orderByDesc('fecha_resultado')->get() : collect();
 
-        $todos = $this->entregas->porEntregar()->whereNotIn('id', $marcados->pluck('dte_id'))
+        $todos = $this->entregas->porEntregarConWeb()->whereNotIn('id', $marcados->pluck('dte_id'))
             ->load(['clienteSucursal:id,nombre,ruta_id,distrito_id,departamento_id', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
         // El pedido de cada CCF: quién lo sacó («lo sacó otro vendedor») y lo que no vino.
         $pedidos = PedidoSalaEnvio::vigentes()->whereIn('dte_id', $todos->modelKeys())
@@ -108,7 +116,7 @@ class PorEntregarController extends Controller
         })->filter();
 
         // Por zona: la ruta de la sala o la que cubre su lugar. Los nombres, en una consulta.
-        $zonaDe = fn (Dte $d) => $d->clienteSucursal ? $this->viajes->zonaId($d->clienteSucursal) : null;
+        $zonaDe = fn (Dte $d) => $d->pedidoWeb ? $d->pedidoWeb->pedidoSala?->ruta_id : ($d->clienteSucursal ? $this->viajes->zonaId($d->clienteSucursal) : null);
         $zonas = Ruta::whereKey($dtes->map($zonaDe)->filter()->unique()->all())->pluck('nombre', 'id');
         $grupos = $dtes->groupBy(fn (Dte $d) => $zonaDe($d) ?? self::SIN_RUTA)
             ->map(fn ($lista, $clave) => [
@@ -135,6 +143,7 @@ class PorEntregarController extends Controller
             'ruta' => $ruta,
             'filtroInvalido' => $request->filled('ruta') && $ruta === null,
             'total' => $dtes->count(),
+            'cuantosWeb' => $dtes->filter(fn (Dte $d) => $d->pedidoWeb !== null)->count(),
             'enCamino' => $enCamino,
             'trabados' => $trabados,
             // Ya cobró efectivo hoy: se entrega a la oficina con el PDF del día.
@@ -165,7 +174,9 @@ class PorEntregarController extends Controller
      * La entrega queda en la salida del que anota (así la puede deshacer), con el que entregó
      * sumado. La sala con albarán solo anota quién: queda «Entregado» sin cobro esperando el
      * albarán, como la ve Cobros. La que ya tiene albarán sin quién ({@see EntregasCcf::conAlbaranSinQuien()})
-     * solo anota quién. El doble toque no anota otra: avisa que ya estaba.
+     * solo anota quién. El doble toque no anota otra: avisa que ya estaba. El pedido web
+     * (16/11/2026) queda «Ya pagado» sin cobro, aunque llegue una forma de pago: también lo
+     * impone EntregasCcf::registrar().
      */
     public function marcar(Request $request, Dte $dte): RedirectResponse
     {
@@ -174,7 +185,7 @@ class PorEntregarController extends Controller
             return back()->with('error', 'Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.');
         }
         // La sala con albarán cuyo albarán ya cayó sin que nadie anotara quién: solo falta eso.
-        $soloQuien = $this->entregas->porEntregar($dte->id)->isEmpty();
+        $soloQuien = $this->entregas->porEntregarConWeb($dte->id)->isEmpty();
         if ($soloQuien && $this->entregas->conAlbaranSinQuien($dte->id)->isEmpty()) {
             // El doble toque: la entrega ya quedó anotada y no se anota otra.
             abort_unless(SalidaRutaEntrega::where('dte_id', $dte->id)->entregadas()->exists(), 404);
@@ -260,7 +271,10 @@ class PorEntregarController extends Controller
         return view('rutas.pedidos.hoja', PedidoSalaController::datosHoja($pedido, $facturar, null) + ['volverPorEntregar' => true]);
     }
 
-    /** El PDF, solo de un CCF de la lista: cualquier otro documento da 404. */
+    /**
+     * El PDF, solo de un CCF de la lista: cualquier otro documento da 404, también la factura
+     * del pedido web (lleva los datos del comprador y el vendedor no la necesita).
+     */
     public function pdf(Dte $dte, DtePdfService $pdf): Response
     {
         abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);

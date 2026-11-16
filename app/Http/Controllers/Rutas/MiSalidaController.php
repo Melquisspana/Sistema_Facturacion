@@ -67,7 +67,7 @@ class MiSalidaController extends Controller
      */
     private function cuantosPorEntregar(?SalidaRuta $viaje): int
     {
-        $todos = $this->entregas->porEntregar();
+        $todos = $this->entregas->porEntregarConWeb();
         if ($viaje === null) {
             return $todos->count();
         }

@@ -3,14 +3,17 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoDte;
+use App\Enums\EstadoPedidoWeb;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
+use App\Enums\OrigenPedidoSala;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\ResultadoEntrega;
 use App\Facades\Ajustes;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
+use App\Models\PedidoWeb;
 use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
 use App\Models\Ruta;
@@ -47,6 +50,9 @@ use Spatie\Activitylog\Models\Activity;
  *   · y no está sin registrar en otra salida abierta —ya va en camino—.
  *
  * Un «no entregado» NO saca al CCF de pendientes: sigue en «Por entregar».
+ *
+ * El pedido web con ruta (16/11/2026) va aparte, en {@see self::pendientesWeb()}: su Factura
+ * 01 no entra en los CCF de las salas. Se registra igual, en el viaje, «Ya pagado» y sin cobro.
  *
  * ─────────────────────────── Controles ───────────────────────────
  *
@@ -86,6 +92,44 @@ class EntregasCcf
         $desde = max($this->desde(), Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR));
 
         return $this->pendientesDeSalas(null, $desde, enCamino: true, dteId: $dteId);
+    }
+
+    /**
+     * La lista de «Por entregar»: lo de las salas ({@see porEntregar()}) y los pedidos web con
+     * ruta ({@see pendientesWeb()}), los más viejos primero. Cada DTE trae `pedidoWeb` cargado
+     * (null en las salas), así la pantalla los distingue sin consultar de a uno. El tablero y
+     * los contadores de salas siguen con {@see porEntregar()}.
+     *
+     * @return Collection<int, Dte>
+     */
+    public function porEntregarConWeb(?int $dteId = null): Collection
+    {
+        return $this->porEntregar($dteId)->each(fn (Dte $d) => $d->setRelation('pedidoWeb', null))
+            ->merge($this->pendientesWeb($dteId))->sortBy(fn (Dte $d) => [$d->fecha_emision, $d->id])->values();
+    }
+
+    /**
+     * Pedidos web con ruta por entregar (16/11/2026): su Factura 01 aceptada de verdad por
+     * Hacienda, sin archivar y del ambiente operativo; la fábrica ya lo mandó (`lista_en`),
+     * nadie lo entregó y su pedido sigue vigente. Es una fuente aparte, no {@see baseCcf()}:
+     * así no cambia nada de lo que cuentan las salas. Sin ventana de días: ya está pagado y
+     * hay que entregarlo. Con `$dteId`, solo ese (vacío si no está por entregar).
+     *
+     * @return EloquentCollection<int, Dte> con `pedidoWeb.pedidoSala` (y su nombre)
+     */
+    public function pendientesWeb(?int $dteId = null): EloquentCollection
+    {
+        return Dte::query()->where('tipo_dte', '01')->aceptadoRealMh()->noArchivados()
+            ->where('ambiente', (string) (config('rutas.ambiente_ccf') ?: config('dte.ambiente')))
+            ->when($dteId !== null, fn ($q) => $q->whereKey($dteId))
+            ->whereHas('pedidoWeb', fn ($q) => $q->where('entrega_tipo', 'ruta')->whereNotNull('lista_en')->whereNull('entregado_en')
+                ->where('estado', EstadoPedidoWeb::Facturado)
+                ->whereHas('pedidoSala', fn ($q) => $q->vigentes()->where('origen', OrigenPedidoSala::Web)))
+            ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('salida_ruta_entregas')
+                ->whereColumn('salida_ruta_entregas.dte_id', 'dtes.id')->where('resultado', ResultadoEntrega::Entregado->value))
+            // `pedidoSala.pedidoWeb`: PedidoSala::nombreSala() («Pedido web · Nombre I.») lo lee.
+            ->with(['pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre'])
+            ->orderBy('fecha_emision')->orderBy('id')->get();
     }
 
     /**
@@ -248,6 +292,12 @@ class EntregasCcf
                 // dinero: se anota aunque el día esté terminado (p. ej. al terminar la ruta).
                 $this->exigirDiaAbierto($salida, $comun['fecha_resultado']->toDateString());
                 $dte = Dte::with('cliente')->whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
+                // El pedido web (16/11/2026), bloqueado: solo si sigue por entregar. `entregado_en`
+                // se mira en la fila bloqueada, que en MySQL ve lo último confirmado.
+                $web = PedidoWeb::where('dte_id', $dte->id)->lockForUpdate()->first();
+                if ($web !== null && ($web->entregado_en !== null || $this->pendientesWeb($dte->id)->isEmpty())) {
+                    throw ValidationException::withMessages(['entrega' => 'Ese pedido web no está por entregar.']);
+                }
                 if ($this->existeBloqueando(SalidaRutaEntrega::where('dte_id', $entrega->dte_id)->where('id', '!=', $entrega->id)->entregadas())) {
                     throw ValidationException::withMessages(['entrega' => 'Ese CCF ya consta como entregado en otra salida.']);
                 }
@@ -258,13 +308,16 @@ class EntregasCcf
                 // entregar, por ninguna pantalla ni origen: la forma que llegue se ignora, y con
                 // ella el quedan. El vendedor, en su viaje o en la automática, dice cómo le
                 // pagaron: ahí no hay «la habitual del cliente» (el PDF del día es el control del
-                // dinero). La regla va acá para que valga por cualquier pantalla.
-                if (DiaVendedor::esPortal($dte)) {
+                // dinero). La regla va acá para que valga por cualquier pantalla. El pedido web ya
+                // se pagó en la página: «Ya pagado», sin cobro, quedan, observación ni avería.
+                if ($web !== null) {
+                    $datos = ['quedan_numero' => null, 'quedan_fecha_pago' => null, 'nota' => null, 'trae_nota_averia' => false] + $datos;
+                } elseif (DiaVendedor::esPortal($dte)) {
                     $datos = ['forma_cobro' => self::SIN_COBRO, 'quedan_numero' => null, 'quedan_fecha_pago' => null] + $datos;
                 } elseif ($origen === OrigenRegistroEntrega::Vendedor && $salida->esAutomatica() && ! filled($datos['forma_cobro'] ?? null)) {
                     throw ValidationException::withMessages(['forma_cobro' => self::FALTA_FORMA_COBRO]);
                 }
-                $forma = $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
+                $forma = $web !== null ? FormaCobroEntrega::YaPagado : $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
                 $quedan = $forma === null ? $this->quedan($datos) : ['quedan_numero' => null, 'quedan_fecha_pago' => null];
                 // La observación de la entrega (una devolución, por ejemplo): opcional.
                 $observacion = trim((string) ($datos['nota'] ?? '')) ?: null;
@@ -272,15 +325,25 @@ class EntregasCcf
                     throw ValidationException::withMessages(['nota' => 'La observación puede tener hasta 300 caracteres.']);
                 }
 
+                $cobra = $forma !== null && $forma !== FormaCobroEntrega::YaPagado;
                 $entrega->update($comun + [
                     'forma_cobro' => $forma,
-                    'monto_esperado' => $forma ? $dte->total_pagar : null,
-                    'monto_cobrado' => $forma ? $dte->total_pagar : null,
+                    'monto_esperado' => $cobra ? $dte->total_pagar : null,
+                    'monto_cobrado' => $cobra ? $dte->total_pagar : null,
                     'entregado_por_id' => $personaId,
                     'trae_nota_averia' => filter_var($datos['trae_nota_averia'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'motivo_no_entrega' => null,
                     'nota' => $observacion,
                 ] + $quedan);
+
+                // La página se entera en la próxima pasada de tienda:traer-pedidos. Sin datos
+                // personales en la auditoría: quién (la ficha) y la entrega; el cuándo es la fila.
+                if ($web !== null) {
+                    $web->update(['entregado_en' => $comun['fecha_resultado'], 'estado_por_informar' => 'entregado']);
+                    activity('pedido_web')->performedOn($web)->causedBy($usuario)
+                        ->withProperties(['estado' => 'entregado', 'entrega_id' => $entrega->id, 'entregado_por_id' => $personaId])
+                        ->log('entregó el pedido web');
+                }
 
                 $original->setRawAttributes($entrega->getAttributes(), true);
 
@@ -343,6 +406,8 @@ class EntregasCcf
         return match (true) {
             $elegida === null => $habitual,
             $elegida === self::SIN_COBRO => null,
+            // «Ya pagado» es solo del pedido web: una sala no se marca así ni a mano.
+            $elegida === FormaCobroEntrega::YaPagado->value => throw ValidationException::withMessages(['forma_cobro' => 'Elegí una forma de pago de la lista.']),
             default => FormaCobroEntrega::tryFrom((string) $elegida)
                 ?? throw ValidationException::withMessages(['forma_cobro' => 'Elegí una forma de pago de la lista.']),
         };
@@ -390,6 +455,15 @@ class EntregasCcf
             }
             if ($salida->estado === EstadoSalidaRuta::Cancelada) {
                 throw ValidationException::withMessages(['entrega' => 'La salida está cancelada: no se corrige nada en ella.']);
+            }
+
+            // El pedido web vuelve a «Por entregar». A la página se le vuelve a decir «en_ruta»:
+            // si ya recibió «entregado» lo rechaza (su seguimiento solo avanza) y no pasa nada.
+            $web = PedidoWeb::where('dte_id', $entrega->dte_id)->lockForUpdate()->first();
+            if ($web !== null && $entrega->resultado === ResultadoEntrega::Entregado) {
+                $web->update(['entregado_en' => null, 'estado_por_informar' => 'en_ruta']);
+                activity('pedido_web')->performedOn($web)->causedBy(auth()->user())
+                    ->withProperties(['estado' => 'en_ruta', 'entrega_id' => $entrega->id])->log('deshizo la entrega del pedido web');
             }
 
             // La automática ({@see PorEntregar}) lleva solo lo marcado: si la fila quedara

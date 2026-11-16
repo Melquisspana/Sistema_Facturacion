@@ -57,8 +57,9 @@ class PorEntregar
     public function entregaPara(Dte $dte, PersonalRuta $persona, User $usuario): SalidaRutaEntrega
     {
         return DB::transaction(function () use ($dte, $persona, $usuario) {
+            // El pedido web (16/11/2026) no tiene sala: va a la zona de su pedido, o sin zona.
             $sala = $dte->clienteSucursal;
-            $rutaId = $sala ? $this->viajes->zonaId($sala) : null;
+            $rutaId = $dte->pedidoWeb ? $dte->pedidoWeb->pedidoSala?->ruta_id : ($sala ? $this->viajes->zonaId($sala) : null);
             if ($rutaId !== null) {
                 // Con la zona bloqueada, dos vendedores que marcan a la vez no arman dos salidas.
                 Ruta::whereKey($rutaId)->lockForUpdate()->firstOrFail();
@@ -298,11 +299,11 @@ class PorEntregar
     /**
      * Lo que mira el vendedor con su viaje en curso (10/11/2026). «Este viaje»: los CCF de sus
      * pedidos y los que ya se anotaron en él. «Toda la zona»: además, los de las salas de sus
-     * zonas (la zona de cada pedido y la del viaje), salgan o no de un pedido. Si el viaje no
-     * tiene nada, solo «Toda la zona».
+     * zonas (la zona de cada pedido y la del viaje), salgan o no de un pedido, y los pedidos web
+     * de esas zonas. Si el viaje no tiene nada, solo «Toda la zona».
      *
-     * @param  Collection<int, Dte>  $todos  los de {@see EntregasCcf::porEntregar()}, con su sala
-     *                                       (con `ruta_id`, `distrito_id` y `departamento_id`)
+     * @param  Collection<int, Dte>  $todos  los de {@see EntregasCcf::porEntregarConWeb()}, con su sala
+     *                                       (con `ruta_id`, `distrito_id` y `departamento_id`) y `pedidoWeb`
      * @return array<string, Collection<int, Dte>>
      */
     public function vistas(SalidaRuta $viaje, Collection $todos): array
@@ -316,6 +317,7 @@ class PorEntregar
         $vistas = [
             'viaje' => $todos->filter(fn (Dte $d) => in_array($d->id, $delViaje, true))->values(),
             'zona' => $todos->filter(fn (Dte $d) => in_array($d->id, $delViaje, true)
+                || ($d->pedidoWeb !== null && in_array((int) $d->pedidoWeb->pedidoSala?->ruta_id, $zonas, true))
                 || ($d->clienteSucursal !== null && in_array($this->viajes->zonaId($d->clienteSucursal), $zonas, true)))->values(),
         ];
 

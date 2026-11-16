@@ -559,6 +559,12 @@ class Dte extends Model
         return $this->hasMany(PedidoSalaEnvio::class, 'dte_id');
     }
 
+    /** El pedido de la tienda web que se facturó con esta Factura 01; null en cualquier otro. */
+    public function pedidoWeb(): HasOne
+    {
+        return $this->hasOne(PedidoWeb::class, 'dte_id');
+    }
+
     /**
      * La definición ÚNICA de «el envío ya está facturado»: el documento no está borrado
      * (suave) ni quedó invalidado o rechazado, que son finales. El borrador cuenta: ya
