@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\TiendaWeb\FacturarPedidoWeb;
 use App\Services\TiendaWeb\ImportarPedidosWeb;
+use App\Services\TiendaWeb\InformarEstadoPedidoWeb;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -13,7 +14,7 @@ class TiendaTraerPedidos extends Command
 
     protected $description = 'Trae pedidos pagados de la tienda y los factura; sin --aplicar solo cuenta, sin escribir';
 
-    public function handle(ImportarPedidosWeb $importador, FacturarPedidoWeb $facturador): int
+    public function handle(ImportarPedidosWeb $importador, FacturarPedidoWeb $facturador, InformarEstadoPedidoWeb $estados): int
     {
         $aplicar = (bool) $this->option('aplicar');
         $fallo = false;
@@ -31,6 +32,7 @@ class TiendaTraerPedidos extends Command
             $this->error('No se pudo completar la facturación de los pedidos web. Se reintentará en la próxima pasada.');
             $fallo = true;
         }
+        $estados->pasada($aplicar);
         $this->info(($aplicar ? 'Aplicado' : 'Simulación').': '.implode(', ', array_map(
             fn ($clave, $valor) => $clave.'='.$valor, array_keys($conteo), $conteo,
         )));

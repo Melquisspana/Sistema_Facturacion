@@ -61,7 +61,7 @@
             @endif
 
             <nav aria-label="Qué mirar" class="flex flex-wrap gap-3">
-                @foreach (['por-mandar' => 'Por mandar ('.$cuantosPorMandar.')', 'hechos' => 'Hechos hoy'] as $valor => $texto)
+                @foreach (['por-mandar' => 'Por mandar ('.$cuantosPorMandar.')', 'hechos' => 'Hechos hoy', 'para-recoger' => 'Para recoger ('.$paraRecoger->count().')'] as $valor => $texto)
                     @php($aqui = $ver === $valor)
                     <a href="{{ route('fabrica.pedidos.index', $valor === 'por-mandar' ? [] : ['ver' => $valor]) }}"
                        @if ($aqui) aria-current="page" @endif
@@ -86,6 +86,22 @@
                         </section>
                     @endif
                 @endforeach
+            @elseif ($ver === 'para-recoger')
+                <ul class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    @forelse ($paraRecoger as $pedido)
+                        <li class="rounded-2xl border border-gray-200 bg-white p-5">
+                            <h2 class="text-2xl font-bold text-gray-800">{{ $pedido->nombreSala() }}</h2>
+                            @include('fabrica.pedidos._web-badges')
+                            <p class="mt-2 text-base text-gray-700">{{ $pedido->pedidoWeb->codigo }} · lista desde {{ $pedido->pedidoWeb->lista_en->format('H:i') }}</p>
+                            <form method="POST" action="{{ route('fabrica.pedidos.recogido', $pedido) }}" @submit="enviando = true" class="mt-3">
+                                @csrf @method('PATCH')
+                                <button :disabled="enviando" class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 disabled:opacity-50">Ya lo recogieron</button>
+                            </form>
+                        </li>
+                    @empty
+                        <li class="text-lg text-gray-600">No hay pedidos para recoger.</li>
+                    @endforelse
+                </ul>
             @else
                 <section aria-labelledby="envios-hoy" class="space-y-3">
                     <h2 id="envios-hoy" class="text-lg font-semibold text-gray-800">Envíos de hoy</h2>

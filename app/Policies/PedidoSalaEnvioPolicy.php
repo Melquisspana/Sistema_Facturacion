@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\OrigenPedidoSala;
 use App\Enums\PermisoSistema;
 use App\Models\PedidoSalaEnvio;
 use App\Models\User;
@@ -20,6 +21,7 @@ class PedidoSalaEnvioPolicy
             && $envio->estaVigente()
             && $envio->fecha->toDateString() === HoraNegocio::fechaHoy()
             && $envio->pedido->estaVigente()
+            && $envio->pedido->origen !== OrigenPedidoSala::Web
             && ! $envio->estaFacturado();
     }
 }

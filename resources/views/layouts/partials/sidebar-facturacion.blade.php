@@ -35,6 +35,7 @@
         <x-sidebar-group titulo="Ventas y facturación" icono="facturacion" clave="ventas" :activo="$grupoVentasActivo">
             @if ($veFacturacion)
                 <x-sidebar-link :href="route('facturacion.index')" :active="$enDocumentosFiscales">Documentos fiscales</x-sidebar-link>
+                <x-sidebar-link :href="route('facturacion.pedidos-web.index')" :active="request()->routeIs('facturacion.pedidos-web.*')">Pedidos web</x-sidebar-link>
                 {{-- Órdenes de compra que llegaron por correo, para ver las que faltan facturar.
                      Mismo permiso que los documentos (dte.ver). Apagada por defecto desde el
                      12/11/2026: se prende en Configuración › Módulos. --}}

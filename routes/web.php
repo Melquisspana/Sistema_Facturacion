@@ -41,6 +41,7 @@ use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Facturacion\FacturarPedidoController;
 use App\Http\Controllers\Facturacion\ListaEmpaqueController;
 use App\Http\Controllers\Facturacion\OrdenCompraRecibidaController;
+use App\Http\Controllers\Facturacion\PedidoWebController;
 use App\Http\Controllers\Facturacion\PorFacturarController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
 use App\Http\Controllers\Facturacion\TiendaNuevaController;
@@ -203,6 +204,10 @@ Route::middleware('auth')->group(function () {
     | La autorización fina (gestión vs lectura, solo-borrador) la decide DtePolicy.
     */
     Route::prefix('facturacion')->name('facturacion.')->scopeBindings()->group(function () {
+        Route::get('pedidos-web', [PedidoWebController::class, 'index'])
+            ->middleware('permission:dte.ver')->name('pedidos-web.index');
+        Route::post('pedidos-web/{pedidoWeb}/reintentar', [PedidoWebController::class, 'reintentar'])
+            ->middleware('permission:dte.gestionar')->name('pedidos-web.reintentar');
         Route::post('contingencia/activar', [ContingenciaController::class, 'activar'])
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.activar');
         Route::post('contingencia/terminar', [ContingenciaController::class, 'terminar'])

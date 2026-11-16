@@ -324,7 +324,7 @@ class ImportarPedidosWebTest extends TestCase
         $this->get(route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]))->assertOk()->assertViewHas('pedidos', fn ($p) => $p->isEmpty());
         $this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-15']))->assertOk()->assertViewHas('otrosDiasSinFacturar', 0);
         $contenido = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-15'), now());
-        $this->assertArrayHasKey('Pedido web · Elena I.', $contenido['salas']);
+        $this->assertArrayHasKey('Pedido web · Elena I. (web)', $contenido['salas']);
         $this->assertStringNotContainsString('tienda nueva', json_encode($contenido));
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessage(FacturarPedido::PEDIDO_WEB);

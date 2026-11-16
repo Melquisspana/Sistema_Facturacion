@@ -14,6 +14,7 @@
 --}}
 @php
     $paleta = [
+        'rosa' => ['fuerte' => '#853452', 'linea' => '#A54368', 'fondo' => '#FBF0F4', 'borde' => '#E8C5D2'],
         'verde' => ['fuerte' => '#235C42', 'linea' => '#2F6B4E', 'fondo' => '#EEF5F0', 'borde' => '#BFE0CD'],
         'pizarra' => ['fuerte' => '#2B4A6F', 'linea' => '#3B5F8A', 'fondo' => '#EEF2F7', 'borde' => '#C5D1E0'],
         'ocre' => ['fuerte' => '#7A5212', 'linea' => '#9A6B1F', 'fondo' => '#F8F2E6', 'borde' => '#E3D0A8'],

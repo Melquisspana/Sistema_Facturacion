@@ -251,6 +251,10 @@ Para la pantalla de la PC de pedidos (`/fabrica/pedidos`), que se usa de pie, co
 
 ### Páginas para imprimir
 
+Los pedidos web (16/11/2026) llevan WEB y 🎁 Regalo en la lista; al abrirlos se ve cada cajita sin precios, dirección ni teléfono. Se mandan completos y sin borrador; «Esperando factura» queda deshabilitado hasta tener factura aceptada. «Para recoger» reúne los armados sin entregar con «Ya lo recogieron» táctil. La recogida no se deshace desde fábrica: el seguimiento remoto solo avanza; las correcciones se resuelven en oficina.
+
+En la web se imprime únicamente la factura oficial 01. Para regalos se imprime únicamente una tarjeta carta con acento rosa (`#853452` / `#A54368`, `x-documento.estilos acento="rosa"`), nombre, mensaje y firma de la marca. Por ser una tarjeta personal, no lleva recuadro ni leyenda tributaria, precios ni datos del comprador.
+
 Para lo que se imprime o se guarda como PDF desde el navegador: la lista de empaque (`facturacion/listas/imprimir`), la hoja de lo que se despachó (`rutas/pedidos/hoja`) y la hoja de cada envío que imprime la PC de pedidos (`fabrica/pedidos/imprimir`, que se imprime sola al abrir). Agregado el 09/11/2026.
 
 - Documento aparte: su propio `<html>`, sus estilos en un `<style>` y sin el bundle de la aplicación ni la barra. No lleva modo oscuro.
@@ -278,6 +282,7 @@ Desde el 12/11/2026 (lo pidió el dueño): la mayoría de los documentos que se 
 | Documento | Acento | Nombre en el recuadro |
 |---|---|---|
 | CCF y demás DTE (`facturacion/pdf`) | Vino `#6E2142` | El tipo de DTE (sin leyenda) |
+| Tarjeta de regalo web (`fabrica/pedidos/tarjeta-regalo`) | Rosa `#853452` / `#A54368` | Un regalo para…; tarjeta personal sin recuadro ni leyenda tributaria |
 | Hoja de despacho de pedidos (`fabrica/pedidos/imprimir`) | Verde `#235C42` / `#2F6B4E` | HOJA DE DESPACHO |
 | PDF del día del vendedor (`rutas/mi-salida/dia-pdf`) y correo del resumen diario | Azul pizarra `#2B4A6F` / `#3B5F8A` | RESUMEN DEL DÍA · Resumen diario |
 | Hoja del pedido de la oficina y de «Por entregar» (`rutas/pedidos/hoja`), la que firma el gerente | Ocre `#7A5212` / `#9A6B1F` | HOJA DE PEDIDO |
@@ -321,3 +326,9 @@ Tomadas el 03/11/2026:
 1. **Trato de vos**, como Gastos, Planilla y Rutas.
 2. **Cancelar a la izquierda y Guardar a la derecha**, como Planta y los diálogos. En Facturación cambia de lugar.
 3. **Verde solo para «Terminar» en Rutas** («Entregado», «Terminar día», «Terminar ruta»). Todo lo demás, índigo.
+
+### Pedidos web en oficina (16/11/2026)
+
+La lista usa los filtros, filas apiladas, insignias y modal compartidos. Por defecto muestra Para revisar y Facturando con más de 30 minutos sin cambios. Reintentar exige permiso de gestión, confirmación y ausencia de factura; si ya existe, se corrige en Facturación. Hasta que exista la presentación en App\Support\Dinero, se reutiliza App\Services\Gastos\Dinero::mostrar para centavos, con $ delante.
+
+En el pedido abierto, solo la fila de otros pedidos se actualiza cada 30 segundos, sin tocar lo marcado. Un pedido web nuevo avisa durante ocho segundos con role=status y aria-live=polite.
