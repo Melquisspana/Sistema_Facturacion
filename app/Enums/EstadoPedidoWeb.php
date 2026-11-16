@@ -6,4 +6,8 @@ enum EstadoPedidoWeb: string
 {
     case Importado = 'importado';
     case ParaRevisar = 'para_revisar';
+    // Factura automática (ADR 0011): ya tiene su borrador y se está emitiendo.
+    case Facturando = 'facturando';
+    // Hacienda aceptó la factura; quedan el correo y el aviso a la página si faltan.
+    case Facturado = 'facturado';
 }

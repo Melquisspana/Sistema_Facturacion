@@ -16,6 +16,7 @@ class PedidoWeb extends Model
         'departamento_codigo', 'municipio', 'direccion', 'notas', 'regalo',
         'cajitas_detalle', 'lineas', 'pasarela', 'referencia', 'estado',
         'motivo_revision', 'pedido_sala_id', 'informado_preparando_en',
+        'dte_id', 'factura_correo_en', 'informado_factura_en',
     ];
 
     protected $hidden = ['cliente_nombre', 'cliente_correo', 'cliente_telefono', 'direccion', 'notas', 'regalo'];
@@ -27,6 +28,8 @@ class PedidoWeb extends Model
             'total_centavos' => 'integer',
             'pagado_en' => 'datetime',
             'informado_preparando_en' => 'datetime',
+            'factura_correo_en' => 'datetime',
+            'informado_factura_en' => 'datetime',
             'estado' => EstadoPedidoWeb::class,
             'cliente_telefono' => 'encrypted',
             'direccion' => 'encrypted',

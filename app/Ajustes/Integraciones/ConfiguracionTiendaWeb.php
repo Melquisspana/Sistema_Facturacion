@@ -3,6 +3,8 @@
 namespace App\Ajustes\Integraciones;
 
 use App\Ajustes\Ajustes;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
 
 class ConfiguracionTiendaWeb
 {
@@ -17,6 +19,16 @@ class ConfiguracionTiendaWeb
     public function secreto(): string
     {
         return (string) $this->ajustes->secretoParaRuntime('tienda.secreto');
+    }
+
+    /**
+     * El cliente HTTP de la tienda, el mismo para traer pedidos y para avisarle: token,
+     * JSON, 10 s y sin seguir redirecciones. El secreto no sale de esta clase.
+     */
+    public function cliente(): PendingRequest
+    {
+        return Http::withToken($this->secreto())->acceptJson()->timeout(10)
+            ->withOptions(['allow_redirects' => false]);
     }
 
     public function completo(): bool

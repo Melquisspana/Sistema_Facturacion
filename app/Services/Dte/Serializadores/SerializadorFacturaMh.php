@@ -83,7 +83,11 @@ class SerializadorFacturaMh implements SerializadorMh
             'nombre' => $r->nombre,
             'codActividad' => $r->actividadEconomica,
             'descActividad' => $r->actividadEconomica ? $this->descActividad($r->actividadEconomica) : null,
-            'direccion' => $this->direccion($r->departamento, $r->municipio, $r->direccion ?: '—', $r->distrito),
+            // Sin ubicación (consumidor final nombrado, ADR 0011) la dirección va null, que el
+            // esquema admite, en vez de un complemento '—' con departamento y municipio vacíos.
+            'direccion' => blank($r->departamento) && blank($r->municipio) && blank($r->distrito) && blank($r->direccion)
+                ? null
+                : $this->direccion($r->departamento, $r->municipio, $r->direccion ?: '—', $r->distrito),
             'telefono' => $r->telefono,
             'correo' => $r->correo,
         ];

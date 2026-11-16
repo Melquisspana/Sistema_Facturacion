@@ -2,6 +2,7 @@
 
 namespace App\Support\Dte;
 
+use App\Http\Controllers\Facturacion\DteController;
 use App\Models\Dte;
 
 /**
@@ -11,7 +12,7 @@ use App\Models\Dte;
  * cliente y, por sala, la dirección que de verdad recibe los documentos de esa tienda. Si
  * la sala declara correo, ese es el que vale; si no, se cae al del cliente.
  *
- * Esa misma regla ya decidía a quién se le envía el documento ({@see \App\Http\Controllers\Facturacion\DteController})
+ * Esa misma regla ya decidía a quién se le envía el documento ({@see DteController})
  * y qué destinatario se propone en la ficha, pero estaba escrita por separado en cada
  * lugar. Al mostrarla además en el PDF hacían falta tres copias de la misma condición, y
  * tres copias es como se llega a que el PDF diga un correo y el envío use otro. Acá vive
@@ -33,6 +34,11 @@ final class CorreoReceptorDte
 
         if ($correo === '') {
             $correo = trim((string) ($dte->cliente?->correo ?? ''));
+        }
+
+        // Sin cliente: el consumidor final nombrado en el propio documento (tienda web, ADR 0011).
+        if ($correo === '' && $dte->cliente_id === null) {
+            $correo = trim((string) ($dte->receptor_correo ?? ''));
         }
 
         return $correo !== '' ? $correo : null;

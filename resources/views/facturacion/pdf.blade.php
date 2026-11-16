@@ -104,7 +104,8 @@
     $cliComercial = ($cli?->nombre_comercial && trim($cli->nombre_comercial) !== trim((string) $cli->nombre))
         ? $cli->nombre_comercial : null;
 
-    $cliNombre = $cli?->nombre;
+    // Sin cliente, el consumidor final puede venir nombrado en el propio documento (tienda web, ADR 0011).
+    $cliNombre = $cli?->nombre ?? (filled($dte->receptor_nombre) ? $dte->receptor_nombre : null);
     $cliDocumento = $cli?->num_documento;
     $cliNrc = $cli?->nrc;
     $cliActividad = $cli?->actividadEconomica?->nombre;
@@ -407,7 +408,7 @@
     <div class="sec rec nobreak">
         <div class="sec-h">Receptor</div>
         <div class="sec-b">
-            <span class="rec-name">{{ $cliNombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif @if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
+            <span class="rec-name">{{ $cliNombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif @if (! $cli && blank($cliNombre)) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
             <table style="margin-top:3px;">
                 <tr>
                     <td style="width: 50%; padding-right: 10px;">

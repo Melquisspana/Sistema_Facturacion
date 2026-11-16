@@ -38,6 +38,8 @@ class Dte extends Model
         'tipo_modelo', 'tipo_operacion', 'tipo_contingencia', 'motivo_contingencia',
         'establecimiento_id', 'punto_venta_id', 'correlativo_id',
         'cliente_id', 'cliente_sucursal_id', 'dte_relacionado_id',
+        // Consumidor final nombrado sin Cliente (factura de la tienda web, ADR 0011).
+        'receptor_nombre', 'receptor_correo',
         'ejercicio', 'numero_control', 'numero_interno', 'codigo_generacion', 'sello_recepcion',
         'respuesta_mh', 'respuesta_mh_path', 'fecha_procesamiento_mh',
         'condicion_operacion', 'forma_pago', 'numero_orden_compra',
