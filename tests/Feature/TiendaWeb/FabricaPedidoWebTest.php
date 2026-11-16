@@ -314,4 +314,97 @@ class FabricaPedidoWebTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $migracion->down();
     }
+
+    public function test_otros_actualiza_fila_ids_y_comparte_el_parcial_inicial(): void
+    {
+        $abierto = $this->pedido();
+        $nuevo = $this->pedido();
+        $otros = app(PedidosFabrica::class)->otrosPorMandar($abierto);
+        $html = view('fabrica.pedidos._otros', compact('otros'))->render();
+        $this->getJson(route('fabrica.pedidos.otros', $abierto))->assertOk()
+            ->assertJsonPath('ids', [$nuevo->id])->assertJsonPath('html', $html);
+        $this->get(route('fabrica.pedidos.show', $abierto))->assertOk()->assertSee($html, false)
+            ->assertSee('setInterval(() => this.actualizar(), 30000)', false)
+            ->assertSee('Llegó un pedido web')->assertSee('8000')->assertSee('[401, 419]', false);
+        $abierto->update(['origen' => OrigenPedidoSala::Sala]);
+        $this->get(route('fabrica.pedidos.show', $abierto))->assertOk()->assertSee($html, false)
+            ->assertSee('setInterval(() => this.actualizar(), 30000)', false);
+    }
+
+    public function test_otros_y_lista_oficina_rechazan_sin_permiso(): void
+    {
+        $pedido = $this->pedido();
+        $this->actingAs(User::factory()->create(['activo' => true]));
+        $this->getJson(route('fabrica.pedidos.otros', $pedido))->assertForbidden();
+        $this->get(route('facturacion.pedidos-web.index'))->assertForbidden();
+        $this->post(route('facturacion.pedidos-web.reintentar', $pedido->pedidoWeb))->assertForbidden();
+    }
+
+    private function oficina(bool $gestionar = true): void
+    {
+        $user = User::factory()->create(['activo' => true]);
+        $user->givePermissionTo($gestionar ? ['dte.ver', 'dte.gestionar'] : ['dte.ver']);
+        $this->actingAs($user);
+    }
+
+    public function test_lista_oficina_estados_filtros_antiguedad_y_privacidad(): void
+    {
+        $revision = $this->pedido(['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado'])->pedidoWeb;
+        $viejo = $this->pedido(['estado' => EstadoPedidoWeb::Facturando])->pedidoWeb;
+        $viejo->forceFill(['updated_at' => now()->subMinutes(31)])->save();
+        $reciente = $this->pedido(['estado' => EstadoPedidoWeb::Facturando])->pedidoWeb;
+        $reciente->forceFill(['updated_at' => now()->subMinutes(30)])->save();
+        $importado = $this->pedido(['estado' => EstadoPedidoWeb::Importado])->pedidoWeb;
+        $facturado = $this->pedido()->pedidoWeb;
+        $this->oficina();
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()
+            ->assertViewHas('pedidos', function ($lista) use ($revision, $viejo) {
+                $this->assertEquals([$revision->id, $viejo->id], $lista->pluck('id')->all());
+
+                return true;
+            })
+            ->assertDontSee($reciente->codigo)->assertDontSee($importado->codigo)->assertDontSee($facturado->codigo)
+            ->assertSee('Motivo inventado')->assertSee('Compradora Inventada')->assertSee('16/11/2026 09:00')
+            ->assertSee('$987.65')->assertDontSee('telefono-secreto')->assertDontSee('direccion-secreta');
+        foreach (EstadoPedidoWeb::cases() as $estado) {
+            $this->get(route('facturacion.pedidos-web.index', ['estado' => $estado->value]))
+                ->assertOk()->assertViewHas('pedidos', fn ($lista) => $lista->count() > 0 && $lista->every(fn ($p) => $p->estado === $estado));
+        }
+        $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()
+            ->assertViewHas('pedidos', fn ($lista) => $lista->total() === 5);
+    }
+
+    public function test_reintentar_solo_revision_sin_factura_y_auditoria_sin_datos_personales(): void
+    {
+        $web = $this->pedido(['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado'])->pedidoWeb;
+        $web->update(['dte_id' => null]);
+        $this->oficina();
+        $this->post(route('facturacion.pedidos-web.reintentar', $web))->assertRedirect(route('facturacion.pedidos-web.index'));
+        $this->assertSame(EstadoPedidoWeb::Importado, $web->fresh()->estado);
+        $this->assertNull($web->fresh()->motivo_revision);
+        $actividad = Activity::where('description', 'reintentar pedido web')->sole();
+        $this->assertSame($web->id, $actividad->subject_id);
+        $this->assertSame(auth()->id(), $actividad->causer_id);
+        $this->assertEquals(collect(['estado_anterior' => 'para_revisar', 'estado' => 'importado'])->sortKeys(), $actividad->properties->sortKeys());
+        $this->post(route('facturacion.pedidos-web.reintentar', $web))->assertSessionHasErrors('pedido');
+        foreach ([EstadoPedidoWeb::Facturando, EstadoPedidoWeb::Facturado] as $estado) {
+            $web->update(['estado' => $estado]);
+            $this->post(route('facturacion.pedidos-web.reintentar', $web))->assertSessionHasErrors('pedido');
+            $this->assertSame($estado, $web->fresh()->estado);
+        }
+        $this->assertSame(1, Activity::where('description', 'reintentar pedido web')->count());
+    }
+
+    public function test_reintentar_con_factura_o_sin_gestion_se_rechaza(): void
+    {
+        $web = $this->pedido(['estado' => EstadoPedidoWeb::ParaRevisar])->pedidoWeb;
+        $this->oficina();
+        $this->post(route('facturacion.pedidos-web.reintentar', $web))->assertSessionHasErrors('pedido');
+        $this->assertSame(EstadoPedidoWeb::ParaRevisar, $web->fresh()->estado);
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertSee('Corregí la factura')->assertDontSee('¿Reintentar');
+        $web->update(['dte_id' => null]);
+        $this->oficina(false);
+        $this->post(route('facturacion.pedidos-web.reintentar', $web))->assertForbidden();
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertDontSee('¿Reintentar');
+    }
 }

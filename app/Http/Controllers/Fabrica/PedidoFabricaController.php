@@ -50,6 +50,17 @@ class PedidoFabricaController extends Controller
         ]);
     }
 
+    public function otros(PedidoSala $pedido): JsonResponse
+    {
+        Gate::authorize('mandar', $pedido);
+        $otros = $this->fabrica->otrosPorMandar($pedido);
+
+        return response()->json([
+            'html' => view('fabrica.pedidos._otros', compact('otros'))->render(),
+            'ids' => $otros->where('origen', OrigenPedidoSala::Web)->pluck('id')->values(),
+        ]);
+    }
+
     /** La hoja «Qué va a <sala>». Si ya no está por mandar, a la lista con un aviso (no un 403). */
     public function show(PedidoSala $pedido): View|RedirectResponse
     {

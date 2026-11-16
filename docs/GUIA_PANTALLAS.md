@@ -326,3 +326,9 @@ Tomadas el 03/11/2026:
 1. **Trato de vos**, como Gastos, Planilla y Rutas.
 2. **Cancelar a la izquierda y Guardar a la derecha**, como Planta y los diálogos. En Facturación cambia de lugar.
 3. **Verde solo para «Terminar» en Rutas** («Entregado», «Terminar día», «Terminar ruta»). Todo lo demás, índigo.
+
+### Pedidos web en oficina (16/11/2026)
+
+La lista usa los filtros, filas apiladas, insignias y modal compartidos. Por defecto muestra Para revisar y Facturando con más de 30 minutos sin cambios. Reintentar exige permiso de gestión, confirmación y ausencia de factura; si ya existe, se corrige en Facturación. Hasta que exista la presentación en App\Support\Dinero, se reutiliza App\Services\Gastos\Dinero::mostrar para centavos, con $ delante.
+
+En el pedido abierto, solo la fila de otros pedidos se actualiza cada 30 segundos, sin tocar lo marcado. Un pedido web nuevo avisa durante ocho segundos con role=status y aria-live=polite.

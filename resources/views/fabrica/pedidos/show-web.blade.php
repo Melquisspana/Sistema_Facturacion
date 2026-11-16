@@ -5,8 +5,8 @@
         $nombres = collect($web->lineas)->pluck('nombre', 'producto');
     @endphp
     <div class="py-6 sm:py-8">
-        <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8">
-            <a href="{{ route('fabrica.pedidos.index') }}" class="inline-flex min-h-12 items-center rounded-xl px-5 py-4 text-lg font-semibold text-indigo-700">Volver a Pedidos</a>
+        <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8" x-data="{ enviando: false, saliendo: false, salir(destino) { if (this.enviando || this.saliendo) return; this.saliendo = true; location.href = destino; } }">
+            @include('fabrica.pedidos._otros-actualizar')
             <x-rutas.avisos />
             <section class="rounded-lg border border-gray-200 bg-white p-5">
                 <div class="flex flex-wrap items-center gap-3">
@@ -42,7 +42,7 @@
                     </section>
                 @endforeach
             </div>
-            <form method="POST" action="{{ route('fabrica.pedidos.mandar', $pedido) }}" x-data="{ enviando: false }" @submit="enviando = true">
+            <form method="POST" action="{{ route('fabrica.pedidos.mandar', $pedido) }}" @submit="enviando = true">
                 @csrf
                 <input type="hidden" name="clave" value="{{ $clave }}">
                 <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
@@ -50,7 +50,7 @@
                     <input type="hidden" name="cantidades[{{ $linea->id }}]" value="{{ $linea->cantidad }}">
                 @endforeach
                 <div class="flex flex-wrap items-center gap-3">
-                    <a href="{{ route('fabrica.pedidos.index') }}" class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
+                    <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)" class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
                     <button @disabled(! $web->facturaLista()) :disabled="enviando || @js(! $web->facturaLista())" class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 disabled:opacity-50">{{ $web->facturaLista() ? 'Imprimir y mandar' : 'Esperando factura' }}</button>
                 </div>
                 @unless ($web->facturaLista())

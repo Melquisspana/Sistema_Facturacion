@@ -23,6 +23,7 @@ Route::middleware(['auth', 'permission:fabrica.pedidos.mandar', 'cache.headers:n
     ->prefix('fabrica/pedidos')->name('fabrica.pedidos.')
     ->group(function () {
         Route::get('/', [PedidoFabricaController::class, 'index'])->name('index');
+        Route::get('{pedido}/otros', [PedidoFabricaController::class, 'otros'])->name('otros');
         Route::get('{pedido}', [PedidoFabricaController::class, 'show'])->name('show');
         // Lo marcado en la hoja se guarda solo (fetch), sin mandar nada.
         Route::patch('{pedido}/borrador', [PedidoFabricaController::class, 'borrador'])->name('borrador');
