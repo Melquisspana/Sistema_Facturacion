@@ -56,7 +56,9 @@ class DiaVendedor
     public function resumen(PersonalRuta $persona, ?User $usuario, string $fecha): array
     {
         $filas = $this->suyas($persona, $usuario)
-            ->with(['dte:id,numero_control,total_pagar,cliente_id', 'sala:id,nombre', 'registradoPor:id,name'])
+            // El pedido web (16/11/2026) no tiene sala: el PDF lo nombra «Pedido web · Nombre I.».
+            ->with(['dte:id,numero_control,total_pagar,cliente_id', 'dte.pedidoWeb:id,dte_id,pedido_sala_id', 'dte.pedidoWeb.pedidoSala',
+                'dte.pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre', 'sala:id,nombre', 'registradoPor:id,name'])
             ->whereDate('fecha_resultado', $fecha)
             ->orderBy('fecha_resultado')->orderBy('id')
             ->get();
@@ -76,6 +78,10 @@ class DiaVendedor
             'portal_id' => $portalId,
         ];
         foreach ($entregadas as $entrega) {
+            // El pedido web ya se pagó en la página: no es dinero ni quedan del día.
+            if ($entrega->forma_cobro === FormaCobroEntrega::YaPagado) {
+                continue;
+            }
             if ($entrega->forma_cobro !== null) {
                 $resumen[$entrega->forma_cobro->value] += CierreDia::centavos($entrega->monto_cobrado ?? '0');
                 $resumen['cuantas'][$entrega->forma_cobro->value]++;

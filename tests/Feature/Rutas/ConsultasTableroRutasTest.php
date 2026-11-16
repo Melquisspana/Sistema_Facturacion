@@ -173,6 +173,7 @@ class ConsultasTableroRutasTest extends TestCase
     {
         // «Todas»: los CCF de todos los viajes, cada uno con el viaje en el que va. 25: una
         // consulta fija más desde «¿Quién lo entregó?» (la lista de quienes pueden entregar).
-        $this->noCreceConLosDatos('rutas.por-entregar.index', 25, fn () => $this->vendedores[0], ['ver' => 'todas']);
+        // 26 (16/11/2026): otra fija, los pedidos web con ruta (EntregasCcf::pendientesWeb()).
+        $this->noCreceConLosDatos('rutas.por-entregar.index', 26, fn () => $this->vendedores[0], ['ver' => 'todas']);
     }
 }

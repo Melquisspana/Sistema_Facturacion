@@ -23,10 +23,11 @@ class InformarEstadoPedidoWeb
                 if ($pedido->estado_por_informar === null || $pedido->lista_en === null || $pedido->informado_preparando_en === null) {
                     return;
                 }
-                // No saltear «lista» si lo recogieron antes de la siguiente pasada.
+                // No saltear «lista» (o «en_ruta», el de ruta) si lo entregaron antes de la
+                // siguiente pasada: la página no pasa de «preparando» a «entregado».
                 if ($pedido->estado_por_informar === 'entregado'
                     && ($pedido->estado_informado_en === null || $pedido->estado_informado_en->lt($pedido->lista_en))) {
-                    if (! $this->enviar($pedido, 'lista')) {
+                    if (! $this->enviar($pedido, $pedido->entrega_tipo === 'ruta' ? 'en_ruta' : 'lista')) {
                         return;
                     }
                     // Conservar el avance si falla el POST de «entregado» a continuación.
