@@ -402,6 +402,67 @@ class PedidosSalaTest extends TestCase
 
     // ══════════════════════════════ oficina
 
+    public function test_la_oficina_filtra_el_historial_por_estado(): void
+    {
+        $ids = [];
+        foreach (EstadoPedidoSala::cases() as $estado) {
+            $ids[$estado->value] = PedidoSala::create([
+                'cliente_sucursal_id' => $this->sala->id,
+                'ruta_id' => $this->ruta->id,
+                'salida_ruta_id' => $this->salida->id,
+                'sacado_por_id' => $this->persona->id,
+                'registrado_por' => $this->vendedor->id,
+                'fecha' => '2026-11-05',
+                'estado' => $estado,
+            ])->id;
+        }
+
+        $this->actingAs($this->oficina);
+        foreach ([
+            '' => array_values(array_diff_key($ids, ['anulado' => true])),
+            'anulado' => [$ids['anulado']],
+            'todos' => array_values($ids),
+            'parcial' => [$ids['parcial']],
+            'registrado' => [$ids['registrado']],
+            'enviado' => [$ids['enviado']],
+            'no_se_trae' => [$ids['no_se_trae']],
+        ] as $estado => $esperados) {
+            $respuesta = $this->get(route('rutas.pedidos.index', $estado === '' ? [] : ['estado' => $estado]))
+                ->assertOk()
+                ->assertViewHas('pedidos', function ($pedidos) use ($esperados) {
+                    $this->assertEqualsCanonicalizing($esperados, $pedidos->pluck('id')->all());
+                    $this->assertSame(25, $pedidos->perPage());
+
+                    return true;
+                })
+                ->assertViewHas('filtrado', $estado !== '');
+            if ($estado === '') {
+                $respuesta->assertDontSee('>Limpiar</a>', false);
+            } else {
+                $respuesta->assertSee('>Limpiar</a>', false);
+            }
+        }
+
+        $this->get(route('rutas.pedidos.index', ['estado' => '']))
+            ->assertOk()->assertViewHas('filtrado', false)->assertDontSee('>Limpiar</a>', false);
+        $this->getJson(route('rutas.pedidos.index', ['estado' => 'inventado']))
+            ->assertUnprocessable()->assertJsonValidationErrors('estado');
+
+        $filtros = [
+            'estado' => 'parcial', 'desde' => '2026-11-05', 'hasta' => '2026-11-05',
+            'ruta_id' => $this->ruta->id, 'sala' => $this->sala->codigo, 'salida' => $this->salida->id,
+            'mandado_el' => '2026-11-05',
+        ];
+        PedidoSala::findOrFail($ids['parcial'])->envios()->create([
+            'numero' => 1, 'clave' => (string) Str::uuid(), 'fecha' => '2026-11-05',
+            'registrado_por' => $this->oficina->id,
+        ]);
+        $this->get(route('rutas.pedidos.index', $filtros))->assertOk()
+            ->assertViewHas('pedidos', fn ($pedidos) => $pedidos->pluck('id')->all() === [$ids['parcial']]);
+        $this->get(route('rutas.pedidos.index', array_replace($filtros, ['mandado_el' => '2026-11-06'])))
+            ->assertOk()->assertViewHas('pedidos', fn ($pedidos) => $pedidos->isEmpty());
+    }
+
     public function test_la_oficina_ve_la_lista_con_filtros_y_el_detalle(): void
     {
         $this->sacar()->assertSessionHasNoErrors();

@@ -2,7 +2,7 @@
      fecha, ruta y sala (docs/GUIA_PANTALLAS.md: formulario GET, «Filtrar» secundario y
      «Limpiar» solo con filtros). «Mandado el»: lo que la fábrica mandó ese día. En el
      celular, tarjetas; en la computadora, tabla. Solo lectura: lo que sale lo marca la
-     fábrica en /fabrica/pedidos. --}}
+     fábrica en /fabrica/pedidos. Los anulados se esconden de entrada (Melqui, 16/11/2026). --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -47,6 +47,16 @@
                 <div>
                     <label for="f-sala" class="{{ $etiqueta }}">Sala</label>
                     <input id="f-sala" type="search" name="sala" value="{{ request('sala') }}" maxlength="100" placeholder="Nombre o código" class="{{ $campo }}">
+                </div>
+                <div>
+                    <label for="f-estado" class="{{ $etiqueta }}">Estado</label>
+                    <select id="f-estado" name="estado" class="{{ $campo }}">
+                        <option value="" @selected(! request('estado'))>Todos menos anulados</option>
+                        @foreach (\App\Enums\EstadoPedidoSala::cases() as $estado)
+                            <option value="{{ $estado->value }}" @selected(request('estado') === $estado->value)>{{ $estado->label() }}</option>
+                        @endforeach
+                        <option value="todos" @selected(request('estado') === 'todos')>Todos</option>
+                    </select>
                 </div>
                 <div class="flex flex-wrap items-center gap-3">
                     <button class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Filtrar</button>
