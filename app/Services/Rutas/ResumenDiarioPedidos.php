@@ -21,10 +21,9 @@ use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
- * El correo de las 18:00 con lo que hizo la fábrica, por sala: lo que salió en cada envío,
- * lo que se deshizo de un envío que ya había salido en un correo anterior, lo que faltó
- * (con su motivo), lo que se marcó «No se trae» y lo que sigue por mandar con sus días de
- * atraso. Si no salió nada, sale igual con «Hoy no salió ningún pedido» y los pendientes.
+ * El correo de las 18:00: cuerpo corto por sala y vendedor; hojas de despacho y detalle
+ * de lo deshecho, faltantes y pendientes en el PDF de fábrica (16/11/2026).
+ * Si no salió nada, sale igual con «Hoy no salió ningún pedido» y el resumen de pendientes.
  *
  * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
  * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,
@@ -126,6 +125,16 @@ class ResumenDiarioPedidos
         $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta)
             + ['ventas' => $this->vendido($fecha)];
         [$contenido['vendedores'], $pdf] = $this->pdfDeVendedores($fecha);
+        $contenido['fabrica_pdf_fallo'] = false;
+        if ($contenido['salas'] !== []) {
+            try {
+                $pdf['salio-de-la-fabrica-'.$fecha.'.pdf'] = app(PdfFabricaDiario::class)->binario($contenido);
+            } catch (Throwable $e) {
+                // No registrar el mensaje del render: podría contener datos del pedido.
+                report(new \RuntimeException('No se pudo adjuntar el PDF de la fábrica ('.get_class($e).')'));
+                $contenido['fabrica_pdf_fallo'] = true;
+            }
+        }
         // Es una foto: lo vendido y lo marcado después no entra. El de todos los días es de
         // su hora; el que se manda a mano, de la hora en que sale.
         $contenido['hasta_las'] = self::horaDicha($forzar ? HoraNegocio::ahora()->format('H:i') : self::HORA);
@@ -196,6 +205,10 @@ class ResumenDiarioPedidos
             ->with($relaciones)->orderBy('id')->get();
         foreach ($envios as $e) {
             $salas[$sala($e->pedido)]['salio'][] = $envio($e);
+            if ($e->pedido->origen === OrigenPedidoSala::Web) {
+                $salas[$sala($e->pedido)]['cajitas'] = ($salas[$sala($e->pedido)]['cajitas'] ?? 0)
+                    + collect($e->pedido->pedidoWeb?->cajitas_detalle ?? [])->sum(fn ($c) => $c['cantidad'] ?? 1);
+            }
         }
 
         // Un envío que un correo anterior dio por salido y se deshizo después. Uno que salió y
@@ -263,6 +276,7 @@ class ResumenDiarioPedidos
         return [
             'fecha' => $hoy->format('d/m/Y'),
             'salio_algo' => $envios->isNotEmpty(),
+            'envios_ids' => $envios->modelKeys(),
             'salas' => $salas,
         ];
     }
@@ -291,7 +305,7 @@ class ResumenDiarioPedidos
      * nombres para el cuerpo (null si no se pudo ni buscar quién tuvo movimiento) y los PDF,
      * nombre de archivo => contenido.
      *
-     * @return array{0: array{adjuntos: list<string>, fallaron: list<string>}|null, 1: array<string, string>}
+     * @return array{0: array{adjuntos: list<string>, fallaron: list<string>, resumenes: list<array>, cuentas_fallaron: list<string>}|null, 1: array<string, string>}
      */
     private function pdfDeVendedores(string $fecha): array
     {
@@ -303,16 +317,26 @@ class ResumenDiarioPedidos
             return [null, []];
         }
 
-        $nombres = ['adjuntos' => [], 'fallaron' => []];
+        $nombres = ['adjuntos' => [], 'fallaron' => [], 'resumenes' => [], 'cuentas_fallaron' => []];
         $pdf = [];
         foreach ($personas as $persona) {
+            $resumen = null;
+            try {
+                $resumen = $this->dia->resumen($persona, $persona->user, $fecha);
+                $nombres['resumenes'][] = ['nombre' => $persona->nombre, 'entregas' => $resumen['entregadas']->count(),
+                    'no_se_pudo' => $resumen['no_entregadas']->count(), 'cobrado' => $resumen['cobrado'],
+                    'quedan' => $resumen['quedan']['monto'], 'portal' => $resumen['portal']['monto']];
+            } catch (Throwable $e) {
+                report($e);
+                $nombres['cuentas_fallaron'][] = $persona->nombre;
+            }
             try {
                 $archivo = DiaVendedor::nombrePdf($persona, $fecha);
                 // Dos personas con el mismo nombre: la segunda lleva su número.
                 if (isset($pdf[$archivo])) {
                     $archivo = Str::replaceLast('.pdf', '-'.$persona->id.'.pdf', $archivo);
                 }
-                $pdf[$archivo] = $this->dia->pdfBinario($persona, $persona->user, $fecha);
+                $pdf[$archivo] = $this->dia->pdfBinario($persona, $persona->user, $fecha, $resumen);
                 $nombres['adjuntos'][] = $persona->nombre;
             } catch (Throwable $e) {
                 report($e);

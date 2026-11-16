@@ -205,9 +205,9 @@ class DiaVendedor
     }
 
     /** Ese mismo PDF, en bytes: es el que adjunta el correo diario. */
-    public function pdfBinario(PersonalRuta $persona, ?User $usuario, string $fecha): string
+    public function pdfBinario(PersonalRuta $persona, ?User $usuario, string $fecha, ?array $resumen = null): string
     {
-        return $this->hoja($persona, $usuario, $fecha)->output();
+        return $this->hoja($persona, $usuario, $fecha, $resumen)->output();
     }
 
     public static function nombrePdf(PersonalRuta $persona, string $fecha): string
@@ -215,10 +215,10 @@ class DiaVendedor
         return 'dia-'.$fecha.'-'.Str::slug($persona->nombre).'.pdf';
     }
 
-    private function hoja(PersonalRuta $persona, ?User $usuario, string $fecha): HojaPdf
+    private function hoja(PersonalRuta $persona, ?User $usuario, string $fecha, ?array $resumen = null): HojaPdf
     {
         return Pdf::loadView('rutas.mi-salida.dia-pdf', [
-            'resumen' => $this->resumen($persona, $usuario, $fecha),
+            'resumen' => $resumen ?? $this->resumen($persona, $usuario, $fecha),
             'persona' => $persona,
             'empresa' => NombreEmpresa::actual(),
             // El logo como lo carga el PDF del CCF (data-URI): DomPDF no baja imágenes por URL.

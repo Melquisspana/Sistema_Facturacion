@@ -16,6 +16,7 @@ use App\Models\Producto;
 use App\Models\Ruta;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Rutas\PdfFabricaDiario;
 use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Support\Correo\CandadoCorreoReal;
@@ -24,6 +25,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule as ScheduleFacade;
@@ -124,6 +126,55 @@ class CorreoDiarioPedidosTest extends TestCase
         return $correos->first();
     }
 
+    private function detalle(ResumenDiarioPedidosCorreo $correo): string
+    {
+        return html_entity_decode(strip_tags(app(PdfFabricaDiario::class)->html($correo->contenido)));
+    }
+
+    public function test_sin_movimiento_ni_pendientes_no_adjunta_pdf_de_fabrica(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+        $correo = $this->enviado();
+        $this->assertSame([], $correo->pdf);
+        $this->assertStringNotContainsString('Faltaron cosas', $correo->render());
+        $this->assertStringNotContainsString('Por mandar:', $correo->render());
+    }
+
+    public function test_si_falla_el_pdf_de_fabrica_sale_el_correo_con_aviso(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        Exceptions::fake();
+        $this->pedido($this->sala('Sala inventada'), [$this->galleta->id => '2']);
+        $this->mock(PdfFabricaDiario::class)->shouldReceive('binario')->once()
+            ->andThrow(new \RuntimeException('Falla inventada con datos privados'));
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+        $correo = $this->enviado();
+        $this->assertSame([], $correo->pdf);
+        $this->assertStringContainsString('No se pudo adjuntar el PDF de la fábrica', $correo->render());
+        Exceptions::assertReported(fn (\RuntimeException $e) => str_contains($e->getMessage(), 'No se pudo adjuntar el PDF de la fábrica')
+            && ! str_contains($e->getMessage(), 'datos privados'));
+    }
+
+    public function test_treinta_envios_caben_en_unos_pocos_mb(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        for ($i = 1; $i <= 30; $i++) {
+            $pedido = $this->pedido($this->sala('Sala inventada '.$i), [$this->galleta->id => '12']);
+            $this->mandar($pedido, [$this->galleta->id => '12']);
+        }
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+        $correo = $this->enviado();
+        $pdf = $correo->pdf['salio-de-la-fabrica-2026-11-09.pdf'];
+        $this->assertStringStartsWith('%PDF', $pdf);
+        $this->assertSame(30, preg_match_all('/\/Type \/Page\b/', $pdf), 'Una página por envío, sin detalle final vacío');
+        $this->assertLessThan(3 * 1024 * 1024, strlen(base64_encode($pdf)) + strlen($correo->render()));
+        $html = app(PdfFabricaDiario::class)->html($correo->contenido);
+        $this->assertSame(30, substr_count($html, 'HOJA DE DESPACHO'));
+    }
     // ══════════════════════════════ contenido
 
     public function test_el_correo_dice_por_sala_lo_que_salio_lo_que_falto_lo_que_no_se_trae_y_lo_que_sigue(): void
@@ -157,12 +208,20 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertMatchesRegularExpression('/<img src="data:image\/png;base64,[^"]+" class="doc-logo"/', $html);
         $this->assertMatchesRegularExpression('/Correo interno<\/span><br>\s*<span class="doc-ttl"[^>]*color: #2B4A6F[^>]*>Resumen diario<\/span>\s*<br><span class="doc-fecha"[^>]*>09\/11\/2026<\/span>/', $html);
         $this->assertStringContainsString('border-top: 2px solid #3B5F8A', $html);
-        // Las salas, por nombre; en cada una lo que pasó.
+        $this->assertStringNotContainsString('Galleta de prueba', $html);
+        $this->assertStringNotContainsString('Canilla de prueba', $html);
+        $this->assertStringContainsString('Súper Ficticio Centro: 1 producto (1 envío)', $html);
+        $this->assertStringContainsString('Faltaron cosas en 1 sala · Por mandar: 1 pedido', $html);
+        $this->assertArrayHasKey('salio-de-la-fabrica-2026-11-09.pdf', $correo->pdf);
+        $this->assertStringStartsWith('%PDF', $correo->pdf['salio-de-la-fabrica-2026-11-09.pdf']);
+        $html = preg_replace('/\s+/u', ' ', $this->detalle($correo));
+        $this->assertStringContainsString('HOJA DE DESPACHO', $html);
+        $this->assertStringContainsString('Lo que va', $html);
         $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 06\/11\/2026 \(3 días de atraso\): Canilla de prueba 2\.5/s', $html);
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(18:00\): Galleta de prueba 24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Galleta de prueba.*24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
         $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*No se trae.*Galleta de prueba: 3.*Por qué no se mandó: El cliente canceló/s', $html);
         $this->assertSame(1, substr_count($html, 'Por qué no se mandó'), 'solo el pedido cerrado con «No mandar»');
-        $this->assertTrue(strpos($html, 'Abarrotes Inventados') < strpos($html, 'Súper Ficticio Centro'));
+
         $this->assertTrue(strpos($html, 'Súper Ficticio Centro') < strpos($html, 'Tienda Inventada Norte'));
     }
 
@@ -183,7 +242,7 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->travelTo('2026-11-10 18:00:00');
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
 
-        $html = $this->enviado()->render();
+        $html = $this->detalle($this->enviado());
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Faltó.*Canilla de prueba: 6 — Sin harina.*Por qué no se mandó: No hay producto/s', $html);
         $this->assertStringNotContainsString('Sigue por mandar', $html);
     }
@@ -215,8 +274,8 @@ class CorreoDiarioPedidosTest extends TestCase
 
         $correos = Mail::sent(ResumenDiarioPedidosCorreo::class);
         $this->assertCount(2, $correos);
-        $html = $correos->last()->render();
-        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*Salió.*Envío 1 \(09\/11 18:20\): Galleta de prueba 3/s', $html);
+        $html = preg_replace('/\s+/u', ' ', $this->detalle($correos->last()));
+        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*Galleta de prueba.*3/s', $html);
         $this->assertMatchesRegularExpression('/Abarrotes Inventados Sur.*No se trae.*Canilla de prueba: 2/s', $html);
         // El envío que el correo del lunes dio por salido se deshizo: se avisa y vuelve a pendiente.
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Se deshizo.*Envío 1 \(09\/11 16:00\): Galleta de prueba 5.*Sigue por mandar/s', $html);
@@ -227,16 +286,21 @@ class CorreoDiarioPedidosTest extends TestCase
     {
         Mail::fake();
         $this->correoReal();
-        $trampa = '![](https://rastreo.example/p.gif) [Ver detalle](https://phishing.example/login)';
+        $trampa = '![](https://rastreo.example/p.gif) [Ver detalle](https://phishing.example/login) <img src="https://rastreo.example/x">';
 
         $pedido = $this->pedido($this->sala('Súper [Ficticio](https://phishing.example/sala) Centro'), [$this->galleta->id => '4', $this->canilla->id => '2']);
         $this->mandar($pedido, [$this->galleta->id => '4', $this->canilla->id => '0'], [$this->canilla->id => $trampa]);
 
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
 
-        $html = $this->enviado()->render();
-        $this->assertStringNotContainsString('src="https://rastreo.example', $html);
-        $this->assertStringNotContainsString('href="https://phishing.example', $html);
+        $correo = $this->enviado();
+        $pdfHtml = app(PdfFabricaDiario::class)->html($correo->contenido);
+        foreach ([$correo->render(), $pdfHtml] as $html) {
+            $this->assertStringNotContainsString('src="https://rastreo.example', $html);
+            $this->assertStringNotContainsString('href="https://phishing.example', $html);
+        }
+        $this->assertStringContainsString('&lt;img', $pdfHtml);
+        $html = $this->detalle($correo);
         // Se lee tal cual se escribió.
         $this->assertStringContainsString('[Ver detalle](https://phishing.example/login)', $html);
         $this->assertStringContainsString('Súper [Ficticio](https://phishing.example/sala) Centro', $html);
@@ -250,8 +314,8 @@ class CorreoDiarioPedidosTest extends TestCase
 
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
 
-        $html = $this->enviado()->render();
-        $this->assertStringContainsString('Hoy no salió ningún pedido', $html);
+        $html = $this->detalle($this->enviado());
+        $this->assertStringContainsString('Hoy no salió ningún pedido', $this->enviado()->render());
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Sigue por mandar.*Pedido del 08\/11\/2026 \(1 día de atraso\): Galleta de prueba 5/s', $html);
     }
 
@@ -330,7 +394,7 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->artisan('pedidos:correo-diario')->expectsOutput('Resumen enviado.')->assertSuccessful();
         Mail::assertSentCount(2);
         // El de las 6 trae el día entero, también lo que ya iba en el de prueba.
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(09:00\): Galleta de prueba 5/s', Mail::sent(ResumenDiarioPedidosCorreo::class)->last()->render());
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Galleta de prueba.*5/s', $this->detalle(Mail::sent(ResumenDiarioPedidosCorreo::class)->last()));
 
         // Reenviarlo después de las 6 también se puede, solo con --forzar.
         $this->artisan('pedidos:correo-diario')->expectsOutput('El resumen de hoy ya se había mandado.')->assertSuccessful();
