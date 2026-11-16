@@ -117,6 +117,28 @@ class CatalogoAjustes
     private function construir(): array
     {
         $definiciones = [
+            DefinicionAjuste::hacer(
+                clave: 'tienda.url', seccion: 'tienda', tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Interno, impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2, editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva, etiqueta: 'URL de la tienda web',
+                descripcion: 'Dirección HTTPS de la página que entrega los pedidos pagados.',
+                reglas: ['maxlen:255', 'https'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'tienda.secreto', seccion: 'tienda', tipo: TipoAjuste::Secreto,
+                sensibilidad: Sensibilidad::SecretoCritico, impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2, editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva, etiqueta: 'Secreto de la tienda web',
+                descripcion: 'Autoriza al sistema a leer pedidos y avisar su estado. Nunca se muestra.',
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'tienda.pedidos.automatica', seccion: 'tienda', tipo: TipoAjuste::Booleano,
+                sensibilidad: Sensibilidad::Interno, impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2, editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva, etiqueta: 'Traer pedidos web automáticamente',
+                descripcion: 'Cada minuto trae los pedidos pagados a la fábrica.', porDefecto: false,
+            ),
             // ================================================================
             // N1 — Contabilidad. YA MIGRADAS a `ajustes_sistema`.
             //

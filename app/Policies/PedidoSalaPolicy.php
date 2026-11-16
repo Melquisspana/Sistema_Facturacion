@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Enums\EstadoPedidoSala;
+use App\Enums\OrigenPedidoSala;
 use App\Enums\PermisoSistema;
 use App\Models\PedidoSala;
 use App\Models\User;
@@ -77,7 +78,8 @@ class PedidoSalaPolicy
      */
     public function enlazarSala(User $usuario, PedidoSala $pedido): bool
     {
-        return $this->view($usuario, $pedido) && $usuario->can(PermisoSistema::DteGestionar->value);
+        return $pedido->origen === OrigenPedidoSala::Sala
+            && $this->view($usuario, $pedido) && $usuario->can(PermisoSistema::DteGestionar->value);
     }
 
     /** Mandar todo o una parte, armar la hoja y «No se trae». */

@@ -104,6 +104,7 @@ class PedidosFabrica
         // la del cliente) y el código de cada producto. Va en el mismo renglón y no repetido:
         // dos `select` de la misma relación se combinan y gana el último.
         return array_merge([
+            'pedidoWeb:id,pedido_sala_id,cliente_nombre,entrega_tipo',
             $conSala ? 'sala:id,cliente_id,nombre,direccion' : 'sala:id,nombre',
             // `salida.ruta`: la zona del viaje, que se muestra si el pedido no tiene la suya
             // (la tienda nueva, {@see PedidoSala::zonaNombre()}).
@@ -153,8 +154,8 @@ class PedidosFabrica
      */
     public function otrosPorMandar(PedidoSala $pedido): Collection
     {
-        return $this->porMandar()->withOnly(['sala:id,nombre'])->whereKeyNot($pedido->id)
-            ->get(['id', 'cliente_sucursal_id', 'sala_nueva_nombre', 'armando_desde', 'fecha'])
+        return $this->porMandar()->withOnly(['sala:id,nombre', 'pedidoWeb:id,pedido_sala_id,cliente_nombre,entrega_tipo'])->whereKeyNot($pedido->id)
+            ->get(['id', 'origen', 'cliente_sucursal_id', 'sala_nueva_nombre', 'armando_desde', 'fecha'])
             ->sortBy(fn (PedidoSala $p) => $p->armando_desde === null ? 1 : 0)
             ->values();
     }

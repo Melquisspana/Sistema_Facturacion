@@ -3,6 +3,7 @@
 namespace App\Services\Rutas;
 
 use App\Enums\EstadoDte;
+use App\Enums\OrigenPedidoSala;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\OrdenCompraRequeridaException;
 use App\Models\Dte;
@@ -52,6 +53,8 @@ class FacturarPedido
 
     /** La tienda nueva (10/11/2026) no se factura hasta que tiene su sala. */
     public const SIN_SALA = 'Es una tienda nueva: antes de facturar, dala de alta en Clientes y enlazala al pedido.';
+
+    public const PEDIDO_WEB = 'Los pedidos web se facturan por el proceso de la tienda, nunca como CCF.';
 
     /** La sala del pedido se borró de Clientes después de sacarlo: sin sala no hay a quién facturar. */
     public const SALA_BORRADA = 'La sala de este pedido ya no está en Clientes (la borraron). Sin sala no se factura: pedile a quien maneja Clientes que la revise.';
@@ -119,6 +122,9 @@ class FacturarPedido
                 throw ValidationException::withMessages(['pedido' => PedidosFabrica::ANULADO]);
             }
             // Leído de la fila bloqueada: nunca un CCF sin cliente ni sala.
+            if ($pedido->origen === OrigenPedidoSala::Web) {
+                throw ValidationException::withMessages(['pedido' => self::PEDIDO_WEB]);
+            }
             if ($pedido->esTiendaNueva()) {
                 throw ValidationException::withMessages(['pedido' => self::SIN_SALA]);
             }
@@ -325,6 +331,7 @@ class FacturarPedido
         $sala = $pedido->sala;
         $lineas = [];
         $problemas = match (true) {
+            $pedido->origen === OrigenPedidoSala::Web => [self::PEDIDO_WEB],
             $pedido->esTiendaNueva() => [self::SIN_SALA],
             $sala === null => [self::SALA_BORRADA],
             default => [],

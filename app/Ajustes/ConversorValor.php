@@ -5,6 +5,7 @@ namespace App\Ajustes;
 use App\Ajustes\Definicion\DefinicionAjuste;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
+use App\Ajustes\Integraciones\ConfiguracionTiendaWeb;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Support\Dinero;
@@ -276,6 +277,10 @@ class ConversorValor
      */
     private function comprobarFormato(DefinicionAjuste $definicion, string $texto): void
     {
+        if (in_array('https', $definicion->reglas, true)
+            && ! ConfiguracionTiendaWeb::urlValida($texto)) {
+            throw ValorAjusteInvalidoException::con($definicion->clave, 'La URL debe ser HTTPS, sin usuario, contraseña, consulta ni fragmento.');
+        }
         $hora = '([01]\d|2[0-3]):[0-5]\d';
 
         if (in_array('hora', $definicion->reglas, true) && preg_match('/^'.$hora.'$/', $texto) !== 1) {

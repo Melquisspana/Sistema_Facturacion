@@ -174,7 +174,7 @@ class MiPedidoController extends Controller
         $palabras = $this->palabras($nombre);
         $personaId = PedidosSala::persona($usuario)?->id;
 
-        return PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->whereDate('fecha', HoraNegocio::fechaHoy())
+        return PedidoSala::vigentes()->where('origen', 'sala')->whereNull('cliente_sucursal_id')->whereDate('fecha', HoraNegocio::fechaHoy())
             ->where(fn ($q) => $palabras->each(fn (string $p) => $q->orWhere('sala_nueva_nombre', 'like', '%'.addcslashes($p, '%_\\').'%')))
             ->with('sacadoPor:id,nombre')->orderBy('id')->limit(30)->get()
             ->groupBy(fn (PedidoSala $p) => PedidosSala::nombreTienda($p->sala_nueva_nombre))

@@ -21,6 +21,7 @@ use App\Http\Controllers\Configuracion\HaciendaController;
 use App\Http\Controllers\Configuracion\IntegracionBuzonAdicionalController;
 use App\Http\Controllers\Configuracion\IntegracionDocumentosRecibidosController;
 use App\Http\Controllers\Configuracion\IntegracionGmailController;
+use App\Http\Controllers\Configuracion\IntegracionTiendaWebController;
 use App\Http\Controllers\Configuracion\InvalidacionController;
 use App\Http\Controllers\Configuracion\ModulosController;
 use App\Http\Controllers\Configuracion\OpcionesModuloController;
@@ -859,6 +860,17 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
         | sincroniza nada) y su secreto en pantalla aparte.
         */
         Route::get('integraciones/gmail', [IntegracionGmailController::class, 'index'])->name('integraciones.gmail');
+        Route::get('integraciones/tienda', [IntegracionTiendaWebController::class, 'index'])->name('integraciones.tienda');
+        Route::put('integraciones/tienda', [IntegracionTiendaWebController::class, 'update'])->name('integraciones.tienda.update');
+        Route::get('integraciones/tienda/secreto', [SecretoController::class, 'edit'])
+            ->name('integraciones.tienda.secreto.edit')
+            ->defaults('clave', 'tienda.secreto')->defaults('volver', 'configuracion.integraciones.tienda');
+        Route::put('integraciones/tienda/secreto', [SecretoController::class, 'update'])
+            ->name('integraciones.tienda.secreto.update')
+            ->defaults('clave', 'tienda.secreto')->defaults('volver', 'configuracion.integraciones.tienda');
+        Route::delete('integraciones/tienda/secreto', [SecretoController::class, 'destroy'])
+            ->name('integraciones.tienda.secreto.destroy')
+            ->defaults('clave', 'tienda.secreto')->defaults('volver', 'configuracion.integraciones.tienda');
         Route::put('integraciones/gmail', [IntegracionGmailController::class, 'update'])->name('integraciones.gmail.update');
         Route::post('integraciones/gmail/probar', [IntegracionGmailController::class, 'probar'])->name('integraciones.gmail.probar');
         Route::delete('integraciones/gmail/cuenta', [IntegracionGmailController::class, 'desconectar'])->name('integraciones.gmail.desconectar');
