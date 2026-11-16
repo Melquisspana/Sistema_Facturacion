@@ -357,6 +357,39 @@ class PantallaFabricaTest extends TestCase
         $this->assertSame(11, substr_count($fila, 'min-h-12'));
     }
 
+    // ══════════════════════════════ notas del vendedor (16/11/2026)
+
+    public function test_las_notas_del_vendedor_se_ven_en_la_lista_el_pedido_y_la_hoja_impresa(): void
+    {
+        $notas = "Cambio por avería: 2 nance\n<b>1 coco</b>";
+        $conNotas = $this->pedido([$this->galleta->id => '12'], extra: ['notas' => $notas]);
+        $sinNotas = $this->pedido([$this->canilla->id => '6'], $this->otraSala);
+
+        // La lista marca solo el que trae notas, sin mostrarlas.
+        $lista = $this->get(route('fabrica.pedidos.index'))->assertOk()->getContent();
+        $this->assertStringContainsString('Con notas del vendedor', $this->tarjeta($lista, $conNotas));
+        $this->assertStringNotContainsString('Con notas del vendedor', $this->tarjeta($lista, $sinNotas));
+        $this->assertStringNotContainsString('Cambio por avería', $lista);
+
+        // El pedido abierto las muestra completas, escapadas.
+        $this->get(route('fabrica.pedidos.show', $conNotas))->assertOk()
+            ->assertSee('Notas del vendedor:')->assertSee($notas)->assertDontSee('<b>1 coco</b>', false);
+        $this->get(route('fabrica.pedidos.show', $sinNotas))->assertOk()->assertDontSee('Notas del vendedor');
+
+        // Y viajan en la hoja que se imprime al mandar.
+        $this->mandar($conNotas, [$this->galleta->id => '12'])->assertSessionHasNoErrors();
+        $this->get(route('fabrica.pedidos.imprimir', [$conNotas, $conNotas->envios()->sole()]))->assertOk()
+            ->assertSee('Notas del vendedor:')->assertSee($notas)->assertDontSee('<b>1 coco</b>', false);
+    }
+
+    private function tarjeta(string $html, PedidoSala $pedido): string
+    {
+        $inicio = strpos($html, 'id="pedido-'.$pedido->id.'"');
+        $this->assertNotFalse($inicio, "No está la tarjeta del pedido {$pedido->id}.");
+
+        return substr($html, $inicio, strpos($html, '</a>', $inicio) - $inicio);
+    }
+
     // ══════════════════════════════ 5. imprimir y mandar
 
     public function test_imprimir_y_mandar_registra_el_envio_como_antes_y_abre_su_hoja(): void

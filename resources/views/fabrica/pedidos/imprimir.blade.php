@@ -52,6 +52,7 @@
         .rec-name { font-size: 15px; font-weight: bold; }
         .f { margin-top: 3px; font-size: 11.5px; }
         .f .k { color: #8A9099; }
+        .obs { margin-top: 6px; padding: 4px 8px; border: 1px solid #E5C77A; background: #FFF8E6; font-size: 12px; white-space: pre-line; page-break-inside: avoid; }
 
         h2.queda { color: #7A4A0C; }
         h2.no-va { color: #8A2440; }
@@ -118,6 +119,10 @@
             <div class="rec-name">{{ $pedido->nombreSala() }}</div>
             @if ($direccion)<div class="f"><span class="k">Dirección:</span> {{ $direccion }}</div>@endif
             <div class="f"><span class="k">Zona:</span> {{ $pedido->zonaNombre() }}</div>
+            {{-- Las notas del vendedor (cambios por avería, etc.) viajan con la hoja. --}}
+            @if (filled($pedido->notas))
+                <div class="obs"><strong>Notas del vendedor:</strong> {{ $pedido->notas }}</div>
+            @endif
         </div>
     </section>
 
