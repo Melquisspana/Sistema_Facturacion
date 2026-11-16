@@ -57,6 +57,26 @@ class SalidaEntregaController extends Controller
             ? 'Se quitó el CCF de la salida; vuelve a Por entregar.' : 'El CCF volvió a quedar sin registrar.');
     }
 
+    /** «Corregir quién»: solo la persona, con motivo. La regla está en {@see EntregasCcf::corregirQuien()}. */
+    public function corregirQuien(Request $request, SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
+    {
+        $datos = $request->validate([
+            'entregado_por_id' => ['required', 'integer'],
+            'motivo' => ['required', 'string', 'max:'.EntregasCcf::MOTIVO_QUIEN_MAX],
+        ], [
+            'entregado_por_id.required' => 'Elegí a la persona correcta.',
+            'entregado_por_id.integer' => 'Elegí a la persona correcta.',
+            'motivo.required' => 'Escribí el motivo del cambio.',
+            'motivo.string' => 'Escribí el motivo del cambio.',
+            'motivo.max' => 'El motivo puede tener hasta '.EntregasCcf::MOTIVO_QUIEN_MAX.' caracteres.',
+        ]);
+        $entrega->setRelation('salida', $salida);
+
+        $entrega = $this->entregas->corregirQuien($entrega, (int) $datos['entregado_por_id'], $datos['motivo'], $request->user());
+
+        return back()->with('status', 'Listo: ahora figura '.$entrega->entregadoPor->nombre.'. La fecha y el cobro no cambiaron.');
+    }
+
     public function destroy(SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
     {
         $entrega->setRelation('salida', $salida);
