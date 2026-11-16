@@ -8,6 +8,14 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.16.2] - 2026-11-16
+
+Pedidos: las notas del vendedor se ven en la fábrica (#391). Se subió solo este cambio sobre 2026.11.16.1; la unión con la tienda web (#386, #388, #389, #390) ya está en master, pero todavía no en producción. Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- Pedidos (pantalla de la fábrica): si el vendedor dejó notas, por ejemplo cambios por avería, el pedido lleva la etiqueta «Con notas del vendedor» en la lista, una franja amarilla corta al abrirlo y un recuadro en la hoja de despacho que se imprime al mandar (#391).
+
 ## [2026.11.16.1] - 2026-11-16
 
 Pedidos: un pedido de 12 productos se ve entero en el monitor de la fábrica, sin bajar (#385). Sin migraciones ni cambios de permisos.
