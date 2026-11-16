@@ -189,7 +189,7 @@ class ResumenDiarioPedidos
                 ])->values()->all(),
             ];
         };
-        $relaciones = ['pedido.sala:id,nombre', 'lineas.linea.producto:id,nombre'];
+        $relaciones = ['pedido.sala:id,nombre', 'pedido.pedidoWeb', 'lineas.linea.producto:id,nombre'];
 
         $envios = PedidoSalaEnvio::query()->vigentes()->whereBetween('created_at', [$desde, $hasta])
             ->with($relaciones)->orderBy('id')->get();
@@ -217,7 +217,7 @@ class ResumenDiarioPedidos
                 ->whereBetween('created_at', [$desde, $hasta])
                 ->select('subject_id'))
             ->whereIn('estado', [EstadoPedidoSala::Enviado->value, EstadoPedidoSala::NoSeTrae->value])
-            ->with(['sala:id,nombre', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
+            ->with(['sala:id,nombre', 'pedidoWeb', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
             ->orderBy('id')
             ->get();
 
@@ -246,7 +246,7 @@ class ResumenDiarioPedidos
             }
         }
 
-        foreach ($this->fabrica->porMandar()->get() as $pedido) {
+        foreach ($this->fabrica->porMandar()->with('pedidoWeb')->get() as $pedido) {
             $salas[$sala($pedido)]['por_mandar'][] = [
                 'fecha' => $pedido->fecha->format('d/m/Y'),
                 'atraso' => (int) $pedido->fecha->copy()->startOfDay()->diffInDays($hoy),

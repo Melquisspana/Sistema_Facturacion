@@ -328,3 +328,11 @@ Schedule::command('pedidos:correo-diario')
     ->timezone(HoraNegocio::zona())
     ->withoutOverlapping(10)
     ->appendOutputTo(storage_path('logs/pedidos-correo-diario.log'));
+
+// La tienda se recorre desde el principio en cada pasada; el cursor solo pagina.
+Schedule::command('tienda:traer-pedidos --aplicar')
+    ->everyMinute()
+    ->when(fn () => Ajustes::boolSinBase('tienda.pedidos.automatica'))
+    // Candado de 5 minutos: si una pasada se cae, la siguiente no queda trabada un día entero.
+    ->withoutOverlapping(5)
+    ->appendOutputTo(storage_path('logs/tienda-pedidos.log'));

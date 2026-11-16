@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\Enums\EstadoPedidoSala;
+use App\Enums\OrigenPedidoSala;
 use App\Services\Rutas\PedidosSala;
 use App\Support\Dte\ReglaOrdenCompra;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Pedido que un vendedor saca en una sala: lo que anota en el sugerido que
@@ -23,7 +25,10 @@ class PedidoSala extends Model
 
     protected $table = 'pedidos_sala';
 
+    protected $attributes = ['origen' => 'sala'];
+
     protected $fillable = [
+        'origen',
         'cliente_sucursal_id',
         'sala_nueva_nombre',
         'ruta_id',
@@ -42,6 +47,7 @@ class PedidoSala extends Model
     protected function casts(): array
     {
         return [
+            'origen' => OrigenPedidoSala::class,
             'fecha' => 'date',
             'estado' => EstadoPedidoSala::class,
             'sacado_por_id' => 'integer',
@@ -64,7 +70,12 @@ class PedidoSala extends Model
      */
     public function esTiendaNueva(): bool
     {
-        return $this->cliente_sucursal_id === null;
+        return $this->origen === OrigenPedidoSala::Sala && $this->cliente_sucursal_id === null;
+    }
+
+    public function pedidoWeb(): HasOne
+    {
+        return $this->hasOne(PedidoWeb::class, 'pedido_sala_id');
     }
 
     /**
@@ -73,6 +84,11 @@ class PedidoSala extends Model
      */
     public function nombreSala(): string
     {
+        if ($this->origen === OrigenPedidoSala::Web) {
+            $partes = preg_split('/\s+/u', trim($this->pedidoWeb?->cliente_nombre ?? ''), -1, PREG_SPLIT_NO_EMPTY);
+
+            return 'Pedido web'.($partes ? ' · '.$partes[0].(isset($partes[1]) ? ' '.mb_substr($partes[1], 0, 1).'.' : '') : '');
+        }
         if (! $this->esTiendaNueva()) {
             return (string) ($this->sala?->nombre ?? 'Sala sin nombre');
         }
@@ -93,6 +109,10 @@ class PedidoSala extends Model
      */
     public function zonaNombre(): string
     {
+        if ($this->origen === OrigenPedidoSala::Web && $this->pedidoWeb?->entrega_tipo === 'recoger') {
+            return 'Para recoger';
+        }
+
         return $this->ruta?->nombre
             ?? ($this->esTiendaNueva() && $this->salida?->ruta_id !== null ? $this->salida->ruta->nombre : null)
             ?? 'Sin zona';

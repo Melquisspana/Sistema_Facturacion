@@ -191,7 +191,7 @@ class PedidosSala
     public function tiendaNuevaPorEnlazar(mixed $id, User $usuario): ?PedidoSala
     {
         $pedido = filter_var($id, FILTER_VALIDATE_INT) !== false
-            ? PedidoSala::vigentes()->whereKey((int) $id)->whereNull('cliente_sucursal_id')->first()
+            ? PedidoSala::vigentes()->where('origen', 'sala')->whereKey((int) $id)->whereNull('cliente_sucursal_id')->first()
             : null;
 
         return $pedido !== null && $usuario->can('enlazarSala', $pedido) ? $pedido : null;
@@ -215,9 +215,12 @@ class PedidosSala
      */
     public static function mismaTiendaNueva(PedidoSala $pedido): Collection
     {
+        if (! $pedido->esTiendaNueva()) {
+            return collect();
+        }
         $nombre = self::nombreTienda($pedido->sala_nueva_nombre);
 
-        return $nombre === '' ? collect() : PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->whereKeyNot($pedido->id)
+        return $nombre === '' ? collect() : PedidoSala::vigentes()->where('origen', 'sala')->whereNull('cliente_sucursal_id')->whereKeyNot($pedido->id)
             ->with('sacadoPor:id,nombre')->orderBy('fecha')->orderBy('id')->get()
             ->filter(fn (PedidoSala $p) => self::nombreTienda($p->sala_nueva_nombre) === $nombre)->values();
     }
@@ -235,7 +238,7 @@ class PedidosSala
         if ($nuevas->isEmpty()) {
             return [];
         }
-        $porNombre = PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->pluck('sala_nueva_nombre')
+        $porNombre = PedidoSala::vigentes()->where('origen', 'sala')->whereNull('cliente_sucursal_id')->pluck('sala_nueva_nombre')
             ->countBy(fn (?string $n) => self::nombreTienda($n));
 
         return $nuevas->mapWithKeys(fn (PedidoSala $p) => [$p->id => max(0, ($porNombre[self::nombreTienda($p->sala_nueva_nombre)] ?? 1) - 1)])->all();
@@ -358,7 +361,7 @@ class PedidosSala
      */
     private function exigirTiendaSinSacar(PersonalRuta $persona, string $nombre): void
     {
-        $repetida = PedidoSala::vigentes()->whereNull('cliente_sucursal_id')->where('sacado_por_id', $persona->id)
+        $repetida = PedidoSala::vigentes()->where('origen', 'sala')->whereNull('cliente_sucursal_id')->where('sacado_por_id', $persona->id)
             ->whereDate('fecha', HoraNegocio::fechaHoy())->pluck('sala_nueva_nombre')
             ->contains(fn (?string $n) => self::nombreTienda($n) === self::nombreTienda($nombre));
         if ($repetida) {

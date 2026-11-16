@@ -53,6 +53,7 @@ class PorFacturarController extends Controller
         $porFacturar = fn (Builder $e) => $e->porFacturar();
 
         $pedidos = PedidoSala::query()
+            ->where('origen', 'sala')
             ->vigentes()
             // «Sin facturar»: lo que llegó cualquier día y todavía no tiene un CCF que cuente.
             ->whereHas('envios', $sinFacturar ? $porFacturar : $enviosDelDia)
@@ -125,6 +126,7 @@ class PorFacturarController extends Controller
             'mismaTienda' => PedidosSala::cuantosMasDeLaTienda($pedidos->getCollection()),
             // Pedidos sin facturar que no salen en el día elegido: para el aviso de arriba.
             'otrosDiasSinFacturar' => $sinFacturar ? 0 : PedidoSala::query()->vigentes()
+                ->where('origen', 'sala')
                 ->whereHas('envios', $porFacturar)
                 ->whereDoesntHave('envios', $enviosDelDia)
                 ->count(),
