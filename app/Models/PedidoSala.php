@@ -87,7 +87,9 @@ class PedidoSala extends Model
         if ($this->origen === OrigenPedidoSala::Web) {
             $partes = preg_split('/\s+/u', trim($this->pedidoWeb?->cliente_nombre ?? ''), -1, PREG_SPLIT_NO_EMPTY);
 
-            return 'Pedido web'.($partes ? ' · '.$partes[0].(isset($partes[1]) ? ' '.mb_substr($partes[1], 0, 1).'.' : '') : '');
+            $apellido = collect(array_slice($partes ?: [], 1))->first(fn ($parte) => ! in_array(mb_strtolower($parte), ['de', 'del', 'la', 'las', 'los', 'y'], true));
+
+            return 'Pedido web'.($partes ? ' · '.$partes[0].($apellido ? ' '.mb_strtoupper(mb_substr($apellido, 0, 1)).'.' : '') : '');
         }
         if (! $this->esTiendaNueva()) {
             return (string) ($this->sala?->nombre ?? 'Sala sin nombre');

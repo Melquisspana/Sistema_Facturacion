@@ -42,11 +42,11 @@ class PedidosWebParaRevisarTest extends TestCase
         $h = $detector->revisar();
 
         $this->assertSame(2, $h->conteo);
-        $this->assertSame('2 pedidos web no se facturaron solos', $h->titulo);
+        $this->assertSame('2 pedidos web requieren atención', $h->titulo);
         $this->assertStringContainsString('LN-TEST-0000-0002', $h->detalle);
         $this->assertStringContainsString('LN-TEST-0000-0003', $h->detalle);
         $this->assertStringContainsString('lista de pedidos web', $h->queHacer);
-        $this->assertStringContainsString('código del pedido', $h->queHacer);
+        $this->assertStringContainsString('motivo y las alertas', $h->queHacer);
         $this->assertSame('2026-11-16 09:00', $h->desde->format('Y-m-d H:i'), 'Desde el más viejo.');
         $texto = $h->titulo.$h->detalle.$h->queHacer;
         $this->assertStringNotContainsString('Secreto', $texto);

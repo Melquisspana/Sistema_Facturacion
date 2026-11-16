@@ -49,11 +49,18 @@ class InformarEstadoPedidoWeb
 
     private function enviar(PedidoWeb $pedido, string $estado): bool
     {
+        if (RespuestaAvisoPedidoWeb::rechazado($pedido, $estado)) {
+            return false;
+        }
         try {
             $respuesta = $this->tienda->cliente()->post($this->tienda->url().'/api/sistema/pedidos/'.$pedido->web_id.'/estado', ['estado' => $estado]);
 
-            return $respuesta->status() === 200
-                || ($respuesta->status() === 409 && $respuesta->json('error') === 'estado');
+            if (RespuestaAvisoPedidoWeb::estadoAceptado($respuesta, $estado)) {
+                return true;
+            }
+            RespuestaAvisoPedidoWeb::anotar($pedido, $respuesta, $estado);
+
+            return false;
         } catch (Throwable) {
             return false;
         }

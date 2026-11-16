@@ -27,7 +27,7 @@
                     @php
                         $clase = match ($cajita['clase'] ?? '') {
                             'gusto' => 'A su gusto',
-                            'surtido' => is_string($cajita['surtido'] ?? null) ? $cajita['surtido'] : 'Surtido',
+                            'surtido' => is_string($cajita['surtido_nombre'] ?? null) && trim($cajita['surtido_nombre']) !== '' ? $cajita['surtido_nombre'] : (is_string($cajita['surtido'] ?? null) ? $cajita['surtido'] : 'Surtido'),
                             'dulce' => $nombres[$cajita['producto'] ?? ''] ?? 'Dulce',
                             default => 'Cajita',
                         };

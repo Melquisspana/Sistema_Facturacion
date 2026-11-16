@@ -75,6 +75,7 @@ class ImportarPedidosWeb
             throw new RuntimeException('No se pudo completar la lectura de pedidos de la tienda. Se reintentará en la próxima pasada.');
         } finally {
             if ($aplicar) {
+                $this->traerAlertas();
                 // También cubre la caída tras el POST remoto: puede ya no venir en el GET.
                 // Por pedido de fábrica y no por estado: la factura (etapa 2) lo mueve a
                 // «facturando» o «facturado» aunque el aviso todavía no haya salido.
@@ -211,23 +212,52 @@ class ImportarPedidosWeb
         $nombre = Str::lower(Str::ascii(trim($datos['entrega']['municipio'] ?? '')));
         $distrito = $departamento ? Distrito::where('departamento_id', $departamento->id)->get()
             ->first(fn (Distrito $d) => Str::lower(Str::ascii(trim($d->nombre))) === $nombre) : null;
-        if ($distrito === null) {
+        if ($departamento === null) {
             return null;
         }
 
-        return app(PropuestaRutas::class)->zonaDe(null, $distrito->id, $departamento->id)?->id;
+        return app(PropuestaRutas::class)->zonaDe(null, $distrito?->id, $departamento->id)?->id;
+    }
+
+    private function traerAlertas(): void
+    {
+        try {
+            $despues = 0;
+            do {
+                $respuesta = $this->http()->get($this->configuracion->url().'/api/sistema/pedidos-a-revisar', ['despues' => $despues]);
+                $pedidos = $respuesta->json('pedidos');
+                if ($respuesta->status() !== 200 || ! is_array($pedidos) || ! array_is_list($pedidos)) {
+                    return;
+                }
+                foreach ($pedidos as $datos) {
+                    if (! is_array($datos) || ! is_int($datos['id'] ?? null) || $datos['id'] <= $despues) {
+                        return;
+                    }
+                    $despues = $datos['id'];
+                    if (($datos['alerta'] ?? '') === 'pago_doble') {
+                        PedidoWeb::where('web_id', $datos['id'])->where(fn ($q) => $q->whereNull('alerta')->orWhere('alerta', ''))
+                            ->update(['alerta' => 'pago_doble']);
+                    }
+                }
+            } while (count($pedidos) === 100);
+        } catch (Throwable) {
+            // Mejor esfuerzo: se vuelve a consultar en la próxima pasada.
+        }
     }
 
     private function informar(PedidoWeb $pedido): void
     {
         // Solo los que llegaron a fábrica; el estado puede ya ser de la factura (etapa 2).
-        if ($pedido->pedido_sala_id === null || $pedido->informado_preparando_en !== null) {
+        if ($pedido->pedido_sala_id === null || $pedido->informado_preparando_en !== null
+            || RespuestaAvisoPedidoWeb::rechazado($pedido, 'preparando')) {
             return;
         }
         try {
             $respuesta = $this->http()->post($this->configuracion->url().'/api/sistema/pedidos/'.$pedido->web_id.'/estado', ['estado' => 'preparando']);
-            if ($respuesta->status() === 200 || ($respuesta->status() === 409 && $respuesta->json('error') === 'estado')) {
+            if (RespuestaAvisoPedidoWeb::estadoAceptado($respuesta, 'preparando')) {
                 $pedido->update(['informado_preparando_en' => now()]);
+            } else {
+                RespuestaAvisoPedidoWeb::anotar($pedido, $respuesta, 'preparando');
             }
         } catch (Throwable) {
             // Se conserva sin informar para la próxima pasada. Nunca loguear la excepción.

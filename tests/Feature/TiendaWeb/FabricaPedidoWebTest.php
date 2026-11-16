@@ -15,10 +15,13 @@ use App\Models\PedidoSalaEnvio;
 use App\Models\PedidoWeb;
 use App\Models\Producto;
 use App\Models\User;
+use App\Services\Alertas\Detectores\PedidosWebParaRevisar;
 use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Services\TiendaWeb\InformarEstadoPedidoWeb;
+use App\Services\TiendaWeb\RespuestaAvisoPedidoWeb;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
@@ -209,7 +212,7 @@ class FabricaPedidoWebTest extends TestCase
     {
         $pedido = $this->pedido();
         $this->mandar($pedido);
-        $this->remoto(409, ['error' => 'estado']);
+        $this->remoto(409, ['error' => 'estado', 'actual' => 'entregado']);
         app(InformarEstadoPedidoWeb::class)->pasada(true);
         app(InformarEstadoPedidoWeb::class)->pasada(true);
         Http::assertSentCount(1);
@@ -228,7 +231,7 @@ class FabricaPedidoWebTest extends TestCase
         $this->assertSame(['lista', 'entregado'], Http::recorded()->map(fn ($par) => $par[0]['estado'])->all());
     }
 
-    public function test_entregado_fallido_se_reintenta_y_409_ajeno_no_cuenta(): void
+    public function test_entregado_409_ajeno_no_cuenta_y_no_reintenta(): void
     {
         $pedido = $this->pedido();
         $this->mandar($pedido);
@@ -242,8 +245,9 @@ class FabricaPedidoWebTest extends TestCase
         $this->remoto(200);
         app(InformarEstadoPedidoWeb::class)->pasada(true);
         app(InformarEstadoPedidoWeb::class)->pasada(true);
-        Http::assertSentCount(1);
-        $this->assertNull($pedido->pedidoWeb->refresh()->estado_por_informar);
+        Http::assertSentCount(0);
+        $this->assertSame('entregado', $pedido->pedidoWeb->refresh()->estado_por_informar);
+        $this->assertStringContainsString('La página rechazó el aviso:', $pedido->pedidoWeb->motivo_revision);
     }
 
     public function test_si_lista_sale_y_entregado_falla_solo_reintenta_entregado(): void
@@ -406,5 +410,158 @@ class FabricaPedidoWebTest extends TestCase
         $this->oficina(false);
         $this->post(route('facturacion.pedidos-web.reintentar', $web))->assertForbidden();
         $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertDontSee('¿Reintentar');
+    }
+
+    public function test_oficina_pago_doble_permiso_nota_confirmacion_fallo_y_exito(): void
+    {
+        $pedido = $this->pedido(['alerta' => 'pago_doble']);
+        $web = $pedido->pedidoWeb;
+        $url = route('facturacion.pedidos-web.revisado', $web);
+        $datos = ['nota' => 'Segundo cobro devuelto; revisión terminada.', 'confirmacion' => '1'];
+        $this->oficina(false);
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertSee($web->codigo)
+            ->assertSee('Pago doble: revisar si hay que devolver el segundo cobro')->assertDontSee('Ya lo revisé');
+        $this->post($url, $datos)->assertForbidden();
+        $this->oficina();
+        $this->get(route('facturacion.pedidos-web.index'))->assertSee('Ya lo revisé');
+        $this->post($url, ['confirmacion' => '1'])->assertSessionHasErrors('nota');
+        $this->post($url, ['nota' => 'Revisado'])->assertSessionHasErrors('confirmacion');
+        $this->post($url, ['nota' => 'Tarjeta 4111 1111 1111 1111', 'confirmacion' => '1'])->assertSessionHasErrors('nota');
+        Http::swap(new Factory);
+        Http::fake(['*/revisado' => Http::sequence()->push([], 503)->push(['alerta' => ''], 200)]);
+        $this->post($url, $datos)->assertSessionHasErrors('pedido');
+        $this->assertSame('pago_doble', $web->refresh()->alerta);
+        $this->post($url, $datos)->assertRedirect(route('facturacion.pedidos-web.index'));
+        $this->assertSame('', $web->refresh()->alerta);
+        $this->assertSame(EstadoPedidoWeb::Facturado, $web->estado);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/revisado') && $r['nota'] === $datos['nota']);
+        $actividad = Activity::where('description', 'revisó alerta de pago doble del pedido web')->sole();
+        $this->assertSame(collect(['alerta_anterior' => 'pago_doble', 'alerta' => ''])->sortKeys()->all(), $actividad->properties->sortKeys()->all());
+        $this->assertStringNotContainsString($datos['nota'], $actividad->properties->toJson());
+        $this->assertNull(app(PedidosWebParaRevisar::class)->revisar());
+    }
+
+    public function test_alerta_y_motivo_sin_para_revisar_salen_en_oficina_y_detector_sin_habilitar_reintentar(): void
+    {
+        $alerta = $this->pedido(['alerta' => 'pago_doble']);
+        $motivo = $this->pedido(['motivo_revision' => 'La página rechazó el aviso: factura (HTTP 409).']);
+        $this->oficina();
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertSee($alerta->pedidoWeb->codigo)
+            ->assertSee($motivo->pedidoWeb->codigo)->assertSee('La página rechazó el aviso: factura')->assertDontSee('>Reintentar<', false);
+        $this->post(route('facturacion.pedidos-web.reintentar', $motivo->pedidoWeb))->assertSessionHasErrors('pedido');
+        $hallazgo = app(PedidosWebParaRevisar::class)->revisar();
+        $this->assertSame(2, $hallazgo->conteo);
+    }
+
+    public function test_fabrica_prefiere_nombre_del_surtido_y_conserva_codigo_anterior(): void
+    {
+        $pedido = $this->pedido(['cajitas_detalle' => [
+            ['clase' => 'surtido', 'surtido' => 'codigo-nuevo', 'surtido_nombre' => 'La especial inventada', 'tam' => 12],
+            ['clase' => 'surtido', 'surtido' => 'codigo-anterior', 'tam' => 12],
+        ]]);
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->assertSee('La especial inventada')->assertSee('codigo-anterior')->assertDontSee('codigo-nuevo');
+    }
+
+    public function test_estado_rechazado_se_anota_una_vez_y_no_reintenta(): void
+    {
+        foreach ([409, 422, 404] as $status) {
+            $pedido = $this->pedido();
+            $this->mandar($pedido);
+            $this->remoto($status, ['error' => 'estado']);
+            app(InformarEstadoPedidoWeb::class)->pasada(true);
+            app(InformarEstadoPedidoWeb::class)->pasada(true);
+            Http::assertSentCount(1);
+            $web = $pedido->pedidoWeb->refresh();
+            $this->assertSame('lista', $web->estado_por_informar);
+            $this->assertNull($web->estado_informado_en);
+            $this->assertSame(EstadoPedidoWeb::Facturado, $web->estado);
+            $this->assertStringContainsString('La página rechazó el aviso: lista (HTTP '.$status.')', $web->motivo_revision);
+        }
+    }
+
+    public function test_contrato_de_409_solo_acepta_actual_igual_o_posterior(): void
+    {
+        foreach ([
+            ['preparando', 'preparando', true], ['preparando', 'lista', true],
+            ['lista', 'en_ruta', true], ['en_ruta', 'lista', true], ['lista', 'entregado', true],
+            ['entregado', 'lista', false], ['lista', 'preparando', false],
+            ['preparando', 'cancelado', false], ['lista', null, false], ['lista', [], false],
+        ] as [$estado, $actual, $acepta]) {
+            $respuesta = new \Illuminate\Http\Client\Response(new Response(409, ['Content-Type' => 'application/json'], json_encode(['error' => 'estado', 'actual' => $actual])));
+            $this->assertSame($acepta, RespuestaAvisoPedidoWeb::estadoAceptado($respuesta, $estado));
+        }
+    }
+
+    public function test_volver_a_avisar_limpia_motivo_audita_y_reintenta_en_la_pasada_siguiente(): void
+    {
+        $pedido = $this->pedido();
+        $this->mandar($pedido);
+        $this->remoto(422);
+        app(InformarEstadoPedidoWeb::class)->pasada(true);
+        $web = $pedido->pedidoWeb->refresh();
+        $motivo = $web->motivo_revision;
+        $estado = $web->estado;
+        $this->oficina();
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertSee('Volver a avisar');
+        $url = route('facturacion.pedidos-web.volver-a-avisar', $web);
+        $this->post($url)->assertSessionHasErrors('confirmacion');
+        $this->assertSame($motivo, $web->refresh()->motivo_revision);
+        $this->post($url, ['confirmacion' => '1'])->assertRedirect(route('facturacion.pedidos-web.index'));
+        $this->assertNull($web->refresh()->motivo_revision);
+        $this->assertSame($estado, $web->estado);
+        $this->assertSame('lista', $web->estado_por_informar);
+        $this->assertNull(app(PedidosWebParaRevisar::class)->revisar());
+        $actividad = Activity::where('description', 'volver a avisar pedido web')->sole();
+        $this->assertSame($web->id, $actividad->subject_id);
+        $this->assertSame(auth()->id(), $actividad->causer_id);
+        $this->assertSame(collect(['motivo_anterior' => $motivo, 'motivo_revision' => null])->sortKeys()->all(), $actividad->properties->sortKeys()->all());
+        // Otro rechazo se anota de nuevo; la oficina puede habilitar el aviso otra vez.
+        $this->remoto(404);
+        app(InformarEstadoPedidoWeb::class)->pasada(true);
+        Http::assertSentCount(1);
+        $this->assertStringContainsString('HTTP 404', $web->refresh()->motivo_revision);
+        $this->post($url, ['confirmacion' => '1'])->assertRedirect();
+        $this->remoto(200);
+        app(InformarEstadoPedidoWeb::class)->pasada(true);
+        Http::assertSentCount(1);
+        $this->assertNull($web->refresh()->estado_por_informar);
+        $this->assertNull($web->motivo_revision);
+        $this->assertNotNull($web->estado_informado_en);
+    }
+
+    public function test_volver_a_avisar_exige_permiso_de_gestion(): void
+    {
+        $web = $this->pedido(['motivo_revision' => 'La página rechazó el aviso: lista (HTTP 422). Revisalo en la página.'])->pedidoWeb;
+        $this->oficina(false);
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()->assertDontSee('Volver a avisar');
+        $this->post(route('facturacion.pedidos-web.volver-a-avisar', $web), ['confirmacion' => '1'])->assertForbidden();
+        $this->assertNotNull($web->refresh()->motivo_revision);
+        $this->assertSame(0, Activity::where('description', 'volver a avisar pedido web')->count());
+    }
+
+    public function test_volver_a_avisar_rechaza_para_revisar_y_sin_motivo(): void
+    {
+        $this->oficina();
+        foreach ([
+            ['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado'],
+            ['motivo_revision' => null],
+            ['motivo_revision' => ''],
+        ] as $extra) {
+            $web = $this->pedido($extra)->pedidoWeb;
+            $this->post(route('facturacion.pedidos-web.volver-a-avisar', $web), ['confirmacion' => '1'])->assertSessionHasErrors('pedido');
+            $this->assertSame($extra['motivo_revision'], $web->refresh()->motivo_revision);
+        }
+        $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()->assertDontSee('Volver a avisar');
+        $this->assertSame(0, Activity::where('description', 'volver a avisar pedido web')->count());
+    }
+
+    public function test_volver_a_avisar_no_copia_datos_personales_del_motivo_a_la_auditoria(): void
+    {
+        $web = $this->pedido(['motivo_revision' => 'Motivo inventado con correo privado@example.test'])->pedidoWeb;
+        $this->oficina();
+        $this->post(route('facturacion.pedidos-web.volver-a-avisar', $web), ['confirmacion' => '1'])->assertRedirect();
+        $actividad = Activity::where('description', 'volver a avisar pedido web')->sole();
+        $this->assertSame(collect(['motivo_anterior' => 'Motivo omitido por privacidad.', 'motivo_revision' => null])->sortKeys()->all(), $actividad->properties->sortKeys()->all());
+        $this->assertNull($web->refresh()->motivo_revision);
     }
 }

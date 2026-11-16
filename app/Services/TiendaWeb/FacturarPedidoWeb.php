@@ -47,7 +47,7 @@ use Throwable;
  */
 class FacturarPedidoWeb
 {
-    /** Tarjeta de crédito (CAT-017). Pendiente de confirmar con la contadora si va 02 o 03. */
+    /** Tarjeta de crédito (CAT-017), 03 al contado: confirmado el 16/11/2026. */
     public const FORMA_PAGO = '03';
 
     /** Contado (CAT-016). {@see CondicionOperacion::para()} sin cliente daría crédito. */
@@ -88,6 +88,7 @@ class FacturarPedidoWeb
         $conteo = ['facturados' => 0, 'facturando' => 0, 'facturas_para_revisar' => 0, 'facturas_con_error' => 0];
         $pendientes->eachById(function (PedidoWeb $pedido) use (&$conteo) {
             try {
+                $yaFacturado = $pedido->estado === EstadoPedidoWeb::Facturado;
                 $estado = $this->procesar($pedido);
             } catch (Throwable $e) {
                 // Un pedido roto no frena a los demás. Del error, solo la clase: el mensaje
@@ -95,6 +96,9 @@ class FacturarPedidoWeb
                 Log::warning('Pedido web: no se pudo procesar su factura', ['pedido_web_id' => $pedido->id, 'excepcion' => class_basename($e)]);
                 $conteo['facturas_con_error']++;
 
+                return;
+            }
+            if ($yaFacturado) {
                 return;
             }
             $conteo[match ($estado) {
@@ -360,7 +364,7 @@ class FacturarPedidoWeb
     private function avisarPagina(PedidoWeb $pedido): void
     {
         $dte = Dte::find($pedido->dte_id);
-        if ($pedido->informado_factura_en !== null || $dte === null) {
+        if ($pedido->informado_factura_en !== null || $dte === null || RespuestaAvisoPedidoWeb::rechazado($pedido, 'factura')) {
             return;
         }
         try {
@@ -373,6 +377,9 @@ class FacturarPedidoWeb
             ]);
             if ($respuesta->status() === 200) {
                 $pedido->update(['informado_factura_en' => now()]);
+            } elseif (in_array($respuesta->status(), [404, 422], true)
+                || ($respuesta->status() === 409 && $respuesta->json('error') === 'factura')) {
+                RespuestaAvisoPedidoWeb::anotar($pedido, $respuesta, 'factura');
             }
         } catch (Throwable) {
             // Se reintenta en la pasada siguiente. Nunca registrar la excepción.
