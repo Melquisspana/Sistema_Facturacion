@@ -436,6 +436,10 @@ class NavigationTest extends TestCase
         $lecturaOperativa = [
             'dashboard',
             'clientes.index', 'productos.index', 'facturacion.index',
+            // ENTRA 'facturacion.pedidos-web.index' (16/11/2026): la lista de pedidos de
+            // la tienda web que nombra el aviso de alertas. Mismo permiso que los
+            // documentos (dte.ver), así que no le abre la puerta a nadie nuevo.
+            'facturacion.pedidos-web.index',
             // SALE 'ppq.index' y ENTRA 'cobros.index': Facturas por cobrar, del
             // grupo Seguimiento, reemplazó la búsqueda de PPQ como primera fila;
             // se conserva el mismo permiso ppq.ver.
