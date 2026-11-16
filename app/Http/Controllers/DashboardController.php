@@ -7,15 +7,21 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Models\Exportacion;
+use App\Services\Cobros\BandejaCobros;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Rutas\AvisoRutas;
+use App\Services\Rutas\EntregasCcf;
 use App\Services\Sistema\DiagnosticoSistemaService;
+use App\Support\HoraNegocio;
 use App\Support\WorkerHeartbeat;
+use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
+use Throwable;
 
 /**
  * Panel de inicio: resumen operativo con datos que YA existen (nada de llamadas
@@ -36,6 +42,9 @@ class DashboardController extends Controller
      * El recorte se hace en la consulta; el listado completo vive en Facturación.
      */
     private const DOCUMENTOS_RECIENTES = 12;
+
+    /** Minutos que «Por cobrar» y «Por entregar» guardan su cuenta ({@see tarjeta()}). */
+    private const MINUTOS_TARJETAS = 5;
 
     public function index(Request $request, DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService): View
     {
@@ -92,7 +101,60 @@ class DashboardController extends Controller
             'veFacturacion' => $veFacturacion,
             // Rutas que ya toca visitar. Vacío sin permiso o sin el módulo: nunca rompe el panel.
             'avisoRutas' => app(AvisoRutas::class)->para($usuario),
+            // Los números de «Facturas por cobrar» y «Por entregar», con el permiso de cada
+            // pantalla (el mismo de sus rutas). Null: no la puede abrir y no se calcula.
+            'porCobrar' => $usuario->can('ppq.ver')
+                ? $this->tarjeta('por_cobrar', 'Por cobrar', fn () => app(BandejaCobros::class)->porCobrar())
+                : null,
+            'porEntregar' => $usuario->canAny(['rutas.ver', 'rutas.entregas.registrar'])
+                ? $this->tarjeta('por_entregar', 'Por entregar', fn () => $this->porEntregar())
+                : null,
         ]);
+    }
+
+    /**
+     * Una tarjeta con número. La cuenta es la misma para todos los que pueden abrir su
+     * pantalla (el permiso se mira antes de llamar acá), así que se guarda una sola vez por
+     * tarjeta durante {@see self::MINUTOS_TARJETAS} minutos, con la hora en que se hizo: el
+     * Inicio lo abre todo el mundo y estas cuentas filtran en PHP. Si falla, el Inicio carga
+     * igual, la tarjeta dice que no se pudo, queda en el registro como el aviso de rutas y la
+     * falla no se guarda.
+     *
+     * @param  Closure(): array<string, mixed>  $calcular
+     * @return array<string, mixed> lo calculado con `hora` y `de_cache`, o `['error' => true]`
+     */
+    private function tarjeta(string $clave, string $titulo, Closure $calcular): array
+    {
+        try {
+            $recien = false;
+            $dato = Cache::remember("inicio.{$clave}", self::MINUTOS_TARJETAS * 60, function () use ($calcular, &$recien) {
+                $recien = true;
+
+                return $calcular() + ['hora' => HoraNegocio::ahora()->format('H:i')];
+            });
+
+            return $dato + ['de_cache' => ! $recien];
+        } catch (Throwable $e) {
+            Log::warning("No se pudo calcular «{$titulo}» del Inicio.", ['error' => $e->getMessage()]);
+
+            return ['error' => true];
+        }
+    }
+
+    /**
+     * Lo que falta entregar: la lista de la pantalla «Por entregar» con los pedidos web con
+     * ruta ({@see EntregasCcf::porEntregarConWeb()}), contada.
+     *
+     * @return array{total: int, web: int}
+     */
+    private function porEntregar(): array
+    {
+        $lista = app(EntregasCcf::class)->porEntregarConWeb();
+
+        return [
+            'total' => $lista->count(),
+            'web' => $lista->filter(fn (Dte $d) => $d->pedidoWeb !== null)->count(),
+        ];
     }
 
     /**

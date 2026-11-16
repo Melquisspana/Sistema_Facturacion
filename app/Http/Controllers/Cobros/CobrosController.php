@@ -29,6 +29,7 @@ use App\Models\PpqItem;
 use App\Models\SalidaRutaEntrega;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\AplicadorPagosTxt;
+use App\Services\Cobros\BandejaCobros;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
@@ -124,20 +125,18 @@ class CobrosController extends Controller
     /** Descargas preparadas por página en la ficha de una solicitud. */
     private const DESCARGAS_POR_PAGINA = 20;
 
-    /** @var array<int, array<int, int>> por cliente, ver {@see saldadosConNc()} */
-    private array $saldadosConNc = [];
-
     public function __construct(
         private readonly AltaCobrosService $alta,
         private readonly VinculadorAlbaranes $vinculador,
         private readonly SolicitudCobroService $solicitudes,
+        private readonly BandejaCobros $bandeja,
     ) {}
 
     /** La bandeja. */
     public function index(Request $request): View
     {
         $this->devolucionesPendientes = [];
-        $clientes = $this->clientes();
+        $clientes = $this->bandeja->clientes();
         $cliente = $this->clienteElegido($request, $clientes);
         $filtros = $this->filtros($request);
         $filtrosSolicitud = $this->filtrosSolicitud($request);
@@ -187,7 +186,7 @@ class CobrosController extends Controller
         $elegibilidad = app(ElegibilidadPpqSeguimiento::class);
         $clavesPpq = $elegibilidad->claves();
         $listosPpq = $elegibilidad->listos(CobroDocumento::deCliente($cliente->id)->sinInvalidadosRetirables()
-            ->whereKeyNot($this->saldadosConNc($cliente))
+            ->whereKeyNot($this->bandeja->saldadosConNc($cliente))
             ->when(config('dte.ambiente') === '01', fn ($q) => $q->whereDoesntHave('dte', fn ($d) => $d->where('ambiente', '00'))), $clavesPpq);
         $listosEnFiltro = $elegibilidad->listos($this->consulta($cliente, $filtros), $clavesPpq);
         $avisosPpq = $elegibilidad->avisos($listosPpq->keys());
@@ -1046,7 +1045,7 @@ class CobrosController extends Controller
      */
     private function verificarClienteDeCobros(Cliente $cliente): void
     {
-        if (! $this->clientes()->contains('id', $cliente->id)) {
+        if (! $this->bandeja->clientes()->contains('id', $cliente->id)) {
             throw ValidationException::withMessages([
                 'documentos' => 'No se preparó nada: este cliente no tiene perfil documental activo para cobros.',
             ]);
@@ -1121,17 +1120,6 @@ class CobrosController extends Controller
     }
 
     /**
-     * CCF que sus NC dejan en saldo 0: fuera del Seguimiento. Se calcula una vez por petición
-     * porque la bandeja arma muchas consultas (tarjetas, meses, lista).
-     *
-     * @return array<int, int>
-     */
-    private function saldadosConNc(Cliente $cliente): array
-    {
-        return $this->saldadosConNc[$cliente->id] ??= CobroDocumento::idsSaldadosConNc($cliente->id);
-    }
-
-    /**
      * CCF que la tarjeta «Entregados, por presentar» cuenta pero no se pueden meter en un PPQ,
      * con el motivo. La tarjeta mira solo pago, presentación y albarán; la casilla además
      * descarta lo que sigue en un PPQ vigente, la revisión histórica y los pagos en revisión.
@@ -1161,15 +1149,15 @@ class CobrosController extends Controller
             ->values();
     }
 
-    /** @return Builder<CobroDocumento> */
+    /**
+     * La bandeja del cliente ({@see BandejaCobros::documentos()}, la misma de la tarjeta del
+     * Inicio) con los filtros de la pantalla.
+     *
+     * @return Builder<CobroDocumento>
+     */
     private function consultaSinMes(Cliente $cliente, array $filtros): Builder
     {
-        return CobroDocumento::deCliente($cliente->id)
-            ->sinInvalidadosRetirables()
-            ->whereKeyNot($this->saldadosConNc($cliente))
-            ->where('tipo_dte', $filtros['tipo'] === '05' ? '05' : '03')
-            // Fuera los DTE de otro ambiente (pruebas en el servidor real).
-            ->when(config('dte.ambiente') === '01', fn ($q) => $q->whereDoesntHave('dte', fn ($d) => $d->where('ambiente', '00')))
+        return $this->bandeja->documentos($cliente, $filtros['tipo'] === '05' ? '05' : '03')
             ->when(filled($filtros['presentacion']), fn ($q) => $q->where('presentacion_estado', $filtros['presentacion']))
             ->when(filled($filtros['pago']), fn ($q) => $q->where('pago_estado', $filtros['pago']))
             ->when(filled($filtros['vinculacion']), fn ($q) => $q->where('vinculacion_estado', $filtros['vinculacion']))
@@ -1194,7 +1182,7 @@ class CobrosController extends Controller
     private function contadores(Cliente $cliente): array
     {
         $base = fn () => CobroDocumento::deCliente($cliente->id)->sinInvalidadosRetirables()
-            ->whereKeyNot($this->saldadosConNc($cliente));
+            ->whereKeyNot($this->bandeja->saldadosConNc($cliente));
 
         $presentacion = [];
         foreach (EstadoPresentacionCobro::cases() as $estado) {
@@ -1404,15 +1392,6 @@ class CobrosController extends Controller
         $fecha = DateTimeImmutable::createFromFormat('!Y-m-d', $valor);
 
         return $fecha !== false && $fecha->format('Y-m-d') === $valor;
-    }
-
-    /** @return Collection<int, Cliente> */
-    private function clientes(): Collection
-    {
-        return Cliente::query()
-            ->whereHas('perfilDocumento', fn ($q) => $q->where('activo', true))
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'nombre_comercial']);
     }
 
     /** @param Collection<int, Cliente> $clientes */

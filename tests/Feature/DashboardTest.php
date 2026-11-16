@@ -204,7 +204,8 @@ class DashboardTest extends TestCase
 
         $contar = fn (string $tabla) => count(array_filter(
             $consultas,
-            fn (string $sql) => str_contains($sql, 'from "'.$tabla.'"') || str_contains($sql, 'from `'.$tabla.'`')
+            fn (string $sql) => (str_contains($sql, 'from "'.$tabla.'"') || str_contains($sql, 'from `'.$tabla.'`'))
+                && ! $this->esListaDeClientesDeCobros($sql)
         ));
 
         $this->assertLessThanOrEqual(1, $contar('clientes'), 'Hay N+1 sobre `clientes` en el dashboard.');
@@ -308,11 +309,22 @@ class DashboardTest extends TestCase
 
         $contar = fn (string $tabla) => count(array_filter(
             $consultas,
-            fn (string $sql) => str_contains($sql, 'from "'.$tabla.'"') || str_contains($sql, 'from `'.$tabla.'`')
+            fn (string $sql) => (str_contains($sql, 'from "'.$tabla.'"') || str_contains($sql, 'from `'.$tabla.'`'))
+                && ! $this->esListaDeClientesDeCobros($sql)
         ));
 
         $this->assertLessThanOrEqual(1, $contar('clientes'));
         $this->assertLessThanOrEqual(1, $contar('cliente_sucursales'));
+    }
+
+    /**
+     * La tarjeta «Por cobrar» (16/11/2026) lee una vez la lista de clientes de Facturas por
+     * cobrar (los de perfil documental activo). Es una consulta fija, no una por documento:
+     * no cuenta para el N+1 de la tabla de documentos.
+     */
+    private function esListaDeClientesDeCobros(string $sql): bool
+    {
+        return str_contains($sql, 'cliente_perfiles_documento');
     }
 
     public function test_actividad_reciente_no_incluye_borradores(): void
