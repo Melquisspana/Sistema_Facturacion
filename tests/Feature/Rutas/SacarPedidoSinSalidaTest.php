@@ -226,39 +226,142 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->assertSame(2, SalidaRuta::count());
     }
 
-    public function test_avisa_si_una_cantidad_es_mucho_mas_que_lo_habitual_de_la_sala(): void
+    /** Pedidos anteriores de la sala, de galletas (tres o más: ya hay con qué comparar). */
+    private function historia(array $cantidades = ['2026-10-20' => '10', '2026-10-27' => '10', '2026-11-03' => '10']): void
     {
-        // Tres pedidos anteriores de 10 galletas: ya hay con qué comparar.
-        foreach (['2026-10-20', '2026-10-27', '2026-11-03'] as $fecha) {
-            PedidoSala::create(['cliente_sucursal_id' => $this->sala->id, 'sacado_por_id' => $this->persona->id, 'registrado_por' => $this->vendedor->id,
-                'fecha' => $fecha, 'estado' => EstadoPedidoSala::Enviado])->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => '10']);
-        }
-        $chocolate = Producto::factory()->create(['nombre' => 'Chocolate de prueba', 'codigo' => 'C01']);
-
-        // 1000 en vez de 10: se guarda (puede ser cierto) y avisa. Lo que nunca pidió no avisa.
-        $this->sacar($this->sala, [$this->galleta->id => '1000', $chocolate->id => '500'])->assertSessionHasNoErrors()
-            ->assertSessionHas('status', fn (string $s) => str_contains($s, 'Revisá: Galleta de prueba lleva 1,000 y esta sala suele llevar 10.')
-                && ! str_contains($s, 'Chocolate'));
-        $this->assertSame(4, PedidoSala::count());
-
-        // Hasta el triple de lo habitual no avisa, y la sala sin historia tampoco.
-        $pedido = PedidoSala::latest('id')->first();
-        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '30']])
-            ->assertSessionHasNoErrors()->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Revisá'));
-        $this->sacar($this->otraSala, [$this->galleta->id => '1000'])
-            ->assertSessionHasNoErrors()->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Revisá'));
-    }
-
-    public function test_el_aviso_compara_con_la_mediana_aunque_la_ultima_vez_haya_llevado_mas(): void
-    {
-        // 10, 10 y 100: lo habitual es 10. Un 100 nuevo avisa aunque la última vez llevó 100.
-        foreach (['2026-10-20' => '10', '2026-10-27' => '10', '2026-11-03' => '100'] as $fecha => $cantidad) {
+        foreach ($cantidades as $fecha => $cantidad) {
             PedidoSala::create(['cliente_sucursal_id' => $this->sala->id, 'sacado_por_id' => $this->persona->id, 'registrado_por' => $this->vendedor->id,
                 'fecha' => $fecha, 'estado' => EstadoPedidoSala::Enviado])->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => $cantidad]);
         }
+    }
 
-        $this->sacar($this->sala, [$this->galleta->id => '100'])->assertSessionHasNoErrors()
-            ->assertSessionHas('status', fn (string $s) => str_contains($s, 'Revisá: Galleta de prueba lleva 100 y esta sala suele llevar 10.'));
+    /**
+     * Antes se guardaba y después avisaba «Revisá: … lleva 1,000». Desde el 16/11/2026 (Melqui)
+     * la cantidad exagerada no se guarda sin confirmar: el 500 en vez de 5.
+     */
+    public function test_una_cantidad_exagerada_no_se_guarda_sin_confirmar(): void
+    {
+        $this->historia();
+        $chocolate = Producto::factory()->create(['nombre' => 'Chocolate de prueba', 'codigo' => 'C01']);
+        $formulario = route('rutas.sacar-pedido.create', $this->sala);
+        $cantidades = [$this->galleta->id => '1000', $chocolate->id => '500'];
+
+        // 1000 en vez de 10 (más del triple de lo habitual) y 500 de lo que nunca pidió (más de
+        // 200): no se guarda, ni abre el viaje, y vuelve al formulario.
+        $this->from($formulario)->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => $cantidades])
+            ->assertRedirect($formulario)
+            ->assertSessionHasErrors(['confirmar_cantidades' => 'Galleta de prueba: 1,000 (esta sala suele llevar 10)'])
+            ->assertSessionHasErrors(['confirmar_cantidades' => 'Chocolate de prueba: 500 (es más de 200)'])
+            ->assertSessionMissing('borrador_guardado');
+        $this->assertSame(3, PedidoSala::count());
+        $this->assertSame(0, SalidaRuta::count());
+
+        // El formulario vuelve con el aviso, lo escrito y la casilla.
+        $this->get($formulario)->assertOk()
+            ->assertSeeInOrder(['Revisá estas cantidades antes de guardar:', 'Galleta de prueba: 1,000 (esta sala suele llevar 10)', 'Chocolate de prueba: 500 (es más de 200)'])
+            ->assertSee('name="confirmar_cantidades" value="1"', false)->assertSee('Sí, las cantidades están bien')
+            ->assertSee('value="1000"', false)->assertSee('value="500"', false);
+
+        // «0» no confirma.
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => $cantidades, 'confirmar_cantidades' => '0'])
+            ->assertSessionHasErrors('confirmar_cantidades');
+        $this->assertSame(3, PedidoSala::count());
+
+        // Confirmado: se guarda, sin el aviso de después, y la auditoría dice qué se confirmó.
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => $cantidades, 'confirmar_cantidades' => '1'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('rutas.sacar-pedido.index'))
+            ->assertSessionHas('status', fn (string $s) => str_starts_with($s, 'Pedido de «Sala de prueba Oriente» guardado.') && ! str_contains($s, 'Revisá'));
+        $pedido = PedidoSala::latest('id')->first();
+        $this->assertSame(['1000.0000', '500.0000'], $pedido->lineas()->orderBy('id')->pluck('cantidad')->all());
+        $this->assertSame([
+            ['producto_id' => $this->galleta->id, 'cantidad' => '1000', 'suele' => '10.0000'],
+            ['producto_id' => $chocolate->id, 'cantidad' => '500', 'suele' => null],
+        ], Activity::where('description', 'sacó el pedido de la sala')->sole()->properties['cantidades_confirmadas']);
+
+        // La oficina, al corregir, sigue con el aviso de después: solo lo que tiene con qué compararse.
+        $this->assertSame(['Revisá: Galleta de prueba lleva 1,000 y esta sala suele llevar 10.'], app(PedidosSala::class)->avisosCantidad($pedido));
+    }
+
+    public function test_una_cantidad_normal_se_guarda_como_siempre_sin_la_casilla(): void
+    {
+        $this->historia();
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()
+            ->assertDontSee('name="confirmar_cantidades"', false)->assertDontSee('Sí, las cantidades están bien');
+
+        // Hasta el triple de lo habitual, y hasta 200 sin historia: se guarda sin preguntar.
+        $this->sacar($this->sala, [$this->galleta->id => '30'])->assertSessionHasNoErrors()
+            ->assertSessionHas('status', fn (string $s) => ! str_contains($s, 'Revisá'));
+        $this->sacar($this->otraSala, [$this->galleta->id => '200'])->assertSessionHasNoErrors();
+        $this->assertSame(5, PedidoSala::count());
+        $this->assertFalse(Activity::where('description', 'sacó el pedido de la sala')->get()
+            ->contains(fn (Activity $a) => $a->properties->has('cantidades_confirmadas')));
+    }
+
+    public function test_se_compara_con_la_mediana_aunque_la_ultima_vez_haya_llevado_mas(): void
+    {
+        // 10, 10 y 100: lo habitual es 10. Un 100 nuevo pide confirmar aunque la última vez llevó 100.
+        $this->historia(['2026-10-20' => '10', '2026-10-27' => '10', '2026-11-03' => '100']);
+
+        $this->sacar($this->sala, [$this->galleta->id => '100'])
+            ->assertSessionHasErrors(['confirmar_cantidades' => 'Galleta de prueba: 100 (esta sala suele llevar 10)']);
+        $this->assertSame(3, PedidoSala::count());
+    }
+
+    public function test_corregir_y_la_tienda_nueva_tambien_piden_confirmar(): void
+    {
+        // Sin historia, el tope fijo: más de 200.
+        $this->sacar($this->sala)->assertSessionHasNoErrors();
+        $pedido = PedidoSala::sole();
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '500']])
+            ->assertSessionHasErrors(['confirmar_cantidades' => 'Galleta de prueba: 500 (es más de 200)']);
+        $this->assertSame('12.0000', $pedido->refresh()->lineas->sole()->cantidad);
+
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '500'], 'confirmar_cantidades' => '1'])
+            ->assertSessionHasNoErrors()->assertSessionHas('status', 'Pedido de «Sala de prueba Oriente» corregido.');
+        $this->assertSame('500.0000', $pedido->refresh()->lineas->sole()->cantidad);
+        $this->assertSame([['producto_id' => $this->galleta->id, 'cantidad' => '500', 'suele' => null]],
+            Activity::where('description', 'corrigió el pedido de la sala')->sole()->properties['cantidades_confirmadas']);
+
+        $tiendaNueva = fn (array $extra = []) => $this->post(route('rutas.sacar-pedido.tienda-nueva.store'),
+            ['sala_nueva_nombre' => 'Tienda de prueba Nueva', 'cantidades' => [$this->galleta->id => '201']] + $extra);
+        $tiendaNueva()->assertSessionHasErrors(['confirmar_cantidades' => 'Galleta de prueba: 201 (es más de 200)']);
+        $this->assertSame(1, PedidoSala::count());
+        $tiendaNueva(['confirmar_cantidades' => '1'])->assertSessionHasNoErrors();
+        $this->assertSame(2, PedidoSala::count());
+    }
+
+    /**
+     * El borrador del teléfono (16/11/2026): la clave lleva el usuario, la sala (o el pedido que
+     * se corrige, o la tienda nueva) y el día. Se borra solo cuando el servidor guardó: lo
+     * avisa a la página siguiente con un dato de sesión de una vez.
+     */
+    public function test_al_guardar_la_pagina_siguiente_borra_el_borrador_del_telefono(): void
+    {
+        $clave = 'pedido-borrador:'.$this->vendedor->id.':sala-'.$this->sala->id.':2026-11-09';
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()
+            ->assertSee('data-borrador="'.$clave.'"', false)
+            ->assertSee('Tenés un pedido sin mandar de las')->assertSee('>Recuperar</button>', false)->assertSee('>Descartar</button>', false)
+            ->assertSee('Sin señal: el pedido quedó guardado en este teléfono. Mandalo cuando vuelva la señal.');
+
+        // Con un error no se guardó: el borrador queda.
+        $this->sacar($this->sala, [$this->galleta->id => '0'])->assertSessionHasErrors()->assertSessionMissing('borrador_guardado');
+
+        $this->sacar($this->sala)->assertSessionHasNoErrors()->assertSessionHas('borrador_guardado', $clave);
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertSee('localStorage.removeItem(\''.$clave.'\')', false);
+        // Es de una vez: la página que sigue ya no lo trae.
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertDontSee($clave, false);
+
+        // Corregir usa la clave del pedido; la tienda nueva, la suya.
+        $pedido = PedidoSala::sole();
+        $corregido = 'pedido-borrador:'.$this->vendedor->id.':pedido-'.$pedido->id.':2026-11-09';
+        $this->get(route('rutas.sacar-pedido.edit', $pedido))->assertOk()->assertSee('data-borrador="'.$corregido.'"', false);
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '4']])
+            ->assertSessionHasNoErrors()->assertSessionHas('borrador_guardado', $corregido);
+
+        $nueva = 'pedido-borrador:'.$this->vendedor->id.':tienda-nueva:2026-11-09';
+        $this->get(route('rutas.sacar-pedido.tienda-nueva.create', ['nombre' => 'Tienda de prueba Nueva']))->assertOk()->assertSee('data-borrador="'.$nueva.'"', false);
+        $this->post(route('rutas.sacar-pedido.tienda-nueva.store'), ['sala_nueva_nombre' => 'Tienda de prueba Nueva', 'cantidades' => [$this->galleta->id => '6']])
+            ->assertSessionHasNoErrors()->assertSessionHas('borrador_guardado', $nueva);
     }
 
     public function test_validaciones_del_pedido_intactas(): void
@@ -293,6 +396,13 @@ class SacarPedidoSinSalidaTest extends TestCase
             ->assertSessionHasNoErrors()->assertSessionHas('status', 'Pedido de «Sala de prueba Oriente» corregido.');
         $this->assertSame('4.0000', $pedido->refresh()->lineas->sole()->cantidad);
         $this->assertSame(1, SalidaRuta::count(), 'Corregir no abre otro viaje.');
+        // Una cantidad de 1,000 o más vuelve al formulario sin separador de miles: un
+        // <input type="number"> con «1,000» queda vacío y al corregir se perdía la línea.
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '1500.5'], 'confirmar_cantidades' => '1'])
+            ->assertSessionHasNoErrors();
+        $this->get(route('rutas.sacar-pedido.edit', $pedido))->assertOk()
+            ->assertSee('value="1500.5"', false)->assertDontSee('value="1,500.5"', false);
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '4']])->assertSessionHasNoErrors();
 
         $otro = User::factory()->create(['activo' => true])->assignRole('vendedor');
         PersonalRuta::create(['nombre' => 'Ana Ficticia', 'user_id' => $otro->id]);

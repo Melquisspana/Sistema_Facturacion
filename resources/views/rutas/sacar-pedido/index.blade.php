@@ -22,6 +22,11 @@
         $secundario = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
     @endphp
 
+    {{-- El servidor guardó el pedido: se borra su borrador del teléfono (rutas/mi-salida/pedido). --}}
+    @if (session('borrador_guardado'))
+        <script>try { localStorage.removeItem(@js(session('borrador_guardado'))); } catch (error) {}</script>
+    @endif
+
     <h1 class="text-3xl font-bold">Sacar pedido</h1>
     @if ($viaje)
         <p class="mt-1 {{ $gris }}">Va a tu viaje: {{ $viaje->nombreViaje() }}</p>

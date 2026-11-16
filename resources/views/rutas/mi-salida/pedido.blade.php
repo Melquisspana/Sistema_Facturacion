@@ -11,7 +11,22 @@
 
      Con $sala, arriba va su historia ($historia, de HistoriaSala, sobre la misma fuente del
      tablero): último pedido y sus cajas, última entrega y cómo pagó, cada cuánto compra,
-     cuándo toca volver y cuántas facturas tiene por cobrar. Sin precios. --}}
+     cuándo toca volver y cuántas facturas tiene por cobrar. Sin precios.
+
+     Sin señal (16/11/2026): lo escrito se guarda en el teléfono (localStorage) con un retardo
+     corto: cantidades, OC, notas y nombre de la tienda nueva, sin el token. La clave
+     ($claveBorrador, de MiPedidoController::claveBorrador) lleva el usuario, la sala (o el
+     pedido que se corrige, o la tienda nueva) y el día. Si al abrir hay uno distinto de lo que
+     trae la página, se ofrece arriba con «Recuperar» y «Descartar»; no se llena solo, y
+     mientras se ofrece no se pisa. Sin señal, «Guardar» no manda: deja el borrador y lo dice.
+     Con señal manda una sola vez. El borrador se borra cuando el servidor guardó (la página
+     siguiente lo borra con la clave que le pasa la sesión) o a los 3 días. Si localStorage
+     falla (modo privado), el formulario anda igual, sin borrador. Alpine escrito acá: el JS de
+     producción no se recompila. El layout del vendedor no tiene x-cloak: lo que aparece solo
+     con Alpine va en <template x-if>.
+
+     Las cantidades exageradas (16/11/2026) no se guardan sin confirmar: el servidor vuelve
+     con lo escrito, la lista (PedidosSala::cantidadesExageradas) y la casilla. --}}
 @extends('layouts.vendedor')
 
 @section('content')
@@ -19,6 +34,8 @@
         $caja = 'rounded-2xl bg-white p-4 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
         $gris = 'text-sm text-gray-600 dark:text-paper-300';
         $campo = 'min-h-11 w-full rounded-lg border-gray-300 dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100';
+        $aviso = 'rounded-2xl bg-amber-50 p-4 text-amber-800 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30';
+        $secundario = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
         $accion = match (true) {
             $pedido !== null => route('rutas.sacar-pedido.update', $pedido),
             $sala !== null => route('rutas.sacar-pedido.store', $sala),
@@ -54,11 +71,98 @@
         </dl>
     @endif
 
-    <form method="POST" action="{{ $accion }}" class="mt-5 space-y-5">
+    <form method="POST" action="{{ $accion }}" class="mt-5 space-y-5" data-borrador="{{ $claveBorrador }}"
+          @input="cambio($event)" @submit="enviar($event)"
+          x-data="{
+              clave: '', pendiente: null, sinSenal: '', enviando: false, espera: null,
+              {{-- Los de más de 3 días se borran; el de esta clave se ofrece si no es lo que trae la página. --}}
+              init() {
+                  this.clave = this.$root.dataset.borrador;
+                  try {
+                      const limite = Date.now() - 3 * 24 * 60 * 60 * 1000;
+                      Object.keys(localStorage).filter((k) => k.startsWith('pedido-borrador:')).forEach((k) => {
+                          const b = this.leer(k);
+                          if (! b || b.guardado < limite) localStorage.removeItem(k);
+                      });
+                      const b = this.leer(this.clave);
+                      if (b && ! this.iguales(b.campos, this.valores())) {
+                          const h = new Date(b.guardado);
+                          this.pendiente = { campos: b.campos, hora: String(h.getHours()).padStart(2, '0') + ':' + String(h.getMinutes()).padStart(2, '0') };
+                      }
+                  } catch (error) {}
+              },
+              leer(clave) {
+                  try {
+                      const b = JSON.parse(localStorage.getItem(clave));
+                      return b && typeof b.guardado === 'number' && b.campos && typeof b.campos === 'object' ? b : null;
+                  } catch (error) { return null; }
+              },
+              {{-- Solo lo que se escribe: nunca el token ni la casilla de las cantidades. --}}
+              esCampo(el) { return /^(cantidades\[\d+\]|numero_orden_compra|notas|sala_nueva_nombre)$/.test(el.name || ''); },
+              valores() {
+                  const v = {};
+                  [...this.$root.elements].filter((c) => this.esCampo(c) && c.value.trim() !== '').forEach((c) => { v[c.name] = c.value; });
+                  return v;
+              },
+              {{-- Sin los espacios de más: el servidor los quita y la página vuelve sin ellos. --}}
+              iguales(a, b) {
+                  const texto = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, String(o[k]).trim().replace(/\s+/g, ' ')]));
+                  return texto(a) === texto(b);
+              },
+              cambio(e) {
+                  if (! this.esCampo(e.target)) return;
+                  clearTimeout(this.espera);
+                  this.espera = setTimeout(() => this.guardar(), 500);
+              },
+              {{-- Devuelve si quedó guardado. Mientras se ofrece uno, no se pisa. --}}
+              guardar() {
+                  clearTimeout(this.espera);
+                  if (this.pendiente) return false;
+                  try {
+                      localStorage.setItem(this.clave, JSON.stringify({ guardado: Date.now(), campos: this.valores() }));
+                      return true;
+                  } catch (error) { return false; }
+              },
+              recuperar() {
+                  [...this.$root.elements].filter((c) => this.esCampo(c)).forEach((c) => { c.value = this.pendiente.campos[c.name] ?? ''; });
+                  this.pendiente = null;
+              },
+              descartar() {
+                  if (! confirm('¿Descartar el pedido sin mandar? Se borra de este teléfono.')) return;
+                  try { localStorage.removeItem(this.clave); } catch (error) {}
+                  this.pendiente = null;
+              },
+              {{-- Al tocar «Guardar», lo que está en pantalla queda guardado antes de mandar: si
+                   se corta a mitad, se ofrece al volver. Sin señal no se manda. --}}
+              enviar(e) {
+                  if (this.enviando) { e.preventDefault(); return; }
+                  this.pendiente = null;
+                  const guardado = this.guardar();
+                  if (navigator.onLine === false) {
+                      e.preventDefault();
+                      this.sinSenal = guardado ? 'guardado' : 'sin-guardar';
+                      return;
+                  }
+                  this.sinSenal = '';
+                  this.enviando = true;
+              },
+          }">
         @csrf
         @if ($pedido)
             @method('PUT')
         @endif
+
+        {{-- Un pedido que quedó en este teléfono sin mandar: se ofrece, no se llena solo. --}}
+        <template x-if="pendiente">
+            <div class="{{ $aviso }}" role="status">
+                <p class="font-semibold">Tenés un pedido sin mandar de las <span x-text="pendiente.hora"></span>.</p>
+                <p class="mt-1 text-sm">Quedó guardado en este teléfono. Recuperalo para revisarlo y mandarlo.</p>
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <button type="button" class="{{ $secundario }}" @click="recuperar()">Recuperar</button>
+                    <button type="button" class="{{ $secundario }}" @click="descartar()">Descartar</button>
+                </div>
+            </div>
+        </template>
 
         {{-- Tienda nueva (10/11/2026): solo el nombre. La oficina carga sus datos al facturar. --}}
         @if (! $sala && ! $pedido && (($parecidas ?? collect())->isNotEmpty() || ($tiendasDeHoy ?? collect())->isNotEmpty()))
@@ -151,11 +255,39 @@
             @error('notas')<p class="mt-1 text-sm text-red-700 dark:text-red-300" role="alert">{{ $message }}</p>@enderror
         </div>
 
+        {{-- Cantidades exageradas: el servidor no guardó y pide confirmar. El primer mensaje es el
+             título y el resto, una línea por producto (PedidosSala::exigirCantidadesConfirmadas). --}}
+        @if ($errors->has('confirmar_cantidades'))
+            @php($revisar = $errors->get('confirmar_cantidades'))
+            <div class="{{ $aviso }}" role="alert">
+                <p id="revisar-cantidades" class="font-semibold">{{ $revisar[0] }}</p>
+                <ul class="mt-2 list-disc space-y-1 pl-5">
+                    @foreach (array_slice($revisar, 1) as $linea)
+                        <li>{{ $linea }}</li>
+                    @endforeach
+                </ul>
+                <label class="mt-3 flex min-h-11 items-center gap-3 font-semibold">
+                    <input type="checkbox" name="confirmar_cantidades" value="1" @checked(old('confirmar_cantidades')) aria-describedby="revisar-cantidades"
+                           class="h-6 w-6 shrink-0 rounded border-gray-300 text-indigo-600 dark:border-ink-600 dark:bg-ink-900">
+                    Sí, las cantidades están bien
+                </label>
+                <p class="mt-1 text-sm">Si alguna está mal, corregila. Si están bien, marcá la casilla y guardá de nuevo.</p>
+            </div>
+        @endif
+
+        {{-- Sin señal: no se mandó. Con el borrador guardado o, si el teléfono no deja guardar, sin él. --}}
+        <template x-if="sinSenal === 'guardado'">
+            <p class="{{ $aviso }} text-sm" role="alert">Sin señal: el pedido quedó guardado en este teléfono. Mandalo cuando vuelva la señal.</p>
+        </template>
+        <template x-if="sinSenal === 'sin-guardar'">
+            <p class="{{ $aviso }} text-sm" role="alert">Sin señal: el pedido no se mandó. Quedate en esta pantalla y tocá «Guardar» cuando vuelva la señal.</p>
+        </template>
+
         {{-- Cancelar arriba y el principal abajo en el celular; en fila en la computadora. --}}
         <div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
-            <a href="{{ route('rutas.sacar-pedido.index') }}"
-               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</a>
-            <button class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">{{ $pedido ? 'Guardar cambios' : 'Guardar pedido' }}</button>
+            <a href="{{ route('rutas.sacar-pedido.index') }}" class="{{ $secundario }}">Cancelar</a>
+            <button class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    :disabled="enviando">{{ $pedido ? 'Guardar cambios' : 'Guardar pedido' }}</button>
         </div>
     </form>
 @endsection

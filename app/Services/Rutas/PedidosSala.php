@@ -37,39 +37,93 @@ class PedidosSala
 {
     public function __construct(private readonly Viajes $viajes, private readonly EstimadoPedidos $estimado) {}
 
-    /** Desde cuántas veces lo habitual de la sala una cantidad se avisa como «mucho más». */
+    /** Desde cuántas veces lo habitual de la sala una cantidad es exagerada. */
     public const VECES_HABITUAL = 3;
 
     /**
-     * «Revisá: Galleta lleva 1,000 y esta sala suele llevar 10.» El 1000 en vez de 10: lo que
-     * pasa de {@see self::VECES_HABITUAL} veces lo que la sala suele llevar de ese producto (la
-     * mediana de {@see EstimadoPedidos}, con sus pedidos hasta ayer: no se compara consigo mismo). Solo
-     * con 3 pedidos o más y en lo que suele pedir. Solo avisa: el pedido ya se guardó (puede
-     * ser cierto) y quien lo sacó lo corrige mientras pueda.
+     * Sin historia con qué comparar (tienda nueva, sala con menos de 3 pedidos o producto que la
+     * sala no suele pedir), desde cuánto una cantidad es exagerada: más de 200 de un producto en
+     * un pedido ya es raro, y el 500 en vez de 5 pasa de ahí (Melqui, 16/11/2026).
+     */
+    public const CANTIDAD_A_CONFIRMAR = 200;
+
+    public const REVISAR_CANTIDADES = 'Revisá estas cantidades antes de guardar:';
+
+    /**
+     * Las cantidades exageradas de un pedido, calculadas sobre las líneas que se pasan (las que
+     * llegan del formulario, antes de guardarlas, o las de un pedido ya guardado). Con historia,
+     * lo que pasa de {@see self::VECES_HABITUAL} veces lo que la sala suele llevar de ese
+     * producto: la mediana de {@see EstimadoPedidos}, con sus pedidos hasta ayer (no se compara
+     * consigo mismo), solo con 3 pedidos o más y en lo que suele pedir. Contra la mediana y no la
+     * última vez: una vez rara no sube el umbral. Sin historia, lo que pasa de
+     * {@see self::CANTIDAD_A_CONFIRMAR}.
+     *
+     * @param  list<array{producto_id: int|string, cantidad: string}>  $lineas
+     * @return list<array{producto_id: int, cantidad: string, suele: ?string}> `suele`: lo habitual; null sin historia
+     */
+    public function cantidadesExageradas(?int $salaId, array $lineas): array
+    {
+        $habitual = [];
+        if ($salaId !== null) {
+            $estimado = $this->estimado->paraSala($salaId, CarbonImmutable::parse(HoraNegocio::fechaHoy())->subDay());
+            $habitual = $estimado->confianza() === PedidoEstimado::POCO_DATO ? [] : array_column($estimado->lineas, 'cantidad', 'producto_id');
+        }
+
+        $exageradas = [];
+        foreach ($lineas as $linea) {
+            $suele = $habitual[(int) $linea['producto_id']] ?? null;
+            $tope = $suele === null ? self::CANTIDAD_A_CONFIRMAR : (float) $suele * self::VECES_HABITUAL;
+            if ((float) $linea['cantidad'] > $tope) {
+                $exageradas[] = ['producto_id' => (int) $linea['producto_id'], 'cantidad' => (string) $linea['cantidad'], 'suele' => $suele];
+            }
+        }
+
+        return $exageradas;
+    }
+
+    /**
+     * El aviso de después, para la oficina al corregir un pedido ya guardado:
+     * «Revisá: Galleta lleva 1,000 y esta sala suele llevar 10.» Las exageradas de
+     * {@see cantidadesExageradas()} que tienen con qué compararse. Solo avisa. Al vendedor se
+     * le pide confirmarlas antes de guardar ({@see exigirCantidadesConfirmadas()}).
      *
      * @return list<string>
      */
     public function avisosCantidad(PedidoSala $pedido): array
     {
-        if ($pedido->cliente_sucursal_id === null) {
-            return [];
-        }
-        $estimado = $this->estimado->paraSala($pedido->cliente_sucursal_id, CarbonImmutable::parse(HoraNegocio::fechaHoy())->subDay());
-        if ($estimado->confianza() === PedidoEstimado::POCO_DATO) {
-            return [];
-        }
-        $habitual = collect($estimado->lineas)->keyBy('producto_id');
+        $lineas = $pedido->lineas()->with('producto:id,nombre')->orderBy('id')->get();
+        $nombres = $lineas->pluck('producto.nombre', 'producto_id');
 
-        return $pedido->lineas()->with('producto:id,nombre')->orderBy('id')->get()
-            ->map(function (PedidoSalaLinea $linea) use ($habitual) {
-                $suele = $habitual->get($linea->producto_id);
-                // Contra la mediana, no la última vez: una vez rara no sube el umbral.
-                $tope = $suele === null ? null : (float) $suele['cantidad'] * self::VECES_HABITUAL;
+        return collect($this->cantidadesExageradas($pedido->cliente_sucursal_id, $lineas->map->only(['producto_id', 'cantidad'])->all()))
+            ->whereNotNull('suele')
+            ->map(fn (array $e) => 'Revisá: '.$nombres[$e['producto_id']].' lleva '.PedidoSalaLinea::legible($e['cantidad'])
+                .' y esta sala suele llevar '.PedidoSalaLinea::legible($e['suele']).'.')
+            ->values()->all();
+    }
 
-                return $tope !== null && (float) $linea->cantidad > $tope
-                    ? 'Revisá: '.$linea->producto?->nombre.' lleva '.$linea->cantidadLegible().' y esta sala suele llevar '.PedidoSalaLinea::legible($suele['cantidad']).'.'
-                    : null;
-            })->filter()->values()->all();
+    /**
+     * El 500 en vez de 5 no se guarda sin confirmar (Melqui, 16/11/2026): vuelve al formulario
+     * con lo escrito, una línea por cantidad exagerada ({@see cantidadesExageradas()}) y la
+     * casilla «Sí, las cantidades están bien», que manda `confirmar_cantidades`. El primer
+     * mensaje es el título de la lista. Confirmadas, se devuelven para la auditoría.
+     *
+     * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, confirmar_cantidades?: mixed}  $datos
+     * @return list<array{producto_id: int, cantidad: string, suele: ?string}>
+     */
+    private function exigirCantidadesConfirmadas(?ClienteSucursal $sala, array $datos): array
+    {
+        $exageradas = $this->cantidadesExageradas($sala?->id, $datos['lineas']);
+        if ($exageradas === [] || ! empty($datos['confirmar_cantidades'])) {
+            return $exageradas;
+        }
+        $nombres = Producto::whereKey(array_column($exageradas, 'producto_id'))->pluck('nombre', 'id');
+
+        throw ValidationException::withMessages(['confirmar_cantidades' => [self::REVISAR_CANTIDADES, ...array_map(
+            fn (array $e) => $nombres[$e['producto_id']].': '.PedidoSalaLinea::legible($e['cantidad']).' ('.($e['suele'] !== null
+                ? 'esta sala suele llevar '.PedidoSalaLinea::legible($e['suele'])
+                : 'es más de '.self::CANTIDAD_A_CONFIRMAR).')',
+            $exageradas,
+        )]]);
     }
 
     /** Quien saca el pedido: la ficha de Rutas activa del usuario. */
@@ -107,7 +161,11 @@ class PedidosSala
      * que espera la sala no vería el pedido que el otro acaba de guardar y la sala quedaría
      * con dos. El candado de la persona pone en fila los toques del mismo vendedor.
      *
-     * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, numero_orden_compra?: ?string, notas?: ?string, sala_nueva_nombre?: ?string}  $datos
+     * Las cantidades exageradas sin `confirmar_cantidades` no se guardan
+     * ({@see exigirCantidadesConfirmadas()}): se miran después de los candados y de las demás
+     * reglas, antes de escribir nada.
+     *
+     * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, numero_orden_compra?: ?string, notas?: ?string, sala_nueva_nombre?: ?string, confirmar_cantidades?: mixed}  $datos
      */
     public function guardar(?ClienteSucursal $sala, array $datos, User $usuario, ?PedidoSala $pedido = null): PedidoSala
     {
@@ -137,6 +195,7 @@ class PedidosSala
                     ->lockForUpdate()->firstOrFail();
                 $this->exigirSinFabrica($pedido);
                 Gate::forUser($usuario)->authorize('corregir', $pedido);
+                $confirmadas = $this->exigirCantidadesConfirmadas($sala, $datos);
                 $pedido->update($campos);
                 $pedido->lineas()->delete();
             } else {
@@ -144,6 +203,7 @@ class PedidosSala
                     throw ValidationException::withMessages(['lineas' => self::SALA_SIN_PEDIDOS]);
                 }
                 $sala !== null ? $this->exigirSinSacar($sala, $usuario) : $this->exigirTiendaSinSacar($persona, $campos['sala_nueva_nombre']);
+                $confirmadas = $this->exigirCantidadesConfirmadas($sala, $datos);
                 $viaje = $this->viajes->paraPedido($persona, $sala, $usuario);
                 $pedido = $viaje->pedidos()->create($campos + [
                     'cliente_sucursal_id' => $sala?->id,
@@ -161,7 +221,7 @@ class PedidosSala
                 'cantidad' => $l['cantidad'],
             ], $datos['lineas']));
 
-            $this->auditar($pedido, $usuario, $pedido->wasRecentlyCreated ? 'sacó el pedido de la sala' : 'corrigió el pedido de la sala');
+            $this->auditar($pedido, $usuario, $pedido->wasRecentlyCreated ? 'sacó el pedido de la sala' : 'corrigió el pedido de la sala', $confirmadas);
 
             return $pedido;
         });
@@ -451,13 +511,20 @@ class PedidosSala
             ->whereKey($pedido->sacado_por_id)->where('user_id', $usuario->id)->where('activo', true)->exists();
     }
 
-    private function auditar(PedidoSala $pedido, User $usuario, string $descripcion): void
+    /**
+     * Con las líneas y, si hubo, las cantidades exageradas que quien lo sacó confirmó
+     * ({@see exigirCantidadesConfirmadas()}): producto, cantidad y lo habitual.
+     *
+     * @param  list<array{producto_id: int, cantidad: string, suele: ?string}>  $confirmadas
+     */
+    private function auditar(PedidoSala $pedido, User $usuario, string $descripcion, array $confirmadas = []): void
     {
         activity('pedido_sala')
             ->performedOn($pedido)
             ->causedBy($usuario)
             ->withProperties($pedido->only(['cliente_sucursal_id', 'sala_nueva_nombre', 'salida_ruta_id', 'sacado_por_id', 'fecha', 'estado', 'numero_orden_compra', 'notas'])
-                + ['lineas' => $pedido->lineas()->get(['producto_id', 'cantidad'])->toArray()])
+                + ['lineas' => $pedido->lineas()->get(['producto_id', 'cantidad'])->toArray()]
+                + ($confirmadas !== [] ? ['cantidades_confirmadas' => $confirmadas] : []))
             ->log($descripcion);
     }
 }

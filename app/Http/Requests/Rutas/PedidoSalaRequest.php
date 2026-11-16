@@ -14,6 +14,9 @@ use Illuminate\Validation\Rule;
  *
  * La OC es opcional y su forma solo avisa (#169): no se valida acá. La tienda nueva
  * (10/11/2026) lleva además su nombre, con los espacios de más quitados.
+ *
+ * `confirmar_cantidades` (16/11/2026) es la casilla «Sí, las cantidades están bien»: sin ella,
+ * las cantidades exageradas no se guardan ({@see PedidosSala::cantidadesExageradas()}).
  */
 class PedidoSalaRequest extends FormRequest
 {
@@ -57,6 +60,7 @@ class PedidoSalaRequest extends FormRequest
             'numero_orden_compra' => ['nullable', 'string', 'max:30'],
             'notas' => ['nullable', 'string', 'max:500'],
             'sala_nueva_nombre' => $this->esTiendaNueva() ? ['required', 'string', 'min:3', 'max:100'] : ['exclude'],
+            'confirmar_cantidades' => ['nullable', 'boolean'],
         ];
     }
 
@@ -77,6 +81,7 @@ class PedidoSalaRequest extends FormRequest
             'sala_nueva_nombre.min' => 'El nombre de la tienda tiene que tener al menos 3 letras.',
             'sala_nueva_nombre.max' => 'El nombre de la tienda puede tener hasta 100 caracteres.',
             'sala_nueva_nombre.*' => 'Escribí el nombre de la tienda.',
+            'confirmar_cantidades.*' => 'Marcá la casilla «Sí, las cantidades están bien» o dejala vacía.',
         ];
     }
 }
