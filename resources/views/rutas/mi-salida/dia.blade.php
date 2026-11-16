@@ -56,7 +56,7 @@
             <h2 class="font-semibold">No se pudo entregar</h2>
             <ul class="mt-1 space-y-1 text-sm">
                 @foreach ($resumen['no_entregadas'] as $entrega)
-                    <li>{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }} · {{ $entrega->motivo_no_entrega?->label() }}</li>
+                    <li>{{ $entrega->nombreDestino() }} · {{ $entrega->motivo_no_entrega?->label() }}</li>
                 @endforeach
             </ul>
         </div>

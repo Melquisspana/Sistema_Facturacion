@@ -13,6 +13,7 @@ use App\Enums\ResultadoEntrega;
 use App\Facades\Ajustes;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
+use App\Models\PedidoSala;
 use App\Models\PedidoWeb;
 use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
@@ -119,6 +120,15 @@ class EntregasCcf
      */
     public function pendientesWeb(?int $dteId = null): EloquentCollection
     {
+        return $this->webPorEntregar($dteId)
+            // `pedidoSala.pedidoWeb`: PedidoSala::nombreSala() («Pedido web · Nombre I.») lo lee.
+            ->with(['pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre'])
+            ->orderBy('fecha_emision')->orderBy('id')->get();
+    }
+
+    /** La regla de {@see pendientesWeb()}, sin cargar nada: la reusa la cuenta del tablero. */
+    private function webPorEntregar(?int $dteId = null): Builder
+    {
         return Dte::query()->where('tipo_dte', '01')->aceptadoRealMh()->noArchivados()
             ->where('ambiente', (string) (config('rutas.ambiente_ccf') ?: config('dte.ambiente')))
             ->when($dteId !== null, fn ($q) => $q->whereKey($dteId))
@@ -126,10 +136,7 @@ class EntregasCcf
                 ->where('estado', EstadoPedidoWeb::Facturado)
                 ->whereHas('pedidoSala', fn ($q) => $q->vigentes()->where('origen', OrigenPedidoSala::Web)))
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('salida_ruta_entregas')
-                ->whereColumn('salida_ruta_entregas.dte_id', 'dtes.id')->where('resultado', ResultadoEntrega::Entregado->value))
-            // `pedidoSala.pedidoWeb`: PedidoSala::nombreSala() («Pedido web · Nombre I.») lo lee.
-            ->with(['pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre'])
-            ->orderBy('fecha_emision')->orderBy('id')->get();
+                ->whereColumn('salida_ruta_entregas.dte_id', 'dtes.id')->where('resultado', ResultadoEntrega::Entregado->value));
     }
 
     /**
@@ -171,10 +178,15 @@ class EntregasCcf
      * ({@see PropuestaRutas::zonaDe()}): su ruta, la que cubre su lugar o, en la clave 0, «Sin
      * zona». Las mismas consultas con 2 zonas que con 20: se buscan todos juntos y se reparten.
      *
-     * @return array<int, array{cantidad: int, monto: float}> ruta_id (0: sin zona) => pendientes
+     * Los pedidos web con ruta por entregar ({@see pendientesWeb()}, 16/11/2026) van en `web`,
+     * en la zona de su pedido (0 si no tiene o ya no está activa): solo cuántos, porque ya se
+     * pagaron en la página y no suman al monto. Una consulta más, fija.
+     *
+     * @return array<int, array{cantidad: int, monto: float, web: int}> ruta_id (0: sin zona) => pendientes
      */
     public function pendientesPorRuta(): array
     {
+        $activas = $this->propuesta->activas()->modelKeys();
         $zonaDeSala = [];
         foreach (ClienteSucursal::where('activo', true)->get(['id', 'ruta_id', 'distrito_id', 'departamento_id']) as $sala) {
             $zonaDeSala[$sala->id] = $this->propuesta->zonaDe($sala->ruta_id, $sala->distrito_id, $sala->departamento_id)?->id ?? 0;
@@ -182,14 +194,19 @@ class EntregasCcf
         $porZona = $this->pendientesDeSalas(null)
             ->filter(fn (Dte $dte) => isset($zonaDeSala[$dte->cliente_sucursal_id]))
             ->groupBy(fn (Dte $dte) => $zonaDeSala[$dte->cliente_sucursal_id]);
+        $webPorZona = PedidoSala::query()
+            ->whereHas('pedidoWeb', fn ($q) => $q->whereIn('dte_id', $this->webPorEntregar()->select('dtes.id')))
+            ->pluck('ruta_id')
+            ->countBy(fn ($ruta) => in_array((int) $ruta, $activas, true) ? (int) $ruta : 0);
 
         $resumen = [];
 
-        foreach ([...$this->propuesta->activas()->modelKeys(), 0] as $id) {
+        foreach ([...$activas, 0] as $id) {
             $pendientes = $porZona->get($id, collect());
             $resumen[$id] = [
                 'cantidad' => $pendientes->count(),
                 'monto' => round((float) $pendientes->sum('total_pagar'), 2),
+                'web' => $webPorZona->get($id, 0),
             ];
         }
 

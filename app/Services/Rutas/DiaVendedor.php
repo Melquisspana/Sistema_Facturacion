@@ -57,8 +57,7 @@ class DiaVendedor
     {
         $filas = $this->suyas($persona, $usuario)
             // El pedido web (16/11/2026) no tiene sala: el PDF lo nombra «Pedido web · Nombre I.».
-            ->with(['dte:id,numero_control,total_pagar,cliente_id', 'dte.pedidoWeb:id,dte_id,pedido_sala_id', 'dte.pedidoWeb.pedidoSala',
-                'dte.pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre', 'sala:id,nombre', 'registradoPor:id,name'])
+            ->with(['dte:id,numero_control,total_pagar,cliente_id', ...SalidaRutaEntrega::PEDIDO_WEB, 'sala:id,nombre', 'registradoPor:id,name'])
             ->whereDate('fecha_resultado', $fecha)
             ->orderBy('fecha_resultado')->orderBy('id')
             ->get();

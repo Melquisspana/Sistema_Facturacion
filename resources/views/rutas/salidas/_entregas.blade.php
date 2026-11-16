@@ -5,10 +5,18 @@
      Solo lo dibuja el detalle de la oficina: el vendedor marca desde «Por entregar».
      Cada tarjeta pregunta quién lo entregó, entre los que van en la salida. Lo que trae
      albarán de Calleja ya consta entregado: la tarjeta solo pide quién. Arriba, «Faltan /
-     Entregados / Todos» filtra la lista (?ver=), sin JavaScript. --}}
+     Entregados / Todos» filtra la lista (?ver=), sin JavaScript.
+
+     El pedido web (16/11/2026) va con su nombre corto («Pedido web · Nombre I.»), WEB y «Ya
+     pagado» en lugar del monto: ni dirección, ni teléfono, ni notas del comprador. --}}
 @php
     // Un día que una salida de antes dejó cerrado no recibe más entregas.
     $registrable = $registrable && ! $salida->diaCerrado();
+    // Si el día de cada entrega está cerrado se pregunta una vez por fecha, no por cada CCF.
+    $cerrados = [];
+    $diaCerrado = function (string $fecha) use (&$cerrados, $salida): bool {
+        return $cerrados[$fecha] ??= $salida->diaCerrado($fecha);
+    };
     $saldosAnteriores = app(\App\Services\Rutas\CierreDia::class)->saldosAnteriores($salida, $porSala->keys()->all());
     $prefijoEntregas = 'rutas.salidas.entregas.';
     $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
@@ -56,13 +64,14 @@
             $albaran = $resolucion?->estaVinculado() ? $resolucion->albaran : null;
             // Tocar la sala o el número descarga el PDF del CCF al celular.
             $verCcf = $entrega->dte ? route('rutas.salidas.ccf', [$salida, $entrega]) : null;
+            $web = $entrega->dte?->pedidoWeb !== null;
         @endphp
         <div class="{{ $caja }} mt-3 px-4 py-3">
             @if ($verCcf)
                 {{-- Repite el enlace del número para el dedo; el lector de pantalla usa el del número. --}}
-                <a href="{{ $verCcf }}" download tabindex="-1" aria-hidden="true" class="block truncate text-xs font-medium text-gray-500 hover:underline dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</a>
+                <a href="{{ $verCcf }}" download tabindex="-1" aria-hidden="true" class="block truncate text-xs font-medium text-gray-500 hover:underline dark:text-paper-300">{{ $entrega->nombreDestino() }}</a>
             @else
-                <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</p>
+                <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $entrega->nombreDestino() }}</p>
             @endif
             @if ($loop->first)
                 @foreach ($saldosAnteriores->get($sala?->id, collect()) as $saldo)
@@ -86,7 +95,12 @@
                     @if (isset($noVigentes[$entrega->dte_id]))
                         <span class="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ $noVigentes[$entrega->dte_id] }} · no entregar</span>
                     @endif
-                    <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                    @if ($web)
+                        <x-planta.badge color="red">WEB</x-planta.badge>
+                        <p class="text-sm font-medium text-green-700 dark:text-green-400">Ya pagado</p>
+                    @else
+                        <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                    @endif
                 </div>
 
                 {{-- Resultado ya registrado. En el celular va siempre en su propia línea, para que
@@ -108,7 +122,7 @@
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}{{ $puedeMarcar ? ' · falta quién lo entregó' : '' }}</p>
                     @endif
-                    @if ($puedeGestionar && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString())) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
+                    @if ($puedeGestionar && (! $entrega->fecha_resultado || ! $diaCerrado($entrega->fecha_resultado->toDateString())) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
                         <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}" class="mt-1">
                             @csrf @method('PATCH')
                             <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>

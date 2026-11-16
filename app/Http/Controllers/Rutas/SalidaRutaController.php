@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
+use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
 use Illuminate\Http\RedirectResponse;
@@ -59,8 +60,10 @@ class SalidaRutaController extends Controller
 
         // Sin los facturados después de entregar (registros de antes del 04/11/2026, sin dinero):
         // no cuentan en ninguna pantalla, como en la lista y en «Por entregar».
+        // El pedido web (16/11/2026) no tiene sala: se nombra con su pedido ({@see SalidaRutaEntrega::nombreDestino()}).
         $entregas = $salida->entregas()->sinFacturadosDespues()
-            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre', 'registradoPor:id,name'])
+            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega',
+                ...SalidaRutaEntrega::PEDIDO_WEB, 'sala:id,nombre,codigo', 'entregadoPor:id,nombre', 'registradoPor:id,name'])
             ->get();
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);

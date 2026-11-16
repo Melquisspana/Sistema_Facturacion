@@ -2,7 +2,9 @@
      la sala porque ya se pagó en la página: no lleva monto, forma de pago, PDF ni hoja, y el
      vendedor solo dice quién lo entregó y marca «Entregado». La dirección y los teléfonos
      vienen cifrados de pedidos_web; Blade los escapa. Si es regalo, se entrega a quien lo
-     recibe y el paquete va sin precios.
+     recibe y el paquete va sin precios. Las notas de entrega del comprador («llamar antes»,
+     también en el regalo) van solo acá, cifradas igual; el mensaje del regalo no: va en la
+     tarjeta que imprime la fábrica.
 
      Recibe: $web (PedidoWeb con pedidoSala y su nombre, de EntregasCcf::pendientesWeb()). --}}
 @php
@@ -18,6 +20,10 @@
 @if ($regalo)
     <p class="mt-1 text-sm font-medium text-gray-800 dark:text-paper-100">Entregar a: {{ $regalo['nombre'] ?? '' }}{{ filled($regalo['telefono'] ?? null) ? ' · '.$regalo['telefono'] : '' }}</p>
     <p class="text-sm text-amber-800 dark:text-amber-300">Regalo: el paquete va sin precios</p>
+@endif
+@if (filled($web->notas))
+    {{-- En una línea de texto. La página ya las corta en 300 caracteres; el tope es por si llega algo más largo. --}}
+    <p class="mt-1 break-words text-sm text-gray-700 dark:text-paper-100">Notas del comprador: {{ \Illuminate\Support\Str::limit(\Illuminate\Support\Str::squish($web->notas), 300) }}</p>
 @endif
 <div class="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
     <p class="text-sm text-gray-600 dark:text-paper-300">{{ $cajitas }} {{ $cajitas === 1 ? 'cajita' : 'cajitas' }}</p>

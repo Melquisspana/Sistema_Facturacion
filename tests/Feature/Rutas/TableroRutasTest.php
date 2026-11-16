@@ -242,7 +242,8 @@ class TableroRutasTest extends TestCase
         $this->assertSame($pocas, $muchas, 'El tablero no debería hacer una consulta por ruta, sala o salida.');
         // 37 hoy: todas agregadas (visitas de cada sala, pedidos sacados, facturado por zona, la
         // cobertura de las zonas, los pedidos con su zona para nombrar cada viaje, las facturas
-        // que no se pudieron entregar dos veces, …).
-        $this->assertLessThan(39, $muchas);
+        // que no se pudieron entregar dos veces, …). 16/11/2026: una más, fija, los pedidos web
+        // por entregar de cada zona (EntregasCcf::pendientesPorRuta()).
+        $this->assertLessThan(40, $muchas);
     }
 }

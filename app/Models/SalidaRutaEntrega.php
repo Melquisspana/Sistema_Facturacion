@@ -22,6 +22,12 @@ class SalidaRutaEntrega extends Model
 {
     use LogsActivity;
 
+    /**
+     * Lo que {@see nombreDestino()} lee del pedido web, para cargarlo una vez en las listas (con
+     * `sala:id,nombre` y el `dte` con sus columnas, que cada pantalla ya carga).
+     */
+    public const PEDIDO_WEB = ['dte.pedidoWeb:id,dte_id,pedido_sala_id', 'dte.pedidoWeb.pedidoSala', 'dte.pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre'];
+
     protected $table = 'salida_ruta_entregas';
 
     protected $fillable = [
@@ -101,6 +107,16 @@ class SalidaRutaEntrega extends Model
     public function estaPendiente(): bool
     {
         return $this->resultado === null;
+    }
+
+    /**
+     * El nombre que se muestra: la sala o, en el pedido web (16/11/2026, sin sala), «Pedido web
+     * · Nombre I.» ({@see PedidoSala::nombreSala()}): nunca la dirección ni el teléfono. En
+     * listas, cargar antes `sala` y {@see self::PEDIDO_WEB}.
+     */
+    public function nombreDestino(): string
+    {
+        return $this->sala?->nombre ?? $this->dte?->pedidoWeb?->pedidoSala?->nombreSala() ?? 'Sala sin identificar';
     }
 
     /** Anotado por la oficina después de facturar: entregado, pero sin dinero en la salida. */
