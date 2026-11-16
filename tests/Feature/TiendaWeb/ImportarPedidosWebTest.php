@@ -74,8 +74,9 @@ class ImportarPedidosWebTest extends TestCase
         Http::swap(new Factory);
         Http::preventStrayRequests();
         Http::fake([
+            '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),
             '*/pedidos-pagados*' => Http::response(['pedidos' => $pedidos]),
-            '*/estado' => Http::response(['error' => $error], $estado),
+            '*/estado' => Http::response(['error' => $error, 'actual' => 'entregado'], $estado),
             '*/limpieza' => Http::response([], 200),
         ]);
     }
@@ -139,7 +140,7 @@ class ImportarPedidosWebTest extends TestCase
         $this->assertSame('3.0000', PedidoSala::firstOrFail()->lineas->sole()->cantidad);
         $this->assertSame(1, Activity::where('log_name', 'pedido_web')->count());
         $this->assertCount(1, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/estado')));
-        $gets = Http::recorded(fn (Request $r) => $r->method() === 'GET');
+        $gets = Http::recorded(fn (Request $r) => $r->method() === 'GET' && str_contains($r->url(), '/pedidos-pagados'));
         $this->assertCount(2, $gets);
         foreach ($gets as [$request]) {
             $this->assertSame(0, $request['despues']);
@@ -242,15 +243,16 @@ class ImportarPedidosWebTest extends TestCase
         Http::assertNotSent(fn (Request $r) => str_ends_with($r->url(), '/estado'));
     }
 
-    public function test_distrito_desconocido_importa_sin_zona_aun_con_cobertura_departamental(): void
+    public function test_distrito_desconocido_usa_cobertura_departamental(): void
     {
         $depto = Departamento::firstOrCreate(['codigo' => '04'], ['nombre' => 'Inventado', 'activo' => true]);
-        Ruta::create(['nombre' => 'Zona inventada', 'activa' => true])->coberturas()->create(['departamento_id' => $depto->id]);
+        $ruta = Ruta::create(['nombre' => 'Zona inventada', 'activa' => true]);
+        $ruta->coberturas()->create(['departamento_id' => $depto->id]);
         $this->remoto([$this->datos()]);
         $this->pasar();
         $this->assertSame(EstadoPedidoWeb::Importado, PedidoWeb::firstOrFail()->estado);
-        $this->assertNull(PedidoSala::firstOrFail()->ruta_id);
-        $this->assertSame('Sin zona', PedidoSala::firstOrFail()->zonaNombre());
+        $this->assertSame($ruta->id, PedidoSala::firstOrFail()->ruta_id);
+        $this->assertSame('Zona inventada', PedidoSala::firstOrFail()->zonaNombre());
     }
 
     public function test_sin_aplicar_cuenta_sin_escrituras_ni_post(): void
@@ -338,6 +340,9 @@ class ImportarPedidosWebTest extends TestCase
             if ($r->method() !== 'GET') {
                 return Http::response([], 200);
             }
+            if (str_contains($r->url(), '/pedidos-a-revisar')) {
+                return Http::response(['pedidos' => []]);
+            }
             $this->assertSame(100, $r['limite']);
 
             return Http::response(['pedidos' => $r['despues'] === 0
@@ -347,14 +352,14 @@ class ImportarPedidosWebTest extends TestCase
         $this->assertSame(101, $this->pasar()['importados']);
         $this->assertSame(101, $this->pasar()['existentes']);
         $this->assertDatabaseCount('pedidos_sala', 101);
-        $this->assertSame([0, 100, 0, 100], Http::recorded(fn (Request $r) => $r->method() === 'GET')->map(fn ($par) => $par[0]['despues'])->values()->all());
+        $this->assertSame([0, 100, 0, 100], Http::recorded(fn (Request $r) => $r->method() === 'GET' && str_contains($r->url(), '/pedidos-pagados'))->map(fn ($par) => $par[0]['despues'])->values()->all());
         $this->assertCount(2, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza')));
     }
 
     public function test_avisa_solo_despues_de_confirmar_la_transaccion_local(): void
     {
         Http::fake(function (Request $r) {
-            if ($r->method() === 'GET') {
+            if ($r->method() === 'GET' && str_contains($r->url(), '/pedidos-pagados')) {
                 return Http::response(['pedidos' => [$this->datos()]]);
             }
             if (str_ends_with($r->url(), '/estado')) {
@@ -434,6 +439,7 @@ class ImportarPedidosWebTest extends TestCase
     public function test_limpieza_fallida_no_deshace_importacion(): void
     {
         Http::fake([
+            '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),
             '*/pedidos-pagados*' => Http::response(['pedidos' => [$this->datos()]]),
             '*/estado' => Http::response([], 200),
             '*/limpieza' => Http::response([], 500),
@@ -441,5 +447,65 @@ class ImportarPedidosWebTest extends TestCase
         $this->artisan('tienda:traer-pedidos', ['--aplicar' => true])->assertSuccessful();
         $this->assertDatabaseCount('pedidos_sala', 1);
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/limpieza') && $r->body() === '');
+    }
+
+    public function test_pago_doble_tardio_se_anota_sin_cambiar_estado_y_consulta_fallida_no_frena(): void
+    {
+        $this->remoto([$this->datos()]);
+        $this->pasar();
+        $web = PedidoWeb::firstOrFail();
+        $web->update(['estado' => EstadoPedidoWeb::Facturado]);
+        Http::swap(new Factory);
+        Http::fake([
+            '*/pedidos-pagados*' => Http::response(['pedidos' => []]),
+            '*/pedidos-a-revisar*' => Http::sequence()->push([], 503)->push(['pedidos' => [
+                ['id' => 1, 'alerta' => 'pago_doble'], ['id' => 99, 'alerta' => 'pago_doble'],
+            ]])->push(['pedidos' => [['id' => 1, 'alerta' => 'pago_doble']]]),
+            '*/limpieza' => Http::response(),
+        ]);
+        $this->pasar();
+        $this->assertSame('', $web->refresh()->alerta);
+        $this->pasar();
+        $actualizado = $web->refresh()->updated_at;
+        $this->travel(1)->minutes();
+        $this->pasar();
+        $this->assertSame('pago_doble', $web->refresh()->alerta);
+        $this->assertTrue($actualizado->eq($web->updated_at));
+        $this->assertSame(EstadoPedidoWeb::Facturado, $web->estado);
+        $this->assertDatabaseCount('pedidos_web', 1);
+    }
+
+    public function test_preparando_rechazado_no_reintenta_ni_cambia_estado(): void
+    {
+        foreach ([409, 422, 404] as $i => $status) {
+            $this->remoto([$this->datos($i + 1)], $status);
+            if ($status === 409) {
+                Http::swap(new Factory);
+                Http::fake([
+                    '*/pedidos-pagados*' => Http::response(['pedidos' => [$this->datos($i + 1)]]),
+                    '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),
+                    '*/estado' => Http::response(['error' => 'estado'], 409),
+                    '*/limpieza' => Http::response(),
+                ]);
+            }
+            $this->pasar();
+            $this->pasar();
+            $web = PedidoWeb::where('web_id', $i + 1)->firstOrFail();
+            $this->assertNull($web->informado_preparando_en);
+            $this->assertSame(EstadoPedidoWeb::Importado, $web->estado);
+            $this->assertStringContainsString('La página rechazó el aviso: preparando (HTTP '.$status.')', $web->motivo_revision);
+            $this->assertCount(1, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/estado')));
+        }
+    }
+
+    public function test_nombre_web_salta_particulas_y_usa_mayuscula(): void
+    {
+        $this->remoto([$this->datos()]);
+        $this->pasar();
+        $web = PedidoWeb::firstOrFail();
+        foreach (['Alba de la nube' => 'Alba N.', 'Alba del río' => 'Alba R.', 'Alba las los y soles' => 'Alba S.', 'Alba' => 'Alba'] as $nombre => $visible) {
+            $web->update(['cliente_nombre' => $nombre]);
+            $this->assertSame('Pedido web · '.$visible, $web->pedidoSala->fresh()->nombreSala());
+        }
     }
 }

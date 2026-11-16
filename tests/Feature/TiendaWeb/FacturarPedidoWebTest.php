@@ -575,4 +575,24 @@ class FacturarPedidoWebTest extends TestCase
         }
         $this->assertNotNull(PedidoWeb::firstOrFail()->dte_id);
     }
+
+    public function test_factura_rechazada_se_anota_una_vez_sin_inflar_conteo(): void
+    {
+        $this->haciendaSimulada();
+        foreach ([409, 422, 404] as $status) {
+            $pedido = $this->pedido();
+            Http::swap(new Factory);
+            Http::fake(['*/estado' => Http::response(['error' => 'factura'], $status)]);
+            $this->assertSame(1, $this->pasada()['facturados']);
+            $this->assertSame(0, $this->pasada()['facturados']);
+            $this->assertSame(0, $this->pasada()['facturados']);
+            Http::assertSentCount(1);
+            $pedido->refresh();
+            $this->assertNull($pedido->informado_factura_en);
+            $this->assertSame(EstadoPedidoWeb::Facturado, $pedido->estado);
+            $this->assertStringContainsString('La página rechazó el aviso: factura (HTTP '.$status.')', $pedido->motivo_revision);
+            $actividad = Activity::where('subject_id', $pedido->id)->where('description', 'aviso de pedido web rechazado')->sole();
+            $this->assertSame(collect(['aviso' => 'factura', 'http' => $status])->sortKeys()->all(), $actividad->properties->sortKeys()->all());
+        }
+    }
 }

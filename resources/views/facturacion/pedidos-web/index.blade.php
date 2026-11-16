@@ -7,7 +7,7 @@
     <div class="py-6">
         <div class="mx-auto max-w-7xl space-y-4 px-4 sm:px-6 lg:px-8">
             <x-rutas.avisos />
-            <p class="text-sm text-gray-600">Primero los pedidos para revisar y los que llevan más de 30 minutos facturando. Si un pedido ya tiene factura, corregila en Facturación.</p>
+            <p class="text-sm text-gray-600">Primero los pedidos con alertas, avisos rechazados, para revisar y los que llevan más de 30 minutos facturando. Si un pedido ya tiene factura, corregila en Facturación.</p>
             <x-filtros-celular :activos="$estado !== '' ? 1 : 0" id="filtros-pedidos-web">
                 <form method="GET" action="{{ route('facturacion.pedidos-web.index') }}" class="flex flex-wrap items-end gap-3">
                     <div>
@@ -39,8 +39,47 @@
                                 <td class="px-4 py-3 text-sm"><span class="block text-xs text-gray-500 md:hidden">Entrega</span>{{ $web->entrega_tipo === 'recoger' ? 'Recoger' : 'Ruta · '.($web->pedidoSala?->ruta?->nombre ?? $web->pedidoSala?->salida?->ruta?->nombre ?? 'Por asignar') }}</td>
                                 <td class="px-4 py-3 text-right text-sm tabular-nums"><span class="block text-xs text-gray-500 md:hidden">Total</span>${{ \App\Services\Gastos\Dinero::mostrar($web->total_centavos) }}</td>
                                 <td class="px-4 py-3"><x-planta.badge :color="$web->estado->color()">{{ $web->estado->etiqueta() }}</x-planta.badge></td>
-                                <td class="col-span-2 px-4 py-3 text-sm">{{ $web->estado === \App\Enums\EstadoPedidoWeb::ParaRevisar ? $web->motivo_revision : '' }}</td>
+                                <td class="col-span-2 px-4 py-3 text-sm">{{ $web->motivo_revision }}
+                                    @if ($web->alerta)<p class="text-sm text-gray-600">Pago doble: revisar si hay que devolver el segundo cobro</p>@endif</td>
                                 <td class="col-span-2 px-4 py-3 text-right text-sm">
+                                    @if ($web->alerta)
+                                        @can('dte.gestionar')
+                                            <x-secondary-button x-on:click="$dispatch('open-modal', 'revisado-{{ $web->id }}')">Ya lo revisé</x-secondary-button>
+                                            <x-modal name="revisado-{{ $web->id }}" maxWidth="md" focusable>
+                                                <form method="POST" action="{{ route('facturacion.pedidos-web.revisado', $web) }}" class="p-6 text-left" role="dialog" aria-modal="true" aria-labelledby="revisado-titulo-{{ $web->id }}">
+                                                    @csrf
+                                                    <h2 id="revisado-titulo-{{ $web->id }}" class="text-lg font-semibold text-gray-800">¿Confirmar revisión de {{ $web->codigo }}?</h2>
+                                                    <label for="nota-{{ $web->id }}" class="mt-3 block text-sm font-medium text-gray-700">Nota de revisión (sin datos de tarjeta)</label>
+                                                    <x-text-input id="nota-{{ $web->id }}" name="nota" required maxlength="300" class="mt-2 block w-full" />
+                                                    <x-input-error :messages="$errors->get('nota')" />
+                                                    <label class="mt-3 block text-sm text-gray-700"><input type="checkbox" name="confirmacion" value="1" required> Confirmo que revisé el segundo cobro.</label>
+                                                    <x-input-error :messages="$errors->get('confirmacion')" />
+                                                    <div class="mt-6 flex flex-wrap justify-end gap-3">
+                                                        <x-secondary-button x-on:click="$dispatch('close-modal', 'revisado-{{ $web->id }}')">Cancelar</x-secondary-button>
+                                                        <x-primary-button>Ya lo revisé</x-primary-button>
+                                                    </div>
+                                                </form>
+                                            </x-modal>
+                                        @endcan
+                                    @endif
+                                    @if ($web->estado !== \App\Enums\EstadoPedidoWeb::ParaRevisar && filled($web->motivo_revision))
+                                        @can('dte.gestionar')
+                                            <x-secondary-button x-on:click="$dispatch('open-modal', 'volver-a-avisar-{{ $web->id }}')">Volver a avisar</x-secondary-button>
+                                            <x-modal name="volver-a-avisar-{{ $web->id }}" maxWidth="md" focusable>
+                                                <form method="POST" action="{{ route('facturacion.pedidos-web.volver-a-avisar', $web) }}" class="p-6 text-left" role="dialog" aria-modal="true" aria-labelledby="volver-a-avisar-titulo-{{ $web->id }}">
+                                                    @csrf
+                                                    <h2 id="volver-a-avisar-titulo-{{ $web->id }}" class="text-lg font-semibold text-gray-800">¿Volver a avisar {{ $web->codigo }}?</h2>
+                                                    <p class="mt-3 text-sm text-gray-600">Después de corregir el problema en la página, la próxima pasada volverá a mandar los avisos pendientes.</p>
+                                                    <label class="mt-3 block text-sm text-gray-700"><input type="checkbox" name="confirmacion" value="1" required> Confirmo que quiero volver a avisar.</label>
+                                                    <x-input-error :messages="$errors->get('confirmacion')" />
+                                                    <div class="mt-6 flex flex-wrap justify-end gap-3">
+                                                        <x-secondary-button x-on:click="$dispatch('close-modal', 'volver-a-avisar-{{ $web->id }}')">Cancelar</x-secondary-button>
+                                                        <x-primary-button>Volver a avisar</x-primary-button>
+                                                    </div>
+                                                </form>
+                                            </x-modal>
+                                        @endcan
+                                    @endif
                                     @if ($web->dte_id)
                                         <a href="{{ route('facturacion.show', $web->dte_id) }}" class="inline-flex min-h-11 items-center text-indigo-700">Ver factura</a>
                                         @if ($web->estado === \App\Enums\EstadoPedidoWeb::ParaRevisar)<p class="text-sm text-gray-600">Corregí la factura en Facturación.</p>@endif

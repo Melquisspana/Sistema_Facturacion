@@ -40,6 +40,7 @@ class PedidosWebParaRevisar implements Detector
     {
         $pendientes = PedidoWeb::query()->where(fn ($q) => $q
             ->where('estado', EstadoPedidoWeb::ParaRevisar)
+            ->orWhere('alerta', '<>', '')->orWhereNotNull('motivo_revision')
             ->orWhere(fn ($q) => $q->where('estado', EstadoPedidoWeb::Facturando)
                 ->where('updated_at', '<', now()->subMinutes(self::MINUTOS_TRABADO))));
         $n = (clone $pendientes)->count();
@@ -51,11 +52,9 @@ class PedidosWebParaRevisar implements Detector
         $codigos = (clone $pendientes)->orderBy('id')->limit(self::NOMBRADOS)->pluck('codigo')->implode(', ');
 
         return new Hallazgo(
-            titulo: $n === 1 ? '1 pedido web no se facturó solo' : $n.' pedidos web no se facturaron solos',
+            titulo: $n === 1 ? '1 pedido web requiere atención' : $n.' pedidos web requieren atención',
             detalle: 'Para revisar: '.$codigos.($n > self::NOMBRADOS ? ' y '.($n - self::NOMBRADOS).' más.' : '.'),
-            // La lista de pedidos web llega en la etapa 3; mientras tanto, por código.
-            queHacer: 'Revisá el motivo de cada uno en la lista de pedidos web. Mientras esa pantalla no llegue, '
-                .'la oficina lo busca con el código del pedido y decide si emite la factura a mano.',
+            queHacer: 'Revisá el motivo y las alertas de cada uno en la lista de pedidos web.',
             conteo: $n,
             desde: Carbon::parse($pendientes->min('updated_at')),
         );

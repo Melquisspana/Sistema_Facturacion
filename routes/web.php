@@ -206,6 +206,10 @@ Route::middleware('auth')->group(function () {
     Route::prefix('facturacion')->name('facturacion.')->scopeBindings()->group(function () {
         Route::get('pedidos-web', [PedidoWebController::class, 'index'])
             ->middleware('permission:dte.ver')->name('pedidos-web.index');
+        Route::post('pedidos-web/{pedidoWeb}/revisado', [PedidoWebController::class, 'revisado'])
+            ->middleware('permission:dte.gestionar')->name('pedidos-web.revisado');
+        Route::post('pedidos-web/{pedidoWeb}/volver-a-avisar', [PedidoWebController::class, 'volverAAvisar'])
+            ->middleware('permission:dte.gestionar')->name('pedidos-web.volver-a-avisar');
         Route::post('pedidos-web/{pedidoWeb}/reintentar', [PedidoWebController::class, 'reintentar'])
             ->middleware('permission:dte.gestionar')->name('pedidos-web.reintentar');
         Route::post('contingencia/activar', [ContingenciaController::class, 'activar'])
