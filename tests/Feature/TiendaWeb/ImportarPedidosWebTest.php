@@ -118,7 +118,11 @@ class ImportarPedidosWebTest extends TestCase
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/estado') && $r['estado'] === 'preparando' && $r->hasHeader('Authorization', 'Bearer '.self::SECRETO));
         $actividad = Activity::where('log_name', 'pedido_web')->firstOrFail();
         $this->assertNull($actividad->causer_id);
-        $this->assertSame(['web_id' => 1, 'codigo' => $web->codigo, 'origen' => 'tienda_web'], $actividad->properties->all());
+        // MySQL reordena las claves de una columna JSON: se compara sin importar el orden.
+        $this->assertSame(
+            collect(['web_id' => 1, 'codigo' => $web->codigo, 'origen' => 'tienda_web'])->sortKeys()->all(),
+            $actividad->properties->sortKeys()->all(),
+        );
     }
 
     public function test_dos_pasadas_no_duplican_y_suman_lineas_del_mismo_producto(): void
