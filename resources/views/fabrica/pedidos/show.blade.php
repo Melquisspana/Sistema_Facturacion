@@ -155,8 +155,11 @@
                     <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Orden de compra:</dt><dd class="font-mono text-gray-800">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
                     <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Lo sacó:</dt><dd class="text-gray-800">{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
                     <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Fecha y hora:</dt><dd class="tabular-nums text-gray-800">{{ $pedido->fecha->format('d/m/Y') }} {{ $pedido->created_at->format('H:i') }}</dd></div>
+                    {{-- Notas del vendedor (16/11/2026): ahí pone, por ejemplo, los cambios por avería
+                         (se saca el arruinado y se da uno nuevo). En gris no se veían: van en una
+                         franja amarilla corta, del ancho de la hoja, sin agrandar la letra. --}}
                     @if ($pedido->notas)
-                        <div class="w-full"><dt class="text-sm text-gray-500">Notas</dt><dd class="whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
+                        <div class="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-1"><dt class="inline text-sm font-semibold text-amber-800">Notas del vendedor:</dt> <dd class="inline whitespace-pre-line text-gray-800">{{ $pedido->notas }}</dd></div>
                     @endif
                 </dl>
             </section>
