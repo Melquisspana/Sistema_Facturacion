@@ -513,17 +513,31 @@ class PantallaFabricaTest extends TestCase
         $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Envío 1')->assertDontSee('Imprimir de nuevo');
     }
 
+    public function test_el_codigo_del_producto_solo_aparece_en_la_hoja_impresa(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->canilla->id => '6']);
+
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertSee('Galleta de prueba')->assertSee('Canilla de prueba')
+            ->assertDontSee('G01')->assertDontSee('C01');
+
+        $this->mandar($pedido, [$this->galleta->id => '12', $this->canilla->id => '6'])
+            ->assertSessionHasNoErrors();
+        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $pedido->envios()->sole()]))->assertOk()
+            ->assertSee('G01')->assertSee('C01');
+    }
+
     public function test_en_monitor_cada_producto_es_un_renglon_y_la_lista_usa_el_ancho(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '12', $this->canilla->id => '6']);
         $this->pedido([$this->galleta->id => '3'], $this->otraSala);
 
-        // Un renglón por producto: nombre y código | Pidió | Va, Todo, Nada; el motivo abajo.
+        // Un renglón por producto: nombre y Pidió | Va, Todo, Nada; el motivo abajo.
         $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
             ->assertSee('max-w-full mx-auto', false)
-            ->assertSee('lg:grid lg:grid-cols-2', false)->assertSee('xl:grid-cols-2', false)
-            ->assertSeeInOrder(['Galleta de prueba', 'G01', 'Pidió 12', 'Va', 'Todo', 'Nada', 'Por qué no va'])
-            ->assertSee('sm:grid-cols-2 lg:grid-cols-6', false);
+            ->assertSee('lg:flex lg:flex-wrap', false)->assertSee('xl:grid-cols-2', false)
+            ->assertSeeInOrder(['Galleta de prueba', 'Pidió 12', 'Va', 'Todo', 'Nada', 'Por qué no va'])
+            ->assertSee('mt-1 flex flex-wrap gap-x-3 gap-y-2 text-base', false);
 
         $this->get(route('fabrica.pedidos.index'))->assertOk()
             ->assertSee('max-w-full mx-auto', false)->assertSee('lg:grid-cols-4', false);
