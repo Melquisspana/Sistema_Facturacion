@@ -8,6 +8,14 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.16.1] - 2026-11-16
+
+Pedidos: un pedido de 12 productos se ve entero en el monitor de la fábrica, sin bajar (#385). Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- Pedidos (pantalla de la fábrica): cada producto en un renglón, con el nombre y «Pidió» junto a «Va», «Todo» y «Nada»; los datos de la sala en una franja y la fila de otros pedidos más baja. Sin el código de producto, que en la fábrica no se usa; sigue en la hoja impresa (#385).
+
 ## [2026.11.13.3] - 2026-11-13
 
 El sistema se puede instalar como app en el celular (#376). «Salir» ya no tarda (#379). Inicio más claro y ordenado, sin lo que ya no se usa (#377, #380). En Pedidos, «No mandar nada» se entiende y pide confirmación (#375). Arreglos de dinero de la auditoría en DTE, Cobros, PPQ y Gastos (#373, #374).
