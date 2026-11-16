@@ -16,7 +16,6 @@ use App\Support\HoraNegocio;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -77,7 +76,9 @@ class ImportarPedidosWeb
         } finally {
             if ($aplicar) {
                 // También cubre la caída tras el POST remoto: puede ya no venir en el GET.
-                PedidoWeb::where('estado', EstadoPedidoWeb::Importado)->whereNull('informado_preparando_en')
+                // Por pedido de fábrica y no por estado: la factura (etapa 2) lo mueve a
+                // «facturando» o «facturado» aunque el aviso todavía no haya salido.
+                PedidoWeb::whereNotNull('pedido_sala_id')->whereNull('informado_preparando_en')
                     ->whereNotIn('id', $intentados)->eachById(fn (PedidoWeb $p) => $this->informar($p));
                 try {
                     $this->http()->withBody('', 'application/json')->post($this->configuracion->url().'/api/sistema/limpieza');
@@ -87,7 +88,7 @@ class ImportarPedidosWeb
             }
         }
         if ($aplicar) {
-            $conteo['avisos_pendientes'] = PedidoWeb::where('estado', EstadoPedidoWeb::Importado)->whereNull('informado_preparando_en')->count();
+            $conteo['avisos_pendientes'] = PedidoWeb::whereNotNull('pedido_sala_id')->whereNull('informado_preparando_en')->count();
         }
 
         return $conteo;
@@ -95,8 +96,7 @@ class ImportarPedidosWeb
 
     private function http(): PendingRequest
     {
-        return Http::withToken($this->configuracion->secreto())->acceptJson()->timeout(10)
-            ->withOptions(['allow_redirects' => false]);
+        return $this->configuracion->cliente();
     }
 
     private function esValido(array $datos): bool
@@ -220,7 +220,8 @@ class ImportarPedidosWeb
 
     private function informar(PedidoWeb $pedido): void
     {
-        if ($pedido->estado !== EstadoPedidoWeb::Importado || $pedido->informado_preparando_en !== null) {
+        // Solo los que llegaron a fábrica; el estado puede ya ser de la factura (etapa 2).
+        if ($pedido->pedido_sala_id === null || $pedido->informado_preparando_en !== null) {
             return;
         }
         try {

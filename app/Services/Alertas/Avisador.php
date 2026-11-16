@@ -12,6 +12,7 @@ use App\Services\Alertas\Detectores\FirmadoSinTransmitir;
 use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
 use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
+use App\Services\Alertas\Detectores\PedidosWebParaRevisar;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\SaludDelSistema;
 use App\Services\Alertas\Detectores\TrabajosFallidos;
@@ -59,6 +60,7 @@ class Avisador
             app(SaludDelSistema::class),
             app(TrabajosFallidos::class),
             app(DteRechazados::class),
+            app(PedidosWebParaRevisar::class),
             app(ContingenciaVencida::class),
             app(FirmadoSinTransmitir::class),
             app(RespaldoFallido::class),

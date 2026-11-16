@@ -117,7 +117,12 @@ class MapeadorDteSalida
     {
         $cliente = $dte->cliente;
         if (! $cliente) {
-            return null; // Factura 01 a consumidor final
+            // Factura 01 a consumidor final: sin receptor, salvo que el documento traiga su
+            // nombre (tienda web, ADR 0011). Entonces solo nombre y correo: sin documento,
+            // NRC, actividad ni ubicación.
+            return filled($dte->receptor_nombre)
+                ? new ReceptorDteData(nombre: $dte->receptor_nombre, correo: filled($dte->receptor_correo) ? $dte->receptor_correo : null)
+                : null;
         }
 
         // Identidad fiscal: SIEMPRE del cliente (es el contribuyente con el NIT).

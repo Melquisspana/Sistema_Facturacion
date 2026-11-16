@@ -30,7 +30,7 @@ use App\Models\Dte;
  *   Lo que NO es el Caso 2: que la firma falle y no llegue a producir un JWS. Ahí no
  *   hubo envío que consultar, y preguntarle a Hacienda por un documento que nunca salió
  *   solo agrega una petición inútil. Ese camino lanza su excepción de firma y no entra
- *   acá (ver DteController::procesarFirmaTransmision).
+ *   acá (ver FirmaTransmisionDte::procesar).
  *
  * EL CICLO
  *   1. Enviar.

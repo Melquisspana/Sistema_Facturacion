@@ -50,3 +50,4 @@ Puede agregarse una sección de referencias relacionadas. Usá solo datos invent
 | [0008. Punto de venta propio y candados de emisión real](0008-punto-de-venta-propio-y-candados-de-emision-real.md) | Aceptada | 2026-11-10 |
 | [0009. Reglas de cálculo de CCF y nota de crédito](0009-reglas-de-calculo-de-ccf-y-nota-de-credito.md) | Aceptada | 2026-11-10 |
 | [0010. El viaje reemplaza a la ruta fija](0010-el-viaje-reemplaza-a-la-ruta-fija.md) | Aceptada | 2026-11-10 |
+| [0011. Factura automática de la tienda web](0011-factura-automatica-de-la-tienda-web.md) | Aceptada | 2026-11-16 |

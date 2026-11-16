@@ -335,4 +335,6 @@ Schedule::command('tienda:traer-pedidos --aplicar')
     ->when(fn () => Ajustes::boolSinBase('tienda.pedidos.automatica'))
     // Candado de 5 minutos: si una pasada se cae, la siguiente no queda trabada un día entero.
     ->withoutOverlapping(5)
+    // Emite a Hacienda (ADR 0011): una emisión lenta no frena las otras tareas del programador.
+    ->runInBackground()
     ->appendOutputTo(storage_path('logs/tienda-pedidos.log'));

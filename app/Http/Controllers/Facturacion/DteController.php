@@ -18,12 +18,9 @@ use App\Exceptions\Dte\AnulacionException;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Exceptions\Dte\DteEmisionEnCursoException;
 use App\Exceptions\Dte\DteEvidenciaProtegidaException;
-use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
-use App\Exceptions\Dte\DteFirmaException;
 use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteJsonException;
 use App\Exceptions\Dte\DteJsonInvalidoException;
-use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Exceptions\Dte\GeneracionException;
 use App\Exceptions\Dte\OrdenCompraRequeridaException;
@@ -57,18 +54,16 @@ use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
-use App\Services\Dte\ContingenciaAutomaticaService;
 use App\Services\Dte\CopiaDeAceptadoTardio;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
-use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
-use App\Services\Dte\DteTransmisionResiliente;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\EnvioDteCorreoService;
+use App\Services\Dte\FirmaTransmisionDte;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Dte\PrecioProductoResolver;
 use App\Services\Dte\PreflightEmisionProduccion;
@@ -1157,8 +1152,8 @@ class DteController extends Controller
 
     /**
      * Acción MANUAL única: firma y transmite el DTE en un solo paso, de forma idempotente.
-     * Reusa los servicios existentes (DteJsonService/DteFirmaService/DteTransmisionService) y
-     * su máquina de estados; NO duplica lógica de firma/transmisión. En modo MOCK
+     * Usa el núcleo compartido {@see FirmaTransmisionDte} (el mismo de la factura automática
+     * de la tienda web) y su máquina de estados; NO duplica lógica de firma/transmisión. En modo MOCK
      * (DTE_FIRMADOR_MOCK / MH_MOCK) simula firma y aceptación sin firmador ni red.
      *
      * Garantías: NO consume correlativo nuevo (lo asigna la generación de JSON), NO re-firma si
@@ -1169,15 +1164,14 @@ class DteController extends Controller
     public function firmarTransmitir(
         Request $request,
         Dte $dte,
-        DteJsonService $jsonService,
-        DteFirmaService $firma,
+        FirmaTransmisionDte $firmaTransmision,
         DteTransmisionService $transmision,
     ): RedirectResponse {
         $this->authorize('firmarTransmitir', $dte);
 
         return $this->conCandadoDeEmision(
             $dte,
-            fn () => $this->firmarTransmitirConCandado($request, $dte, $jsonService, $firma, $transmision),
+            fn () => $this->firmarTransmitirConCandado($request, $dte, $firmaTransmision, $transmision),
             fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
         );
     }
@@ -1205,8 +1199,7 @@ class DteController extends Controller
     private function firmarTransmitirConCandado(
         Request $request,
         Dte $dte,
-        DteJsonService $jsonService,
-        DteFirmaService $firma,
+        FirmaTransmisionDte $firmaTransmision,
         DteTransmisionService $transmision,
     ): RedirectResponse {
         $volver = redirect()->route('facturacion.show', $dte);
@@ -1238,7 +1231,7 @@ class DteController extends Controller
         ]);
 
         // Núcleo compartido: asegura JSON, firma (si generado) y transmite.
-        $res = $this->procesarFirmaTransmision($dte, $jsonService, $firma, $transmision);
+        $res = $firmaTransmision->procesar($dte, $request->user());
         if (isset($res['error'])) {
             return $volver->with('error', $res['error']);
         }
@@ -1255,74 +1248,6 @@ class DteController extends Controller
     }
 
     /**
-     * Núcleo compartido de firma + transmisión, reusado por firmarTransmitir() y por
-     * generarTransmitirProduccion(). Asegura el JSON, firma SOLO si el documento está
-     * generado (idempotente) y transmite el firmado. NO envía correo.
-     *
-     * @return array{error: string}|array{resultado: array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>}}
-     */
-    private function procesarFirmaTransmision(Dte $dte, DteJsonService $jsonService, DteFirmaService $firma, DteTransmisionService $transmision): array
-    {
-        // CASO 2 del manual. Se mira ANTES de firmar: si el documento YA llega firmado,
-        // hubo un intento anterior cuyo desenlace nadie conoce (el usuario que vuelve a
-        // pulsar el botón). Ese es el escenario donde reenviar a ciegas duplica, y por
-        // eso la política consulta antes del primer envío. Si llega Generado, la firma
-        // es nueva: no hubo envío previo y no hay nada que consultar.
-        $estadoIncierto = $dte->estado === EstadoDte::Firmado;
-
-        // 1. Asegurar el JSON oficial (genera si falta, reusando la misma garantía del correo).
-        //    Sin tomar el candado otra vez: quien llega hasta acá ya lo tiene.
-        if (($error = $this->asegurarJson($dte, $jsonService)) !== null) {
-            return ['error' => 'No se puede firmar/transmitir: '.$error];
-        }
-
-        // 2. Firmar SOLO si aún está generado; si ya está firmado se salta y se reintenta el envío.
-        try {
-            if ($dte->estado === EstadoDte::Generado) {
-                $firma->firmar($dte);
-                $dte->refresh();
-            }
-        } catch (DteFirmaDeshabilitadaException|DteFirmaException $e) {
-            Log::warning('DTE firma: fallo', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
-
-            return ['error' => 'No se pudo firmar el documento: '.$e->getMessage().' Podés reintentar.'];
-        }
-
-        // 3. Transmitir el documento firmado, SIEMPRE por la política oficial de
-        //    reintentos (Manual V2.0): consulta antes de cualquier reenvío, máximo 2
-        //    reenvíos, y al agotarse un error explícito SIN activar contingencia.
-        //    Se resuelve del contenedor en vez de inyectarlo en las cuatro acciones que
-        //    llegan hasta acá: la política no es una opción de cada botón, es la única
-        //    forma de transmitir.
-        if ($dte->esTransitorio()) {
-            return ['resultado' => ['resultado' => 'transitorio', 'http_status' => null,
-                'mensaje' => 'Documento emitido en contingencia, pendiente de sello de recepción.', 'sello' => null]];
-        }
-
-        try {
-            $r = app(DteTransmisionResiliente::class)->transmitir($dte, $estadoIncierto);
-            if (app(ContingenciaAutomaticaService::class)->convertirTrasReintentos($dte, $r, request()->user())) {
-                $r['resultado'] = 'transitorio';
-                $r['mensaje'] = 'Documento emitido en contingencia, pendiente de sello de recepción.';
-            }
-        } catch (DteFirmaException $e) {
-            return ['error' => 'Se activó la contingencia, pero no se pudo re-firmar el documento: '.$e->getMessage()];
-        } catch (DteTransmisionDeshabilitadaException $e) {
-            Log::warning('DTE transmisión bloqueada', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
-
-            return ['error' => 'Firmado, pero la transmisión está bloqueada por candados de seguridad: '
-                .$e->getMessage().' El documento queda firmado; podés reintentar.'];
-        } catch (DteTransmisionException $e) {
-            Log::warning('DTE fallo en transmisión', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
-
-            return ['error' => 'Firmado, pero no se pudo transmitir: '.$e->getMessage()
-                .' El documento queda firmado; podés reintentar.'];
-        }
-
-        return ['resultado' => $r];
-    }
-
-    /**
      * ACCIÓN REAL DE PRODUCCIÓN: "Generar y transmitir producción". Explícita y
      * separada del botón normal "Generar" (que sigue siendo local/seguro). Corre el
      * preflight de producción, exige la barrera anti-Conta y la frase EMITIR PRODUCCION,
@@ -1332,9 +1257,7 @@ class DteController extends Controller
     public function generarTransmitirProduccion(
         Request $request,
         Dte $dte,
-        DteJsonService $jsonService,
-        DteFirmaService $firma,
-        DteTransmisionService $transmision,
+        FirmaTransmisionDte $firmaTransmision,
         DteGeneracionService $generacion,
         PreflightEmisionProduccion $preflightCcf,
         PreflightEmisionProduccionFactura $preflightFactura,
@@ -1344,7 +1267,7 @@ class DteController extends Controller
 
         return $this->conCandadoDeEmision(
             $dte,
-            fn () => $this->generarTransmitirProduccionConCandado($request, $dte, $jsonService, $firma, $transmision, $generacion, $preflightCcf, $preflightFactura, $preflightExportacion),
+            fn () => $this->generarTransmitirProduccionConCandado($request, $dte, $firmaTransmision, $generacion, $preflightCcf, $preflightFactura, $preflightExportacion),
             fn (string $aviso) => redirect()->route('facturacion.show', $dte)->with('error', $aviso),
         );
     }
@@ -1353,9 +1276,7 @@ class DteController extends Controller
     private function generarTransmitirProduccionConCandado(
         Request $request,
         Dte $dte,
-        DteJsonService $jsonService,
-        DteFirmaService $firma,
-        DteTransmisionService $transmision,
+        FirmaTransmisionDte $firmaTransmision,
         DteGeneracionService $generacion,
         PreflightEmisionProduccion $preflightCcf,
         PreflightEmisionProduccionFactura $preflightFactura,
@@ -1423,7 +1344,7 @@ class DteController extends Controller
         }
 
         // 5. Firmar (real) + transmitir (núcleo compartido). NO envía correo.
-        $res = $this->procesarFirmaTransmision($dte, $jsonService, $firma, $transmision);
+        $res = $firmaTransmision->procesar($dte, $request->user());
         if (isset($res['error'])) {
             return $volver->with('error', $res['error']);
         }
@@ -2082,7 +2003,7 @@ class DteController extends Controller
      * si existen, el JSON oficial y el JWS firmado. Registra el intento en el historial
      * (enviado | error). NO transmite a Hacienda ni cambia el estado del DTE.
      */
-    public function enviarCorreo(Request $request, Dte $dte, DteJsonService $jsonService): RedirectResponse
+    public function enviarCorreo(Request $request, Dte $dte, FirmaTransmisionDte $firmaTransmision): RedirectResponse
     {
         $this->authorize('enviarCorreo', $dte); // gestor + no borrador (DtePolicy)
 
@@ -2097,7 +2018,7 @@ class DteController extends Controller
 
         // No mandar un correo incompleto: el DTE debe tener su JSON oficial guardado. Si falta
         // (documento viejo), se intenta generar automáticamente; si no se puede, se bloquea.
-        if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
+        if (($error = $this->asegurarJsonParaCorreo($dte, $firmaTransmision)) !== null) {
             return back()->withErrors(['destinatarios' => $error])->withInput();
         }
 
@@ -2138,7 +2059,7 @@ class DteController extends Controller
      * intenta enviar. Reusa el MISMO pipeline encolado que enviarCorreo (PDF + JSON/JWS,
      * historial DteEnvio, job en cola). No transmite a Hacienda ni cambia el estado.
      */
-    public function enviarCorreoCliente(Dte $dte, DteJsonService $jsonService): RedirectResponse
+    public function enviarCorreoCliente(Dte $dte, FirmaTransmisionDte $firmaTransmision): RedirectResponse
     {
         $this->authorize('enviarCorreo', $dte); // gestor + no borrador (DtePolicy)
 
@@ -2151,7 +2072,7 @@ class DteController extends Controller
         }
 
         // El correo no sale incompleto: garantizar el JSON oficial (se genera si falta).
-        if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
+        if (($error = $this->asegurarJsonParaCorreo($dte, $firmaTransmision)) !== null) {
             return back()->with('error', $error);
         }
 
@@ -2198,7 +2119,7 @@ class DteController extends Controller
      * soportado + estado generado), lo genera al vuelo. Si no se puede, devuelve el
      * mensaje de error para mostrar al usuario; null = todo OK.
      */
-    private function asegurarJsonParaCorreo(Dte $dte, DteJsonService $jsonService): ?string
+    private function asegurarJsonParaCorreo(Dte $dte, FirmaTransmisionDte $firmaTransmision): ?string
     {
         // Con el JSON ya guardado no se genera nada: no hace falta el candado.
         if (filled($dte->json_generado_path)) {
@@ -2208,36 +2129,12 @@ class DteController extends Controller
         // Generarlo asigna numeración y escribe el archivo, igual que al emitir: va bajo el
         // mismo candado por documento, que además lo relee antes de decidir que falta. Sin
         // esto, «enviar correo» y «firmar y transmitir» a la vez podían generarlo los dos.
+        // La misma garantía que usa la emisión ({@see FirmaTransmisionDte::asegurarJson()}).
         try {
-            return CandadoEmisionDte::ejecutar($dte, fn () => $this->asegurarJson($dte, $jsonService));
+            return CandadoEmisionDte::ejecutar($dte, fn () => $firmaTransmision->asegurarJson($dte));
         } catch (DteEmisionEnCursoException $e) {
             return $e->getMessage();
         }
-    }
-
-    /**
-     * Lo de {@see asegurarJsonParaCorreo()}, para quien YA tiene el candado del documento
-     * (el flujo de emisión). El candado no se puede tomar dos veces desde el mismo pedido.
-     */
-    private function asegurarJson(Dte $dte, DteJsonService $jsonService): ?string
-    {
-        if (filled($dte->json_generado_path)) {
-            return null;
-        }
-
-        $faltante = 'Este DTE no tiene JSON generado. Regenerá el JSON antes de enviar.';
-
-        if (! $jsonService->soporta($dte->tipo_dte) || $dte->estado !== EstadoDte::Generado) {
-            return $faltante;
-        }
-
-        try {
-            $jsonService->generar($dte); // asigna numeración oficial + guarda json_generado_path
-        } catch (\Throwable $e) { // schema inválido, no mapeable, no serializable, etc.
-            return $faltante;
-        }
-
-        return null;
     }
 
     /**

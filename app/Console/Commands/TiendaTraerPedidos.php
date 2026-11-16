@@ -2,29 +2,39 @@
 
 namespace App\Console\Commands;
 
+use App\Services\TiendaWeb\FacturarPedidoWeb;
 use App\Services\TiendaWeb\ImportarPedidosWeb;
 use Illuminate\Console\Command;
 use Throwable;
 
 class TiendaTraerPedidos extends Command
 {
-    protected $signature = 'tienda:traer-pedidos {--aplicar : Guarda los pedidos y avisa a la tienda}';
+    protected $signature = 'tienda:traer-pedidos {--aplicar : Guarda los pedidos, emite su factura y avisa a la tienda}';
 
-    protected $description = 'Trae pedidos pagados de la tienda; sin --aplicar solo cuenta, sin escribir';
+    protected $description = 'Trae pedidos pagados de la tienda y los factura; sin --aplicar solo cuenta, sin escribir';
 
-    public function handle(ImportarPedidosWeb $importador): int
+    public function handle(ImportarPedidosWeb $importador, FacturarPedidoWeb $facturador): int
     {
+        $aplicar = (bool) $this->option('aplicar');
+        $fallo = false;
+        $conteo = [];
         try {
-            $conteo = $importador->ejecutar((bool) $this->option('aplicar'));
+            $conteo = $importador->ejecutar($aplicar);
         } catch (Throwable) {
             $this->error('No se pudo completar la importación. Revisá la configuración y reintentá en la próxima pasada.');
-
-            return self::FAILURE;
+            $fallo = true;
         }
-        $this->info(($this->option('aplicar') ? 'Aplicado' : 'Simulación').': '.implode(', ', array_map(
+        // Lo ya importado se factura aunque la tienda no haya respondido en esta pasada.
+        try {
+            $conteo += $facturador->pasada($aplicar);
+        } catch (Throwable) {
+            $this->error('No se pudo completar la facturación de los pedidos web. Se reintentará en la próxima pasada.');
+            $fallo = true;
+        }
+        $this->info(($aplicar ? 'Aplicado' : 'Simulación').': '.implode(', ', array_map(
             fn ($clave, $valor) => $clave.'='.$valor, array_keys($conteo), $conteo,
         )));
 
-        return self::SUCCESS;
+        return $fallo ? self::FAILURE : self::SUCCESS;
     }
 }
