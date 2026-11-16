@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Rutas;
 
+use App\Enums\EstadoPedidoSala;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\CorregirPedidoOficinaRequest;
 use App\Models\ClienteSucursal;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -27,6 +29,7 @@ class PedidoSalaController extends Controller
     public function index(Request $request): View
     {
         $filtros = $request->validate([
+            'estado' => ['nullable', Rule::in([...array_column(EstadoPedidoSala::cases(), 'value'), 'todos'])],
             'desde' => ['nullable', 'date_format:Y-m-d'],
             'hasta' => ['nullable', 'date_format:Y-m-d'],
             'ruta_id' => ['nullable', 'integer'],
@@ -35,9 +38,14 @@ class PedidoSalaController extends Controller
             'mandado_el' => ['nullable', 'date_format:Y-m-d'],
         ]);
 
+        $estado = $filtros['estado'] ?? '';
+
         $pedidos = PedidoSala::query()
             ->with(['sala:id,nombre,codigo', 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre'])
             ->withCount('lineas')
+            ->when($estado !== 'todos', fn (Builder $q) => $estado === ''
+                ? $q->where('estado', '!=', EstadoPedidoSala::Anulado->value)
+                : $q->where('estado', $estado))
             ->when($filtros['desde'] ?? null, fn (Builder $q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($filtros['hasta'] ?? null, fn (Builder $q, $f) => $q->whereDate('fecha', '<=', $f))
             ->when($filtros['ruta_id'] ?? null, fn (Builder $q, $r) => $q->where('ruta_id', $r))
