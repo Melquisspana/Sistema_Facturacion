@@ -260,7 +260,10 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
             $this->assertStringStartsWith('%PDF', $pdf);
         }
         $texto = $this->texto($correo);
-        $this->assertStringContainsString('Van adjuntos los PDF del día, con lo marcado hasta las 6 de la tarde, de: Ana Ficticia, Beto Ficticio, Carla Ficticia.', $texto);
+        $this->assertStringContainsString('Ana Ficticia: Entregas 1 · Cobrado $142.00', $texto);
+        $this->assertStringContainsString('Beto Ficticio: Entregas 0 · Cobrado $0.00', $texto);
+        $this->assertStringContainsString('Carla Ficticia: Entregas 0 · No se pudo 1 · Cobrado $0.00', $texto);
+        $this->assertStringContainsString('PDF del día adjuntos, con lo marcado hasta las 6 de la tarde.', $texto);
         $this->assertStringNotContainsString('Dora', $texto);
         $this->assertStringNotContainsString('Eva', $texto);
         $this->assertStringNotContainsString('ningún vendedor', $texto);
@@ -330,10 +333,23 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
 
         $this->assertSame(['dia-2026-11-09-ana-ficticia.pdf'], array_keys($this->adjuntos($correo)));
         $texto = $this->texto($correo);
-        $this->assertStringContainsString('Van adjuntos los PDF del día, con lo marcado hasta las 6 de la tarde, de: Ana Ficticia.', $texto);
+        $this->assertStringContainsString('PDF del día adjuntos, con lo marcado hasta las 6 de la tarde.', $texto);
         $this->assertStringContainsString('No se pudo adjuntar el PDF de: Beto Ficticio.', $texto);
         Exceptions::assertReported(fn (\RuntimeException $e) => $e->getMessage() === 'Falla simulada del PDF');
         $this->assertSame(1, $this->auditoria()['adjuntos']);
+    }
+
+    public function test_si_falla_la_cuenta_de_un_vendedor_lo_dice_y_sigue(): void
+    {
+        Exceptions::fake();
+        [$ana] = $this->vendedor('Ana Ficticia');
+        $this->marcar($ana);
+        $this->partialMock(DiaVendedor::class, function (MockInterface $dia) {
+            $dia->shouldReceive('resumen')->andThrow(new \RuntimeException('Falla inventada de cuenta'));
+        });
+        $texto = $this->texto($this->enviado());
+        $this->assertStringContainsString('No se pudo calcular el día de Ana Ficticia.', $texto);
+        $this->assertStringNotContainsString('Ana Ficticia: Entregas', $texto);
     }
 
     // ══════════════════════════════ es una foto de las 6
@@ -356,7 +372,7 @@ class CorreoDiarioCierreDelDiaTest extends TestCase
 
         $texto = $this->texto(Mail::sent(ResumenDiarioPedidosCorreo::class)->sole());
         $this->assertStringContainsString('Vendido hoy hasta las 10:15 de la mañana: $142.00 en 1 factura.', $texto);
-        $this->assertStringContainsString('Van adjuntos los PDF del día, con lo marcado hasta las 10:15 de la mañana, de: Ana Ficticia.', $texto);
+        $this->assertStringContainsString('PDF del día adjuntos, con lo marcado hasta las 10:15 de la mañana.', $texto);
         $this->assertStringContainsString('Este resumen llega cada día a las 6 de la tarde.', $texto);
     }
 

@@ -16,6 +16,7 @@ use App\Models\PedidoWeb;
 use App\Models\Producto;
 use App\Models\User;
 use App\Services\Dte\DtePdfService;
+use App\Services\Rutas\PdfFabricaDiario;
 use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Services\TiendaWeb\InformarEstadoPedidoWeb;
@@ -283,7 +284,14 @@ class FabricaPedidoWebTest extends TestCase
         $contenido = app(ResumenDiarioPedidos::class)->contenido(now()->startOfDay(), now()->endOfDay());
         $this->assertArrayHasKey('Pedido web · Compradora I. (web)', $contenido['salas']);
         $correo = new ResumenDiarioPedidosCorreo($contenido);
-        $this->assertStringContainsString('(web)', $correo->render());
+        $this->assertStringContainsString('Pedido web · Compradora I.: 2 cajitas', $correo->render());
+        $pdfHtml = app(PdfFabricaDiario::class)->html($contenido);
+        $this->assertStringContainsString('Pepiayote inventado', $pdfHtml);
+        $this->assertStringContainsString('Cajita 1', $pdfHtml);
+        foreach (['direccion-secreta', 'telefono-secreto', 'compradora@example.test', 'Compradora Inventada', '98765'] as $privado) {
+            $this->assertStringNotContainsString($privado, $correo->render());
+            $this->assertStringNotContainsString($privado, $pdfHtml);
+        }
     }
 
     public function test_recogida_rechaza_otro_rol_y_pedido_sin_armar(): void

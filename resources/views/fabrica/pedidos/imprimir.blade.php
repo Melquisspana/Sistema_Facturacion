@@ -43,28 +43,7 @@
         (el envío anulado que corrige, o null; PedidosFabrica::corrigeA).
     --}}
     <style>
-        <x-documento.estilos acento="verde" />
-
-        @page { size: letter portrait; margin: 12mm; }
-        body { padding: 24px 16px; font-size: 12px; }
-        .hoja { max-width: 820px; margin: 0 auto; }
-
-        .rec-name { font-size: 15px; font-weight: bold; }
-        .f { margin-top: 3px; font-size: 11.5px; }
-        .f .k { color: #8A9099; }
-        .obs { margin-top: 6px; padding: 4px 8px; border: 1px solid #E5C77A; background: #FFF8E6; font-size: 12px; white-space: pre-line; page-break-inside: avoid; }
-
-        h2.queda { color: #7A4A0C; }
-        h2.no-va { color: #8A2440; }
-        .items tbody td { font-size: 12px; }
-        .items tbody tr:nth-child(even) td { background: #F8F9FA; }
-        .items .ci { color: #9AA0A8; width: 22px; }
-        .items .cod { width: 110px; }
-        .items td.cod { font-weight: bold; font-size: 11px; }
-        .items .pn { font-weight: bold; }
-        .items td.r { font-size: 14px; font-weight: bold; font-variant-numeric: tabular-nums; }
-        .items .motivo { font-style: italic; color: #4A4F58; }
-        .nota { margin: 6px 0 0; font-size: 11px; color: #6B7280; }
+        @include('fabrica.pedidos._estilos-despacho')
 
         .no-print { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 820px; margin: 0 auto 16px; }
         .no-print a, .no-print button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid #C9CDD4; background: #fff; color: #20242C; font: inherit; font-weight: 600; text-decoration: none; border-radius: 6px; cursor: pointer; }
@@ -85,89 +64,14 @@
     </style>
 </head>
 <body>
-@php
-    // Solo si es el último envío de todos (ni uno deshecho después) el estado y los motivos actuales son los suyos.
-    $queda = $ultimo && $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
-    $titulo = ! $ultimo ? 'No fue en este envío' : ($queda ? 'Queda pendiente (va en otro envío)' : 'No va');
-    $clase = ! $ultimo ? '' : ($queda ? 'queda' : 'no-va');
-    $direccion = $pedido->direccionSala();
-    $empresa = \App\Support\NombreEmpresa::actual();
-@endphp
+
 
 <div class="no-print">
     <a href="{{ route('fabrica.pedidos.index') }}">Volver a Pedidos</a>
     <button type="button" onclick="window.print()">Imprimir</button>
 </div>
 
-<main class="hoja">
-    <x-documento.encabezado :empresa="$empresa" :logo="asset('images/dte/logo-pdf.png')" detalle="Pedidos · lo que sale para la sala"
-        etiqueta="Documento interno de pedidos" titulo="HOJA DE DESPACHO">
-        <tr class="key"><td class="k">Fecha y hora</td><td class="v">{{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</td></tr>
-        <tr><td class="k">Vendedor</td><td class="v">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td></tr>
-        @if (filled($pedido->numero_orden_compra))
-            <tr><td class="k">Orden de compra</td><td class="v mono">{{ $pedido->numero_orden_compra }}</td></tr>
-        @endif
-    </x-documento.encabezado>
-
-    @if ($corrige)
-        <p class="st"><strong>Corrige la hoja de las {{ $corrige->created_at->format('H:i') }}</strong>: esa hoja quedó anulada y vale esta.</p>
-    @endif
-
-    <section class="sec">
-        <div class="sec-h">Sala de entrega</div>
-        <div class="sec-b">
-            <div class="rec-name">{{ $pedido->nombreSala() }}</div>
-            @if ($direccion)<div class="f"><span class="k">Dirección:</span> {{ $direccion }}</div>@endif
-            <div class="f"><span class="k">Zona:</span> {{ $pedido->zonaNombre() }}</div>
-            {{-- Las notas del vendedor (cambios por avería, etc.) viajan con la hoja. --}}
-            @if (filled($pedido->notas))
-                <div class="obs"><strong>Notas del vendedor:</strong> {{ $pedido->notas }}</div>
-            @endif
-        </div>
-    </section>
-
-    <h2>Lo que va</h2>
-    <table class="items">
-        <thead><tr><th class="ci">#</th><th class="cod">Código</th><th>Producto</th><th class="r">Cantidad</th></tr></thead>
-        <tbody>
-            @foreach ($envio->lineas as $linea)
-                <tr>
-                    <td class="ci">{{ $loop->iteration }}</td>
-                    <td class="cod mono">{{ $linea->linea?->producto?->codigo }}</td>
-                    <td class="pn">{{ $linea->linea?->producto?->nombre }}</td>
-                    <td class="r">{{ $linea->cantidadLegible() }}</td>
-                </tr>
-            @endforeach
-        </tbody>
-    </table>
-
-    @if ($faltan->isNotEmpty())
-        <h2 class="{{ $clase }}">{{ $titulo }}</h2>
-        <table class="items">
-            <thead><tr><th class="ci">#</th><th class="cod">Código</th><th>Producto</th><th class="r">Cantidad</th>@if ($ultimo)<th>Motivo</th>@endif</tr></thead>
-            <tbody>
-                @foreach ($faltan as $falta)
-                    <tr>
-                        <td class="ci">{{ $loop->iteration }}</td>
-                        <td class="cod mono">{{ $falta['linea']->producto?->codigo }}</td>
-                        <td class="pn">{{ $falta['linea']->producto?->nombre }}</td>
-                        <td class="r">{{ \App\Models\PedidoSalaLinea::legible($falta['cantidad']) }}</td>
-                        @if ($ultimo)
-                            <td class="motivo">{{ $falta['linea']->motivo_no_enviado ?? '' }}</td>
-                        @endif
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-    @endif
-    @if (! $ultimo)
-        <p class="nota">Después de este salieron otros envíos.</p>
-    @endif
-
-    <x-documento.firmas :quienes="['Entrega (pedidos)', 'Recibe']" />
-
-    <p class="pie">Hoja interna de despacho de {{ $empresa }}. No es factura ni documento tributario.</p>
-</main>
+@include('fabrica.pedidos._hoja-despacho')
 
 {{-- Se imprime sola al abrir. --}}
 <script>window.addEventListener('load', function () { window.print(); });</script>
