@@ -8,6 +8,14 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.17.2] - 2026-11-17
+
+Fábrica: los pedidos de días anteriores ya no van en amarillo (#405). Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- Pedidos (pantalla de la fábrica): los pedidos de «De días anteriores» se ven como los de hoy. Solo llevan la fecha «Del dd/mm/aaaa · hace N días», en gris (#405).
+
 ## [2026.11.17] - 2026-11-17
 
 Rendimiento a partir de la prueba de carga del 16/11 (#404). El servidor suelta antes las conexiones quietas, y el Inicio, Cobros y Por entregar quedan más livianos. Sin migraciones ni cambios de permisos.
