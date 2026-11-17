@@ -5,10 +5,18 @@
      Solo lo dibuja el detalle de la oficina: el vendedor marca desde «Por entregar».
      Cada tarjeta pregunta quién lo entregó, entre los que van en la salida. Lo que trae
      albarán de Calleja ya consta entregado: la tarjeta solo pide quién. Arriba, «Faltan /
-     Entregados / Todos» filtra la lista (?ver=), sin JavaScript. --}}
+     Entregados / Todos» filtra la lista (?ver=), sin JavaScript.
+
+     El pedido web (16/11/2026) va con su nombre corto («Pedido web · Nombre I.»), WEB y «Ya
+     pagado» en lugar del monto: ni dirección, ni teléfono, ni notas del comprador. --}}
 @php
     // Un día que una salida de antes dejó cerrado no recibe más entregas.
     $registrable = $registrable && ! $salida->diaCerrado();
+    // Si el día de cada entrega está cerrado se pregunta una vez por fecha, no por cada CCF.
+    $cerrados = [];
+    $diaCerrado = function (string $fecha) use (&$cerrados, $salida): bool {
+        return $cerrados[$fecha] ??= $salida->diaCerrado($fecha);
+    };
     $saldosAnteriores = app(\App\Services\Rutas\CierreDia::class)->saldosAnteriores($salida, $porSala->keys()->all());
     $prefijoEntregas = 'rutas.salidas.entregas.';
     $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
@@ -56,7 +64,9 @@
             $albaran = $resolucion?->estaVinculado() ? $resolucion->albaran : null;
             // Tocar la sala o el número descarga el PDF del CCF al celular.
             $verCcf = $entrega->dte ? route('rutas.salidas.ccf', [$salida, $entrega]) : null;
-            $diaCerrado = $entrega->fecha_resultado !== null && $salida->diaCerrado($entrega->fecha_resultado->toDateString());
+            $web = $entrega->dte?->pedidoWeb !== null;
+            // Con la pregunta de arriba, que se hace una vez por fecha y no por cada CCF.
+            $diaCerradoEntrega = $entrega->fecha_resultado !== null && $diaCerrado($entrega->fecha_resultado->toDateString());
             $corregible = $puedeGestionar && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada;
             // «Corregir quién» (16/11/2026): también en un día cerrado o una salida liquidada, porque
             // no cambia montos. Se elige entre los que van y pueden entregar, menos el que ya figura.
@@ -66,9 +76,9 @@
         <div class="{{ $caja }} mt-3 px-4 py-3">
             @if ($verCcf)
                 {{-- Repite el enlace del número para el dedo; el lector de pantalla usa el del número. --}}
-                <a href="{{ $verCcf }}" download tabindex="-1" aria-hidden="true" class="block truncate text-xs font-medium text-gray-500 hover:underline dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</a>
+                <a href="{{ $verCcf }}" download tabindex="-1" aria-hidden="true" class="block truncate text-xs font-medium text-gray-500 hover:underline dark:text-paper-300">{{ $entrega->nombreDestino() }}</a>
             @else
-                <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</p>
+                <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $entrega->nombreDestino() }}</p>
             @endif
             @if ($loop->first)
                 @foreach ($saldosAnteriores->get($sala?->id, collect()) as $saldo)
@@ -92,7 +102,12 @@
                     @if (isset($noVigentes[$entrega->dte_id]))
                         <span class="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ $noVigentes[$entrega->dte_id] }} · no entregar</span>
                     @endif
-                    <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                    @if ($web)
+                        <x-planta.badge color="red">WEB</x-planta.badge>
+                        <p class="text-sm font-medium text-green-700 dark:text-green-400">Ya pagado</p>
+                    @else
+                        <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
+                    @endif
                 </div>
 
                 {{-- Resultado ya registrado. En el celular va siempre en su propia línea, para que
@@ -114,13 +129,13 @@
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}{{ $puedeMarcar ? ' · falta quién lo entregó' : '' }}</p>
                     @endif
-                    @if ($otrosQuien->isNotEmpty() || ($corregible && ! $diaCerrado))
+                    @if ($otrosQuien->isNotEmpty() || ($corregible && ! $diaCerradoEntrega))
                         <div class="mt-1 flex flex-wrap items-center justify-end gap-x-4">
                             @if ($otrosQuien->isNotEmpty())
                                 <button type="button" x-data x-on:click="$dispatch('open-modal', 'quien-{{ $entrega->id }}')"
                                         class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Corregir quién</button>
                             @endif
-                            @if ($corregible && ! $diaCerrado)
+                            @if ($corregible && ! $diaCerradoEntrega)
                                 <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}">
                                     @csrf @method('PATCH')
                                     <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>
@@ -141,10 +156,10 @@
                         <input type="hidden" name="corrige_entrega" value="{{ $entrega->id }}">
                         <h2 id="quien-titulo-{{ $entrega->id }}" class="text-lg font-semibold text-gray-800 dark:text-paper-100">{{ $fue ? 'Corregir quién fue' : 'Corregir quién lo entregó' }}</h2>
                         <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">
-                            {{ $sala?->nombre ?? 'Sala sin identificar' }} · …{{ $entrega->dte?->numero_control ? \App\Support\OrdenCompra::ultimosDigitos($entrega->dte->numero_control) : '—' }}.
+                            {{ $entrega->nombreDestino() }} · …{{ $entrega->dte?->numero_control ? \App\Support\OrdenCompra::ultimosDigitos($entrega->dte->numero_control) : '—' }}.
                             Ahora figura {{ $entrega->entregadoPor?->nombre ?? 'nadie' }}. Solo cambia la persona: la fecha y el cobro quedan igual.
                         </p>
-                        @if ($diaCerrado || $salida->estaLiquidada())
+                        @if ($diaCerradoEntrega || $salida->estaLiquidada())
                             <p class="mt-2 text-sm text-amber-800 dark:text-amber-300">Este día ya se cerró. El total no cambia: solo a quién se atribuye.</p>
                         @endif
 

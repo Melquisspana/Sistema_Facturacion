@@ -204,11 +204,11 @@
                     @if ($web)
                         {{-- El pedido web: su nombre y WEB; en vez del monto, «Ya pagado». --}}
                         <div class="flex flex-wrap items-center gap-2">
-                            <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $web->pedidoSala?->nombreSala() ?? 'Pedido web' }}</h3>
+                            <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $entrega->nombreDestino() }}</h3>
                             <x-planta.badge color="red">WEB</x-planta.badge>
                         </div>
                     @else
-                        <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</h3>
+                        <h3 class="text-base font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $entrega->nombreDestino() }}</h3>
                     @endif
                     @if ($entrega->salida->esViaje())
                         <p class="truncate text-xs text-gray-500 dark:text-paper-300">Viaje {{ $entrega->salida->nombreViaje() }}</p>

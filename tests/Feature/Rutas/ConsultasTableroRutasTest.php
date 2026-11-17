@@ -161,7 +161,9 @@ class ConsultasTableroRutasTest extends TestCase
 
     public function test_el_resumen_del_tablero_no_pide_nada_de_a_uno(): void
     {
-        $this->noCreceConLosDatos('rutas.dashboard', 38);
+        // 39 (16/11/2026): una fija más, los pedidos web por entregar de cada zona
+        // (EntregasCcf::pendientesPorRuta()), contados en una consulta para todas.
+        $this->noCreceConLosDatos('rutas.dashboard', 39);
     }
 
     public function test_viajes_no_pide_nada_de_a_uno(): void

@@ -69,7 +69,7 @@
                     $portal = $resumen['portal_id'] !== null && (int) $entrega->dte?->cliente_id === $resumen['portal_id'];
                 @endphp
                 <tr class="{{ $i % 2 ? 'par' : '' }}">
-                    <td><span class="marca ok" aria-label="Entregado">E</span> {{ $entrega->dte?->pedidoWeb?->pedidoSala?->nombreSala() ?? $entrega->sala?->nombre ?? 'Sala sin identificar' }}
+                    <td><span class="marca ok" aria-label="Entregado">E</span> {{ $entrega->nombreDestino() }}
                         {{-- Lo anotó otro vendedor por él (12/11/2026): la entrega es suya igual. --}}
                         @if ($entrega->registrado_por && (int) $entrega->registrado_por !== (int) $persona->user_id)
                             <br><span class="aviso">Anotó: {{ $entrega->registradoPor?->name }}</span>
@@ -100,7 +100,7 @@
         <tbody>
             @forelse ($resumen['no_entregadas'] as $i => $entrega)
                 <tr class="{{ $i % 2 ? 'par' : '' }}">
-                    <td><span class="marca no" aria-label="No se pudo">N</span> {{ $entrega->dte?->pedidoWeb?->pedidoSala?->nombreSala() ?? $entrega->sala?->nombre ?? 'Sala sin identificar' }}
+                    <td><span class="marca no" aria-label="No se pudo">N</span> {{ $entrega->nombreDestino() }}
                         @if ($entrega->registrado_por && (int) $entrega->registrado_por !== (int) $persona->user_id)
                             <br><span class="aviso">Anotó: {{ $entrega->registradoPor?->name }}</span>
                         @endif

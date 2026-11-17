@@ -278,8 +278,8 @@ class FlujoUnicoRutasTest extends TestCase
         $this->ccf($this->sala('Sala de prueba cerrada', true, ['activo' => false]), total: '900.00');
 
         $pendientes = app(EntregasCcf::class)->pendientesPorRuta();
-        $this->assertSame(['cantidad' => 2, 'monto' => 140.0], $pendientes[$this->zona->id]);
-        $this->assertSame(['cantidad' => 1, 'monto' => 7.0], $pendientes[0]);
+        $this->assertSame(['cantidad' => 2, 'monto' => 140.0, 'web' => 0], $pendientes[$this->zona->id]);
+        $this->assertSame(['cantidad' => 1, 'monto' => 7.0, 'web' => 0], $pendientes[0]);
 
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))->assertOk()
             ->assertSee('2 CCF por entregar · $140.00')

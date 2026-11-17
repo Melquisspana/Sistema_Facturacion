@@ -34,6 +34,8 @@
             ? 'Atrasada '.$dias(abs($faltan))
             : $insignias[$estado][0];
         $plata = fn (float $monto) => '$'.number_format($monto, 2);
+        // El pedido web por entregar (16/11/2026) se cuenta aparte y sin monto: ya se pagó en la página.
+        $pedidosWeb = fn (int $n) => $n === 1 ? '1 pedido web por entregar, ya pagado' : $n.' pedidos web por entregar, ya pagados';
         $desdeHoy = fn ($fecha) => max(0, (int) $fecha->diffInDays(today()));
     @endphp
 
@@ -131,7 +133,7 @@
                             @php
                                 $ruta = $fila['ruta'];
                                 $estadoClase = $insignias[$fila['estado']][1];
-                                $pend = $pendientes[$ruta->id] ?? ['cantidad' => 0, 'monto' => 0];
+                                $pend = $pendientes[$ruta->id] ?? ['cantidad' => 0, 'monto' => 0, 'web' => 0];
                                 ['atrasadas' => $atrasadas, 'semana' => $tocan] = $conteoRuta->get($ruta->id, ['atrasadas' => 0, 'semana' => 0]);
                                 $faltan = $fila['faltan'];
                             @endphp
@@ -170,7 +172,7 @@
                                     </p>
                                     <p>Facturado en 30 días: <span class="tabular-nums">{{ $plata($facturado[$ruta->id] ?? 0) }}</span></p>
                                     <p class="text-xs text-gray-500">
-                                        {{ $pend['cantidad'] > 0 ? $pend['cantidad'].' CCF por entregar · $'.number_format($pend['monto'], 2) : 'Sin CCF por entregar' }}
+                                        {{ $pend['cantidad'] > 0 ? $pend['cantidad'].' CCF por entregar · $'.number_format($pend['monto'], 2) : 'Sin CCF por entregar' }}{{ $pend['web'] > 0 ? ' · '.$pedidosWeb($pend['web']) : '' }}
                                         · {{ $fila['salas']->count() }} {{ $fila['salas']->count() === 1 ? 'sala' : 'salas' }}
                                     </p>
                                 </div>
@@ -353,6 +355,9 @@
                         {{-- Sus CCF no son de ninguna tarjeta de zona: se cuentan acá (clave 0). --}}
                         @if (($pendientes[0]['cantidad'] ?? 0) > 0)
                             {{ $pendientes[0]['cantidad'] }} CCF por entregar · ${{ number_format($pendientes[0]['monto'], 2) }}.
+                        @endif
+                        @if (($pendientes[0]['web'] ?? 0) > 0)
+                            {{ $pedidosWeb($pendientes[0]['web']) }}.
                         @endif
                     </span>
                     <span class="shrink-0 font-medium">Ver zonas</span>

@@ -5,8 +5,10 @@ namespace Tests\Feature\TiendaWeb;
 use App\Enums\EstadoPedidoWeb;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\FormaCobroEntrega;
+use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\PropositoSalida;
+use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Facades\Ajustes;
 use App\Http\Requests\Clientes\ClienteRequest;
@@ -296,13 +298,99 @@ class PorEntregarWebTest extends TestCase
         $this->assertSame($uno, $this->consultas());
     }
 
-    private function consultas(): int
+    /** La oficina: lo administra todo, pero no es vendedor. */
+    private function oficina(): User
+    {
+        return User::factory()->create(['activo' => true])->assignRole('administrador');
+    }
+
+    public function test_la_tarjeta_muestra_las_notas_del_comprador_escapadas(): void
+    {
+        $web = $this->pedido(['notas' => 'Dejar con el <b>portero</b>']);
+        $this->assertNotSame('Dejar con el <b>portero</b>', $web->getRawOriginal('notas'));
+        $this->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('Notas del comprador: Dejar con el <b>portero</b>')
+            ->assertDontSee('<b>portero</b>', false);
+
+        // Sin notas no aparece nada.
+        $web->update(['notas' => null]);
+        $this->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('Pedido web · Compradora I.')->assertDontSee('Notas del comprador');
+    }
+
+    public function test_la_oficina_y_el_dia_lo_nombran_pedido_web_sin_monto_ni_datos_personales(): void
+    {
+        $viaje = $this->viaje();
+        $this->marcar($this->pedido(['notas' => 'Llamar antes de llegar']))->assertSessionHasNoErrors();
+        // Un «No se pudo» de otro pedido web en el viaje: el día del vendedor lo lista por nombre.
+        $otro = $this->pedido(['cliente_nombre' => 'Otra Compradora de Prueba']);
+        $viaje->entregas()->create(['dte_id' => $otro->dte_id, 'resultado' => ResultadoEntrega::NoEntregado,
+            'motivo_no_entrega' => MotivoNoEntrega::SalaCerrada, 'fecha_resultado' => now(), 'entregado_por_id' => $this->persona->id,
+            'registrado_por' => $this->vendedor->id, 'origen_registro' => OrigenRegistroEntrega::Vendedor]);
+
+        $this->get(route('rutas.mi-salida.dia'))->assertOk()
+            ->assertSee('Pedido web · Otra C.')->assertDontSee('Sala sin identificar');
+
+        $this->actingAs($this->oficina());
+        $this->get(route('rutas.salidas.show', $viaje))->assertOk()
+            ->assertSee('Pedido web · Compradora I.')->assertSee('Pedido web · Otra C.')->assertSee('WEB')->assertSee('Ya pagado')
+            ->assertDontSee('Sala sin identificar')->assertDontSee('$123.45')
+            ->assertDontSee('Calle Inventada 123')->assertDontSee('7000-1234')->assertDontSee('Llamar antes de llegar');
+    }
+
+    public function test_el_tablero_cuenta_el_pedido_web_sin_sumarlo_al_dinero(): void
+    {
+        $web = $this->pedido();
+        $this->ccfDeSala();
+        $oficina = $this->oficina();
+
+        // Por entregar en su zona: se cuenta aparte, sin monto.
+        $this->actingAs($oficina)->get(route('rutas.dashboard'))->assertOk()
+            ->assertSee('1 CCF por entregar · $50.00 · 1 pedido web por entregar, ya pagado')
+            ->assertDontSee('$173.45')->assertDontSee('Compradora');
+
+        // Entregado en el viaje: cuenta como entregado y deja de estar por entregar.
+        $this->actingAs($this->vendedor);
+        $this->viaje();
+        $this->marcar($web)->assertSessionHasNoErrors();
+        $this->actingAs($oficina)->get(route('rutas.dashboard'))->assertOk()
+            ->assertSee('1 de 1 entregados')->assertSee('1 CCF por entregar · $50.00')
+            ->assertDontSee('pedido web por entregar');
+        // No queda como cobro pendiente.
+        $this->get(route('rutas.viajes'))->assertOk()->assertSee('No hay quedan de tiendas por cobrar.');
+    }
+
+    public function test_mas_entregas_web_no_suman_consultas_en_la_oficina_ni_en_el_dia(): void
+    {
+        $viaje = $this->viaje();
+        $this->marcar($this->pedido())->assertSessionHasNoErrors();
+        $this->pedido();
+        $oficina = $this->oficina();
+        $paginas = function () use ($viaje, $oficina) {
+            $this->actingAs($this->vendedor);
+            $dia = $this->consultas(route('rutas.mi-salida.dia'));
+            $this->actingAs($oficina);
+
+            return [$dia, $this->consultas(route('rutas.salidas.show', $viaje)), $this->consultas(route('rutas.dashboard'))];
+        };
+        // La primera vuelta carga los permisos: no se cuenta.
+        $paginas();
+        $antes = $paginas();
+
+        $this->actingAs($this->vendedor);
+        $this->marcar($this->pedido(['regalo' => ['nombre' => 'Destinataria Ficticia', 'telefono' => '7000-5678']]))->assertSessionHasNoErrors();
+        $this->marcar($this->pedido(['cliente_nombre' => 'Otra Compradora de Prueba']))->assertSessionHasNoErrors();
+        $this->pedido();
+        $this->assertSame($antes, $paginas());
+    }
+
+    private function consultas(?string $url = null): int
     {
         $total = 0;
         DB::listen(function () use (&$total) {
             $total++;
         });
-        $this->get(route('rutas.por-entregar.index'))->assertOk();
+        $this->get($url ?? route('rutas.por-entregar.index'))->assertOk();
 
         return $total;
     }

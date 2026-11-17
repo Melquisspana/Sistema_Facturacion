@@ -9,7 +9,6 @@ use App\Enums\OrigenRegistroEntrega;
 use App\Enums\PermisoSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
-use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
@@ -61,9 +60,6 @@ class PorEntregarController extends Controller
     /** Lo que necesita el nombre del viaje ({@see SalidaRuta::nombreViaje()}), cargado una vez para todos. */
     private const NOMBRE_DEL_VIAJE = ['salida.ruta:id,nombre', 'salida.pedidos:id,salida_ruta_id,ruta_id,estado', 'salida.pedidos.ruta:id,nombre'];
 
-    /** El nombre del pedido web de una entrega («Pedido web · Nombre I.», {@see PedidoSala::nombreSala()}). */
-    private const NOMBRE_WEB = ['dte.pedidoWeb:id,dte_id,pedido_sala_id', 'dte.pedidoWeb.pedidoSala', 'dte.pedidoWeb.pedidoSala.pedidoWeb:id,pedido_sala_id,cliente_nombre'];
-
     public function __construct(private readonly EntregasCcf $entregas, private readonly PorEntregar $porEntregar, private readonly Viajes $viajes) {}
 
     private function persona(Request $request): ?PersonalRuta
@@ -78,7 +74,7 @@ class PorEntregarController extends Controller
         $puedeMarcar = $persona !== null && $request->user()->can(PermisoSistema::RutasEntregasRegistrar->value);
 
         // Lo que el vendedor marcó hoy queda abajo, con «Deshacer», y sale de la lista.
-        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', ...self::NOMBRE_WEB, 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre', ...self::NOMBRE_DEL_VIAJE])
+        $marcados = $puedeMarcar ? SalidaRutaEntrega::with(['dte:id,numero_control,numero_orden_compra,total_pagar,cliente_id', ...SalidaRutaEntrega::PEDIDO_WEB, 'sala:id,nombre', 'salida', 'entregadoPor:id,nombre', ...self::NOMBRE_DEL_VIAJE])
             ->where('registrado_por', $request->user()->id)->whereNotNull('resultado')->sinFacturadosDespues()
             ->whereDate('fecha_resultado', HoraNegocio::fechaHoy())
             ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))
