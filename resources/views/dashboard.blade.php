@@ -100,23 +100,43 @@
                 </div>
             @endif
 
-            {{-- Sin cargar las bandejas ni calcular saldos: cada tarjeta abre su lista vigente. --}}
-            @if ($usuarioActual->can('ppq.ver') || $usuarioActual->canAny(['rutas.ver', 'rutas.entregas.registrar']))
+            {{-- Los mismos números que «Facturas por cobrar» y «Por entregar» (16/11/2026). El
+                 controlador los manda solo a quien puede abrir esa pantalla (null si no). Pueden
+                 venir de hace unos minutos: entonces dicen de qué hora son. --}}
+            @if ($porCobrar !== null || $porEntregar !== null)
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    @can('ppq.ver')
+                    @if ($porCobrar !== null)
                         <a href="{{ route('cobros.index') }}" class="{{ $caja }} block min-h-11 p-5 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                            <h2 class="text-xl font-semibold text-gray-800">Por cobrar</h2>
-                            <p class="mt-1 text-sm text-gray-500">Revisá las facturas y sus pagos.</p>
+                            <h2 class="text-sm font-medium text-gray-500">Por cobrar</h2>
+                            @if ($porCobrar['error'] ?? false)
+                                <p class="mt-1 text-sm font-medium text-red-700">No se pudo calcular.</p>
+                            @else
+                                {{-- El monto de Cobros es el total a pagar del CCF, con IVA. --}}
+                                <p class="mt-1 break-words text-3xl font-semibold tabular-nums text-gray-900">${{ number_format((float) $porCobrar['saldo'], 2) }}</p>
+                                <p class="mt-1 text-sm text-gray-600">{{ $porCobrar['cantidad'] }} {{ $porCobrar['cantidad'] === 1 ? 'factura' : 'facturas' }} &middot; con IVA</p>
+                                @if ($porCobrar['de_cache'])
+                                    <p class="mt-1 text-xs text-gray-500">Calculado a las {{ $porCobrar['hora'] }}</p>
+                                @endif
+                            @endif
                             <span class="mt-3 block text-sm font-medium text-indigo-600">Facturas por cobrar &rarr;</span>
                         </a>
-                    @endcan
-                    @canany(['rutas.ver', 'rutas.entregas.registrar'])
+                    @endif
+                    @if ($porEntregar !== null)
                         <a href="{{ route('rutas.por-entregar.index') }}" class="{{ $caja }} block min-h-11 p-5 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                            <h2 class="text-xl font-semibold text-gray-800">Por entregar</h2>
-                            <p class="mt-1 text-sm text-gray-500">Consultá los CCF que faltan entregar.</p>
+                            <h2 class="text-sm font-medium text-gray-500">Por entregar</h2>
+                            @if ($porEntregar['error'] ?? false)
+                                <p class="mt-1 text-sm font-medium text-red-700">No se pudo calcular.</p>
+                            @else
+                                <p class="mt-1 text-3xl font-semibold tabular-nums text-gray-900">{{ $porEntregar['total'] }}</p>
+                                {{-- Dicho como en la pantalla «Por entregar». --}}
+                                <p class="mt-1 text-sm text-gray-600">{{ $porEntregar['total'] - $porEntregar['web'] }} CCF{{ $porEntregar['web'] > 0 ? ' y '.$porEntregar['web'].($porEntregar['web'] === 1 ? ' pedido web' : ' pedidos web') : '' }}</p>
+                                @if ($porEntregar['de_cache'])
+                                    <p class="mt-1 text-xs text-gray-500">Calculado a las {{ $porEntregar['hora'] }}</p>
+                                @endif
+                            @endif
                             <span class="mt-3 block text-sm font-medium text-indigo-600">Ver pendientes &rarr;</span>
                         </a>
-                    @endcanany
+                    @endif
                 </div>
             @endif
 

@@ -319,39 +319,62 @@ class CobroDocumento extends Model
      */
     public function facturadoEfectivo(): string
     {
+        $ccf = $this->esNc() || $this->dte_id === null ? [] : [$this->dte_id];
+
+        return $this->facturadoCon(app(SaldoMontoCcf::class)->descontadoEnCobro($ccf), self::notasCobradasAparte($ccf));
+    }
+
+    /**
+     * {@see facturadoEfectivo()} con las notas ya leídas, para leerlas una vez para varios CCF.
+     *
+     * @param  array<int, string>  $notas  dte_id del CCF => lo que descuentan sus NC
+     * @param  array<int, string>  $aparte  dte_id del CCF => sus NC cobradas aparte
+     */
+    private function facturadoCon(array $notas, array $aparte): string
+    {
         $monto = Dinero::redondear($this->monto ?? '0');
         if ($this->esNc() || $this->dte_id === null) {
             return $monto;
         }
 
-        $notas = app(SaldoMontoCcf::class)->descontadoEnCobro([$this->dte_id])[$this->dte_id];
-
         // Calleja manda dos formatos de archivo de pagos: la línea CF NETA (CCF − NC) o la
         // línea CF por el TOTAL más una línea NC negativa aparte. En el segundo, la NC ya
         // tiene su propio cobro en su documento: restarla otra vez del CCF lo dejaba «con
         // diferencia» aunque estaba pagado (regresión del issue #14).
-        return Dinero::redondear(Dinero::sumar(Dinero::restar($monto, $notas), $this->notasCobradasAparte()));
+        return Dinero::redondear(Dinero::sumar(
+            Dinero::restar($monto, $notas[$this->dte_id] ?? '0'),
+            $aparte[$this->dte_id] ?? '0',
+        ));
     }
 
     /**
-     * Total de las NC aceptadas de este CCF que ya tienen su PROPIO descuento registrado: un
+     * Total de las NC aceptadas de cada CCF que ya tienen su PROPIO descuento registrado: un
      * evento de pago aplicado en el seguimiento de la NC, venga de su línea en un archivo de
-     * pagos o de un registro manual. Esas no se restan del CCF.
+     * pagos o de un registro manual. Esas no se restan del CCF. Una consulta para todos.
+     *
+     * @param  array<int, int>  $ccfIds
+     * @return array<int, string> dte_id del CCF => total (los que no tienen, no vienen)
      */
-    private function notasCobradasAparte(): string
+    private static function notasCobradasAparte(array $ccfIds): array
     {
+        if ($ccfIds === []) {
+            return [];
+        }
+
         // Las de pronto pago no se restaron ({@see SaldoMontoCcf::descontadoEnCobro()}): no se devuelven.
-        $suma = Dte::query()->sinNcProntoPago()
-            ->where('dte_relacionado_id', $this->dte_id)
+        return Dte::query()->sinNcProntoPago()
+            ->whereIn('dte_relacionado_id', $ccfIds)
             ->where('tipo_dte', '05')
             ->where('estado', EstadoDte::Aceptado->value)
             ->whereIn('id', self::query()->where('tipo_dte', '05')->whereNotNull('dte_id')
                 ->whereHas('eventos', fn (Builder $e) => $e->where('tipo', TipoEventoCobro::Pago->value)
                     ->where('estado', EstadoEventoCobro::Aplicado->value)->whereNotNull('monto'))
                 ->select('dte_id'))
-            ->sum('total_pagar');
-
-        return Dinero::redondear((string) $suma);
+            ->groupBy('dte_relacionado_id')
+            ->selectRaw('dte_relacionado_id, SUM(total_pagar) AS suma')
+            ->pluck('suma', 'dte_relacionado_id')
+            ->map(fn ($suma) => Dinero::redondear((string) $suma))
+            ->all();
     }
 
     /**
@@ -371,7 +394,29 @@ class CobroDocumento extends Model
     /** Saldo por cobrar: lo que se espera cobrar menos lo informado. */
     public function saldo(): string
     {
-        return Dinero::redondear(Dinero::restar($this->facturadoEfectivo(), $this->monto_pagado ?? '0'));
+        return $this->saldoDe($this->facturadoEfectivo());
+    }
+
+    /**
+     * {@see saldo()} de varios documentos, con las mismas dos consultas de notas para todos
+     * en vez de dos por documento (la tarjeta «Por cobrar» del Inicio suma todos).
+     *
+     * @param  Collection<int, self>  $documentos  con id, dte_id, tipo_dte, monto y monto_pagado
+     * @return array<int, string> id => saldo
+     */
+    public static function saldos(Collection $documentos): array
+    {
+        $ccf = $documentos->reject(fn (self $d) => $d->esNc() || $d->dte_id === null)
+            ->pluck('dte_id')->unique()->values()->all();
+        $notas = app(SaldoMontoCcf::class)->descontadoEnCobro($ccf);
+        $aparte = self::notasCobradasAparte($ccf);
+
+        return $documentos->mapWithKeys(fn (self $d) => [$d->id => $d->saldoDe($d->facturadoCon($notas, $aparte))])->all();
+    }
+
+    private function saldoDe(string $facturado): string
+    {
+        return Dinero::redondear(Dinero::restar($facturado, $this->monto_pagado ?? '0'));
     }
 
     /**
