@@ -140,16 +140,16 @@ class OrdenesRecibidasTest extends TestCase
     {
         $this->pantallaPrendida();
         $sala = $this->sala('0232', 'Sala de prueba norte');
-        $pendiente = $this->orden('261102320010394', $sala);
-        $facturada = $this->orden('2611023200103', $sala);
+        $pendiente = $this->orden('261102320017265', $sala);
+        $facturada = $this->orden('2611023200172', $sala);
         $sinLeer = $this->orden(null);
         // El CCF lleva la orden con espacios: se compara normalizada.
-        $ccf = $this->ccf(' 2611 0232 00103 ', $sala);
+        $ccf = $this->ccf(' 2611 0232 00172 ', $sala);
         $usuario = $this->usuario(['dte.ver']);
 
         $this->actingAs($usuario)->get(route('facturacion.ordenes-recibidas.index'))
             ->assertOk()
-            ->assertSee('261102320010394')
+            ->assertSee('261102320017265')
             ->assertSee('Sin facturar')
             ->assertSee('Sala de prueba norte')
             ->assertSee('Sin leer')
@@ -159,7 +159,7 @@ class OrdenesRecibidasTest extends TestCase
 
         $this->actingAs($usuario)->get(route('facturacion.ordenes-recibidas.index', ['ver' => 'todas']))
             ->assertOk()
-            ->assertSee('2611023200103')
+            ->assertSee('2611023200172')
             ->assertSee(route('facturacion.show', $ccf))
             ->assertSee(route('facturacion.ordenes-recibidas.pdf', $pendiente));
 
@@ -185,36 +185,36 @@ class OrdenesRecibidasTest extends TestCase
     public function test_la_orden_queda_pendiente_segun_el_estado_de_su_ccf(EstadoDte $estado, bool $pendiente): void
     {
         $sala = $this->sala('0232');
-        $orden = $this->orden('261102320010394', $sala);
-        $ccf = $this->ccf('261102320010394', $sala, $estado);
+        $orden = $this->orden('261102320017265', $sala);
+        $ccf = $this->ccf('261102320017265', $sala, $estado);
 
         $this->assertSame($pendiente ? [$orden->id] : [], OrdenCompraRecibida::sinFacturar()->pluck('id')->all());
         $this->assertSame($pendiente ? [] : [$ccf->id], array_map(fn (Dte $d) => $d->id, array_values(OrdenCompraRecibida::ccfPorNumero([$orden->numero]))));
-        $this->assertSame($pendiente ? ['261102320010394'] : [], array_column(OrdenCompraRecibida::pendientesPorSucursal()[$sala->id] ?? [], 'numero'));
+        $this->assertSame($pendiente ? ['261102320017265'] : [], array_column(OrdenCompraRecibida::pendientesPorSucursal()[$sala->id] ?? [], 'numero'));
     }
 
     public function test_un_ccf_borrado_no_cuenta_como_facturada(): void
     {
         $sala = $this->sala('0232');
-        $orden = $this->orden('261102320010394', $sala);
-        $this->ccf('261102320010394', $sala)->delete();
+        $orden = $this->orden('261102320017265', $sala);
+        $this->ccf('261102320017265', $sala)->delete();
 
         $this->assertSame([$orden->id], OrdenCompraRecibida::sinFacturar()->pluck('id')->all());
         $this->assertSame([], OrdenCompraRecibida::ccfPorNumero([$orden->numero]));
-        $this->assertSame(['261102320010394'], array_column(OrdenCompraRecibida::pendientesPorSucursal()[$sala->id] ?? [], 'numero'));
+        $this->assertSame(['261102320017265'], array_column(OrdenCompraRecibida::pendientesPorSucursal()[$sala->id] ?? [], 'numero'));
     }
 
     public function test_filtra_por_mes(): void
     {
         $this->pantallaPrendida();
-        $this->orden('261102320010394', null, '2026-11-05');
+        $this->orden('261102320017265', null, '2026-11-05');
         $this->orden('261002320010001', null, '2026-10-20');
 
         $this->actingAs($this->usuario(['dte.ver']))
             ->get(route('facturacion.ordenes-recibidas.index', ['ver' => 'todas', 'mes' => '2026-10']))
             ->assertOk()
             ->assertSee('261002320010001')
-            ->assertDontSee('261102320010394');
+            ->assertDontSee('261102320017265');
 
         $this->actingAs($this->usuario(['dte.ver']))
             ->get(route('facturacion.ordenes-recibidas.index', ['mes' => 'octubre']))
@@ -224,7 +224,7 @@ class OrdenesRecibidasTest extends TestCase
     public function test_sin_permiso_de_facturacion_no_entra_ni_abre_el_pdf(): void
     {
         $this->pantallaPrendida();
-        $orden = $this->orden('261102320010394');
+        $orden = $this->orden('261102320017265');
         $sinPermiso = $this->usuario(['ppq.ver']);
 
         $this->actingAs($sinPermiso)->get(route('facturacion.ordenes-recibidas.index'))->assertForbidden();
@@ -272,8 +272,8 @@ class OrdenesRecibidasTest extends TestCase
     public function test_pdf_con_orden_une_el_ccf_y_las_paginas_de_la_orden(): void
     {
         $sala = $this->sala('0232');
-        $this->orden('261102320010394', $sala, paginas: 2);
-        $dte = $this->ccf('261102320010394', $sala);
+        $this->orden('261102320017265', $sala, paginas: 2);
+        $dte = $this->ccf('261102320017265', $sala);
         $usuario = $this->usuario(['dte.ver']);
 
         $this->actingAs($usuario)->get(route('facturacion.show', $dte))
@@ -294,7 +294,7 @@ class OrdenesRecibidasTest extends TestCase
 
     public function test_sin_orden_recibida_no_se_ofrece(): void
     {
-        $dte = $this->ccf('261102320010394', $this->sala('0232'));
+        $dte = $this->ccf('261102320017265', $this->sala('0232'));
         $usuario = $this->usuario(['dte.ver']);
 
         $this->actingAs($usuario)->get(route('facturacion.show', $dte))->assertOk()->assertDontSee('PDF + orden');
@@ -306,8 +306,8 @@ class OrdenesRecibidasTest extends TestCase
     {
         $this->pantallaPrendida();
         $sala = $this->sala('0232');
-        $this->orden('261102320010394', $sala, pdf: '%PDF-1.7 no es un pdf de verdad');
-        $dte = $this->ccf('261102320010394', $sala);
+        $this->orden('261102320017265', $sala, pdf: '%PDF-1.7 no es un pdf de verdad');
+        $dte = $this->ccf('261102320017265', $sala);
         $usuario = $this->usuario(['dte.ver']);
 
         $this->actingAs($usuario)->get(route('facturacion.pdf-con-orden', $dte))
@@ -324,8 +324,8 @@ class OrdenesRecibidasTest extends TestCase
         $this->simularProduccionCorreo();
         Mail::fake();
         $sala = $this->sala('0232');
-        $this->orden('261102320010394', $sala, paginas: 2);
-        $dte = $this->ccf('261102320010394', $sala, EstadoDte::Generado);
+        $this->orden('261102320017265', $sala, paginas: 2);
+        $dte = $this->ccf('261102320017265', $sala, EstadoDte::Generado);
         $paginasCcf = $this->paginas(app(DtePdfService::class)->bytes($dte));
 
         $pdf = $this->actingAs($this->usuario(['dte.ver']))->get(route('facturacion.pdf', $dte))->assertOk()->getContent();

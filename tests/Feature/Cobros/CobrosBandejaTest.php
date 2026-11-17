@@ -454,7 +454,7 @@ class CobrosBandejaTest extends TestCase
             'tipo_codigo' => 'AC01',
             'fecha_albaran' => '2026-09-17',
             'monto_albaran' => '123.74',
-            'numero_orden_compra' => '26090017003463',
+            'numero_orden_compra' => '26090017003927',
             'sala_codigo' => '0017',
         ]);
         $documento = $this->documento($cliente, ['monto' => '123.74']);

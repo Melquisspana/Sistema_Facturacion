@@ -326,7 +326,7 @@ class OpcionesModuloTest extends TestCase
         Ajustes::guardarComoSistema('ppq.codigo_proveedor', '000777');
 
         $this->assertSame('coincide', PpqConciliacion::estado('100.00', '99.90')['key']);
-        $this->assertSame('060', OrdenCompra::salaDesde('2606026002401'));
+        $this->assertSame('060', OrdenCompra::salaDesde('2606026003857'));
         $this->assertSame('ZZ09', PpqAlbaran::tipoDeEntrega());
         $this->assertSame('000777', ValidadorCodigoProveedorTxt::codigoConfigurado());
     }

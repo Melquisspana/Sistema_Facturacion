@@ -55,7 +55,7 @@ class OrdenCompraParserTest extends TestCase
      * @param  list<array{0: string, 1: string, 2: string, 3: string}>  $lineas
      */
     public static function textoEdi(
-        string $numero = '26110317004521',
+        string $numero = '26110317008136',
         string $sala = "0317 SUPERMERCADO DE PRUEBA LAS \nCOLINAS",
         array $lineas = self::LINEAS_EDI,
         string $operador = 'OPER9901 OPERADOR DE PRUEBA',
@@ -69,7 +69,7 @@ class OrdenCompraParserTest extends TestCase
             'PAGINA:', 'FECHA:', 'HORA:', '1/', '04/11/2026', '10:15:30',
             'Proveedor:', 'Sucursal:', 'Número:',
             $sala,
-            '00 / 26 / 4521',
+            '00 / 26 / 8136',
             'P9 009999 _ PROVEEDOR DE PRUEBA',
             'Despacho:06/11/2026',
             "Código\tDescripción", 'Costo ', 'Unitario', 'Costo', 'Real',
@@ -95,9 +95,9 @@ class OrdenCompraParserTest extends TestCase
 
     public function test_lee_numero_de_15_digitos_sala_fechas_lineas_y_total(): void
     {
-        $datos = (new OrdenCompraParser)->desdeTexto(self::texto('261102320010394'));
+        $datos = (new OrdenCompraParser)->desdeTexto(self::texto('261102320017265'));
 
-        $this->assertSame('261102320010394', $datos['numero']);
+        $this->assertSame('261102320017265', $datos['numero']);
         $this->assertSame('0232', $datos['sala_codigo']);
         $this->assertSame('2026-11-05', $datos['fecha_creacion']);
         $this->assertSame('2026-11-07', $datos['fecha_despacho']);
@@ -113,13 +113,13 @@ class OrdenCompraParserTest extends TestCase
     {
         $parser = new OrdenCompraParser;
 
-        $this->assertSame('2611023200103', $parser->desdeTexto(self::texto('2611023200103'))['numero']);
-        $this->assertSame('26110232001039', $parser->desdeTexto(self::texto('26110232001039'))['numero']);
+        $this->assertSame('2611023200172', $parser->desdeTexto(self::texto('2611023200172'))['numero']);
+        $this->assertSame('26110232001726', $parser->desdeTexto(self::texto('26110232001726'))['numero']);
     }
 
     public function test_el_total_impreso_manda_sobre_la_suma(): void
     {
-        $datos = (new OrdenCompraParser)->desdeTexto(self::texto('261102320010394')."\nTotal: 1,025.88\n");
+        $datos = (new OrdenCompraParser)->desdeTexto(self::texto('261102320017265')."\nTotal: 1,025.88\n");
 
         $this->assertSame('1025.88', $datos['total']);
     }
@@ -141,7 +141,7 @@ class OrdenCompraParserTest extends TestCase
 
     public function test_sin_entrega_en_la_sala_sale_del_numero(): void
     {
-        $texto = str_replace('Entrega en: 0232 - SALA DE PRUEBA NORTE', 'SALA DE PRUEBA NORTE', self::texto('261102320010394'));
+        $texto = str_replace('Entrega en: 0232 - SALA DE PRUEBA NORTE', 'SALA DE PRUEBA NORTE', self::texto('261102320017265'));
 
         $this->assertSame('0232', (new OrdenCompraParser)->desdeTexto($texto)['sala_codigo']);
     }
@@ -149,7 +149,7 @@ class OrdenCompraParserTest extends TestCase
     public function test_no_confunde_codigos_de_barras_con_el_numero(): void
     {
         // Sin la etiqueta junto al número, los códigos de 13 dígitos de productos y cliente no cuentan.
-        $texto = str_replace('Orden de Compra # 261102320010394 EDI', 'Orden de Compra', self::texto('261102320010394'));
+        $texto = str_replace('Orden de Compra # 261102320017265 EDI', 'Orden de Compra', self::texto('261102320017265'));
 
         $datos = (new OrdenCompraParser)->desdeTexto($texto);
 
@@ -173,7 +173,7 @@ class OrdenCompraParserTest extends TestCase
     {
         $datos = (new OrdenCompraParser)->desdeTexto(self::textoEdi());
 
-        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('26110317008136', $datos['numero']);
         $this->assertSame('0317', $datos['sala_codigo']);
         // La fecha de emisión del encabezado, no la de entrega ni la de cancelación.
         $this->assertSame('2026-11-04', $datos['fecha_creacion']);
@@ -224,13 +224,13 @@ class OrdenCompraParserTest extends TestCase
         $this->assertNull($sinSala['sala_codigo']);
 
         // Un número al pie de otra sala que la del encabezado tampoco.
-        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '26110999004521'))['numero']);
+        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '26110999008136'))['numero']);
 
         // Ni uno con la sala y un mes válidos pero de otro año (7410 = octubre de 2074):
         // tiene que ir a no más de un mes de la fecha del encabezado.
-        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '74100317004521'))['numero']);
-        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '26090317004521'))['numero']);
-        $this->assertSame('26100317004521', $parser->desdeTexto(self::textoEdi(numero: '26100317004521'))['numero']);
+        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '74100317008136'))['numero']);
+        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '26090317008136'))['numero']);
+        $this->assertSame('26100317008136', $parser->desdeTexto(self::textoEdi(numero: '26100317008136'))['numero']);
     }
 
     public function test_el_numero_con_etiqueta_pasa_por_los_mismos_controles(): void
@@ -238,12 +238,12 @@ class OrdenCompraParserTest extends TestCase
         $parser = new OrdenCompraParser;
 
         // Con etiqueta, pero de otra sala que «Entrega en»: no se toma.
-        $otraSala = str_replace('Orden de Compra # 261102320010394', 'Orden de Compra # 261109990010394', self::texto('261102320010394'));
+        $otraSala = str_replace('Orden de Compra # 261102320017265', 'Orden de Compra # 261109990017265', self::texto('261102320017265'));
         $this->assertNull($parser->desdeTexto($otraSala)['numero']);
 
         // Con etiqueta, pero es un código de barras de las líneas: sigue con el suelto del pie.
         $codigo = str_replace("1/\n", "Orden de Compra # 7410020300015\n1/\n", self::textoEdi());
-        $this->assertSame('26110317004521', $parser->desdeTexto($codigo)['numero']);
+        $this->assertSame('26110317008136', $parser->desdeTexto($codigo)['numero']);
     }
 
     public function test_si_los_bloques_no_cuadran_no_inventa_lineas(): void
@@ -254,7 +254,7 @@ class OrdenCompraParserTest extends TestCase
 
         $this->assertNull($datos['lineas']);
         $this->assertNull($datos['total']);
-        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('26110317008136', $datos['numero']);
         $this->assertSame('0317', $datos['sala_codigo']);
         $this->assertSame('2026-11-04', $datos['fecha_creacion']);
         $this->assertSame('2026-11-06', $datos['fecha_despacho']);
@@ -268,7 +268,7 @@ class OrdenCompraParserTest extends TestCase
         $sinCantidad = (new OrdenCompraParser)->desdeTexto(preg_replace('/^ 20\.000\n/m', '', self::textoEdi(), 1));
         $this->assertNull($sinCantidad['lineas']);
         $this->assertNull($sinCantidad['total']);
-        $this->assertSame('26110317004521', $sinCantidad['numero']);
+        $this->assertSame('26110317008136', $sinCantidad['numero']);
     }
 
     public function test_si_el_descuento_general_no_cuadra_con_la_suma_no_hay_lineas_ni_total(): void
@@ -278,7 +278,7 @@ class OrdenCompraParserTest extends TestCase
 
         $this->assertNull($datos['lineas']);
         $this->assertNull($datos['total']);
-        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('26110317008136', $datos['numero']);
         $this->assertSame('0317', $datos['sala_codigo']);
         $this->assertSame('leida', $datos['estado']);
     }
@@ -289,7 +289,7 @@ class OrdenCompraParserTest extends TestCase
 
         $this->assertNull($datos['lineas']);
         $this->assertNull($datos['total']);
-        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('26110317008136', $datos['numero']);
         $this->assertSame('0317', $datos['sala_codigo']);
     }
 
@@ -304,14 +304,14 @@ class OrdenCompraParserTest extends TestCase
         $datos = (new OrdenCompraParser)->desdeTexto($texto);
 
         $this->assertSame('0317', $datos['sala_codigo']);
-        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('26110317008136', $datos['numero']);
         $this->assertSame('0250 TURRON DE PRUEBA', $datos['lineas'][2]['articulo']);
     }
 
     public function test_un_total_en_una_descripcion_no_es_el_total(): void
     {
         // Por filas: el «Total» impreso tiene que empezar la línea y llevar «:».
-        $filas = str_replace('CARAMELO DE PRUEBA 12 UN', 'LIMPIADOR TOTAL 2.50', self::texto('261102320010394'));
+        $filas = str_replace('CARAMELO DE PRUEBA 12 UN', 'LIMPIADOR TOTAL 2.50', self::texto('261102320017265'));
         $this->assertSame('22.90', (new OrdenCompraParser)->desdeTexto($filas)['total']);
 
         // Por columnas ni se busca: manda la suma.
@@ -322,9 +322,9 @@ class OrdenCompraParserTest extends TestCase
 
     public function test_lee_un_pdf_armado_con_dompdf(): void
     {
-        $datos = (new OrdenCompraParser)->desdePdf(self::pdf(self::texto('26110232001039')));
+        $datos = (new OrdenCompraParser)->desdePdf(self::pdf(self::texto('26110232001726')));
 
-        $this->assertSame('26110232001039', $datos['numero']);
+        $this->assertSame('26110232001726', $datos['numero']);
         $this->assertSame('0232', $datos['sala_codigo']);
         $this->assertSame('2026-11-05', $datos['fecha_creacion']);
         $this->assertSame('leida', $datos['estado']);

@@ -10,7 +10,7 @@ return [
     */
 
     // Sala dentro de la OC: son los `length` dígitos justo DESPUÉS del prefijo YYMM
-    // (`prefix` dígitos); conserva el cero inicial. Ej.: 2606026002401 -> 0260.
+    // (`prefix` dígitos); conserva el cero inicial. Ej.: 2606026003857 -> 0260.
     'sala_oc_prefix' => (int) env('PPQ_SALA_OC_PREFIX', 4),
     'sala_oc_length' => (int) env('PPQ_SALA_OC_LENGTH', 4),
 

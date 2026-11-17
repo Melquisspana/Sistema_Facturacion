@@ -254,7 +254,7 @@ class PpqAvisosAlbaranTest extends TestCase
 
     public function test_vincular_a_mano_incluye_ac04_de_la_oc_elegida_aunque_el_ccf_tenga_oc_erronea(): void
     {
-        $doc = $this->ccf(datosDte: ['numero_orden_compra' => '26090620003463']);
+        $doc = $this->ccf(datosDte: ['numero_orden_compra' => '26090620003927']);
         $nota = $this->devolucion($doc);
         app(VinculadorAlbaranes::class)->vincularAMano($doc, $doc->albaran, $this->usuario(), 'OC digitada con error, entrega confirmada');
         $this->assertSame($doc->dte_id, $nota->refresh()->dte_id);

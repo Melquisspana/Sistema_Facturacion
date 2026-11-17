@@ -134,7 +134,7 @@ class OrdenCompraParser
     }
 
     /**
-     * «Orden de Compra # 261102320010394». El encabezado de la página también dice
+     * «Orden de Compra # 261102320017265». El encabezado de la página también dice
      * «Orden de Compra # 4», por eso se exigen de 13 a 15 dígitos.
      *
      * Sin la etiqueta pegada al número, el del EDI real va solo en su línea al pie: se

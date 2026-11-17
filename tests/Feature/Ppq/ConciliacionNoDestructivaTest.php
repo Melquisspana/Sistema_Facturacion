@@ -86,7 +86,7 @@ class ConciliacionNoDestructivaTest extends TestCase
             'codigo_generacion' => strtoupper(Str::uuid()->toString()),
             'sello_recepcion' => '2026'.strtoupper(Str::random(36)),
             'fecha_procesamiento_mh' => now(),
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),
             'total_pagar' => $monto,
@@ -111,7 +111,7 @@ class ConciliacionNoDestructivaTest extends TestCase
             'numero_control' => $control,
             'tipo_dte' => $tipo,
             'monto_dte' => $monto,
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'sin_albaran' => true,
         ]);
     }

@@ -68,7 +68,7 @@ class CobrosCorreoRecuperacionTest extends TestCase
             'tipo_codigo' => 'AC01',
             'fecha_albaran' => '2026-09-17',
             'monto_albaran' => '123.74',
-            'numero_orden_compra' => '26090017003463',
+            'numero_orden_compra' => '26090017003927',
             'sala_codigo' => '0017',
         ]);
 
@@ -141,7 +141,7 @@ class CobrosCorreoRecuperacionTest extends TestCase
      */
     public function test_el_archivo_se_toma_de_la_marca_y_no_de_cualquier_numero_largo(): void
     {
-        $cuerpo = "Orden 26090017003463999 y monto 12345678901234\n"
+        $cuerpo = "Orden 26090017003927999 y monto 12345678901234\n"
             ."RECIBIDO (000123202609040951)\nREFERENCIA #31001";
 
         $leido = app(CorreoCobroParser::class)->interpretar(self::ASUNTO_REAL, $cuerpo);

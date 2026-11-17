@@ -35,20 +35,20 @@ class ReglaOrdenCompraFormaTest extends TestCase
     public function test_de_13_a_15_digitos_cuadran_porque_el_correlativo_crece(): void
     {
         // Como vienen de Calleja: 2611 + sala 0232 + correlativo de 5, 6 o 7 cifras.
-        $this->assertSame([], $this->problemas('2611023200103'));
-        $this->assertSame([], $this->problemas('26110232001039'));
-        $this->assertSame([], $this->problemas('261102320010394'));
+        $this->assertSame([], $this->problemas('2611023200172'));
+        $this->assertSame([], $this->problemas('26110232001726'));
+        $this->assertSame([], $this->problemas('261102320017265'));
     }
 
     public function test_menos_de_13_o_mas_de_15_digitos_avisa(): void
     {
         $this->assertSame(
-            ['La orden de compra «2611023200103941» tiene 16 dígitos y deben ser de 13 a 15.'],
-            $this->problemas('2611023200103941'),
+            ['La orden de compra «2611023200172651» tiene 16 dígitos y deben ser de 13 a 15.'],
+            $this->problemas('2611023200172651'),
         );
         $this->assertSame(
-            ['La orden de compra «261102320010» tiene 12 dígitos y deben ser de 13 a 15.'],
-            $this->problemas('261102320010'),
+            ['La orden de compra «261102320017» tiene 12 dígitos y deben ser de 13 a 15.'],
+            $this->problemas('261102320017'),
         );
     }
 

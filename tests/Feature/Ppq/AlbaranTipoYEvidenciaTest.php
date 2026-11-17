@@ -115,7 +115,7 @@ class AlbaranTipoYEvidenciaTest extends TestCase
 
         // Un número suelto —como los 26 capturados a mano— NO permite determinar el tipo.
         // Queda en null, que significa «no consta», nunca «AC01».
-        $this->assertNull($this->albaran('3211', 1.93, '260602520020871')->tipo_codigo);
+        $this->assertNull($this->albaran('3211', 1.93, '260602520036514')->tipo_codigo);
     }
 
     public function test_solo_el_albaran_de_entrega_dice_que_es_de_entrega(): void
@@ -123,7 +123,7 @@ class AlbaranTipoYEvidenciaTest extends TestCase
         $this->assertTrue($this->albaran('AC01/0232/00/6715', 136.33)->esDeEntrega());
         $this->assertFalse($this->albaran('AC02/0232/00/6836', 2.89, '260602320099999')->esDeEntrega());
         $this->assertFalse($this->albaran('AC04/0033/00/3209', 6.24, '260600330011111')->esDeEntrega());
-        $this->assertFalse($this->albaran('3211', 1.93, '260602520020871')->esDeEntrega());
+        $this->assertFalse($this->albaran('3211', 1.93, '260602520036514')->esDeEntrega());
     }
 
     // ═════════════════════════ la resolución

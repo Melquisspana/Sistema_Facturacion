@@ -9,7 +9,7 @@ class DteCorreoParserTest extends TestCase
 {
     private function parser(): DteCorreoParser
     {
-        return new DteCorreoParser();
+        return new DteCorreoParser;
     }
 
     public function test_extrae_dte_pelado_con_oc_en_apendice(): void
@@ -23,7 +23,7 @@ class DteCorreoParserTest extends TestCase
             ],
             'resumen' => ['totalPagar' => 146.56, 'montoTotalOperacion' => 147.87],
             'receptor' => ['nombre' => 'Calleja SA de CV', 'nombreComercial' => 'Súper Selectos Ilobasco'],
-            'apendice' => [['campo' => 'ordenCompra', 'etiqueta' => 'Orden de compra', 'valor' => '2606026002401']],
+            'apendice' => [['campo' => 'ordenCompra', 'etiqueta' => 'Orden de compra', 'valor' => '2606026003857']],
             'selloRecibido' => 'SELLO-XYZ',
         ];
 
@@ -33,7 +33,7 @@ class DteCorreoParserTest extends TestCase
         $this->assertSame('ABC-123', $r['codigoGeneracion']);
         $this->assertSame('SELLO-XYZ', $r['sello']);
         $this->assertSame('03', $r['tipoDte']);
-        $this->assertSame('2606026002401', $r['ordenCompra']);
+        $this->assertSame('2606026003857', $r['ordenCompra']);
         $this->assertSame('0260', $r['sala']);          // sala = 4 dígitos tras el YYMM
         $this->assertSame('Súper Selectos Ilobasco', $r['salaNombre']); // nombre de sala = nombre comercial del receptor
         $this->assertSame(146.56, $r['monto']);

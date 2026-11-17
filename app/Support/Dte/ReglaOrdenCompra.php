@@ -24,7 +24,7 @@ use Carbon\CarbonInterface;
  *
  * También guarda la FORMA de la orden del cliente que la exige: `AAMM` + la sala
  * (4 dígitos, empieza con 0) + un correlativo que crece con el tiempo, así que
- * vienen de 13, 14 y 15 dígitos (ej. 2611 0232 0010394). El año y el mes de la
+ * vienen de 13, 14 y 15 dígitos (ej. 2611 0232 0017265). El año y el mes de la
  * orden van a no más de un mes de la fecha del CCF. La forma solo AVISA (el
  * usuario confirma y se genera igual); la usan la emisión y la auditoría de Auditoría › Órdenes de compra.
  */

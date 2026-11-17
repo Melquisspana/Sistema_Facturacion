@@ -34,9 +34,9 @@ class CobrosCorregirVinculoAlbaranTest extends TestCase
     use PreparaEmisorDte;
     use RefreshDatabase;
 
-    private const OC_MAL = '26090620003463';
+    private const OC_MAL = '26090620003927';
 
-    private const OC_BUENA = '26090062003463';
+    private const OC_BUENA = '26090062003927';
 
     private ?Establecimiento $estab = null;
 

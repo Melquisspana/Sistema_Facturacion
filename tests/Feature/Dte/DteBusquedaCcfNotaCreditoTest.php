@@ -185,10 +185,10 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
 
     public function test_busca_por_orden_de_compra(): void
     {
-        $ccf = $this->ccf(1120, ['numero_orden_compra' => '26070205005054']);
+        $ccf = $this->ccf(1120, ['numero_orden_compra' => '26070205006391']);
         $this->ccf(999, ['numero_orden_compra' => '99999999999999']);
 
-        $this->assertSame([$ccf->id], $this->buscar('26070205005054'));
+        $this->assertSame([$ccf->id], $this->buscar('26070205006391'));
         $this->assertSame([$ccf->id], $this->buscar('260702'));
     }
 

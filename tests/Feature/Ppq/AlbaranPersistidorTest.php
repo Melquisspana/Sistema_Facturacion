@@ -9,6 +9,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqSala;
 use App\Services\Ppq\AlbaranPersistidor;
 use App\Services\Ppq\SalaSucursalResolver;
+use App\Support\Sala;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -28,7 +29,7 @@ class AlbaranPersistidorTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        \App\Support\Sala::olvidarCache(); // el caché estático no debe filtrar entre tests
+        Sala::olvidarCache(); // el caché estático no debe filtrar entre tests
         $this->seed(DatosInicialesNegritaSeeder::class);
     }
 
@@ -57,7 +58,7 @@ class AlbaranPersistidorTest extends TestCase
     {
         $datos = [
             'numero_albaran' => 'AC01/0236/00/6359',
-            'numero_orden_compra' => '26060236004586',
+            'numero_orden_compra' => '26060236007318',
             'monto_albaran' => 250.75,
             'fecha_albaran' => '14/07/2026',
         ];
@@ -88,19 +89,19 @@ class AlbaranPersistidorTest extends TestCase
     public function test_autocorrige_monto_null_pero_no_pisa_uno_bueno(): void
     {
         $sinMonto = PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230001794',
+            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230002658',
             'monto_albaran' => null, 'origen' => 'gmail',
         ]);
 
         $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230001794',
+            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230002658',
             'monto_albaran' => 138.87,
         ], 'gmail');
         $this->assertSame('138.87', (string) $sinMonto->refresh()->monto_albaran);
 
         // Un reparseo posterior con otro valor NO lo pisa.
         $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230001794',
+            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230002658',
             'monto_albaran' => 999.99,
         ], 'gmail');
         $this->assertSame('138.87', (string) $sinMonto->refresh()->monto_albaran);
@@ -113,7 +114,7 @@ class AlbaranPersistidorTest extends TestCase
         $sucursal = $this->sala('0236', 'Súper Selectos Santa Elena');
 
         $albaran = $this->persistidor()->registrarConSala([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'gmail');
 
         $this->assertSame('0236', $albaran->sala_codigo);
@@ -125,7 +126,7 @@ class AlbaranPersistidorTest extends TestCase
         $sucursal = $this->sala('230', 'Súper Selectos La Unión');
 
         $albaran = $this->persistidor()->registrarConSala([
-            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230001794',
+            'numero_albaran' => 'AC01/0230/00/2878', 'numero_orden_compra' => '26050230002658',
         ], 'gmail');
 
         $this->assertSame($sucursal->id, $albaran->cliente_sucursal_id);
@@ -138,7 +139,7 @@ class AlbaranPersistidorTest extends TestCase
         PpqSala::recordar('0260', 'Súper Selectos Escalón', 'ccf_json');
 
         $albaran = $this->persistidor()->registrarConSala([
-            'numero_albaran' => 'AC01/0260/00/1111', 'numero_orden_compra' => '2606026002401',
+            'numero_albaran' => 'AC01/0260/00/1111', 'numero_orden_compra' => '2606026003857',
         ], 'gmail');
 
         $this->assertSame('0260', $albaran->sala_codigo);
@@ -217,12 +218,12 @@ class AlbaranPersistidorTest extends TestCase
 
         // Alguien ya corrigió el vínculo a mano hacia otra sucursal.
         $existente = PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             'origen' => 'gmail', 'cliente_sucursal_id' => $corregida->id,
         ]);
 
         $this->persistidor()->registrarConSala([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'gmail');
 
         $this->assertSame($corregida->id, $existente->refresh()->cliente_sucursal_id);
@@ -234,13 +235,13 @@ class AlbaranPersistidorTest extends TestCase
     public function test_registrar_un_albaran_dado_de_baja_lanza_error_controlado(): void
     {
         $borrado = $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'manual');
         $borrado->delete();
 
         try {
             $this->persistidor()->registrar([
-                'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+                'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             ], 'manual');
             $this->fail('Se esperaba AlbaranDadoDeBajaException.');
         } catch (AlbaranDadoDeBajaException $e) {
@@ -257,13 +258,13 @@ class AlbaranPersistidorTest extends TestCase
     public function test_la_via_automatica_tambien_corta_ante_un_albaran_dado_de_baja(): void
     {
         $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'manual')->delete();
 
         $this->expectException(AlbaranDadoDeBajaException::class);
 
         $this->persistidor()->registrarConSala([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'gmail');
     }
 
@@ -298,7 +299,7 @@ class AlbaranPersistidorTest extends TestCase
         $sucursal = $this->sala('0236', 'Súper Selectos Santa Elena');
 
         $albaran = $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'manual');
 
         $this->assertNull($albaran->cliente_sucursal_id);
@@ -337,7 +338,7 @@ class AlbaranPersistidorTest extends TestCase
         $this->sala('0236', 'Súper Selectos Santa Elena');
 
         $albaran = $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'gmail');
 
         $this->assertNull($albaran->cliente_sucursal_id);
@@ -348,13 +349,13 @@ class AlbaranPersistidorTest extends TestCase
         $this->sala('0236', 'Súper Selectos Santa Elena');
 
         $existente = PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             'monto_albaran' => null, 'origen' => 'gmail',
         ]);
 
         // Reusar la fila desde la pantalla sí autocorrige el monto, pero no la sucursal.
         $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             'monto_albaran' => 100.00,
         ], 'manual');
 
@@ -370,12 +371,12 @@ class AlbaranPersistidorTest extends TestCase
         $sucursal = $this->sala('0236', 'Súper Selectos Santa Elena');
 
         $manual = $this->persistidor()->registrar([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'manual');
         $this->assertNull($manual->cliente_sucursal_id);
 
         $sincronizado = $this->persistidor()->registrarConSala([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
         ], 'gmail');
 
         $this->assertSame($manual->id, $sincronizado->id);

@@ -36,7 +36,7 @@ class CobrosVinculacionAutomaticaTest extends TestCase
     use PreparaEmisorDte;
     use RefreshDatabase;
 
-    private const OC = '26090017003463';
+    private const OC = '26090017003927';
 
     private ?Establecimiento $estab = null;
 

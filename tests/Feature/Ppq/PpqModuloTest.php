@@ -79,7 +79,7 @@ class PpqModuloTest extends TestCase
      * lote —y con razón: no existe ante Hacienda—. Estas pruebas hablan de cobrar CCF
      * reales, así que el helper ahora construye uno real.
      */
-    private function crearCcf(string $numeroControl, ?string $oc = '260600232002345', float $monto = 113.58): Dte
+    private function crearCcf(string $numeroControl, ?string $oc = '260600232003816', float $monto = 113.58): Dte
     {
         return Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id,
@@ -101,10 +101,10 @@ class PpqModuloTest extends TestCase
     public function test_helper_extrae_sala_y_ultimos_digitos(): void
     {
         // Sala = 4 dígitos justo después del prefijo YYMM, conservando el cero inicial.
-        $this->assertSame('0260', OrdenCompra::salaDesde('2606026002401'));
-        $this->assertSame('0236', OrdenCompra::salaDesde('26060236004586'));
-        $this->assertSame('0039', OrdenCompra::salaDesde('26050039004820'));
-        $this->assertSame('0230', OrdenCompra::salaDesde('26050230001794'));
+        $this->assertSame('0260', OrdenCompra::salaDesde('2606026003857'));
+        $this->assertSame('0236', OrdenCompra::salaDesde('26060236007318'));
+        $this->assertSame('0039', OrdenCompra::salaDesde('26050039006173'));
+        $this->assertSame('0230', OrdenCompra::salaDesde('26050230002658'));
         $this->assertNull(OrdenCompra::salaDesde('123'));
         $this->assertSame('0986', OrdenCompra::ultimosDigitos('DTE-03-M001P001-0000000000000986'));
         // Sin sucursal con ese código en la BD, la etiqueta es solo el código.
@@ -139,7 +139,7 @@ class PpqModuloTest extends TestCase
 
         $this->actingAs($admin)->get(route('ppq.albaranes_por_fecha', [
             'origen' => 'gmail', 'numero_control' => 'DTE-03-Z', 'tipo_dte' => '03',
-            'numero_orden_compra' => '2606026002401', 'monto_dte' => 50.00, 'fecha' => '2026-06-10', 'q' => '0986',
+            'numero_orden_compra' => '2606026003857', 'monto_dte' => 50.00, 'fecha' => '2026-06-10', 'q' => '0986',
         ]))
             ->assertOk()
             ->assertSee('DTE-03-Z')
@@ -159,13 +159,13 @@ class PpqModuloTest extends TestCase
         $lote = PpqLote::create(['referencia' => 'X', 'fecha' => now(), 'estado' => 'borrador']);
         // Item de Gmail con OC que en número daría notación científica.
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
-            'origen' => 'gmail', 'numero_control' => 'DTE-03-X', 'numero_orden_compra' => '26050230001794', 'monto_dte' => 100.0,
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-X', 'numero_orden_compra' => '26050230002658', 'monto_dte' => 100.0,
         ]);
 
         $ruta = app(ExcelCallejaExporter::class)->generar($lote->fresh());
         $hoja = IOFactory::load($ruta)->getActiveSheet();
 
-        $this->assertSame('26050230001794', (string) $hoja->getCell('A2')->getValue()); // OC completa, no científica
+        $this->assertSame('26050230002658', (string) $hoja->getCell('A2')->getValue()); // OC completa, no científica
         $this->assertSame('0230', (string) $hoja->getCell('I2')->getValue());            // sin sucursal: cae al código
         @unlink($ruta);
     }
@@ -192,7 +192,7 @@ class PpqModuloTest extends TestCase
 
         // CCF de 100 con albarán de 90 (fecha 15/06/2026) → diferencia 10.
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
-            'origen' => 'gmail', 'numero_control' => 'DTE-03-X', 'numero_orden_compra' => '26050230001794',
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-X', 'numero_orden_compra' => '26050230002658',
             'monto_dte' => 100.0, 'monto_albaran' => 90.0, 'numero_albaran' => 'AC01/0230/00/1',
             'fecha_albaran' => '2026-06-15', 'sin_albaran' => '0',
         ]);
@@ -273,7 +273,7 @@ class PpqModuloTest extends TestCase
         Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id, 'tipo_dte' => '05', 'estado' => 'aceptado',
             'cliente_id' => $this->calleja()->id, 'numero_control' => 'DTE-05-M001P001-000000000000340',
-            'numero_orden_compra' => '260600232002345', 'fecha_emision' => now(),
+            'numero_orden_compra' => '260600232003816', 'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'), 'total_pagar' => 20.0,
         ]);
         $user = $this->usuario('facturacion');
@@ -327,7 +327,7 @@ class PpqModuloTest extends TestCase
         $item = PpqItem::firstOrFail();
         $this->assertSame($lote->id, $item->ppq_lote_id);
         $this->assertSame('113.58', (string) $item->monto_dte);            // snapshot del monto
-        $this->assertSame('260600232002345', $item->numero_orden_compra);  // snapshot de la OC
+        $this->assertSame('260600232003816', $item->numero_orden_compra);  // snapshot de la OC
 
         // Duplicado del mismo CCF en el mismo lote: se rechaza, no se duplica.
         $this->actingAs($admin)
@@ -377,7 +377,7 @@ class PpqModuloTest extends TestCase
             'codigo_generacion' => 'GEN-1',
             'sello_recepcion' => 'SELLO-1',
             'tipo_dte' => '03',
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'monto_dte' => 146.56,
             'numero_albaran' => 'ALB-77',
             'monto_albaran' => 140.00,
@@ -406,7 +406,7 @@ class PpqModuloTest extends TestCase
 
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
             'origen' => 'gmail', 'numero_control' => 'DTE-03-SS', 'tipo_dte' => '03',
-            'numero_orden_compra' => '26060236004586', 'monto_dte' => 100.00,
+            'numero_orden_compra' => '26060236007318', 'monto_dte' => 100.00,
             'numero_albaran' => 'AC01/0236/00/6359', 'monto_albaran' => 100.00, 'sin_albaran' => '0',
         ])->assertRedirect();
 
@@ -431,13 +431,13 @@ class PpqModuloTest extends TestCase
         $lote = PpqLote::create(['referencia' => 'BAJA', 'fecha' => now(), 'estado' => 'borrador']);
 
         PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             'origen' => 'manual',
         ])->delete();
 
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
             'origen' => 'gmail', 'numero_control' => 'DTE-03-BAJA', 'tipo_dte' => '03',
-            'numero_orden_compra' => '26060236004586', 'monto_dte' => 100.00,
+            'numero_orden_compra' => '26060236007318', 'monto_dte' => 100.00,
             'numero_albaran' => 'AC01/0236/00/6359', 'monto_albaran' => 100.00, 'sin_albaran' => '0',
         ])->assertRedirect()->assertSessionHas('error');
 
@@ -455,14 +455,14 @@ class PpqModuloTest extends TestCase
         // CCF (suma) con su albarán automático de Gmail.
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
             'origen' => 'gmail', 'numero_control' => 'DTE-03-A', 'tipo_dte' => '03',
-            'numero_orden_compra' => '26060236004586', 'monto_dte' => 100.00,
+            'numero_orden_compra' => '26060236007318', 'monto_dte' => 100.00,
             'numero_albaran' => 'AC01/0236/00/6359', 'monto_albaran' => 100.00, 'sin_albaran' => '0',
         ])->assertRedirect();
 
         // NC (resta) con albarán capturado a MANO (misma OC que el CCF).
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
             'origen' => 'gmail', 'numero_control' => 'DTE-05-B', 'tipo_dte' => '05',
-            'numero_orden_compra' => '26060236004586', 'monto_dte' => 30.00,
+            'numero_orden_compra' => '26060236007318', 'monto_dte' => 30.00,
             'numero_albaran' => 'AC01/0236/00/9999', 'fecha_albaran' => '2026-06-10',
             'monto_albaran' => 30.00, 'observaciones' => 'avería', 'sin_albaran' => '0',
         ])->assertRedirect();
@@ -794,13 +794,13 @@ class PpqModuloTest extends TestCase
     public function test_reagregar_autocorrige_monto_albaran_que_habia_quedado_null(): void
     {
         // Caso real reportado (albarán de La Union, AC01/0230/00/2878, OC
-        // 26050230001794): quedó una fila ppq_albaranes VIEJA con monto NULL (de
+        // 26050230002658): quedó una fila ppq_albaranes VIEJA con monto NULL (de
         // una corrida anterior del parser que no pudo extraerlo). Quitar y volver
         // a agregar el CCF NO arreglaba nada porque firstOrCreate() devolvía esa
         // misma fila sin actualizarla. Ahora debe autocorregirse.
         $viejo = PpqAlbaran::create([
             'numero_albaran' => 'AC01/0230/00/2878',
-            'numero_orden_compra' => '26050230001794',
+            'numero_orden_compra' => '26050230002658',
             'monto_albaran' => null,
             'fecha_albaran' => '2026-06-03',
             'origen' => 'gmail',
@@ -812,13 +812,13 @@ class PpqModuloTest extends TestCase
         // Re-agregar como lo hace la búsqueda HOY (ya con el parser corregido: 138.87).
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
             'origen' => 'gmail', 'numero_control' => 'DTE-03-M001P001-000000000000940',
-            'numero_orden_compra' => '26050230001794', 'monto_dte' => 168.00,
+            'numero_orden_compra' => '26050230002658', 'monto_dte' => 168.00,
             'numero_albaran' => 'AC01/0230/00/2878', 'monto_albaran' => 138.87,
             'fecha_albaran' => '03/06/2026', 'sin_albaran' => '0',
         ])->assertRedirect();
 
         // La fila VIEJA se autocorrigió (mismo id, ya no NULL) — no se creó una duplicada.
-        $this->assertSame($viejo->id, PpqAlbaran::where('numero_albaran', 'AC01/0230/00/2878')->where('numero_orden_compra', '26050230001794')->sole()->id);
+        $this->assertSame($viejo->id, PpqAlbaran::where('numero_albaran', 'AC01/0230/00/2878')->where('numero_orden_compra', '26050230002658')->sole()->id);
         $this->assertSame('138.87', (string) $viejo->refresh()->monto_albaran);
 
         // El item nuevo ya trae el monto (no queda "Albarán sin monto").
@@ -867,7 +867,7 @@ class PpqModuloTest extends TestCase
         $ccf = Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id, 'tipo_dte' => '03', 'estado' => 'aceptado',
             'cliente_id' => $this->calleja()->id, 'cliente_sucursal_id' => $sucursal->id,
-            'numero_control' => 'DTE-03-M001P001-000000000000986', 'numero_orden_compra' => '260600232002345',
+            'numero_control' => 'DTE-03-M001P001-000000000000986', 'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(), 'hora_emision' => now()->format('H:i:s'), 'total_pagar' => 113.58,
         ]);
 
@@ -904,7 +904,7 @@ class PpqModuloTest extends TestCase
 
     public function test_sala_sin_nombre_muestra_texto_de_respaldo(): void
     {
-        $item = new PpqItem(['numero_orden_compra' => '26050230001794']); // sala 0230, sin sucursal
+        $item = new PpqItem(['numero_orden_compra' => '26050230002658']); // sala 0230, sin sucursal
         $this->assertSame('Sala 0230 sin nombre registrado', $item->salaDescripcion());
     }
 

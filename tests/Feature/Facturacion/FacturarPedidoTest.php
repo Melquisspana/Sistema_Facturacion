@@ -123,7 +123,7 @@ class FacturarPedidoTest extends TestCase
         $uno = $this->envio($pedido, [$this->galleta->id => '6', $this->canilla->id => '4'], '2026-11-08');
         $dos = $this->envio($pedido, [$this->galleta->id => '4', $this->quesadilla->id => '3.0000']);
 
-        $respuesta = $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000123']);
+        $respuesta = $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000317']);
         $respuesta->assertSessionHasNoErrors();
 
         $dte = Dte::sole();
@@ -132,7 +132,7 @@ class FacturarPedidoTest extends TestCase
         $this->assertSame('03', $dte->tipo_dte->value);
         $this->assertSame($this->cliente->id, $dte->cliente_id);
         $this->assertSame($this->sala->id, $dte->cliente_sucursal_id);
-        $this->assertSame('26119001000123', $dte->numero_orden_compra);
+        $this->assertSame('26119001000317', $dte->numero_orden_compra);
         $this->assertEquals([$this->galleta->id => 10.0, $this->canilla->id => 4.0, $this->quesadilla->id => 3.0], $this->cantidades($dte));
         $precios = $dte->lineas()->pluck('precio_unitario', 'producto_id')->map(fn ($p) => (float) $p)->all();
         $this->assertEquals([$this->galleta->id => 1.25, $this->canilla->id => 1.50, $this->quesadilla->id => 3.00], $precios);
@@ -270,7 +270,7 @@ class FacturarPedidoTest extends TestCase
         $pedido = $this->pedido([$sinPrecio->id => '1', $inactivo->id => '1', $this->galleta->id => '3', $this->quesadilla->id => '3']);
         $this->envio($pedido, [$sinPrecio->id => '1', $inactivo->id => '1', $this->galleta->id => '2.5000', $this->quesadilla->id => '3']);
 
-        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000123'])
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000317'])
             ->assertSessionHasErrors('pedido');
         $this->assertSame([
             'Turrón de prueba no tiene precio para esta sala.',
@@ -341,14 +341,14 @@ class FacturarPedidoTest extends TestCase
         $uno = $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
         $dos = $this->envio($pedido, [$this->galleta->id => '4', $this->quesadilla->id => '3']);
 
-        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000123'])->assertSessionHasNoErrors();
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000317'])->assertSessionHasNoErrors();
 
         $log = Activity::where('description', 'facturó lo que llegó del pedido')->sole();
         $this->assertSame('pedido_sala', $log->log_name);
         $this->assertTrue($log->subject->is($pedido));
         $this->assertSame($this->oficina->id, $log->causer_id);
         $this->assertSame(Dte::sole()->id, $log->properties['dte_id']);
-        $this->assertSame('26119001000123', $log->properties['numero_orden_compra']);
+        $this->assertSame('26119001000317', $log->properties['numero_orden_compra']);
         // assertEquals: MySQL reordena las claves de la columna JSON.
         $this->assertEquals([['envio_id' => $uno->id, 'numero' => 1], ['envio_id' => $dos->id, 'numero' => 2]], $log->properties['envios']);
         $this->assertEquals([
@@ -360,13 +360,13 @@ class FacturarPedidoTest extends TestCase
     public function test_el_formulario_del_ccf_recibe_el_pedido_y_lo_que_llego(): void
     {
         $sinPrecio = Producto::factory()->create(['nombre' => 'Turrón de prueba', 'precio_unitario' => 0]);
-        $pedido = $this->pedido([$this->galleta->id => '10', $sinPrecio->id => '1'], '26119001000123');
+        $pedido = $this->pedido([$this->galleta->id => '10', $sinPrecio->id => '1'], '26119001000317');
         $this->envio($pedido, [$this->galleta->id => '10', $sinPrecio->id => '1']);
 
         $respuesta = $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
             ->assertViewHas('pedido', fn ($p) => $p->is($pedido));
         $propuesta = $respuesta->viewData('propuesta');
-        $this->assertSame('26119001000123', $propuesta['oc']);
+        $this->assertSame('26119001000317', $propuesta['oc']);
         $this->assertSame(['Galleta de prueba', 'Turrón de prueba'], array_column($propuesta['lineas'], 'nombre'));
         $this->assertSame([10, 1], array_column($propuesta['lineas'], 'entero'));
         $this->assertSame([1.25, null], array_map(fn ($p) => $p === null ? null : (float) $p, array_column($propuesta['lineas'], 'precio')));
@@ -442,7 +442,7 @@ class FacturarPedidoTest extends TestCase
 
     public function test_el_formulario_con_el_pedido_muestra_lo_que_llego_y_manda_a_facturar(): void
     {
-        $pedido = $this->pedido([$this->galleta->id => '10', $this->quesadilla->id => '3'], '26119001000123');
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->quesadilla->id => '3'], '26119001000317');
         $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
         $this->envio($pedido, [$this->galleta->id => '4', $this->quesadilla->id => '3']);
 
@@ -453,7 +453,7 @@ class FacturarPedidoTest extends TestCase
             // La sala va fija: sin buscador de cliente.
             ->assertDontSee('id="cliente_buscar"', false)
             ->assertSee('Sala de prueba Norte')
-            ->assertSee('value="26119001000123"', false)
+            ->assertSee('value="26119001000317"', false)
             ->assertSee('Lo que llegó')
             ->assertSeeInOrder(['Galleta de prueba', '10', 'Quesadilla de prueba', '3'])
             ->assertSee('Envío 1 · 08/11/2026')
@@ -465,7 +465,7 @@ class FacturarPedidoTest extends TestCase
         $this->withSession(['_old_input' => ['numero_orden_compra' => '26119001000999']])
             ->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))
             ->assertSee('value="26119001000999"', false)
-            ->assertDontSee('value="26119001000123"', false);
+            ->assertDontSee('value="26119001000317"', false);
     }
 
     public function test_el_formulario_muestra_lo_que_frena_y_apaga_el_boton(): void
@@ -554,9 +554,9 @@ class FacturarPedidoTest extends TestCase
 
     public function test_despues_de_un_rechazo_el_formulario_no_avisa_que_la_oc_ya_tiene_ccf(): void
     {
-        $pedido = $this->pedido([$this->galleta->id => '10'], '26119001000123');
+        $pedido = $this->pedido([$this->galleta->id => '10'], '26119001000317');
         $this->envio($pedido, [$this->galleta->id => '10']);
-        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000123'])->assertSessionHasNoErrors();
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000317'])->assertSessionHasNoErrors();
         Dte::query()->update(['estado' => EstadoDte::Rechazado->value]);
 
         // Hacienda lo rechazó: hay que volver a facturar, sin el aviso de facturar dos veces.
@@ -566,7 +566,7 @@ class FacturarPedidoTest extends TestCase
         $this->assertFalse($this->botonApagado($respuesta->getContent()));
 
         // Un CCF con esa OC que sí cuenta sigue avisando.
-        $this->post(route('facturacion.store-ccf'), ['tipo_dte' => '03', 'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $this->sala->id, 'numero_orden_compra' => '26119001000123'])
+        $this->post(route('facturacion.store-ccf'), ['tipo_dte' => '03', 'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $this->sala->id, 'numero_orden_compra' => '26119001000317'])
             ->assertSessionHasNoErrors();
         $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
             ->assertSee('La OC del pedido ya tiene un CCF');

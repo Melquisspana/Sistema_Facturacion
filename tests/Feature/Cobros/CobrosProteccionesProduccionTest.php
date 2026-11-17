@@ -49,7 +49,7 @@ class CobrosProteccionesProduccionTest extends TestCase
     {
         return PpqAlbaran::create($datos + [
             'numero_albaran' => 'AC01/0207/00/3874', 'tipo_codigo' => 'AC01',
-            'sala_codigo' => '0207', 'numero_orden_compra' => '26080207003463',
+            'sala_codigo' => '0207', 'numero_orden_compra' => '26080207003927',
             'fecha_albaran' => '2026-08-26', 'monto_albaran' => '100.00',
         ]);
     }
@@ -66,7 +66,7 @@ class CobrosProteccionesProduccionTest extends TestCase
             'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '00',
             'numero_control' => $doc->numero_control, 'codigo_generacion' => $doc->codigo_generacion,
             'fecha_emision' => '2026-08-26', 'hora_emision' => '10:00:00',
-            'numero_orden_compra' => '26080207003463', 'total_pagar' => $doc->monto,
+            'numero_orden_compra' => '26080207003927', 'total_pagar' => $doc->monto,
         ]);
         $doc->update(['dte_id' => $dte->id]);
 

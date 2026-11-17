@@ -44,7 +44,7 @@ use Tests\TestCase;
  * la que dependen sus cinco columnas.
  *
  * Los datos de albarán que usan estas pruebas son los del albarán REAL de referencia
- * (`AC01/0017/00/5131`, OC 26090017003463, 17/09/2026, $123.74), precisamente para poder
+ * (`AC01/0017/00/5131`, OC 26090017003927, 17/09/2026, $123.74), precisamente para poder
  * comprobar lo que el encargo pide de él: que NO se vincule por suposición a una solicitud
  * a la que no pertenece.
  *
@@ -95,7 +95,7 @@ class CobrosSolicitudTest extends TestCase
             'tipo_codigo' => 'AC01',
             'fecha_albaran' => '2026-09-17',
             'monto_albaran' => '123.74',
-            'numero_orden_compra' => '26090017003463',
+            'numero_orden_compra' => '26090017003927',
             'sala_codigo' => '0017',
         ], $datos));
     }
@@ -128,13 +128,13 @@ class CobrosSolicitudTest extends TestCase
 
         // El documento trae su OC a través del DTE; acá se simula con un DTE mínimo.
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
         $this->assertSame(EstadoVinculacionAlbaran::Vinculado, $veredicto['estado']);
         $this->assertSame($albaran->id, $veredicto['albaran_id']);
-        $this->assertStringContainsString('orden de compra 26090017003463', (string) $veredicto['motivo']);
+        $this->assertStringContainsString('orden de compra 26090017003927', (string) $veredicto['motivo']);
         $this->assertCount(1, $veredicto['candidatos']);
     }
 
@@ -152,13 +152,13 @@ class CobrosSolicitudTest extends TestCase
 
         // Mismo importe y misma fecha, OTRA orden de compra.
         $documento = $this->documento($cliente, ['monto' => '123.74', 'fecha_emision' => '2026-09-17']);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090261004111']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090261005392']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
         $this->assertSame(EstadoVinculacionAlbaran::SinAlbaran, $veredicto['estado']);
         $this->assertNull($veredicto['albaran_id']);
-        $this->assertStringContainsString('26090261004111', (string) $veredicto['motivo']);
+        $this->assertStringContainsString('26090261005392', (string) $veredicto['motivo']);
     }
 
     /** DORADA · dos albaranes para la misma OC: no se elige ninguno, se piden los dos. */
@@ -169,7 +169,7 @@ class CobrosSolicitudTest extends TestCase
         $this->albaranReal(['numero_albaran' => 'AC01/0017/00/5132', 'monto_albaran' => '99.10']);
 
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
@@ -187,7 +187,7 @@ class CobrosSolicitudTest extends TestCase
         $this->albaranReal(['sala_codigo' => '0261', 'numero_albaran' => 'AC01/0261/00/5131']);
 
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
@@ -203,7 +203,7 @@ class CobrosSolicitudTest extends TestCase
         $this->albaranReal(['tipo_codigo' => 'AC02', 'numero_albaran' => 'AC02/0017/00/5131']);
 
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
@@ -221,7 +221,7 @@ class CobrosSolicitudTest extends TestCase
         $otro->forceFill(['ppq_albaran_id' => $albaran->id])->save();
 
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
@@ -238,7 +238,7 @@ class CobrosSolicitudTest extends TestCase
         $usuario = $this->usuario();
 
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         app(VinculadorAlbaranes::class)->vincularAMano($documento, $albaran, $usuario, 'Confirmado con la sala.');
 
@@ -740,7 +740,7 @@ class CobrosSolicitudTest extends TestCase
         $b = $this->documento($cliente, ['numero_control' => 'DTE-03-M001P002-000000000000132']);
         $b->forceFill(['ppq_albaran_id' => $this->albaranReal([
             'numero_albaran' => 'AC01/0017/00/5132',
-            'numero_orden_compra' => '26090017003464',
+            'numero_orden_compra' => '26090017003928',
         ])->id])->save();
 
         $servicio = app(SolicitudCobroService::class);
@@ -808,7 +808,7 @@ class CobrosSolicitudTest extends TestCase
         $this->albaranReal(['cliente_sucursal_id' => $sucursalAjena->id]);
 
         $documento = $this->documento($cliente);
-        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003463']));
+        $documento->setRelation('dte', new Dte(['numero_orden_compra' => '26090017003927']));
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 

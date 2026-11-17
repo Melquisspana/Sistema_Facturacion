@@ -113,7 +113,7 @@ class AlbaranParserTest extends TestCase
         $texto = <<<'TXT'
         CALLEJA, S.A. DE C.V.
         ALBARAN  AC01/0039/00/6703
-        Orden de compra: 260600232002345
+        Orden de compra: 260600232003816
         Producto X   10   2.50    25.00
         Producto Y    5   3.00    15.00
         TOTAL  $ 1,234.56
@@ -122,7 +122,7 @@ class AlbaranParserTest extends TestCase
         $r = $this->parser()->desdeTexto($texto);
 
         $this->assertSame(1234.56, $r['monto']);                       // monto total normalizado
-        $this->assertSame('260600232002345', $r['oc']);                // OC
+        $this->assertSame('260600232003816', $r['oc']);                // OC
         $this->assertStringContainsString('AC01/0039', (string) $r['numero']);
         $this->assertNotEmpty($r['debug']['candidatos_monto']);        // debug con candidatos
     }
@@ -132,10 +132,10 @@ class AlbaranParserTest extends TestCase
         // Forma real de los albaranes de Calleja (sep-2026): la OC va como «Ref.» del
         // pedido, en la línea siguiente, sin la palabra «orden».
         $texto = "COCO RAYADO LA NEGRITA 2 ONZAS\nAlbarán de Compras\n".
-            "Pedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref. \n26090011005235\n".
+            "Pedido de Compras 00/6492/26 de Fecha 23/09/2026 Ref. \n26090011006492\n".
             "AC01/0011/00/7488\nTOTAL ALBARAN 168.62";
 
-        $this->assertSame('26090011005235', $this->parser()->desdeTexto($texto)['oc']);
+        $this->assertSame('26090011006492', $this->parser()->desdeTexto($texto)['oc']);
     }
 
     public function test_monto_formato_europeo(): void
@@ -161,7 +161,7 @@ class AlbaranParserTest extends TestCase
         $texto = <<<'TXT'
         CALLEJA, S.A. DE C.V.
         ALBARAN  AC01/232/00/2878
-        Orden de compra: 260600232002345
+        Orden de compra: 260600232003816
         Base 123.99
         IVA 16.12
         R.E. -1.24

@@ -67,7 +67,7 @@ class CobrosFichaCcfTest extends TestCase
             'codigo_generacion' => strtoupper(Str::uuid()->toString()),
             'sello_recepcion' => '2026SELLOREAL'.Str::random(8),
             'fecha_procesamiento_mh' => now(),
-            'numero_orden_compra' => '26090090100777',
+            'numero_orden_compra' => '26090090103582',
             'fecha_emision' => '2026-09-10',
             'hora_emision' => '08:00:00',
             'total_gravado' => '100.00',
@@ -118,7 +118,7 @@ class CobrosFichaCcfTest extends TestCase
         $respuesta->assertSeeText('10/09/2026');
         $respuesta->assertSeeText('Cliente Ficticio, S.A. de C.V.');
         $respuesta->assertSeeText('Sala Ficticia Centro');
-        $respuesta->assertSee('26090090100777');
+        $respuesta->assertSee('26090090103582');
         $respuesta->assertSeeText('Aceptado');
         $respuesta->assertSeeText('Líneas');
         $respuesta->assertSeeText('Dulce de leche ficticio 250 g');
@@ -248,7 +248,7 @@ class CobrosFichaCcfTest extends TestCase
             ->assertSee('$113.00')
             ->assertSee(route('facturacion.pdf', $this->ccf), false)
             ->assertDontSee($this->ccf->numero_control)
-            ->assertDontSee('26090090100777')
+            ->assertDontSee('26090090103582')
             ->assertDontSeeText('Número de control')
             ->assertDontSeeText('Orden de compra')
             ->assertDontSeeText('ID técnico')
@@ -263,7 +263,7 @@ class CobrosFichaCcfTest extends TestCase
         $admin = User::factory()->create()->assignRole(RolSistema::Administrador->value);
         $this->ficha($documento, $admin)->assertOk()
             ->assertSee($this->ccf->numero_control)
-            ->assertSee('26090090100777')
+            ->assertSee('26090090103582')
             ->assertSee(route('cobros.solicitudes.show', $solicitud), false)
             ->assertSee(route('facturacion.imprimir', $this->ccf), false);
         $this->actingAs($admin)->get(route('cobros.solicitudes.show', $solicitud))->assertOk();
