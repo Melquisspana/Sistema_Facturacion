@@ -67,6 +67,16 @@ class SacarPedidoSinSalidaTest extends TestCase
         return $this->post(route('rutas.sacar-pedido.store', $sala), ['cantidades' => $cantidades ?: [$this->galleta->id => '12']]);
     }
 
+    /** La auditoría va en una columna JSON y MySQL reordena las claves: se comparan ordenadas. */
+    private function conClavesOrdenadas(array $filas): array
+    {
+        return array_map(function (array $fila): array {
+            ksort($fila);
+
+            return $fila;
+        }, $filas);
+    }
+
     public function test_el_vendedor_entra_al_inicio_sin_viaje_con_los_dos_botones(): void
     {
         $this->get('/dashboard')->assertRedirect(route('rutas.mi-salida.index'));
@@ -273,10 +283,10 @@ class SacarPedidoSinSalidaTest extends TestCase
             ->assertSessionHas('status', fn (string $s) => str_starts_with($s, 'Pedido de «Sala de prueba Oriente» guardado.') && ! str_contains($s, 'Revisá'));
         $pedido = PedidoSala::latest('id')->first();
         $this->assertSame(['1000.0000', '500.0000'], $pedido->lineas()->orderBy('id')->pluck('cantidad')->all());
-        $this->assertSame([
+        $this->assertSame($this->conClavesOrdenadas([
             ['producto_id' => $this->galleta->id, 'cantidad' => '1000', 'suele' => '10.0000'],
             ['producto_id' => $chocolate->id, 'cantidad' => '500', 'suele' => null],
-        ], Activity::where('description', 'sacó el pedido de la sala')->sole()->properties['cantidades_confirmadas']);
+        ]), $this->conClavesOrdenadas(Activity::where('description', 'sacó el pedido de la sala')->sole()->properties['cantidades_confirmadas']));
 
         // La oficina, al corregir, sigue con el aviso de después: solo lo que tiene con qué compararse.
         $this->assertSame(['Revisá: Galleta de prueba lleva 1,000 y esta sala suele llevar 10.'], app(PedidosSala::class)->avisosCantidad($pedido));
@@ -319,8 +329,8 @@ class SacarPedidoSinSalidaTest extends TestCase
         $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '500'], 'confirmar_cantidades' => '1'])
             ->assertSessionHasNoErrors()->assertSessionHas('status', 'Pedido de «Sala de prueba Oriente» corregido.');
         $this->assertSame('500.0000', $pedido->refresh()->lineas->sole()->cantidad);
-        $this->assertSame([['producto_id' => $this->galleta->id, 'cantidad' => '500', 'suele' => null]],
-            Activity::where('description', 'corrigió el pedido de la sala')->sole()->properties['cantidades_confirmadas']);
+        $this->assertSame($this->conClavesOrdenadas([['producto_id' => $this->galleta->id, 'cantidad' => '500', 'suele' => null]]),
+            $this->conClavesOrdenadas(Activity::where('description', 'corrigió el pedido de la sala')->sole()->properties['cantidades_confirmadas']));
 
         $tiendaNueva = fn (array $extra = []) => $this->post(route('rutas.sacar-pedido.tienda-nueva.store'),
             ['sala_nueva_nombre' => 'Tienda de prueba Nueva', 'cantidades' => [$this->galleta->id => '201']] + $extra);
