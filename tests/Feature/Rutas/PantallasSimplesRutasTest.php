@@ -2,10 +2,14 @@
 
 namespace Tests\Feature\Rutas;
 
+use App\Enums\EstadoPedidoWeb;
 use App\Enums\EstadoSalidaRuta;
 use App\Models\Cliente;
 use App\Models\Departamento;
 use App\Models\Distrito;
+use App\Models\Dte;
+use App\Models\PedidoSala;
+use App\Models\PedidoWeb;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
@@ -16,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -24,6 +29,7 @@ use Tests\TestCase;
  */
 class PantallasSimplesRutasTest extends TestCase
 {
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private function usuario(string $rol = 'administrador'): User
@@ -57,6 +63,38 @@ class PantallasSimplesRutasTest extends TestCase
             ->assertSee('Rutas por visitar')
             ->assertSee('3 días tarde')
             ->assertDontSee('Sonsonate');
+    }
+
+    /** Los pedidos web con ruta por entregar cuentan en el aviso, aparte de los CCF (17/11/2026). */
+    public function test_el_aviso_cuenta_los_pedidos_web_por_entregar_de_la_ruta(): void
+    {
+        $this->seedCatalogosDte();
+        config(['dte.ambiente' => '01', 'rutas.ambiente_ccf' => null]);
+        $estab = $this->crearEmisorDte()['estab'];
+        $ruta = $this->rutaAtrasada();
+        foreach ([1, 2] as $n) {
+            $pedido = PedidoSala::create(['origen' => 'web', 'ruta_id' => $ruta->id, 'fecha' => now()->toDateString(), 'estado' => 'enviado']);
+            $dte = Dte::withoutEvents(fn () => Dte::create([
+                'tipo_dte' => '01', 'estado' => 'aceptado', 'ambiente' => '01',
+                'sello_recepcion' => str_repeat('A', 40), 'fecha_procesamiento_mh' => now(),
+                'establecimiento_id' => $estab->id, 'fecha_emision' => now()->toDateString(), 'hora_emision' => '09:00:00',
+                'numero_control' => 'DTE-01-M001P001-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT), 'total_pagar' => '25.00',
+            ]));
+            PedidoWeb::create([
+                'pedido_sala_id' => $pedido->id, 'dte_id' => $dte->id, 'web_id' => $n, 'codigo' => 'WEB-INVENTADO-'.$n,
+                'idioma' => 'es', 'pagado_en' => now(), 'total_centavos' => 2500, 'moneda' => 'USD',
+                'cliente_nombre' => 'Compradora Inventada', 'cliente_correo' => 'inventada@example.test',
+                'cliente_telefono' => '7000-1234', 'direccion' => 'Calle Inventada 123', 'municipio' => 'Municipio Inventado',
+                'entrega_tipo' => 'ruta', 'pasarela' => 'prueba', 'estado' => EstadoPedidoWeb::Facturado, 'informado_preparando_en' => now(),
+                'factura_correo_en' => now(), 'informado_factura_en' => now(), 'lista_en' => now(), 'estado_por_informar' => 'en_ruta',
+                'lineas' => [], 'cajitas_detalle' => [['cantidad' => 1]],
+            ]);
+        }
+
+        $aviso = app(AvisoRutas::class)->para($this->usuario());
+        $this->assertSame([2, 0, 0.0], [$aviso[0]['web'], $aviso[0]['ccf'], $aviso[0]['monto']]);
+        $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk()
+            ->assertSee('Rutas por visitar')->assertSee('2 web');
     }
 
     public function test_quien_no_ve_rutas_no_recibe_el_aviso(): void

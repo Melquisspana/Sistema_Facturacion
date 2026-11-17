@@ -281,8 +281,16 @@
                                                 <span class="block font-semibold text-gray-800">{{ $aviso['ruta'] }}</span>
                                                 <span class="block {{ $atrasada ? 'font-medium text-red-700' : 'text-amber-800' }}">{{ $aviso['texto'] }}</span>
                                             </span>
-                                            @if ($aviso['ccf'] > 0)
-                                                <span class="shrink-0 rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700">{{ $aviso['ccf'] }} CCF</span>
+                                            @if ($aviso['ccf'] > 0 || ($aviso['web'] ?? 0) > 0)
+                                                <span class="flex shrink-0 flex-wrap justify-end gap-1">
+                                                    @if ($aviso['ccf'] > 0)
+                                                        <span class="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700">{{ $aviso['ccf'] }} CCF</span>
+                                                    @endif
+                                                    {{-- Pedidos web con ruta por entregar (17/11/2026): ya pagados, sin monto. --}}
+                                                    @if (($aviso['web'] ?? 0) > 0)
+                                                        <span class="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700">{{ $aviso['web'] }} web</span>
+                                                    @endif
+                                                </span>
                                             @endif
                                         </li>
                                     @endforeach

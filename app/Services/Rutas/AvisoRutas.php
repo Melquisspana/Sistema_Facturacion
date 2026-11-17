@@ -34,7 +34,7 @@ class AvisoRutas
     ) {}
 
     /**
-     * @return array<int, array{ruta: string, id: int, estado: string, texto: string, ccf: int, monto: float}>
+     * @return array<int, array{ruta: string, id: int, estado: string, texto: string, ccf: int, monto: float, web: int}>
      */
     public function para(?User $usuario): array
     {
@@ -53,7 +53,7 @@ class AvisoRutas
     }
 
     /**
-     * @return array<int, array{ruta: string, id: int, estado: string, texto: string, ccf: int, monto: float}>
+     * @return array<int, array{ruta: string, id: int, estado: string, texto: string, ccf: int, monto: float, web: int}>
      */
     private function calcular(): array
     {
@@ -81,6 +81,8 @@ class AvisoRutas
                 },
                 'ccf' => $pendientes[$f['ruta']->id]['cantidad'] ?? 0,
                 'monto' => $pendientes[$f['ruta']->id]['monto'] ?? 0.0,
+                // Pedidos web con ruta, ya pagados: cuentan para entregar, no suman al monto.
+                'web' => $pendientes[$f['ruta']->id]['web'] ?? 0,
             ])
             ->values()
             ->all();
