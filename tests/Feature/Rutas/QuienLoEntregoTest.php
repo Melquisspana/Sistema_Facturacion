@@ -310,6 +310,37 @@ class QuienLoEntregoTest extends TestCase
         $this->assertMatchesRegularExpression('/<button name="motivo_no_entrega" value="sala_cerrada"\s+disabled x-bind:disabled="! quien"/', $html);
     }
 
+    /**
+     * La prueba de carga del 16/11/2026: los botones se repetían en cada tarjeta y con 102 CCF
+     * y 21 personas la página pesaba 2,7 MB. La lista va una sola vez y cada tarjeta la usa.
+     */
+    public function test_la_lista_de_personas_va_una_sola_vez_aunque_haya_muchas_tarjetas(): void
+    {
+        $this->vendedor('Carlos Ernesto Ramos Ruiz');
+        $tiendas = [$this->ccf($this->salaTienda, '80.00'), $this->ccf($this->salaTienda, '81.00'), $this->ccf($this->salaTienda, '82.00')];
+        $super = $this->ccf($this->salaSuper, '310.80');
+        $this->caeAlbaran($this->ccf($this->salaSuper, '120.00'));
+
+        $html = $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSeeInOrder(['Llegó el albarán: falta quién lo entregó', 'Anotar quién lo entregó'])
+            ->getContent();
+
+        // Una sola lista para toda la página...
+        $this->assertSame(1, substr_count($html, '>Carlos Ramos</span>'));
+        $this->assertSame(1, substr_count($html, '¿Quién lo entregó?</legend>'));
+        // ...que usan las cinco tarjetas: tres tiendas, el súper y el que espera quién lo entregó,
+        // cada una con su propio grupo de botones.
+        $this->assertSame(5, substr_count($html, "getElementById('lista-quienes')"));
+        foreach ([...$tiendas, $super] as $dte) {
+            $this->assertStringContainsString("'quien-dte-{$dte->id}'", $html);
+        }
+
+        // Marcar sigue igual: la tarjeta manda a quién se eligió y el servidor lo valida.
+        $this->marcar($this->ana, $tiendas[1], ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->personaBeto->id])
+            ->assertSessionHasNoErrors();
+        $this->assertSame($this->personaBeto->id, SalidaRutaEntrega::sole()->entregado_por_id);
+    }
+
     public function test_solo_se_elige_un_vendedor_activo(): void
     {
         $dte = $this->ccf($this->salaTienda, '80.00');

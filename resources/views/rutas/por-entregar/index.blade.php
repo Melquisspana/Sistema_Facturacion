@@ -32,6 +32,11 @@
         <p class="mt-4 rounded-2xl bg-white p-5 dark:bg-ink-800">Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.</p>
     @endif
 
+    {{-- «¿Quién lo entregó?», una vez para toda la página: cada tarjeta la copia (_quien). --}}
+    @if ($puedeMarcar)
+        @include('rutas.por-entregar._quienes')
+    @endif
+
     {{-- Con su viaje en curso: «Este viaje», «Toda la zona» y «Todas» (?ver=, no guarda nada). --}}
     @if ($vistas !== [])
         @php
