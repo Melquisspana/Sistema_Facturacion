@@ -148,7 +148,10 @@ class CorregirQuienEntregoTest extends TestCase
         $this->assertSame(['id' => $this->personaAna->id, 'nombre' => 'Ana Ficticia'], $log->properties['antes']);
         $this->assertSame(['id' => $this->personaBeto->id, 'nombre' => 'Beto Ficticio'], $log->properties['despues']);
         $this->assertSame('Se eligió a Ana por error', $log->properties['motivo']);
-        $this->assertSame(['dte_id', 'resultado', 'fecha_resultado', 'antes', 'despues', 'motivo'], array_keys($log->properties->all()));
+        // MySQL guarda el JSON con las claves en otro orden: se comparan ordenadas.
+        $claves = array_keys($log->properties->all());
+        sort($claves);
+        $this->assertSame(['antes', 'despues', 'dte_id', 'fecha_resultado', 'motivo', 'resultado'], $claves);
         $this->assertStringNotContainsString('7000-0000', json_encode($log->properties));
 
         // El PDF del día de cada uno: el efectivo pasa de Ana a Beto, sin cambiar el total.
