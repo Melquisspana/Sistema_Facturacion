@@ -88,13 +88,13 @@ class PpqSalaMapaTest extends TestCase
      */
     public function test_precargar_una_lista_da_los_mismos_nombres_en_dos_consultas(): void
     {
-        $calleja = Cliente::factory()->create();
-        config(['ppq.cliente_default_id' => $calleja->id]);
-        $calleja->sucursales()->create(['nombre' => 'Sala de prueba sin cero', 'codigo' => '230']);
-        $calleja->sucursales()->create(['nombre' => 'Sala de prueba con cero', 'codigo' => '0240']);
-        $calleja->sucursales()->create(['nombre' => 'Sala de prueba primera', 'codigo' => '250']);
-        $calleja->sucursales()->create(['nombre' => 'Sala de prueba segunda', 'codigo' => '0250']);
-        $calleja->sucursales()->create(['nombre' => 'Sala de prueba fiscal', 'codigo' => '0260']);
+        $clientePpq = Cliente::factory()->create();
+        config(['ppq.cliente_default_id' => $clientePpq->id]);
+        $clientePpq->sucursales()->create(['nombre' => 'Sala de prueba sin cero', 'codigo' => '230']);
+        $clientePpq->sucursales()->create(['nombre' => 'Sala de prueba con cero', 'codigo' => '0240']);
+        $clientePpq->sucursales()->create(['nombre' => 'Sala de prueba primera', 'codigo' => '250']);
+        $clientePpq->sucursales()->create(['nombre' => 'Sala de prueba segunda', 'codigo' => '0250']);
+        $clientePpq->sucursales()->create(['nombre' => 'Sala de prueba fiscal', 'codigo' => '0260']);
         Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de prueba de otro cliente', 'codigo' => '0270']);
         PpqSala::recordar('0260', 'Nombre del mapa que no se usa', 'manual');
         PpqSala::recordar('0270', 'Sala de prueba del mapa', 'manual');

@@ -258,7 +258,7 @@ class CobrosBandejaPaginacionTest extends TestCase
     /**
      * El nombre de la sala de cada fila (16/11/2026, prueba de carga): se busca de una vez
      * para toda la página. Antes era una consulta por sala distinta y otra más al mapa de
-     * PPQ cuando la sucursal no tenía código, lo normal en Calleja. Los nombres no cambian:
+     * PPQ cuando la sucursal no tenía código, lo normal en el cliente de PPQ. Los nombres no cambian:
      * el código guardado sin el cero, solo las sucursales del cliente de PPQ, la sucursal
      * antes que el mapa, la sala de la orden de compra cuando aún no llegó el albarán y el
      * texto de la sala sin nombre.
@@ -292,7 +292,7 @@ class CobrosBandejaPaginacionTest extends TestCase
         $cliente->sucursales()->create(['nombre' => 'Sala Fiscal que manda', 'codigo' => '0490']);
         PpqSala::create(['codigo' => '0490', 'nombre' => 'Nombre del mapa que no se usa', 'fuente' => 'manual']);
         $this->deSala($cliente, '0490');
-        // El código de otro cliente no vale para Calleja.
+        // El código de otro cliente no vale para el cliente de PPQ.
         Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de otro cliente', 'codigo' => '0510']);
         $conDevolucion = $this->deSala($cliente, '0510');
         // Una devolución AC04 de esa entrega, ya enlazada a su CCF.
