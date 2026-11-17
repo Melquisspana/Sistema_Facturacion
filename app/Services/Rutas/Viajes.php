@@ -161,6 +161,23 @@ class Viajes
         return $viaje->suma_pedidos && $viaje->estado === EstadoSalidaRuta::EnCurso && $ultimo >= $ayer;
     }
 
+    /** En la sesión, el día en que el vendedor contestó «Sí, sigo» a {@see preguntarSiSigue()}, por viaje. */
+    public const SESION_SIGUE = 'rutas.viaje_sigue.';
+
+    /**
+     * ¿Se le pregunta «Tu viaje del … sigue abierto. ¿Seguís en ese viaje?»? (16/11/2026): el
+     * viaje sigue sumando ({@see sigueSumando()}) pero su último pedido o entrega es de otro día.
+     * Pasa si no tocó «Terminar el día»: sin preguntar, el pedido de hoy se sumaría al viaje
+     * viejo sin que se entere. `$siguioEl` es el día en que ya contestó «Sí, sigo» (la sesión,
+     * {@see self::SESION_SIGUE}): ese día no se vuelve a preguntar.
+     */
+    public function preguntarSiSigue(SalidaRuta $viaje, ?string $siguioEl = null, ?string $hoy = null): bool
+    {
+        $hoy ??= HoraNegocio::fechaHoy();
+
+        return $siguioEl !== $hoy && $this->sigueSumando($viaje, $hoy) && $this->ultimoMovimiento($viaje) < $hoy;
+    }
+
     /** Día del viaje: el 1 es el día en que se abrió. */
     public function dia(SalidaRuta $viaje, ?string $hoy = null): int
     {

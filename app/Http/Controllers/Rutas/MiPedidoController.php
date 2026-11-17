@@ -50,9 +50,13 @@ class MiPedidoController extends Controller
                 ->withExists('envios')->with(['sala:id,nombre', 'lineas.producto:id,nombre', 'salida'])->orderBy('id')->get()
             : collect();
 
+        $viaje = $this->viajeQueSuma($persona);
+
         return view('rutas.sacar-pedido.index', [
             'persona' => $persona,
-            'viaje' => $this->viajeQueSuma($persona),
+            'viaje' => $viaje,
+            // «Tu viaje del … sigue abierto»: el pedido de hoy iría a ese viaje.
+            'preguntarSiSigue' => $viaje !== null && $this->viajes->preguntarSiSigue($viaje, $request->session()->get(Viajes::SESION_SIGUE.$viaje->id)),
             'texto' => $texto,
             'salas' => $salas,
             'sacadas' => $salas === null ? collect() : PedidoSala::vigentes()->whereIn('cliente_sucursal_id', $salas->pluck('id'))

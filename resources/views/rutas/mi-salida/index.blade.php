@@ -24,6 +24,8 @@
             <a href="{{ route('rutas.por-entregar.index') }}" class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Ver «Por entregar»</a>
         </div>
     @else
+        @include('rutas.mi-salida._aviso-viaje')
+
         @if ($viaje)
             <div class="mt-5 rounded-2xl bg-indigo-50 p-5 text-indigo-800 ring-1 ring-indigo-200 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-600">
                 <span class="block text-sm">Tu viaje</span>

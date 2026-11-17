@@ -56,6 +56,12 @@
             $albaran = $resolucion?->estaVinculado() ? $resolucion->albaran : null;
             // Tocar la sala o el número descarga el PDF del CCF al celular.
             $verCcf = $entrega->dte ? route('rutas.salidas.ccf', [$salida, $entrega]) : null;
+            $diaCerrado = $entrega->fecha_resultado !== null && $salida->diaCerrado($entrega->fecha_resultado->toDateString());
+            $corregible = $puedeGestionar && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada;
+            // «Corregir quién» (16/11/2026): también en un día cerrado o una salida liquidada, porque
+            // no cambia montos. Se elige entre los que van y pueden entregar, menos el que ya figura.
+            $otrosQuien = $corregible ? $participantes->reject(fn ($p) => (int) $p->rutas_personal_id === (int) $entrega->entregado_por_id) : collect();
+            $fue = $entrega->resultado === \App\Enums\ResultadoEntrega::NoEntregado;
         @endphp
         <div class="{{ $caja }} mt-3 px-4 py-3">
             @if ($verCcf)
@@ -108,15 +114,70 @@
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}{{ $puedeMarcar ? ' · falta quién lo entregó' : '' }}</p>
                     @endif
-                    @if ($puedeGestionar && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString())) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
-                        <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}" class="mt-1">
-                            @csrf @method('PATCH')
-                            <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>
-                        </form>
+                    @if ($otrosQuien->isNotEmpty() || ($corregible && ! $diaCerrado))
+                        <div class="mt-1 flex flex-wrap items-center justify-end gap-x-4">
+                            @if ($otrosQuien->isNotEmpty())
+                                <button type="button" x-data x-on:click="$dispatch('open-modal', 'quien-{{ $entrega->id }}')"
+                                        class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Corregir quién</button>
+                            @endif
+                            @if ($corregible && ! $diaCerrado)
+                                <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}">
+                                    @csrf @method('PATCH')
+                                    <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>
+                                </form>
+                            @endif
+                        </div>
                     @endif
                 </div>
                 @endif
             </div>
+
+            {{-- «Corregir quién»: solo cambia la persona, con motivo. Si el servidor lo rechaza, vuelve abierto. --}}
+            @if ($otrosQuien->isNotEmpty())
+                <x-modal name="quien-{{ $entrega->id }}" :show="$errors->hasAny(['entregado_por_id', 'motivo']) && (int) old('corrige_entrega') === $entrega->id" maxWidth="md" focusable>
+                    <form method="POST" action="{{ route($prefijoEntregas.'quien', [$salida, $entrega]) }}" class="p-5 text-left sm:p-6"
+                          role="dialog" aria-modal="true" aria-labelledby="quien-titulo-{{ $entrega->id }}">
+                        @csrf @method('PATCH')
+                        <input type="hidden" name="corrige_entrega" value="{{ $entrega->id }}">
+                        <h2 id="quien-titulo-{{ $entrega->id }}" class="text-lg font-semibold text-gray-800 dark:text-paper-100">{{ $fue ? 'Corregir quién fue' : 'Corregir quién lo entregó' }}</h2>
+                        <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">
+                            {{ $sala?->nombre ?? 'Sala sin identificar' }} · …{{ $entrega->dte?->numero_control ? \App\Support\OrdenCompra::ultimosDigitos($entrega->dte->numero_control) : '—' }}.
+                            Ahora figura {{ $entrega->entregadoPor?->nombre ?? 'nadie' }}. Solo cambia la persona: la fecha y el cobro quedan igual.
+                        </p>
+                        @if ($diaCerrado || $salida->estaLiquidada())
+                            <p class="mt-2 text-sm text-amber-800 dark:text-amber-300">Este día ya se cerró. El total no cambia: solo a quién se atribuye.</p>
+                        @endif
+
+                        <fieldset class="mt-4">
+                            <legend class="text-sm font-medium text-gray-700 dark:text-paper-100">{{ $fue ? '¿Quién fue?' : '¿Quién lo entregó?' }}</legend>
+                            <div class="mt-1.5 flex flex-wrap gap-2">
+                                @foreach ($otrosQuien as $p)
+                                    <label class="cursor-pointer">
+                                        <input type="radio" name="entregado_por_id" value="{{ $p->rutas_personal_id }}" required class="peer sr-only"
+                                               @checked((int) old('corrige_entrega') === $entrega->id && (string) old('entregado_por_id') === (string) $p->rutas_personal_id)>
+                                        <span title="{{ $p->personal->nombre }}" class="{{ $pastilla }} peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-600">{{ $p->personal->nombreCorto() }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <x-input-error :messages="$errors->get('entregado_por_id')" class="mt-1" />
+                        </fieldset>
+
+                        <div class="mt-4">
+                            <label for="quien-motivo-{{ $entrega->id }}" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Motivo</label>
+                            <input id="quien-motivo-{{ $entrega->id }}" name="motivo" required maxlength="{{ \App\Services\Rutas\EntregasCcf::MOTIVO_QUIEN_MAX }}" autocomplete="off"
+                                   value="{{ (int) old('corrige_entrega') === $entrega->id ? old('motivo') : '' }}" aria-describedby="quien-motivo-ayuda-{{ $entrega->id }}"
+                                   class="mt-1 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100">
+                            <p id="quien-motivo-ayuda-{{ $entrega->id }}" class="mt-1 text-xs text-gray-500 dark:text-paper-300">Por ejemplo: se eligió a otra persona por error.</p>
+                            <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                        </div>
+
+                        <div class="mt-5 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end dark:border-ink-700">
+                            <x-secondary-button class="min-h-11 justify-center" x-on:click="$dispatch('close-modal', 'quien-{{ $entrega->id }}')">Cancelar</x-secondary-button>
+                            <x-primary-button class="min-h-11 justify-center">Guardar cambio</x-primary-button>
+                        </div>
+                    </form>
+                </x-modal>
+            @endif
 
             {{-- Con albarán ya consta entregado: solo falta quién. Tocar el nombre lo guarda,
                  con la forma de pago habitual del cliente. --}}
