@@ -9,7 +9,7 @@
     $dias = (int) $pedido->fecha->diffInDays(\Illuminate\Support\Carbon::parse($hoy));
 @endphp
 <a id="pedido-{{ $pedido->id }}" href="{{ route('fabrica.pedidos.show', $pedido) }}"
-   class="block min-h-12 rounded-2xl border p-5 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 {{ $atrasado ? 'border-amber-300 bg-amber-50 ring-1 ring-amber-300' : 'border-gray-200 bg-white' }}">
+   class="block min-h-12 rounded-2xl border border-gray-200 bg-white p-5 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
     <span class="flex flex-wrap items-start justify-between gap-2">
         <span class="min-w-0 text-2xl font-bold text-gray-800">{{ $pedido->nombreSala() }}</span>
         <span class="flex flex-wrap items-center gap-2">
@@ -31,8 +31,10 @@
         {{ $pedido->zonaNombre() }} · {{ $cuantos === 1 ? '1 producto' : $cuantos.' productos' }} · {{ $pedido->created_at->format('H:i') }}
         @endif
     </span>
+    {{-- Los de días anteriores van bajo su propio título; la tarjeta es igual a las de hoy y
+         solo agrega la fecha en gris (Melqui, 17/11/2026: el amarillo era demasiado vistoso). --}}
     @if ($atrasado)
-        <span class="mt-1 block text-sm font-semibold text-amber-800">Del {{ $pedido->fecha->format('d/m/Y') }} · hace {{ $dias === 1 ? '1 día' : $dias.' días' }}</span>
+        <span class="mt-1 block text-sm text-gray-500">Del {{ $pedido->fecha->format('d/m/Y') }} · hace {{ $dias === 1 ? '1 día' : $dias.' días' }}</span>
     @endif
     {{-- El vendedor dejó notas (por ejemplo, cambios por avería): se leen al abrir el pedido. --}}
     @if (filled($pedido->notas))
