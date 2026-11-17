@@ -99,7 +99,8 @@ class DashboardController extends Controller
             'esGestorDte' => $esGestorDte,
             'veOperativos' => $veOperativos,
             'veFacturacion' => $veFacturacion,
-            // Rutas que ya toca visitar. Vacío sin permiso o sin el módulo: nunca rompe el panel.
+            // Rutas que ya toca visitar, guardado 5 minutos (AvisoRutas::MINUTOS). Vacío sin
+            // permiso o sin el módulo: nunca rompe el panel.
             'avisoRutas' => app(AvisoRutas::class)->para($usuario),
             // Los números de «Facturas por cobrar» y «Por entregar», con el permiso de cada
             // pantalla (el mismo de sus rutas). Null: no la puede abrir y no se calcula.

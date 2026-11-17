@@ -11,8 +11,11 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Services\Rutas\AvisoRutas;
+use App\Services\Rutas\RitmoRutas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -74,6 +77,52 @@ class PantallasSimplesRutasTest extends TestCase
 
         $this->assertSame([], app(AvisoRutas::class)->para($this->usuario()));
         $this->actingAs($this->usuario())->get(route('dashboard'))->assertOk();
+    }
+
+    /**
+     * El aviso recorre todas las salas (16/11/2026, prueba de carga: unos 170 ms de cada
+     * visita al Inicio): se guarda 5 minutos y la visita siguiente no lo vuelve a calcular.
+     */
+    public function test_el_aviso_se_guarda_cinco_minutos_y_no_se_recalcula_en_cada_visita(): void
+    {
+        $this->travelTo('2026-11-16 10:00:00');
+        $ruta = $this->rutaAtrasada();
+        $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk()->assertSee('3 días tarde');
+
+        // Hoy volvieron de esa ruta: ya no toca, pero lo guardado sigue valiendo un rato.
+        SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => '2026-11-16', 'fecha_fin_real' => '2026-11-16', 'estado' => EstadoSalidaRuta::Finalizada]);
+        $this->travel(4)->minutes();
+        $this->get(route('dashboard'))->assertOk()->assertSee('3 días tarde');
+
+        $this->travel(2)->minutes();
+        $this->get(route('dashboard'))->assertOk()->assertDontSee('Rutas por visitar');
+    }
+
+    /** Lo guardado es uno para todos los que ven Rutas: quien no las ve nunca lo recibe. */
+    public function test_lo_guardado_no_llega_a_quien_no_ve_rutas(): void
+    {
+        $this->rutaAtrasada();
+
+        // Primero entra quien no ve Rutas: a él no se le calcula ni deja un aviso vacío guardado.
+        $this->actingAs($this->usuario('contabilidad'))->get(route('dashboard'))->assertOk()->assertDontSee('Rutas por visitar');
+        $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk()->assertSee('3 días tarde');
+        // Con el aviso ya guardado, sigue sin verlo.
+        $this->actingAs($this->usuario('contabilidad'))->get(route('dashboard'))->assertOk()->assertDontSee('Rutas por visitar');
+    }
+
+    public function test_si_el_aviso_falla_el_inicio_carga_igual_y_la_falla_no_se_guarda(): void
+    {
+        $this->rutaAtrasada();
+        Log::spy();
+        $this->mock(RitmoRutas::class)->shouldReceive('porRuta')->andThrow(new RuntimeException('falla inventada del aviso'));
+
+        $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk()->assertDontSee('Rutas por visitar');
+        Log::shouldHaveReceived('warning')->withArgs(fn ($mensaje, $contexto = []) => str_contains($mensaje, 'aviso de rutas')
+            && ($contexto['error'] ?? null) === 'falla inventada del aviso')->once();
+
+        // La visita siguiente vuelve a intentar: no quedó guardado un aviso vacío.
+        $this->forgetMock(RitmoRutas::class);
+        $this->get(route('dashboard'))->assertOk()->assertSee('3 días tarde');
     }
 
     // ══════════════════════════════ salir a una ruta
