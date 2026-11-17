@@ -8,6 +8,27 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.16.3] - 2026-11-16
+
+Unión con la tienda web: el pedido pagado entra a la fábrica, lleva su factura y llega a Rutas (#386, #388, #389, #390, #393). La tienda queda apagada hasta que se habilite. El historial de pedidos esconde los anulados (#394). El correo diario es corto y trae el detalle en PDF (#395). Cinco migraciones nuevas (pedidos web y su seguimiento) y ningún cambio de permisos.
+
+### Agregado
+
+- Tienda web: el sistema trae de la tienda los pedidos pagados, sin abrir ninguna puerta a internet. Cada pedido queda guardado una sola vez, con los datos del comprador cifrados (#386).
+- Tienda web: cada pedido pagado lleva su factura de consumidor final, que se arma con el mismo cálculo de los DTE. Mientras no se active la factura automática, la oficina la revisa antes (#388).
+- Tienda web: el pedido aparece en la pantalla de la fábrica con la etiqueta WEB y su hoja de despacho. Los que se retiran en la planta van a «Para recoger» (#389).
+- Tienda web: el pedido con ruta sale en Rutas › Por entregar como «ya pagado», sin cobro al entregar (#390).
+- Facturación › Pedidos web: la oficina ve los pedidos de la tienda, marca como revisados los que piden atención y puede volver a avisar a la tienda (#393).
+
+### Cambiado
+
+- Pedidos: el historial esconde los pedidos anulados y se filtra por estado; «Todos menos anulados» es lo que se ve al entrar (#394).
+- Pedidos: el correo diario es corto: lo que salió de la fábrica y lo vendido por cada vendedor. El detalle va en el PDF de la fábrica, adjunto (#395).
+
+### Corregido
+
+- Tienda web: un pago doble que llega tarde queda avisado para revisión. Un aviso que la tienda rechaza ya no se da por enviado. El pedido muestra el nombre del surtido elegido (#393).
+
 ## [2026.11.16.2] - 2026-11-16
 
 Pedidos: las notas del vendedor se ven en la fábrica (#391). Se subió solo este cambio sobre 2026.11.16.1; la unión con la tienda web (#386, #388, #389, #390) ya está en master, pero todavía no en producción. Sin migraciones ni cambios de permisos.
