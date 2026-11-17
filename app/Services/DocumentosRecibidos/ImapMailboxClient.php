@@ -7,6 +7,7 @@ use App\Exceptions\DocumentosRecibidos\AutenticacionBuzonException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
 use App\Exceptions\DocumentosRecibidos\BuzonFrenadoException;
 use App\Exceptions\DocumentosRecibidos\BuzonInaccesibleException;
+use App\Exceptions\DocumentosRecibidos\CorreoNoDisponibleException;
 use App\Services\DocumentosRecibidos\Buzon\EstadoBuzon;
 use App\Services\DocumentosRecibidos\Buzon\PaginaMensajes;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
@@ -39,6 +40,9 @@ class ImapMailboxClient implements MailboxClient
 {
     /** Lo que dice Yahoo cuando frena los logins seguidos: pasajero, no credencial mala. */
     private const SENAL_FRENO = 'too many login failures';
+
+    /** Código IMAP de caída pasajera del servidor (RFC 5530); Gmail lo manda con «AUTHENTICATE». */
+    private const SENAL_NO_DISPONIBLE = '[unavailable]';
 
     /** Fragmentos del error de IMAP que significan "credenciales rechazadas". */
     private const SENALES_AUTENTICACION = [
@@ -268,12 +272,16 @@ class ImapMailboxClient implements MailboxClient
      *
      * El freno va primero: Yahoo lo informa como «[AUTHENTICATIONFAILED] Too many login
      * failures», que la señal «login failure» tomaría por credenciales malas (#162).
+     * La caída de Gmail también: «[UNAVAILABLE] AUTHENTICATE …» no es una contraseña mala.
      */
     public static function excepcionPara(string $motivo, string $prefijo): BuzonException
     {
         $comparable = mb_strtolower($motivo);
         if (str_contains($comparable, self::SENAL_FRENO)) {
             return new BuzonFrenadoException($prefijo.': '.$motivo);
+        }
+        if (str_contains($comparable, self::SENAL_NO_DISPONIBLE)) {
+            return new CorreoNoDisponibleException($prefijo.': '.$motivo);
         }
         foreach (self::SENALES_AUTENTICACION as $senal) {
             if (str_contains($comparable, $senal)) {
