@@ -443,6 +443,7 @@ docker compose --env-file .env.compose ps web         # con 192.0.2.10:443->443/
   - el dominio público como `ServerAlias`;
   - un vhost por defecto para la IP de la red local y Tailscale;
   - el HTTPS de la red local en el 443 (3.7).
+- `docker/apache/rendimiento.conf`: KeepAlive de 2 s en vez de 5, para que una conexión quieta no deje ocupado un proceso de Apache (prueba de carga del 16/11/2026).
 - `docker/php/php.ini` (valores de 2.3).
 - `docker/entrypoint.sh` (`config:cache` y `storage:link`, sin `migrate`).
 - `docs/MIGRACION_LINUX_DOCKER.md` (este archivo) y una guía de despliegue en Linux que reemplace a `docs/DESPLIEGUE_SERVIDOR.md` y `docs/ARRANQUE_WINDOWS.md` cuando termine el cambio.

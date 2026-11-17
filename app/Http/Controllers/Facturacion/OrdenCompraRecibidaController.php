@@ -8,6 +8,7 @@ use App\Models\Dte;
 use App\Models\OrdenCompraRecibida;
 use App\Services\Dte\DtePdfService;
 use App\Services\Dte\PdfConOrdenCompra;
+use App\Support\Sala;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,6 +59,8 @@ class OrdenCompraRecibidaController extends Controller
             ->withQueryString();
 
         $ccfs = OrdenCompraRecibida::ccfPorNumero($ordenes->pluck('numero')->all());
+        // La orden sin sala enlazada muestra el nombre por su código: todos juntos, no uno por fila.
+        Sala::precargar($ordenes->getCollection()->filter(fn (OrdenCompraRecibida $o) => $o->clienteSucursal?->nombre === null)->pluck('sala_codigo'));
 
         return view('facturacion.ordenes-recibidas', [
             'ordenes' => $ordenes,

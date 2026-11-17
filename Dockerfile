@@ -91,7 +91,9 @@ RUN set -eux; \
     echo 'Listen 80' > /etc/apache2/ports.conf
 COPY docker/php/php.ini "$PHP_INI_DIR/conf.d/zz-facturacion.ini"
 COPY docker/apache/facturacion.conf /etc/apache2/sites-available/facturacion.conf
-RUN a2ensite facturacion
+# KeepAlive de 2 s en vez de 5 (ver el archivo).
+COPY docker/apache/rendimiento.conf /etc/apache2/conf-available/facturacion-rendimiento.conf
+RUN a2ensite facturacion && a2enconf facturacion-rendimiento
 COPY docker/entrypoint.sh /usr/local/bin/facturacion-entrypoint
 RUN chmod 0755 /usr/local/bin/facturacion-entrypoint
 

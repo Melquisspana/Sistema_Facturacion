@@ -13,6 +13,9 @@ use App\Models\PpqSala;
  * El match tolera códigos guardados sin el cero inicial (230 == 0230) y, si está
  * configurado `ppq.cliente_default_id` (Ajustes: pantalla o .env), acota la búsqueda a ese cliente (Calleja)
  * para evitar choques de código entre clientes. Cachea por request.
+ *
+ * Una lista que muestra muchas salas llama antes a {@see precargar()} con todos sus códigos:
+ * así son dos consultas para toda la página y no una o dos por sala.
  */
 class Sala
 {
@@ -27,25 +30,55 @@ class Sala
             return null;
         }
 
-        if (! array_key_exists($codigo, self::$cache)) {
-            // Tolera el código guardado con o sin cero inicial ('0230' o '230'), de
-            // forma portable (sin LPAD, que SQLite no tiene).
-            $variantes = array_values(array_filter(array_unique([$codigo, ltrim($codigo, '0')]))) ?: [$codigo];
-
-            $query = ClienteSucursal::query()->whereIn('codigo', $variantes);
-
-            if ($cliente = Ajustes::cliente('ppq.cliente_default_id')) {
-                $query->where('cliente_id', $cliente);
-            }
-
-            // Fiscal primero (cliente_sucursales por código); si no resuelve —lo normal en
-            // Calleja, cuyas sucursales tienen `codigo` nulo—, se cae al mapa auxiliar de PPQ
-            // (nombres que ya vimos en JSON de CCF o altas manuales). El mapa NO es fiscal.
-            self::$cache[$codigo] = $query->value('nombre')
-                ?? PpqSala::nombre($codigo);
-        }
+        self::precargar([$codigo]);
 
         return self::$cache[$codigo];
+    }
+
+    /**
+     * Busca de una vez el nombre de todos estos códigos y lo deja guardado para {@see nombre()}:
+     * una consulta a `cliente_sucursales` y, si alguno no resuelve, otra al mapa de PPQ, para
+     * toda la lista. Los códigos que ya están guardados no se vuelven a buscar.
+     *
+     * @param  iterable<?string>  $codigos
+     */
+    public static function precargar(iterable $codigos): void
+    {
+        $faltan = [];
+        foreach ($codigos as $codigo) {
+            $codigo = self::normalizar($codigo);
+            if ($codigo !== null && ! array_key_exists($codigo, self::$cache)) {
+                // Tolera el código guardado con o sin cero inicial ('0230' o '230'), de
+                // forma portable (sin LPAD, que SQLite no tiene).
+                $faltan[$codigo] = array_values(array_filter(array_unique([$codigo, ltrim($codigo, '0')]))) ?: [$codigo];
+            }
+        }
+        if ($faltan === []) {
+            return;
+        }
+
+        $query = ClienteSucursal::query()->whereIn('codigo', array_values(array_unique(array_merge(...array_values($faltan)))));
+
+        if ($cliente = Ajustes::cliente('ppq.cliente_default_id')) {
+            $query->where('cliente_id', $cliente);
+        }
+
+        // Si dos sucursales tienen el mismo código, la de id menor: la primera que devolvía la
+        // búsqueda de a un código, que no pedía orden.
+        $sucursales = $query->orderBy('id')->get(['codigo', 'nombre']);
+
+        // Fiscal primero (cliente_sucursales por código); si no resuelve —lo normal en
+        // Calleja, cuyas sucursales tienen `codigo` nulo—, se cae al mapa auxiliar de PPQ
+        // (nombres que ya vimos en JSON de CCF o altas manuales). El mapa NO es fiscal.
+        $nombres = [];
+        foreach ($faltan as $codigo => $variantes) {
+            $nombres[$codigo] = $sucursales->first(fn (ClienteSucursal $s) => in_array((string) $s->codigo, $variantes, true))?->nombre;
+        }
+        PpqSala::precargar(array_keys(array_filter($nombres, fn (?string $nombre) => $nombre === null)));
+
+        foreach ($nombres as $codigo => $nombre) {
+            self::$cache[$codigo] = $nombre ?? PpqSala::nombre($codigo);
+        }
     }
 
     /** Etiqueta "0260 - Nombre" si hay nombre; si no, solo "0260". Null si no hay código. */

@@ -198,8 +198,6 @@
                         </p>
                     @else
                         @php $puedeGestionar = auth()->user()?->can('ppq.gestionar') ?? false; $listasEnPagina = 0; $enlacesSugeridos = []; @endphp
-                        {{-- Dónde va la sala dentro de la OC se lee una vez para toda la lista, no en cada documento. --}}
-                        @php $posicionSala = \App\Support\OrdenCompra::posicionSala(); @endphp
                         <form method="POST" autocomplete="off" action="{{ route('cobros.ppq.crear', $cliente) }}"
                               x-data="{
                                   avisos: @js(collect($avisosPpq)->map(fn ($aviso) => ['r' => $aviso['reciente'], 'd' => $aviso['duplicado'] !== null])),
@@ -333,8 +331,9 @@
                                                     @if ($doc->esNc())
                                                         <span class="ml-1 rounded px-1 text-[10px] bg-indigo-100 text-indigo-700">NC</span>
                                                     @endif
-                                                    {{-- La sala sale del albarán o, si aún no llegó, de la orden de compra del CCF. --}}
-                                                    @php $salaCodigo = $doc->albaran?->sala_codigo ?: \App\Support\OrdenCompra::salaDesde($doc->dte?->numero_orden_compra, $posicionSala); @endphp
+                                                    {{-- La sala sale del albarán o, si aún no llegó, de la orden de compra del CCF
+                                                         (CobrosController::index, que busca los nombres de toda la página juntos). --}}
+                                                    @php $salaCodigo = $salaDe[$doc->id] ?? null; @endphp
                                                     @if ($salaCodigo)
                                                         <span class="block text-xs text-gray-500 dark:text-paper-300">{{ \App\Support\Sala::descripcion($salaCodigo) }}</span>
                                                     @endif

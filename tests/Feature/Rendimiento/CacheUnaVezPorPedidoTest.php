@@ -65,7 +65,10 @@ class CacheUnaVezPorPedidoTest extends TestCase
         // Las tarjetas «Por cobrar» y «Por entregar» guardan su cuenta 5 minutos: una lectura cada una.
         $this->assertLessThanOrEqual(1, $this->lecturasDe('inicio.por_cobrar'));
         $this->assertLessThanOrEqual(1, $this->lecturasDe('inicio.por_entregar'));
-        $this->assertLessThanOrEqual(7, count($this->lecturas), implode(', ', $this->lecturas));
+        // 8 (16/11/2026): el aviso de rutas también se guarda 5 minutos (AvisoRutas::MINUTOS).
+        // Esa lectura reemplaza el cálculo que recorría todas las salas en cada visita.
+        $this->assertLessThanOrEqual(1, $this->lecturasDe('inicio.aviso_rutas'));
+        $this->assertLessThanOrEqual(8, count($this->lecturas), implode(', ', $this->lecturas));
     }
 
     public function test_una_pantalla_de_facturacion_lee_el_nombre_una_sola_vez(): void

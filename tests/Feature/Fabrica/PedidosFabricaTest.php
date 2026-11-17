@@ -4,6 +4,9 @@ namespace Tests\Feature\Fabrica;
 
 use App\Enums\EstadoDte;
 use App\Enums\EstadoPedidoSala;
+use App\Enums\EstadoPedidoWeb;
+use App\Enums\EstadoSalidaRuta;
+use App\Enums\OrigenPedidoSala;
 use App\Enums\RolSistema;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
@@ -13,10 +16,12 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
+use App\Models\PedidoWeb;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\Ruta;
+use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\PedidosFabrica;
@@ -666,6 +671,72 @@ class PedidosFabricaTest extends TestCase
             $p->update(['estado' => EstadoPedidoSala::Parcial]);
         }
         $this->assertSame($pocos, $contar());
+    }
+
+    /** Un pedido web pagado, con ruta o para recoger (este, ya listo: va en «Para recoger»). */
+    private function pedidoWeb(string $entrega): PedidoSala
+    {
+        $pedido = PedidoSala::create(['origen' => OrigenPedidoSala::Web, 'ruta_id' => $entrega === 'ruta' ? $this->ruta->id : null,
+            'fecha' => '2026-11-09', 'estado' => EstadoPedidoSala::Registrado]);
+        $pedido->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => '2']);
+        $n = PedidoWeb::count() + 1;
+        PedidoWeb::create([
+            'pedido_sala_id' => $pedido->id, 'web_id' => $n, 'codigo' => 'WEB-INVENTADO-'.$n, 'idioma' => 'es',
+            'pagado_en' => now(), 'total_centavos' => 2500, 'moneda' => 'USD', 'cliente_nombre' => 'Compradora Inventada '.$n,
+            'cliente_correo' => 'inventada@example.test', 'cliente_telefono' => '7000-0000', 'direccion' => 'Calle Inventada',
+            'entrega_tipo' => $entrega, 'pasarela' => 'prueba', 'estado' => EstadoPedidoWeb::Facturado, 'informado_preparando_en' => now(),
+            'lista_en' => $entrega === 'recoger' ? now() : null,
+            'lineas' => [], 'cajitas_detalle' => [['cantidad' => 1]],
+        ]);
+
+        return $pedido;
+    }
+
+    /** Una tienda nueva, sacada en un viaje de otra persona: la zona sale del viaje. */
+    private function tiendaNueva(int $i): PedidoSala
+    {
+        $persona = PersonalRuta::create(['nombre' => 'Vendedora Inventada '.$i, 'user_id' => User::factory()->create(['activo' => true])->id]);
+        $viaje = SalidaRuta::create(['ruta_id' => Ruta::create(['nombre' => 'Zona Inventada '.$i])->id, 'fecha_inicio' => '2026-11-09', 'estado' => EstadoSalidaRuta::EnCurso]);
+        $pedido = PedidoSala::create(['sala_nueva_nombre' => 'Tienda nueva inventada '.$i, 'salida_ruta_id' => $viaje->id,
+            'sacado_por_id' => $persona->id, 'registrado_por' => $this->vendedor->id, 'fecha' => '2026-11-09', 'estado' => EstadoPedidoSala::Registrado]);
+        $pedido->lineas()->create(['producto_id' => $this->canilla->id, 'cantidad' => '1']);
+
+        return $pedido;
+    }
+
+    /**
+     * La prueba de carga del 16/11/2026: la lista trae todo lo pendiente, sin tope (la fábrica
+     * tiene que verlo todo). Tampoco pide nada de a uno con pedidos web (con ruta y para
+     * recoger) ni con tiendas nuevas de un viaje, en «Por mandar» y en «Para recoger».
+     */
+    public function test_la_lista_no_hace_una_consulta_por_pedido_web_ni_por_tienda_nueva(): void
+    {
+        $contar = function (array $parametros = []): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->get(route('fabrica.pedidos.index', $parametros))->assertOk();
+            DB::disableQueryLog();
+
+            return count(DB::getQueryLog());
+        };
+        $this->pedido([$this->galleta->id => '1']);
+        $this->pedidoWeb('ruta');
+        $this->pedidoWeb('recoger');
+        $this->tiendaNueva(0);
+        $contar(); // la primera carga los permisos y los ajustes en caché
+        $pocos = $contar();
+        $pocosRecoger = $contar(['ver' => 'para-recoger']);
+
+        for ($i = 1; $i <= 6; $i++) {
+            $this->pedidoWeb('ruta');
+            $this->pedidoWeb('recoger');
+            $this->tiendaNueva($i);
+        }
+
+        $this->assertSame($pocos, $contar(), 'Por mandar');
+        $this->assertSame($pocosRecoger, $contar(['ver' => 'para-recoger']), 'Para recoger');
+        $this->get(route('fabrica.pedidos.index'))->assertSee('Por mandar (22)')
+            ->assertSee('Tienda nueva inventada 6 (tienda nueva)')->assertSee('Zona Inventada 6');
     }
 
     // ══════════════════════════════ revisión: hallazgos corregidos

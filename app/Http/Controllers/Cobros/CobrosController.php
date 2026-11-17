@@ -52,6 +52,8 @@ use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
+use App\Support\OrdenCompra;
+use App\Support\Sala;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -172,6 +174,15 @@ class CobrosController extends Controller
             ->paginate(self::POR_PAGINA)
             ->withQueryString();
 
+        // La sala de cada fila sale del albarán o, si aún no llegó, de la orden de compra del
+        // CCF. Sus nombres se buscan juntos: la vista los pide fila por fila y eran una o dos
+        // consultas por sala (prueba de carga del 16/11/2026).
+        $posicionSala = OrdenCompra::posicionSala();
+        $salaDe = $documentos->getCollection()->mapWithKeys(fn (CobroDocumento $d) => [
+            $d->id => $d->albaran?->sala_codigo ?: OrdenCompra::salaDesde($d->dte?->numero_orden_compra, $posicionSala),
+        ]);
+        Sala::precargar($salaDe);
+
         // Historial COMPLETO de solicitudes, paginado con su propio parámetro (no mueve la
         // página de documentos). Antes se cortaba en 20 y las viejas no se podían abrir.
         // Orden por id: estable entre páginas.
@@ -238,6 +249,7 @@ class CobrosController extends Controller
             'filtrosSolicitud' => $filtrosSolicitud,
             'hayFiltrosSolicitud' => collect($filtrosSolicitud)->filter(fn ($v) => filled($v))->isNotEmpty(),
             'documentos' => $documentos,
+            'salaDe' => $salaDe,
             'contadores' => $this->contadores($cliente),
             'solicitudes' => $solicitudes,
             // Última descarga PREPARADA de cada solicitud de ESTA página, en una sola consulta.
