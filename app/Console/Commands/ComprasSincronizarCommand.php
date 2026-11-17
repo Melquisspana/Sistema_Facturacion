@@ -193,8 +193,9 @@ class ComprasSincronizarCommand extends Command
         if ($r->fallo()) {
             $bitacora?->fallo($r->mensaje(), $r->aArreglo());
 
-            // El freno de Yahoo se levanta solo: queda el aviso en el log y la tarea
-            // termina bien, para no dar una alerta de caída cada vez (#162).
+            // El freno de Yahoo y la caída de Gmail («[UNAVAILABLE]») se levantan solos:
+            // queda el aviso en el log y la tarea termina bien, para no dar una alerta de
+            // caída cada vez (#162). Una contraseña mala sigue fallando.
             return $r->pasajera() ? self::SUCCESS : self::FAILURE;
         }
 
@@ -246,6 +247,7 @@ class ComprasSincronizarCommand extends Command
         match (true) {
             $r->desenlace === ResumenSincronizacion::AUTENTICACION_FALLIDA => $this->error('AUTENTICACIÓN FALLIDA: '.$r->error),
             $r->desenlace === ResumenSincronizacion::BUZON_FRENADO => $this->warn('BUZÓN FRENADO: '.$r->error),
+            $r->desenlace === ResumenSincronizacion::CORREO_NO_DISPONIBLE => $this->warn('CORREO NO DISPONIBLE: '.$r->error),
             $r->desenlace === ResumenSincronizacion::SIN_CONFIGURAR => $this->error('SIN CONFIGURAR: '.$r->error),
             $r->desenlace === ResumenSincronizacion::BUZON_INACCESIBLE => $this->error('BUZÓN INACCESIBLE: '.$r->error),
             $r->desenlace === ResumenSincronizacion::UID_VALIDITY_CAMBIADO => $this->error('BUZÓN RECONSTRUIDO: '.$r->error),

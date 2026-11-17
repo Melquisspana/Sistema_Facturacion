@@ -6,6 +6,7 @@ use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Exceptions\DocumentosRecibidos\AutenticacionBuzonException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
 use App\Exceptions\DocumentosRecibidos\BuzonFrenadoException;
+use App\Exceptions\DocumentosRecibidos\CorreoNoDisponibleException;
 use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\Buzon\IdentidadCorreo;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
@@ -474,6 +475,7 @@ class SincronizadorDocumentosRecibidos
             desenlace: match (true) {
                 $e instanceof AutenticacionBuzonException => ResumenSincronizacion::AUTENTICACION_FALLIDA,
                 $e instanceof BuzonFrenadoException => ResumenSincronizacion::BUZON_FRENADO,
+                $e instanceof CorreoNoDisponibleException => ResumenSincronizacion::CORREO_NO_DISPONIBLE,
                 default => ResumenSincronizacion::BUZON_INACCESIBLE,
             },
             carpeta: $carpeta,
