@@ -113,7 +113,7 @@ class MiPedidoController extends Controller
         $pedido = $this->pedidos->guardar($sucursal, $request->validated(), $request->user());
         $nuevo = $antes?->id !== $pedido->salida_ruta_id ? ' Se abrió tu viaje: '.$pedido->salida->nombreViaje().'.' : '';
 
-        return $this->volver($pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.'.$nuevo);
+        return $this->volver($pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.'.$nuevo, self::claveBorrador($request->user(), $sucursal, null));
     }
 
     /** Tienda nueva: el sugerido con el nombre que escribió en el buscador. */
@@ -200,7 +200,8 @@ class MiPedidoController extends Controller
         $pedido = $this->pedidos->guardar(null, $request->validated(), $request->user());
         $nuevo = $antes?->id !== $pedido->salida_ruta_id ? ' Se abrió tu viaje: '.$pedido->salida->nombreViaje().'.' : '';
 
-        return $this->volver($pedido, 'Pedido de «'.$pedido->nombreSala().'» guardado. La oficina carga sus datos al facturar.'.$nuevo);
+        return $this->volver($pedido, 'Pedido de «'.$pedido->nombreSala().'» guardado. La oficina carga sus datos al facturar.'.$nuevo,
+            self::claveBorrador($request->user(), null, null));
     }
 
     public function edit(Request $request, PedidoSala $pedido): View|RedirectResponse
@@ -222,9 +223,10 @@ class MiPedidoController extends Controller
 
     public function update(PedidoSalaRequest $request, PedidoSala $pedido): RedirectResponse
     {
+        $borrador = self::claveBorrador($request->user(), $pedido->sala, $pedido);
         $pedido = $this->pedidos->guardar($pedido->sala, $request->validated(), $request->user(), $pedido);
 
-        return $this->volver($pedido, 'Pedido de «'.$pedido->nombreSala().'» corregido.');
+        return $this->volver($pedido, 'Pedido de «'.$pedido->nombreSala().'» corregido.', $borrador);
     }
 
     public function anular(Request $request, PedidoSala $pedido): RedirectResponse
@@ -247,12 +249,32 @@ class MiPedidoController extends Controller
             'nombreNueva' => $pedido?->sala_nueva_nombre ?? $nombreNueva,
             'pedido' => $pedido,
             'productos' => $this->pedidos->productos(),
-            'cantidades' => $pedido ? $pedido->lineas->mapWithKeys(fn ($l) => [$l->producto_id => $l->cantidadLegible()])->all() : [],
+            // Sin separador de miles: un <input type="number"> con «1,000» queda vacío y al
+            // corregir se perdía esa línea.
+            'cantidades' => $pedido ? $pedido->lineas->mapWithKeys(fn ($l) => [$l->producto_id => rtrim(rtrim(number_format((float) $l->cantidad, 4, '.', ''), '0'), '.')])->all() : [],
             // La historia de la sala: su último pedido y entrega, cada cuánto compra, si le toca y lo que debe.
             'historia' => $sala ? app(HistoriaSala::class)->de($sala) : null,
             // La OC solo si la sala la usa (la misma regla de facturación) o si ya se anotó una.
             'conOc' => ReglaOrdenCompra::requerida($sala?->cliente, $sala) || filled($pedido?->numero_orden_compra),
+            'claveBorrador' => self::claveBorrador($request->user(), $sala, $pedido),
         ]);
+    }
+
+    /**
+     * La clave del borrador que el formulario guarda en el teléfono mientras se escribe
+     * (rutas/mi-salida/pedido): el usuario, qué pedido (el que se corrige, el de la sala o el
+     * de la tienda nueva) y el día. Al guardar, {@see volver()} se la pasa a la página
+     * siguiente, que borra ese borrador: el servidor ya tiene el pedido.
+     */
+    private static function claveBorrador(User $usuario, ?ClienteSucursal $sala, ?PedidoSala $pedido): string
+    {
+        $que = match (true) {
+            $pedido !== null => 'pedido-'.$pedido->id,
+            $sala !== null => 'sala-'.$sala->id,
+            default => 'tienda-nueva',
+        };
+
+        return 'pedido-borrador:'.$usuario->id.':'.$que.':'.HoraNegocio::fechaHoy();
     }
 
     /**
@@ -280,16 +302,17 @@ class MiPedidoController extends Controller
     }
 
     /**
-     * A «Sacar pedido», con el aviso de la OC si su forma no cuadra y el de la cantidad que es
-     * mucho más que lo habitual de la sala ({@see PedidosSala::avisosCantidad()}). No bloquean.
+     * A «Sacar pedido», con el aviso de la OC si su forma no cuadra (no bloquea) y la clave del
+     * borrador del teléfono ({@see claveBorrador()}), de una vez: esa página lo borra. Las
+     * cantidades exageradas ya no se avisan acá: se confirmaron antes de guardar
+     * ({@see PedidosSala::cantidadesExageradas()}).
      */
-    private function volver(PedidoSala $pedido, string $mensaje): RedirectResponse
+    private function volver(PedidoSala $pedido, string $mensaje, string $borrador): RedirectResponse
     {
         $avisos = $pedido->avisosOrdenCompra();
-        $cantidades = $this->pedidos->avisosCantidad($pedido);
 
         return redirect()->route('rutas.sacar-pedido.index')
-            ->with('status', trim($mensaje.($avisos ? ' Revisá la orden de compra: '.implode(' ', $avisos) : '')
-                .($cantidades ? ' '.implode(' ', $cantidades).' Si fue un error, tocá «Corregir».' : '')));
+            ->with('status', $mensaje.($avisos ? ' Revisá la orden de compra: '.implode(' ', $avisos) : ''))
+            ->with('borrador_guardado', $borrador);
     }
 }
