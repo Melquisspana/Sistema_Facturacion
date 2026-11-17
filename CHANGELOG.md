@@ -8,6 +8,17 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.17] - 2026-11-17
+
+Rendimiento a partir de la prueba de carga del 16/11 (#404). El servidor suelta antes las conexiones quietas, y el Inicio, Cobros y Por entregar quedan más livianos. Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- **Servidor:** Apache libera en 2 s, en vez de 5, la conexión de quien ya no pide nada. En la prueba, con 500 usuarios, la espera bajó de 15 s a menos de medio segundo (#404).
+- **Inicio:** el aviso de rutas atrasadas se guarda 5 minutos en vez de calcularse en cada visita (#404).
+- **Cobros:** los nombres de las salas y las devoluciones AC04 de la página se buscan juntos, no fila por fila (#404).
+- **Rutas › Por entregar:** la lista de «¿Quién lo entregó?» va una sola vez por página. En el celular del vendedor la página pesa menos de la mitad y se usa igual (#404).
+
 ## [2026.11.16.4] - 2026-11-16
 
 Rutas: el pedido no se pierde sin señal y las cantidades exageradas se confirman (#396). Se puede corregir quién entregó, y hay aviso del viaje abierto (#397). Inicio con «Por cobrar» y «Por entregar» (#398). El pedido web lleva nombre en el viaje y muestra las notas del comprador (#399). Compras: una caída de Gmail ya no avisa como contraseña mala (#402). Sin migraciones ni cambios de permisos.
