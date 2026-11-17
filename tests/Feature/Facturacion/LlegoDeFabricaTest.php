@@ -281,8 +281,8 @@ class LlegoDeFabricaTest extends TestCase
 
     public function test_la_oc_del_pedido_de_otra_sala_o_ya_facturada_no_sale_lista(): void
     {
-        $otraSala = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '1'], '2611 0232 0010394');
-        $usada = $this->pedido($this->sala('Sala de prueba Sur', '9002', exigeOc: true), [$this->galleta->id => '1'], '26119002000123');
+        $otraSala = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '1'], '2611 0232 0017265');
+        $usada = $this->pedido($this->sala('Sala de prueba Sur', '9002', exigeOc: true), [$this->galleta->id => '1'], '26119002000317');
         foreach ([$otraSala, $usada] as $pedido) {
             $this->envio($pedido, [$this->galleta->id => '1']);
         }
@@ -292,7 +292,7 @@ class LlegoDeFabricaTest extends TestCase
         (new Dte)->forceFill([
             'tipo_dte' => TipoDte::CreditoFiscal->value, 'ambiente' => '00', 'estado' => 'aceptado',
             'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $usada->sala->cliente_id,
-            'numero_control' => 'DTE-03-M001P001-000000000000001', 'numero_orden_compra' => '26119002000123',
+            'numero_control' => 'DTE-03-M001P001-000000000000001', 'numero_orden_compra' => '26119002000317',
             'fecha_emision' => '2026-11-08', 'hora_emision' => '08:00:00', 'total_pagar' => 10,
         ])->save();
 
@@ -455,9 +455,9 @@ class LlegoDeFabricaTest extends TestCase
 
     public function test_el_ccf_del_mismo_pedido_no_avisa_que_la_oc_ya_tiene_ccf_si_no_queda_nada(): void
     {
-        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000123');
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000317');
         $dte = $this->facturado([$this->envio($pedido, [$this->galleta->id => '3'])]);
-        Dte::whereKey($dte->id)->update(['numero_orden_compra' => '26119001000123']);
+        Dte::whereKey($dte->id)->update(['numero_orden_compra' => '26119001000317']);
 
         $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
             ->assertDontSee('Esa OC ya tiene un CCF.')
@@ -471,9 +471,9 @@ class LlegoDeFabricaTest extends TestCase
 
     public function test_el_ccf_rechazado_del_pedido_no_avisa_que_la_oc_ya_tiene_ccf(): void
     {
-        $norte = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000123');
+        $norte = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000317');
         $rechazado = $this->facturado([$this->envio($norte, [$this->galleta->id => '5'])], 'rechazado');
-        Dte::whereKey($rechazado->id)->update(['numero_orden_compra' => '26119001000123']);
+        Dte::whereKey($rechazado->id)->update(['numero_orden_compra' => '26119001000317']);
 
         // Hacienda lo rechazó: hay que volver a facturar y la tarjeta no dice lo contrario.
         $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()

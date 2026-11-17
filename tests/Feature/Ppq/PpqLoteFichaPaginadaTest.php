@@ -29,7 +29,7 @@ class PpqLoteFichaPaginadaTest extends TestCase
     use CuentaLecturasDeAjustes;
     use RefreshDatabase;
 
-    private const OC = '26050230001794';
+    private const OC = '26050230002658';
 
     protected function setUp(): void
     {

@@ -27,7 +27,7 @@ class OrdenesRecibidasApagadaTest extends TestCase
     private function orden(): OrdenCompraRecibida
     {
         return OrdenCompraRecibida::create([
-            'numero' => '261102320010394', 'fecha_creacion' => '2026-11-05', 'total' => '22.90',
+            'numero' => '261102320017265', 'fecha_creacion' => '2026-11-05', 'total' => '22.90',
             'pdf_path' => OrdenCompraRecibida::CARPETA_PDF.'/no-existe.pdf', 'pdf_hash' => str_repeat('a', 64),
             'gmail_message_id' => 'm-prueba', 'estado' => OrdenCompraRecibida::LEIDA,
         ]);

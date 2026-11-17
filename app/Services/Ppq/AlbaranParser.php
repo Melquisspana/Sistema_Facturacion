@@ -50,8 +50,8 @@ class AlbaranParser
         ];
 
         $oc = $this->buscar($texto, '/(?:orden\s*de\s*compra|orden|o\.?\s*c\.?|OC)\D{0,15}(\d{8,})/i', $debug, 'oc');
-        // Formato actual de Calleja: «Pedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref.
-        // 26090011005235». La OC es la referencia de 14 dígitos que sigue a «Ref.».
+        // Formato actual de Calleja: «Pedido de Compras 00/6492/26 de Fecha 23/09/2026 Ref.
+        // 26090011006492». La OC es la referencia de 14 dígitos que sigue a «Ref.».
         $oc ??= $this->buscar($texto, '/Pedido\s+de\s+Compras[^\n]*?Ref\.?\s*(\d{14})\b/i', $debug, 'oc_pedido');
         if (preg_match('/\bAC04\s*-\s*Albar[aá]n\s+Devoluci[oó]n\b/iu', $texto)) {
             return $this->devolucion($texto, $oc, $debug);
@@ -201,7 +201,7 @@ class AlbaranParser
 
     /**
      * Fecha del ALBARÁN (su creación): la que usa el portal de Calleja para buscarlo por
-     * año y mes. NO es la del pedido. El PDF trae antes «Pedido de Compras 00/5235/26 de
+     * año y mes. NO es la del pedido. El PDF trae antes «Pedido de Compras 00/6492/26 de
      * Fecha 23/09/2026», y tomar la primera fecha del texto daba el mes del pedido: un
      * albarán creado el 01/10 salía con mes 9 y el portal no lo encontraba.
      *

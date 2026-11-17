@@ -350,18 +350,18 @@ class PedidosSalaTest extends TestCase
         $this->assertSame([], PedidoSala::sole()->avisosOrdenCompra());
         PedidoSala::query()->delete();
 
-        $this->sacar(['numero_orden_compra' => ' 261102360045 '], $this->salaOc)->assertSessionHasNoErrors()
+        $this->sacar(['numero_orden_compra' => ' 261102360073 '], $this->salaOc)->assertSessionHasNoErrors()
             ->assertSessionHas('status', fn ($m) => str_contains($m, 'tiene 12 dígitos y deben ser de 13 a 15'));
         $pedido = PedidoSala::sole();
-        $this->assertSame('261102360045', $pedido->numero_orden_compra);
+        $this->assertSame('261102360073', $pedido->numero_orden_compra);
         $this->get(route('rutas.sacar-pedido.index'))->assertSee('tiene 12 dígitos y deben ser de 13 a 15');
 
         $this->put(route('rutas.sacar-pedido.update', $pedido), [
-            'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26080236004586',
+            'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26080236007318',
         ])->assertSessionHas('status', fn ($m) => str_contains($m, 'es de 08/2026 y el pedido es del 05/11/2026'));
 
         $this->put(route('rutas.sacar-pedido.update', $pedido), [
-            'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26110236004586',
+            'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26110236007318',
         ])->assertSessionHas('status', 'Pedido de «Súper Ficticio Norte» corregido.');
         $this->assertSame([], $pedido->refresh()->avisosOrdenCompra());
     }
@@ -374,18 +374,18 @@ class PedidosSalaTest extends TestCase
         $this->actingAs($this->oficina);
         $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Todavía sin OC')->assertSee('Agregar la OC')
             ->assertSeeText('De 13 a 15 números, del portal EDI.')->assertDontSeeText('14 dígitos');
-        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '261102360045'])
+        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '261102360073'])
             ->assertRedirect(route('rutas.pedidos.show', $pedido))
             ->assertSessionHas('status', fn ($m) => str_starts_with($m, 'Orden de compra guardada.') && str_contains($m, '12 dígitos'));
-        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236004586'])
+        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236007318'])
             ->assertSessionHas('status', 'Orden de compra guardada.');
-        $this->assertSame('26110236004586', $pedido->refresh()->numero_orden_compra);
+        $this->assertSame('26110236007318', $pedido->refresh()->numero_orden_compra);
         $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => str_repeat('1', 31)])->assertSessionHasErrors('numero_orden_compra');
 
         $cambios = Activity::where('description', 'cambió la orden de compra del pedido')->orderBy('id')->get();
         $this->assertCount(2, $cambios);
         $this->assertNull($cambios[0]->properties['anterior']);
-        $this->assertSame('26110236004586', $cambios[1]->properties['nueva']);
+        $this->assertSame('26110236007318', $cambios[1]->properties['nueva']);
         $this->assertSame($this->oficina->id, $cambios[1]->causer_id);
 
         // El jefe de vendedores y el vendedor no la cambian (no son la oficina).
@@ -396,8 +396,8 @@ class PedidosSalaTest extends TestCase
 
         // Anulado: ya no se toca.
         $pedido->update(['estado' => EstadoPedidoSala::Anulado]);
-        $this->actingAs($this->oficina)->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236004587'])->assertForbidden();
-        $this->assertSame('26110236004586', $pedido->refresh()->numero_orden_compra);
+        $this->actingAs($this->oficina)->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236007319'])->assertForbidden();
+        $this->assertSame('26110236007318', $pedido->refresh()->numero_orden_compra);
     }
 
     // ══════════════════════════════ oficina
@@ -577,7 +577,7 @@ class PedidosSalaTest extends TestCase
         $this->actingAs($this->oficina);
         foreach ([EstadoPedidoSala::Parcial, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae] as $estado) {
             $pedido->update(['estado' => $estado]);
-            $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236004586'])->assertSessionHasNoErrors()
+            $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236007318'])->assertSessionHasNoErrors()
                 ->assertSessionHas('status', 'Orden de compra guardada.');
         }
         $pedido->update(['estado' => EstadoPedidoSala::Anulado]);

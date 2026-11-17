@@ -113,7 +113,7 @@ class CobrosAutomatizacionTest extends TestCase
             'establecimiento_id' => $estab->id,
             'punto_venta_id' => $pv->id,
         ]);
-        $ccf->forceFill(['numero_orden_compra' => '26090017003463'])->save();
+        $ccf->forceFill(['numero_orden_compra' => '26090017003927'])->save();
         app(DteBorradorService::class)->agregarLineaDesdeProducto($ccf, $producto, cantidad: 100);
         app(DteGeneracionService::class)->generar($ccf);
 

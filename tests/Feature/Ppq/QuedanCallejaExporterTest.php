@@ -39,9 +39,9 @@ class QuedanCallejaExporterTest extends TestCase
 
     private $estab = null;
 
-    private const OC_A = '26050230001794'; // sala 0230
+    private const OC_A = '26050230002658'; // sala 0230
 
-    private const OC_B = '26050231001795'; // sala 0231
+    private const OC_B = '26050231002659'; // sala 0231
 
     protected function setUp(): void
     {
@@ -115,11 +115,11 @@ class QuedanCallejaExporterTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create();
         $lote = $this->lote();
         $lote->update(['cliente_id' => $cliente->id]);
-        $albaran = $this->albaran('AC01/0262/00/247', '26050262001794');
+        $albaran = $this->albaran('AC01/0262/00/247', '26050262002658');
         if ($incoherente) {
             $albaran->update(['sala_codigo' => '0620']);
         }
-        $item = $this->ccf($lote, 'DTE-03-M001P002-000000000000247', '26050620001794', $albaran);
+        $item = $this->ccf($lote, 'DTE-03-M001P002-000000000000247', '26050620002658', $albaran);
         CobroDocumento::create([
             'cliente_id' => $cliente->id,
             'origen' => 'externo',
@@ -468,7 +468,7 @@ class QuedanCallejaExporterTest extends TestCase
         $lote = $this->lote();
         $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
         $nc = $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000036', 'AC02/0219/00/4534');
-        $ppq = $this->albaran('AC02/0207/00/4354', '26050207001794', fecha: '2026-10-05', tipo: 'AC02');
+        $ppq = $this->albaran('AC02/0207/00/4354', '26050207002658', fecha: '2026-10-05', tipo: 'AC02');
         $nc->update(['ppq_albaran_id' => $ppq->id, 'sin_albaran' => false]);
 
         $ruta = $this->exportador()->generar($lote->fresh());

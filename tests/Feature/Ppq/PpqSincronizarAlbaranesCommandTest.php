@@ -146,7 +146,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     {
         $this->sala('0236', 'Súper Selectos Santa Elena');
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
+            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
         ]]);
 
         $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-07-14', '--hasta' => '2026-07-14'])
@@ -160,7 +160,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     {
         $sucursal = $this->sala('0236', 'Súper Selectos Santa Elena');
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
+            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
         ]]);
 
         $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true])
@@ -168,7 +168,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
 
         $albaran = PpqAlbaran::sole();
         $this->assertSame('AC01/0236/00/6359', $albaran->numero_albaran);
-        $this->assertSame('26060236004586', $albaran->numero_orden_compra);
+        $this->assertSame('26060236007318', $albaran->numero_orden_compra);
         $this->assertSame('250.75', (string) $albaran->monto_albaran);
         $this->assertSame('2026-07-14', $albaran->fecha_albaran->toDateString());
         $this->assertSame('gmail', $albaran->origen);
@@ -182,7 +182,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     {
         $this->sala('0236', 'Súper Selectos Santa Elena');
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
+            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
         ]]);
 
         $opciones = ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true];
@@ -195,7 +195,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     public function test_segunda_corrida_omite_los_correos_ya_sincronizados(): void
     {
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
+            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
         ]]);
         $opciones = ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true];
 
@@ -210,8 +210,8 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         // El mismo albarán llega dos veces con message id distinto (reenvío): el índice
         // único número+OC lo colapsa en una sola fila.
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
-            $this->candidato('msg-2', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
+            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
+            $this->candidato('msg-2', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
         ]]);
 
         $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true])
@@ -309,7 +309,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     {
         PpqSala::recordar('0260', 'Súper Selectos Escalón', 'ccf_json');
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-m', 'AC01/0260/00/1111', '2606026002401', 50.00, '2026-07-14'),
+            $this->candidato('msg-m', 'AC01/0260/00/1111', '2606026003857', 50.00, '2026-07-14'),
         ]]);
 
         $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true])
@@ -322,7 +322,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     public function test_albaran_sin_numero_legible_no_se_guarda_y_se_reporta(): void
     {
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-sin-numero', '', '26060236004586', 10.00, '2026-07-14'),
+            $this->candidato('msg-sin-numero', '', '26060236007318', 10.00, '2026-07-14'),
         ]]);
 
         $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true])
@@ -403,7 +403,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         {
             public function desdePdf(string $bytes): array
             {
-                return ['numero' => $bytes.'/0236/00/7152', 'oc' => '26060236004586', 'fecha' => '2026-10-28', 'monto' => $bytes === 'AC04' ? 22.60 : 226.00];
+                return ['numero' => $bytes.'/0236/00/7152', 'oc' => '26060236007318', 'fecha' => '2026-10-28', 'monto' => $bytes === 'AC04' ? 22.60 : 226.00];
             }
         });
         $this->app->forgetInstance(PpqGmailService::class);
@@ -448,7 +448,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
             public function desdePdf(string $bytes): array
             {
                 // El PDF trae una lectura distinta: no debe ganarle al asunto.
-                return ['numero' => 'AC01/0236/00/9999', 'oc' => '26060236004587', 'fecha' => '2026-10-28', 'monto' => 100.00];
+                return ['numero' => 'AC01/0236/00/9999', 'oc' => '26060236007319', 'fecha' => '2026-10-28', 'monto' => 100.00];
             }
         });
         $this->app->forgetInstance(PpqGmailService::class);
@@ -461,10 +461,10 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     public function test_correo_ya_visto_por_ac04_no_impide_recuperar_su_ac01(): void
     {
         $this->sala('0236', 'Súper Selectos Santa Elena');
-        PpqAlbaran::create(['numero_albaran' => 'AC04/0236/00/7152', 'numero_orden_compra' => '26060236004586', 'gmail_message_id' => 'msg-mixto']);
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0236/00/7152', 'numero_orden_compra' => '26060236007318', 'gmail_message_id' => 'msg-mixto']);
         $this->fakeServicio(['2026-10-28' => [
-            $this->candidato('msg-mixto', 'AC04/0236/00/7152', '26060236004586', 22.60, '2026-10-28'),
-            $this->candidato('msg-mixto', 'AC01/0236/00/7153', '26060236004586', 226.00, '2026-10-28'),
+            $this->candidato('msg-mixto', 'AC04/0236/00/7152', '26060236007318', 22.60, '2026-10-28'),
+            $this->candidato('msg-mixto', 'AC01/0236/00/7153', '26060236007318', 226.00, '2026-10-28'),
         ]]);
         for ($vez = 0; $vez < 2; $vez++) {
             $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-10-28', '--hasta' => '2026-10-28', '--aplicar' => true])->assertSuccessful();
@@ -509,7 +509,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         $dte = [
             'identificacion' => ['numeroControl' => 'DTE-03-M001P002-000000000001011', 'tipoDte' => '03', 'fecEmi' => '2026-07-14'],
             'resumen' => ['totalPagar' => 168.88],
-            'apendice' => [['campo' => 'ordenCompra', 'valor' => '26060236004586']],
+            'apendice' => [['campo' => 'ordenCompra', 'valor' => '26060236007318']],
         ];
 
         $this->app->instance(GmailClient::class, new class($dte) extends GmailClient
@@ -546,7 +546,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         // Solo el albarán; el QUEDAN quedó fuera por el filtro de asunto del servicio real.
         $albaran = PpqAlbaran::sole();
         $this->assertSame('AC01/0236/00/6359', $albaran->numero_albaran);
-        $this->assertSame('26060236004586', $albaran->numero_orden_compra); // OC salida del JSON
+        $this->assertSame('26060236007318', $albaran->numero_orden_compra); // OC salida del JSON
         $this->assertSame('168.88', (string) $albaran->monto_albaran);
         $this->assertSame($sucursal->id, $albaran->cliente_sucursal_id);
     }
@@ -585,12 +585,12 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         // message id no lo tapa) y después dado de baja. El índice único no distingue
         // borrados: sin el guard con withTrashed() esto reventaba la corrida entera.
         PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             'origen' => 'manual',
         ])->delete();
 
         $this->fakeServicio(['2026-07-14' => [
-            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'),
+            $this->candidato('msg-1', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'),
         ]]);
 
         $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-07-14', '--hasta' => '2026-07-14', '--aplicar' => true])
@@ -605,13 +605,13 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     public function test_la_corrida_sigue_con_los_demas_correos_despues_de_uno_dado_de_baja(): void
     {
         PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236007318',
             'origen' => 'manual',
         ])->delete();
 
         $this->fakeServicio(['2026-07-14' => [
             $this->candidato('msg-1', 'AC01/0236/00/1111', '26060236001111', 10.00, '2026-07-14'),
-            $this->candidato('msg-2', 'AC01/0236/00/6359', '26060236004586', 250.75, '2026-07-14'), // dado de baja
+            $this->candidato('msg-2', 'AC01/0236/00/6359', '26060236007318', 250.75, '2026-07-14'), // dado de baja
             $this->candidato('msg-3', 'AC01/0236/00/3333', '26060236003333', 30.00, '2026-07-14'),
         ]]);
 

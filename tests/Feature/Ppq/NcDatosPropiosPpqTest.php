@@ -98,7 +98,7 @@ class NcDatosPropiosPpqTest extends TestCase
             'codigo_generacion' => strtoupper(Str::uuid()->toString()),
             'sello_recepcion' => '2026SELLOREAL'.Str::random(8),
             'fecha_procesamiento_mh' => now(),
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),
             'total_pagar' => 113.58,

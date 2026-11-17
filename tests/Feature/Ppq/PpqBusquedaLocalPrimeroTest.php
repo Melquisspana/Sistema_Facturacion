@@ -101,7 +101,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
             'codigo_generacion' => strtoupper(Str::uuid()->toString()),
             'sello_recepcion' => '2026SELLOREAL'.substr(md5($numeroControl), 0, 8),
             'fecha_procesamiento_mh' => now(),
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),
             'total_pagar' => 113.58,
@@ -231,7 +231,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
     }
 
     /** JSON de un DTE tal como llega adjunto en el correo enviado. */
-    private function jsonDte(string $control, string $codigo, string $tipo = '03', ?string $oc = '260600232002345'): array
+    private function jsonDte(string $control, string $codigo, string $tipo = '03', ?string $oc = '260600232003816'): array
     {
         return [
             'identificacion' => [
@@ -264,7 +264,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
         // albarán sí puede consultarse porque llega después y la sincronización automática
         // puede estar apagada.
         $this->assertNotContains('buscarEnviadosDetallado:0986', $gmail->llamadas);
-        $this->assertContains('buscarAlbaranes:260600232002345', $gmail->llamadas);
+        $this->assertContains('buscarAlbaranes:260600232003816', $gmail->llamadas);
         $resp->assertSee('El albarán faltante se buscó en Gmail', false);
     }
 
@@ -445,7 +445,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
             'ambiente' => '00',
             'cliente_id' => $this->calleja()->id,
             'numero_control' => 'DTE-03-M001P002-000000000000505',
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),
             'total_pagar' => 50.0,
@@ -478,7 +478,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
             'ambiente' => '01',
             'cliente_id' => $this->calleja()->id,
             'numero_control' => 'DTE-03-M001P001-000000000000606',
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),
             'total_pagar' => 113.58,
@@ -518,7 +518,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
             'ambiente' => '01',
             'cliente_id' => $this->calleja()->id,
             'numero_control' => 'DTE-03-M001P002-000000000000607',
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),
             'total_pagar' => 113.58,
@@ -555,7 +555,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
         $this->conectarGmail();
         PpqAlbaran::create([
             'numero_albaran' => 'AC01/0232/00/9090',
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'monto_albaran' => 113.58,
             'fecha_albaran' => now(),
             'origen' => 'gmail',
@@ -572,7 +572,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
         $resp->assertSee('AC01/0232/00/9090', false);
         $resp->assertSee('Albarán sincronizado', false);
         // …pero el ALBARÁN ya estaba sincronizado: no se vuelve a buscar ni a bajar.
-        $this->assertNotContains('buscarAlbaranes:260600232002345', $gmail->llamadas);
+        $this->assertNotContains('buscarAlbaranes:260600232003816', $gmail->llamadas);
         $this->assertSame(
             [],
             array_filter($gmail->llamadas, fn ($l) => str_starts_with($l, 'buscarAlbaranesPorFecha')),
@@ -590,7 +590,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
         $this->actingAs($this->usuario())->get(route('ppq.index', ['q' => '0909']))->assertOk();
 
         // Sin fila en `ppq_albaranes`, el fallback a Gmail sigue existiendo.
-        $this->assertContains('buscarAlbaranes:260600232002345', $gmail->llamadas);
+        $this->assertContains('buscarAlbaranes:260600232003816', $gmail->llamadas);
     }
 
     public function test_el_albaran_se_busca_una_sola_vez_por_documento_real_no_por_correo(): void
@@ -660,7 +660,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
         $nc = $this->ccfResolutivo('DTE-05-M001P002-000000000003030', ['tipo_dte' => '05', 'total_pagar' => 20.0]);
         PpqAlbaran::create([
             'numero_albaran' => 'AC01/0232/00/3030',
-            'numero_orden_compra' => '260600232002345',
+            'numero_orden_compra' => '260600232003816',
             'monto_albaran' => 113.58,
             'origen' => 'gmail',
         ]);

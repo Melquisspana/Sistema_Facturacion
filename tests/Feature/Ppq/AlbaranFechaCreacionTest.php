@@ -21,7 +21,7 @@ class AlbaranFechaCreacionTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const PEDIDO = "Albarán de Compras\nPedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref. \n26090046007047\n";
+    private const PEDIDO = "Albarán de Compras\nPedido de Compras 00/6492/26 de Fecha 23/09/2026 Ref. \n26090046008352\n";
 
     public function test_toma_la_fecha_del_albaran_y_no_la_del_pedido(): void
     {
@@ -48,12 +48,12 @@ class AlbaranFechaCreacionTest extends TestCase
     {
         $disco = Storage::fake((string) config('dte.storage.disk', 'local'));
         $disco->put('ppq/albaranes/octubre.pdf', $this->pdf(
-            ['Albarán de Compras', 'Pedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref.', '26090046007047',
+            ['Albarán de Compras', 'Pedido de Compras 00/6492/26 de Fecha 23/09/2026 Ref.', '26090046008352',
                 'AC01/0046/00/7047/26', '01/10/2026', 'TOTAL ALBARAN 10.00']
         ));
-        $octubre = PpqAlbaran::create(['numero_albaran' => 'AC01/0046/00/7047', 'numero_orden_compra' => '26090046007047',
+        $octubre = PpqAlbaran::create(['numero_albaran' => 'AC01/0046/00/7047', 'numero_orden_compra' => '26090046008352',
             'monto_albaran' => 10, 'fecha_albaran' => '2026-09-23', 'origen' => 'gmail', 'archivo_path' => 'ppq/albaranes/octubre.pdf']);
-        $septiembre = PpqAlbaran::create(['numero_albaran' => 'AC01/0046/00/6990', 'numero_orden_compra' => '26090046006990',
+        $septiembre = PpqAlbaran::create(['numero_albaran' => 'AC01/0046/00/6990', 'numero_orden_compra' => '26090046008294',
             'monto_albaran' => 10, 'fecha_albaran' => '2026-09-28', 'origen' => 'gmail']);
 
         $this->artisan('ppq:recalcular-fecha-albaranes', ['--dry-run' => true])

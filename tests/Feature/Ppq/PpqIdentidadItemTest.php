@@ -75,7 +75,7 @@ class PpqIdentidadItemTest extends TestCase
     }
 
     /** CCF local COBRABLE (producción, aceptado realmente por Hacienda). */
-    private function ccf(string $numeroControl, string $oc = '260600232002345', float $monto = 113.58): Dte
+    private function ccf(string $numeroControl, string $oc = '260600232003816', float $monto = 113.58): Dte
     {
         return Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id,
@@ -98,7 +98,7 @@ class PpqIdentidadItemTest extends TestCase
      * Item HISTÓRICO tal como están los 158 reales: snapshot de Gmail, `dte_id` en NULL.
      * Ese NULL es el punto de todas estas pruebas.
      */
-    private function itemHistorico(PpqLote $lote, string $numeroControl, string $oc = '260600232002345'): PpqItem
+    private function itemHistorico(PpqLote $lote, string $numeroControl, string $oc = '260600232003816'): PpqItem
     {
         return PpqItem::create([
             'ppq_lote_id' => $lote->id,
@@ -188,9 +188,9 @@ class PpqIdentidadItemTest extends TestCase
     public function test_la_misma_orden_de_compra_no_produce_coincidencia_falsa(): void
     {
         // Una OC ampara varios CCF de la misma sala: no identifica a ninguno.
-        $ccf = $this->ccf('DTE-03-M001P002-000000000000990', '260600232002345');
+        $ccf = $this->ccf('DTE-03-M001P002-000000000000990', '260600232003816');
         $lote = $this->lote();
-        $this->itemHistorico($lote, 'DTE-03-M001P002-000000000000991', '260600232002345');
+        $this->itemHistorico($lote, 'DTE-03-M001P002-000000000000991', '260600232003816');
 
         $this->assertSame(
             [],
@@ -201,10 +201,10 @@ class PpqIdentidadItemTest extends TestCase
 
     public function test_el_mismo_monto_y_la_misma_sala_no_producen_coincidencia_falsa(): void
     {
-        $ccf = $this->ccf('DTE-03-M001P002-000000000000992', '260600232002345', 113.58);
+        $ccf = $this->ccf('DTE-03-M001P002-000000000000992', '260600232003816', 113.58);
         $lote = $this->lote();
         // Mismo monto, misma sala (misma OC), distinto documento.
-        $this->itemHistorico($lote, 'DTE-03-M001P002-000000000000993', '260600232002345');
+        $this->itemHistorico($lote, 'DTE-03-M001P002-000000000000993', '260600232003816');
 
         $this->assertSame([], app(PpqBusquedaService::class)->dtesYaUsados([$ccf]));
     }

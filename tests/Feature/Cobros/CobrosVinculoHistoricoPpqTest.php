@@ -32,7 +32,7 @@ class CobrosVinculoHistoricoPpqTest extends TestCase
     use PreparaEmisorDte;
     use RefreshDatabase;
 
-    private const OC = '26090017003463';
+    private const OC = '26090017003927';
 
     private const CONTROL = 'DTE-03-M001P002-000000000000131';
 
@@ -381,8 +381,8 @@ class CobrosVinculoHistoricoPpqTest extends TestCase
         return [
             'importe' => [['monto_albaran' => '100.00'], [], 'importe del CCF'],
             'sala' => [['sala_codigo' => '0261'], [], 'sala 0017'],
-            'OC del albarán' => [['numero_orden_compra' => '26090261004111'], [], 'orden de compra no es'],
-            'OC del item' => [[], ['numero_orden_compra' => '26090261004111'], 'orden de compra no es'],
+            'OC del albarán' => [['numero_orden_compra' => '26090261005392'], [], 'orden de compra no es'],
+            'OC del item' => [[], ['numero_orden_compra' => '26090261005392'], 'orden de compra no es'],
         ];
     }
 
@@ -486,7 +486,7 @@ class CobrosVinculoHistoricoPpqTest extends TestCase
     public static function historialQueContradiceAlExplicito(): array
     {
         return [
-            'OC del item distinta' => [['numero_orden_compra' => '26090261004111']],
+            'OC del item distinta' => [['numero_orden_compra' => '26090261005392']],
             'código de generación distinto' => [['codigo_generacion' => 'FFFFFFFF-0000-4000-8000-000000000131']],
         ];
     }

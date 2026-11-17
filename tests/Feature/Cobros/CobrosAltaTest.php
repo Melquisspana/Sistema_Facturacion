@@ -76,7 +76,7 @@ class CobrosAltaTest extends TestCase
     }
 
     /** Un CCF realmente ACEPTADO por Hacienda. */
-    private function ccfAceptado(Cliente $cliente, string $oc = '26090017003463'): Dte
+    private function ccfAceptado(Cliente $cliente, string $oc = '26090017003927'): Dte
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisorUnico();
 
@@ -255,8 +255,8 @@ class CobrosAltaTest extends TestCase
         Log::spy();
         $cliente = $this->cliente();
         $otro = Cliente::factory()->contribuyente()->create();
-        $choca = $this->ccfAceptado($cliente, '26090017003463');
-        $sigue = $this->ccfAceptado($cliente, '26090017003464');
+        $choca = $this->ccfAceptado($cliente, '26090017003927');
+        $sigue = $this->ccfAceptado($cliente, '26090017003928');
         $ajeno = CobroDocumento::create([
             'cliente_id' => $otro->id, 'origen' => OrigenCobroDocumento::Externo->value, 'tipo_dte' => '03',
             'numero_control' => $choca->numero_control, 'fecha_emision' => $choca->fecha_emision, 'monto' => '10.00',

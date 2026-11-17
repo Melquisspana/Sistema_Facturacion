@@ -10,10 +10,10 @@ use App\Facades\Ajustes;
  * La sala son los `length` dígitos que vienen JUSTO DESPUÉS del prefijo YYMM
  * (4 dígitos) de la OC. Siempre 4 dígitos, empieza con 0, se trata como texto.
  * Ejemplos reales:
- *   2606026002401  -> sala 0260
- *   26060236004586 -> sala 0236
- *   26050039004820 -> sala 0039
- *   26050230001794 -> sala 0230
+ *   2606026003857  -> sala 0260
+ *   26060236007318 -> sala 0236
+ *   26050039006173 -> sala 0039
+ *   26050230002658 -> sala 0230
  *
  * El offset (prefijo) y la longitud son configurables (config/ppq.php).
  */
@@ -22,7 +22,7 @@ class OrdenCompra
     /**
      * Extrae el código de sala (4 dígitos, conservando el cero inicial) desde la OC:
      * los `length` dígitos que siguen al prefijo YYMM (`prefix` dígitos). Devuelve
-     * null si la OC es demasiado corta. Ej.: 2606026002401 → 0260.
+     * null si la OC es demasiado corta. Ej.: 2606026003857 → 0260.
      * `$posicion` es la de {@see posicionSala()} ya leída: un ciclo sobre muchas órdenes
      * la lee una vez en lugar de consultar los ajustes en cada fila.
      *
@@ -67,7 +67,7 @@ class OrdenCompra
 
     /**
      * Dos OC que parecen la misma mal tecleada: del MISMO largo y con 1 o 2 dígitos
-     * distintos, posición por posición (26100218003741 ↔ 20100218003741). Iguales no
+     * distintos, posición por posición (26100218002615 ↔ 20100218002615). Iguales no
      * cuentan: eso ya es la misma OC. Solo sirve para pedir revisión, nunca para vincular.
      */
     public static function casiIgual(?string $a, ?string $b): bool

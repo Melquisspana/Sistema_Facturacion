@@ -120,20 +120,20 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
 
     public function test_casi_igual_es_mismo_largo_y_a_lo_sumo_dos_digitos_distintos(): void
     {
-        $this->assertTrue(OrdenCompra::casiIgual('20100218003741', '26100218003741'));
-        $this->assertTrue(OrdenCompra::casiIgual('26100230002885', '26100230003885'));
-        $this->assertTrue(OrdenCompra::casiIgual('26100218003741', '26100218003799'));
-        $this->assertFalse(OrdenCompra::casiIgual('26100218003741', '26100218003741'), 'La misma OC no es «casi».');
-        $this->assertFalse(OrdenCompra::casiIgual('26100218003741', '26100218004999'), 'Tres dígitos distintos no.');
-        $this->assertFalse(OrdenCompra::casiIgual('2610021800374', '26100218003741'), 'Otro largo no.');
+        $this->assertTrue(OrdenCompra::casiIgual('20100218002615', '26100218002615'));
+        $this->assertTrue(OrdenCompra::casiIgual('26100230001537', '26100230002537'));
+        $this->assertTrue(OrdenCompra::casiIgual('26100218002615', '26100218002699'));
+        $this->assertFalse(OrdenCompra::casiIgual('26100218002615', '26100218002615'), 'La misma OC no es «casi».');
+        $this->assertFalse(OrdenCompra::casiIgual('26100218002615', '26100218004999'), 'Tres dígitos distintos no.');
+        $this->assertFalse(OrdenCompra::casiIgual('2610021800261', '26100218002615'), 'Otro largo no.');
         $this->assertFalse(OrdenCompra::casiIgual('', ''));
     }
 
     public function test_la_union_ii_queda_para_revisar_con_el_albaran_nombrado_y_no_se_vincula_solo(): void
     {
         // La sala sale de la sucursal del CCF (código guardado sin el cero).
-        $documento = $this->ccf('20100218003741', '1001', codigoSala: '218');
-        $albaran = $this->albaran('AC01/0218/00/5633', '26100218003741', '0218');
+        $documento = $this->ccf('20100218002615', '1001', codigoSala: '218');
+        $albaran = $this->albaran('AC01/0218/00/5633', '26100218002615', '0218');
 
         $estado = app(VinculadorAlbaranes::class)->aplicar($documento, soloSiCambia: true);
 
@@ -142,7 +142,7 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
         $this->assertNull($documento->ppq_albaran_id, 'Es dinero y cobro: no se vincula solo.');
         $this->assertSame(EstadoVinculacionAlbaran::Revisar, $documento->vinculacion_estado);
         $this->assertSame(
-            'El albarán AC01/0218/00/5633 trae la orden 26100218003741, casi igual a la del CCF (20100218003741): revisá y enlazalo.',
+            'El albarán AC01/0218/00/5633 trae la orden 26100218002615, casi igual a la del CCF (20100218002615): revisá y enlazalo.',
             $documento->vinculacion_motivo,
         );
         $this->assertSame([$albaran->id], array_column($documento->vinculacion_candidatos, 'id'));
@@ -150,20 +150,20 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
 
     public function test_la_union_queda_para_revisar_aunque_el_albaran_solo_traiga_la_sala_en_el_numero(): void
     {
-        $documento = $this->ccf('26100230002885', '1002');
-        $albaran = $this->albaran('AC01/0230/00/5703', '26100230003885');
+        $documento = $this->ccf('26100230001537', '1002');
+        $albaran = $this->albaran('AC01/0230/00/5703', '26100230002537');
 
         $veredicto = app(VinculadorAlbaranes::class)->auditar($documento);
 
         $this->assertSame(EstadoVinculacionAlbaran::Revisar, $veredicto['estado']);
         $this->assertNull($veredicto['albaran_id']);
-        $this->assertStringContainsString('AC01/0230/00/5703 trae la orden 26100230003885', $veredicto['motivo']);
+        $this->assertStringContainsString('AC01/0230/00/5703 trae la orden 26100230002537', $veredicto['motivo']);
         $this->assertSame($albaran->id, $veredicto['candidatos'][0]['id']);
     }
 
     public function test_tres_digitos_distintos_no_marca(): void
     {
-        $documento = $this->ccf('26100218003741', '1003');
+        $documento = $this->ccf('26100218002615', '1003');
         $this->albaran('AC01/0218/00/5634', '26100218004999', '0218');
 
         $this->assertSame(EstadoVinculacionAlbaran::SinAlbaran, app(VinculadorAlbaranes::class)->auditar($documento)['estado']);
@@ -171,18 +171,18 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
 
     public function test_otra_sala_no_marca(): void
     {
-        $documento = $this->ccf('26100218003741', '1004');
+        $documento = $this->ccf('26100218002615', '1004');
         // Un dígito distinto en la OC, pero el albarán es de la sala 0219.
-        $this->albaran('AC01/0219/00/5635', '26100219003741', '0219');
+        $this->albaran('AC01/0219/00/5635', '26100219002615', '0219');
 
         $this->assertSame(EstadoVinculacionAlbaran::SinAlbaran, app(VinculadorAlbaranes::class)->auditar($documento)['estado']);
     }
 
     public function test_albaran_ya_vinculado_a_otro_documento_no_marca(): void
     {
-        $documento = $this->ccf('20100218003741', '1005');
-        $albaran = $this->albaran('AC01/0218/00/5633', '26100218003741', '0218');
-        $otro = $this->ccf('26100218003741', '1006');
+        $documento = $this->ccf('20100218002615', '1005');
+        $albaran = $this->albaran('AC01/0218/00/5633', '26100218002615', '0218');
+        $otro = $this->ccf('26100218002615', '1006');
         $otro->forceFill(['ppq_albaran_id' => $albaran->id, 'vinculacion_estado' => EstadoVinculacionAlbaran::Vinculado->value])->save();
 
         $this->assertSame(EstadoVinculacionAlbaran::SinAlbaran, app(VinculadorAlbaranes::class)->auditar($documento)['estado']);
@@ -190,9 +190,9 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
 
     public function test_con_dos_candidatos_marca_y_dice_cuantos_pero_no_ofrece_el_clic(): void
     {
-        $documento = $this->ccf('20100218003741', '1007');
-        $this->albaran('AC01/0218/00/5633', '26100218003741', '0218');
-        $this->albaran('AC01/0218/00/5640', '20100218003742', '0218');
+        $documento = $this->ccf('20100218002615', '1007');
+        $this->albaran('AC01/0218/00/5633', '26100218002615', '0218');
+        $this->albaran('AC01/0218/00/5640', '20100218002616', '0218');
 
         app(VinculadorAlbaranes::class)->aplicar($documento, soloSiCambia: true);
         $documento->refresh();
@@ -211,8 +211,8 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
 
     public function test_seguimiento_lo_muestra_como_revisar_albaran_y_se_enlaza_con_un_clic(): void
     {
-        $documento = $this->ccf('20100218003741', '1008');
-        $albaran = $this->albaran('AC01/0218/00/5633', '26100218003741', '0218');
+        $documento = $this->ccf('20100218002615', '1008');
+        $albaran = $this->albaran('AC01/0218/00/5633', '26100218002615', '0218');
         app(VinculadorAlbaranes::class)->aplicar($documento, soloSiCambia: true);
 
         $gestor = $this->gestor();
@@ -221,7 +221,7 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
             ->assertOk()
             ->assertSeeText('Revisar albarán')
             ->assertDontSeeText('El albarán no ha llegado al correo')
-            ->assertSeeText('casi igual a la del CCF (20100218003741)')
+            ->assertSeeText('casi igual a la del CCF (20100218002615)')
             ->assertSeeText('Enlazar AC01/0218/00/5633')
             ->assertSee('action="'.route('cobros.documentos.vincular', $documento).'"', false);
 
@@ -238,7 +238,7 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
             ->from(route('cobros.index', ['cliente_id' => $this->cliente->id]))
             ->post(route('cobros.documentos.vincular', $documento), [
                 'ppq_albaran_id' => $albaran->id,
-                'nota' => 'Enlazado desde Seguimiento: el albarán trae la orden 26100218003741, casi igual a la del CCF.',
+                'nota' => 'Enlazado desde Seguimiento: el albarán trae la orden 26100218002615, casi igual a la del CCF.',
             ])
             ->assertRedirect(route('cobros.index', ['cliente_id' => $this->cliente->id]))
             ->assertSessionHasNoErrors();
@@ -251,8 +251,8 @@ class CobrosAlbaranOrdenCasiIgualTest extends TestCase
 
     public function test_sin_permiso_de_gestionar_ve_el_aviso_pero_no_el_enlace_ni_puede_vincular(): void
     {
-        $documento = $this->ccf('20100218003741', '1009');
-        $albaran = $this->albaran('AC01/0218/00/5633', '26100218003741', '0218');
+        $documento = $this->ccf('20100218002615', '1009');
+        $albaran = $this->albaran('AC01/0218/00/5633', '26100218002615', '0218');
         app(VinculadorAlbaranes::class)->aplicar($documento, soloSiCambia: true);
 
         $soloVe = User::factory()->create();

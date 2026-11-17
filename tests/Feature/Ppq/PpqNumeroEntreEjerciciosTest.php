@@ -213,7 +213,7 @@ class PpqNumeroEntreEjerciciosTest extends TestCase
     {
         $this->item($this->lote(), '2026-12-20');
         $albaran = PpqAlbaran::create(['numero_albaran' => 'AC01/0017/00/5131', 'tipo_codigo' => 'AC01',
-            'fecha_albaran' => '2027-01-16', 'monto_albaran' => '100.00', 'numero_orden_compra' => '27010017003463', 'sala_codigo' => '0017']);
+            'fecha_albaran' => '2027-01-16', 'monto_albaran' => '100.00', 'numero_orden_compra' => '27010017003927', 'sala_codigo' => '0017']);
         $de2026 = $this->documento('2026-12-20', ['ppq_albaran_id' => $albaran->id]);
         $de2027 = $this->documento('2027-01-15', ['ppq_albaran_id' => $albaran->id]);
 

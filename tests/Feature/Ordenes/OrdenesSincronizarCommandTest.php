@@ -50,14 +50,14 @@ class OrdenesSincronizarCommandTest extends TestCase
         ClienteSucursal::factory()->create(['cliente_id' => Cliente::factory()->contribuyente()->create()->id, 'codigo' => '0232']);
 
         $this->gmail([['m1', 'm2']], [
-            'm1' => $this->adjunto(OrdenCompraParserTest::texto('261102320010394')),
+            'm1' => $this->adjunto(OrdenCompraParserTest::texto('261102320017265')),
             'm2' => $this->adjunto("nada legible\n"),
         ]);
 
         $this->artisan('ordenes:sincronizar')->assertSuccessful();
 
         $leida = OrdenCompraRecibida::where('gmail_message_id', 'm1')->firstOrFail();
-        $this->assertSame('261102320010394', $leida->numero);
+        $this->assertSame('261102320017265', $leida->numero);
         $this->assertSame('0232', $leida->sala_codigo);
         $this->assertSame($sala->id, $leida->cliente_sucursal_id);
         $this->assertSame('2026-11-05', $leida->fecha_creacion->toDateString());
@@ -77,7 +77,7 @@ class OrdenesSincronizarCommandTest extends TestCase
 
     public function test_es_idempotente_y_no_vuelve_a_bajar_lo_guardado(): void
     {
-        $gmail = new class([['m1']], ['m1' => $this->adjunto(OrdenCompraParserTest::texto('2611023200103'))]) extends GmailClientDeImportacion
+        $gmail = new class([['m1']], ['m1' => $this->adjunto(OrdenCompraParserTest::texto('2611023200172'))]) extends GmailClientDeImportacion
         {
             public int $bajados = 0;
 
@@ -110,12 +110,12 @@ class OrdenesSincronizarCommandTest extends TestCase
 
     public function test_un_numero_que_ya_llego_en_otro_correo_queda_sin_leer(): void
     {
-        $texto = OrdenCompraParserTest::texto('261102320010394');
+        $texto = OrdenCompraParserTest::texto('261102320017265');
         $this->gmail([['m1', 'm2']], ['m1' => $this->adjunto($texto), 'm2' => $this->adjunto($texto."\nReenvío")]);
 
         $this->artisan('ordenes:sincronizar')->assertSuccessful();
 
-        $this->assertSame('261102320010394', OrdenCompraRecibida::where('gmail_message_id', 'm1')->value('numero'));
+        $this->assertSame('261102320017265', OrdenCompraRecibida::where('gmail_message_id', 'm1')->value('numero'));
         $repetida = OrdenCompraRecibida::where('gmail_message_id', 'm2')->firstOrFail();
         $this->assertNull($repetida->numero);
         $this->assertSame(OrdenCompraRecibida::SIN_LEER, $repetida->estado);
@@ -221,7 +221,7 @@ class OrdenesSincronizarCommandTest extends TestCase
 
         $orden->refresh();
         $this->assertSame(OrdenCompraRecibida::LEIDA, $orden->estado);
-        $this->assertSame('26110317004521', $orden->numero);
+        $this->assertSame('26110317008136', $orden->numero);
         $this->assertSame('0317', $orden->sala_codigo);
         $this->assertSame($sala->id, $orden->cliente_sucursal_id);
         $this->assertSame('2026-11-04', $orden->fecha_creacion->toDateString());
@@ -244,7 +244,7 @@ class OrdenesSincronizarCommandTest extends TestCase
         $this->gmail([[]], []);
         $pdf = OrdenCompraParserTest::pdf(OrdenCompraParserTest::textoEdi());
         $leida = OrdenCompraRecibida::create([
-            'numero' => '26110317004521', 'sala_codigo' => '0317', 'total' => '1.00',
+            'numero' => '26110317008136', 'sala_codigo' => '0317', 'total' => '1.00',
             'pdf_path' => OrdenCompraRecibida::CARPETA_PDF.'/m0.pdf', 'pdf_hash' => hash('sha256', 'm0'),
             'gmail_message_id' => 'm0', 'estado' => OrdenCompraRecibida::LEIDA,
         ]);
@@ -254,7 +254,7 @@ class OrdenesSincronizarCommandTest extends TestCase
         $reenvio = $this->sinLeer('m3', $pdf, ['pdf_hash' => $leida->pdf_hash]);
 
         $this->artisan('ordenes:sincronizar')
-            ->expectsOutputToContain("Orden #{$repetida->id}: el número 26110317004521 ya es de la orden #{$leida->id}")
+            ->expectsOutputToContain("Orden #{$repetida->id}: el número 26110317008136 ya es de la orden #{$leida->id}")
             ->expectsOutputToContain("Orden #{$sinPdf->id}: no está su PDF")
             ->doesntExpectOutputToContain("Orden #{$reenvio->id}:")
             ->assertSuccessful();
@@ -289,7 +289,7 @@ class OrdenesSincronizarCommandTest extends TestCase
 
         $orden->refresh();
         $this->assertSame(OrdenCompraRecibida::LEIDA, $orden->estado);
-        $this->assertSame('26110317004521', $orden->numero);
+        $this->assertSame('26110317008136', $orden->numero);
         $this->assertSame('0317', $orden->sala_codigo);
         $this->assertSame($buena->id, $orden->cliente_sucursal_id);
     }

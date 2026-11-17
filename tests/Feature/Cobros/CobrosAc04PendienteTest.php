@@ -65,7 +65,7 @@ class CobrosAc04PendienteTest extends TestCase
             'codigo_generacion' => strtoupper(Str::uuid()->toString()),
             'sello_recepcion' => '2026SELLOREAL'.Str::random(8),
             'fecha_procesamiento_mh' => now(),
-            'numero_orden_compra' => '26090017003463',
+            'numero_orden_compra' => '26090017003927',
             'fecha_emision' => '2026-09-10',
             'hora_emision' => '08:00:00',
             'total_pagar' => '100.00',
