@@ -195,6 +195,45 @@ class PpqAvisosAlbaranTest extends TestCase
         ]);
     }
 
+    /**
+     * La bandeja busca las AC04 de todos los CCF listos juntas (16/11/2026): cada CCF recibe
+     * las mismas notas y los mismos rechazos que con la búsqueda de a uno. Por la orden de
+     * compra aunque la nota la traiga con guiones o espacios, por el DTE aunque traiga otra
+     * orden, la que apunta a otro DTE se rechaza, y la de otra orden no es de nadie.
+     */
+    public function test_las_devoluciones_de_varios_ccf_juntas_son_las_mismas_que_de_a_uno(): void
+    {
+        $porOrden = $this->ccf();
+        $oc = $porOrden->albaran->numero_orden_compra;
+        $notaPorOrden = $this->devolucion($porOrden, '10.00', ['numero_orden_compra' => substr($oc, 0, 4).'-'.substr($oc, 4, 4).' '.substr($oc, 8)]);
+        $porDte = $this->ccf();
+        $this->devolucion($porDte, '5.00', ['numero_albaran' => 'AC04/0017/00/7301', 'numero_orden_compra' => '26990017999999', 'dte_id' => $porDte->dte_id]);
+        $deOtro = $this->ccf();
+        $this->devolucion($deOtro, '4.00', ['numero_albaran' => 'AC04/0017/00/7302', 'dte_id' => $porDte->dte_id]);
+        $sinNota = $this->ccf();
+        $this->devolucion($sinNota, '3.00', ['numero_albaran' => 'AC04/0017/00/7303', 'numero_orden_compra' => '26990017888888']);
+        $docs = CobroDocumento::whereKey([$porOrden->id, $porDte->id, $deOtro->id, $sinNota->id])->with(['albaran', 'dte.clienteSucursal'])->get();
+        $devoluciones = app(DevolucionesAlbaran::class);
+
+        $juntas = $devoluciones->candidatasDe($docs);
+
+        $resumen = fn (array $r) => [$r['notas']->pluck('numero_albaran')->all(), array_values($r['rechazadas'])];
+        foreach ($docs as $doc) {
+            $this->assertSame(
+                $resumen($devoluciones->analizar($doc, $doc->albaran)),
+                $resumen($devoluciones->analizar($doc, $doc->albaran, candidatas: $juntas[$doc->id])),
+                "CCF {$doc->numero_control}",
+            );
+            $this->assertSame($devoluciones->avisos($doc), $devoluciones->avisos($doc, candidatas: $juntas[$doc->id]));
+        }
+        // Lo que se espera de cada uno, para que la comparación no pase con dos listas vacías.
+        $this->assertSame([$notaPorOrden->numero_albaran], $juntas[$porOrden->id]->pluck('numero_albaran')->all());
+        $this->assertSame(['AC04/0017/00/7301', 'AC04/0017/00/7302'], $juntas[$porDte->id]->pluck('numero_albaran')->all());
+        $this->assertSame(['AC04/0017/00/7302'], $juntas[$deOtro->id]->pluck('numero_albaran')->all());
+        $this->assertStringContainsString('apunta a otro DTE', implode(' ', $devoluciones->analizar($deOtro, $deOtro->albaran, candidatas: $juntas[$deOtro->id])['rechazadas']));
+        $this->assertSame([], $juntas[$sinNota->id]->all());
+    }
+
     public function test_devolucion_explica_toda_la_diferencia_y_se_vincula_automaticamente(): void
     {
         $doc = $this->ccf();

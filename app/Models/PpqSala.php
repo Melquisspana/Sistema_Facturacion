@@ -29,11 +29,35 @@ class PpqSala extends Model
             return null;
         }
 
-        if (! array_key_exists($codigo, self::$cache)) {
-            self::$cache[$codigo] = static::query()->where('codigo', $codigo)->value('nombre');
-        }
+        self::precargar([$codigo]);
 
         return self::$cache[$codigo];
+    }
+
+    /**
+     * El nombre de todos estos códigos en una consulta, guardado para {@see nombre()}. Los que
+     * ya están guardados no se vuelven a buscar.
+     *
+     * @param  iterable<?string>  $codigos
+     */
+    public static function precargar(iterable $codigos): void
+    {
+        $faltan = [];
+        foreach ($codigos as $codigo) {
+            $codigo = Sala::normalizar($codigo);
+            if ($codigo !== null && ! array_key_exists($codigo, self::$cache)) {
+                $faltan[$codigo] = true;
+            }
+        }
+        if ($faltan === []) {
+            return;
+        }
+
+        // `codigo` es único en la tabla.
+        $nombres = static::query()->whereIn('codigo', array_keys($faltan))->pluck('nombre', 'codigo');
+        foreach (array_keys($faltan) as $codigo) {
+            self::$cache[$codigo] = $nombres[$codigo] ?? null;
+        }
     }
 
     /**

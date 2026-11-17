@@ -11,11 +11,15 @@ use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroSolicitud;
+use App\Models\Dte;
 use App\Models\PpqAlbaran;
+use App\Models\PpqSala;
 use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Support\Sala;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -204,6 +208,110 @@ class CobrosBandejaPaginacionTest extends TestCase
         $conCinco = $this->lecturasDeAjustes(fn () => $this->bandeja($cliente, [], $usuario)->assertOk()->assertSeeText('Mostrando 1–5 de 5'));
 
         $this->assertSame($conUno, $conCinco, 'Cinco documentos cuestan las mismas lecturas de ajustes que uno.');
+    }
+
+    /** Un CCF con DTE local, listo para el PPQ, con el albarán de la sala `$codigo`. */
+    private function deSala(Cliente $cliente, string $codigo): CobroDocumento
+    {
+        $documento = $this->documento($cliente);
+        $dte = $this->dteVerificableCobros($cliente, $documento->numero_control, $documento->fecha_emision->toDateString(), $documento->monto);
+        $albaran = PpqAlbaran::create([
+            'numero_albaran' => 'AC01/'.$codigo.'/00/'.(7000 + $this->n),
+            'tipo_codigo' => 'AC01',
+            'fecha_albaran' => '2026-09-17',
+            'monto_albaran' => '123.74',
+            'numero_orden_compra' => '2609'.$codigo.str_pad((string) $this->n, 4, '0', STR_PAD_LEFT),
+            'sala_codigo' => $codigo,
+        ]);
+        $documento->forceFill([
+            'origen' => OrigenCobroDocumento::Dte->value, 'dte_id' => $dte->id,
+            'ppq_albaran_id' => $albaran->id, 'vinculacion_estado' => EstadoVinculacionAlbaran::Vinculado->value,
+        ])->save();
+
+        return $documento;
+    }
+
+    /** Un CCF sin albarán todavía: la sala sale de la orden de compra de su DTE. */
+    private function porOrden(Cliente $cliente, string $orden): CobroDocumento
+    {
+        $documento = $this->documento($cliente);
+        $dte = $this->dteVerificableCobros($cliente, $documento->numero_control, $documento->fecha_emision->toDateString(), $documento->monto);
+        Dte::whereKey($dte->id)->update(['numero_orden_compra' => $orden]);
+        $documento->forceFill(['origen' => OrigenCobroDocumento::Dte->value, 'dte_id' => $dte->id])->save();
+
+        return $documento;
+    }
+
+    /** Consultas de la bandeja; cada pedido del servidor empieza sin los nombres que recordó el anterior. */
+    private function consultasDeLaBandeja(Cliente $cliente, User $usuario): int
+    {
+        Sala::olvidarCache();
+        $total = 0;
+        DB::listen(function () use (&$total) {
+            $total++;
+        });
+        $this->bandeja($cliente, [], $usuario)->assertOk();
+
+        return $total;
+    }
+
+    /**
+     * El nombre de la sala de cada fila (16/11/2026, prueba de carga): se busca de una vez
+     * para toda la página. Antes era una consulta por sala distinta y otra más al mapa de
+     * PPQ cuando la sucursal no tenía código, lo normal en Calleja. Los nombres no cambian:
+     * el código guardado sin el cero, solo las sucursales del cliente de PPQ, la sucursal
+     * antes que el mapa, la sala de la orden de compra cuando aún no llegó el albarán y el
+     * texto de la sala sin nombre.
+     *
+     * Tampoco crecen los avisos de cada CCF listo (albarán reciente, pedir nota de
+     * devolución): las devoluciones AC04 que miran se buscan juntas.
+     */
+    public function test_los_nombres_de_las_salas_se_buscan_juntos_y_no_por_fila(): void
+    {
+        $cliente = $this->cliente();
+        config(['ppq.cliente_default_id' => $cliente->id]);
+        $usuario = $this->usuario();
+        $cliente->sucursales()->create(['nombre' => 'Sala Fiscal de prueba Uno', 'codigo' => '410']);
+        PpqSala::create(['codigo' => '0420', 'nombre' => 'Sala del mapa de prueba Dos', 'fuente' => 'manual']);
+        $this->deSala($cliente, '0410');
+        $this->deSala($cliente, '0420');
+        // Sin albarán todavía: la sala sale de la orden de compra del CCF.
+        PpqSala::create(['codigo' => '0520', 'nombre' => 'Sala del mapa por la orden', 'fuente' => 'manual']);
+        $this->porOrden($cliente, '26100520000001');
+        $this->bandeja($cliente, [], $usuario)->assertOk(); // lo que solo se lee la primera vez no cuenta
+        $pocas = $this->consultasDeLaBandeja($cliente, $usuario);
+
+        foreach (range(3, 8) as $i) {
+            $codigo = '04'.$i.'0';
+            $i % 2 === 1
+                ? $cliente->sucursales()->create(['nombre' => "Sala Fiscal de prueba {$i}", 'codigo' => $codigo])
+                : PpqSala::create(['codigo' => $codigo, 'nombre' => "Sala del mapa de prueba {$i}", 'fuente' => 'manual']);
+            $this->deSala($cliente, $codigo);
+        }
+        // La misma sala con nombre fiscal y en el mapa: manda la sucursal.
+        $cliente->sucursales()->create(['nombre' => 'Sala Fiscal que manda', 'codigo' => '0490']);
+        PpqSala::create(['codigo' => '0490', 'nombre' => 'Nombre del mapa que no se usa', 'fuente' => 'manual']);
+        $this->deSala($cliente, '0490');
+        // El código de otro cliente no vale para Calleja.
+        Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de otro cliente', 'codigo' => '0510']);
+        $conDevolucion = $this->deSala($cliente, '0510');
+        // Una devolución AC04 de esa entrega, ya enlazada a su CCF.
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0510/00/9001', 'tipo_codigo' => 'AC04', 'fecha_albaran' => '2026-09-18', 'dte_id' => $conDevolucion->dte_id,
+            'monto_albaran' => '10.00', 'numero_orden_compra' => $conDevolucion->albaran->numero_orden_compra, 'sala_codigo' => '0510']);
+        PpqSala::create(['codigo' => '0530', 'nombre' => 'Sala del mapa por otra orden', 'fuente' => 'manual']);
+        $this->porOrden($cliente, '26100530000002');
+
+        $muchas = $this->consultasDeLaBandeja($cliente, $usuario);
+
+        $this->assertSame($pocas, $muchas, "Bandeja: {$pocas} consultas con 3 salas y {$muchas} con 12");
+        Sala::olvidarCache();
+        $this->bandeja($cliente, [], $usuario)->assertOk()
+            ->assertSeeText('Sala Fiscal de prueba Uno')->assertSeeText('Sala del mapa de prueba Dos')
+            ->assertSeeText('Sala Fiscal de prueba 3')->assertSeeText('Sala del mapa de prueba 4')
+            ->assertSeeText('Sala Fiscal de prueba 7')->assertSeeText('Sala del mapa de prueba 8')
+            ->assertSeeText('Sala Fiscal que manda')->assertDontSeeText('Nombre del mapa que no se usa')
+            ->assertSeeText('Sala 0510 sin nombre registrado')->assertDontSeeText('Sala de otro cliente')
+            ->assertSeeText('Sala del mapa por la orden')->assertSeeText('Sala del mapa por otra orden');
     }
 
     public function test_una_pagina_fuera_de_rango_ofrece_volver_a_la_primera(): void

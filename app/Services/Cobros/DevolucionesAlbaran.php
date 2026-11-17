@@ -165,18 +165,24 @@ class DevolucionesAlbaran
         }, 3);
     }
 
-    /** @return array{notas: Collection, rechazadas: array<int, string>} */
-    public function analizar(CobroDocumento $doc, PpqAlbaran $entrega, bool $bloquear = false): array
+    /**
+     * @param  Collection<int, PpqAlbaran>|null  $candidatas  las de {@see candidatasDe()}, ya buscadas
+     *                                                        para varios CCF; sin ellas se buscan acá
+     * @return array{notas: Collection, rechazadas: array<int, string>}
+     */
+    public function analizar(CobroDocumento $doc, PpqAlbaran $entrega, bool $bloquear = false, ?Collection $candidatas = null): array
     {
         $oc = OrdenCompra::normalizar($entrega->numero_orden_compra);
-        $consulta = PpqAlbaran::where('tipo_codigo', 'AC04')
-            ->where(function ($q) use ($oc, $doc) {
-                $q->whereRaw("REPLACE(REPLACE(numero_orden_compra, '-', ''), ' ', '') = ?", [$oc]);
-                if ($doc->dte_id !== null) {
-                    $q->orWhere('dte_id', $doc->dte_id);
-                }
-            })->with('clienteSucursal');
-        $candidatas = ($bloquear ? $consulta->lockForUpdate() : $consulta)->orderBy('id')->get();
+        if ($candidatas === null || $bloquear) {
+            $consulta = PpqAlbaran::where('tipo_codigo', 'AC04')
+                ->where(function ($q) use ($oc, $doc) {
+                    $q->whereRaw("REPLACE(REPLACE(numero_orden_compra, '-', ''), ' ', '') = ?", [$oc]);
+                    if ($doc->dte_id !== null) {
+                        $q->orWhere('dte_id', $doc->dte_id);
+                    }
+                })->with('clienteSucursal');
+            $candidatas = ($bloquear ? $consulta->lockForUpdate() : $consulta)->orderBy('id')->get();
+        }
         $sala = Sala::normalizar($entrega->sala_codigo ?: Albaran::salaDesdeNumero($entrega->numero_albaran));
         $salaCcf = Sala::normalizar($doc->dte?->clienteSucursal?->codigo);
         $notas = collect();
@@ -203,6 +209,40 @@ class DevolucionesAlbaran
         }
 
         return ['notas' => $notas, 'rechazadas' => $rechazadas];
+    }
+
+    /**
+     * Las AC04 que {@see analizar()} mira para cada CCF con albarán, en una consulta para todos
+     * (la bandeja de Cobros pide los avisos de cada CCF listo; antes era una consulta por CCF).
+     * El mismo criterio que la consulta de a uno: la orden de compra de su entrega sin guiones
+     * ni espacios, o su DTE; en orden de id.
+     *
+     * @param  Collection<int, CobroDocumento>  $docs  con `albaran`
+     * @return array<int, Collection<int, PpqAlbaran>> por id del documento con albarán
+     */
+    public function candidatasDe(Collection $docs): array
+    {
+        $docs = $docs->filter(fn (CobroDocumento $doc) => $doc->albaran !== null);
+        if ($docs->isEmpty()) {
+            return [];
+        }
+        $ocs = $docs->map(fn (CobroDocumento $doc) => OrdenCompra::normalizar($doc->albaran->numero_orden_compra))->unique()->values()->all();
+        $dtes = $docs->pluck('dte_id')->filter()->unique()->values()->all();
+        $todas = PpqAlbaran::where('tipo_codigo', 'AC04')
+            ->where(function ($q) use ($ocs, $dtes) {
+                $q->whereRaw("REPLACE(REPLACE(numero_orden_compra, '-', ''), ' ', '') IN (".implode(', ', array_fill(0, count($ocs), '?')).')', $ocs);
+                if ($dtes !== []) {
+                    $q->orWhereIn('dte_id', $dtes);
+                }
+            })->with('clienteSucursal')->orderBy('id')->get();
+
+        return $docs->mapWithKeys(function (CobroDocumento $doc) use ($todas) {
+            $oc = OrdenCompra::normalizar($doc->albaran->numero_orden_compra);
+
+            return [$doc->id => $todas->filter(fn (PpqAlbaran $nota) => ($nota->numero_orden_compra !== null
+                    && str_replace(['-', ' '], '', $nota->numero_orden_compra) === $oc)
+                || ($doc->dte_id !== null && (int) $nota->dte_id === (int) $doc->dte_id))->values()];
+        })->all();
     }
 
     /** Se llama dentro de la transacción y bajo el bloqueo de la entrega. */
@@ -251,14 +291,18 @@ class DevolucionesAlbaran
         return Dinero::redondear(Dinero::restar($entrega->monto_albaran, $esperado));
     }
 
-    /** Solo avisos; no interviene en la elegibilidad del PPQ. */
-    public function avisos(CobroDocumento $doc, ?PpqAlbaran $entrega = null): array
+    /**
+     * Solo avisos; no interviene en la elegibilidad del PPQ.
+     *
+     * @param  Collection<int, PpqAlbaran>|null  $candidatas  ver {@see analizar()}
+     */
+    public function avisos(CobroDocumento $doc, ?PpqAlbaran $entrega = null, ?Collection $candidatas = null): array
     {
         $entrega ??= $doc->albaran;
         if ($entrega === null || $doc->tipo_dte !== '03' || $doc->estaInvalidado()) {
             return ['reciente' => false, 'pedir_nota' => false];
         }
-        $recibidas = $this->analizar($doc, $entrega)['notas'];
+        $recibidas = $this->analizar($doc, $entrega, candidatas: $candidatas)['notas'];
         $notas = $recibidas->where('dte_id', $doc->dte_id);
         $fecha = $entrega->fecha_albaran ?? $entrega->created_at;
         $ultima = $notas->sortByDesc('created_at')->first()?->created_at;

@@ -37,6 +37,7 @@ use App\Services\Ppq\QuedanCallejaExporter;
 use App\Services\Ppq\ReversionConciliacion;
 use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
+use App\Support\OrdenCompra;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -199,6 +200,9 @@ class PpqLoteController extends Controller
         ]);
 
         $filas = $ficha->filas($lote);
+        $items = $ficha->pagina($ficha->idsRecientesPrimero($filas));
+        // Los nombres de sala que la página busca por código, juntos y no uno por sala.
+        PpqItem::precargarSalas($items, OrdenCompra::posicionSala());
 
         return view('ppq.lotes.show', [
             'lote' => $lote,
@@ -207,7 +211,7 @@ class PpqLoteController extends Controller
             'ncNuevas' => app(NcPosterioresLotePpq::class)->notas($lote),
             'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
             'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
-            'items' => $ficha->pagina($ficha->idsRecientesPrimero($filas)),
+            'items' => $items,
             // Lo que el formato quedan deja fuera porque ya no vale ante Hacienda (#12).
             'fueraDelQuedan' => app(QuedanCallejaExporter::class)->fueraDelArchivo($lote),
         ]);

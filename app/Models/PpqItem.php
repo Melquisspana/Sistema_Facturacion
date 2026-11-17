@@ -106,6 +106,24 @@ class PpqItem extends Model
     }
 
     /**
+     * Para una lista de items: busca juntos los nombres que {@see salaNombre()} va a pedir por
+     * código (los items sin snapshot ni sucursal con nombre), en vez de uno por sala.
+     *
+     * @param  iterable<PpqItem>  $items  con `dte.clienteSucursal`
+     * @param  array{0: int, 1: int}  $posicionSala
+     */
+    public static function precargarSalas(iterable $items, array $posicionSala): void
+    {
+        $codigos = [];
+        foreach ($items as $item) {
+            if (blank($item->sala_nombre) && blank($item->dte?->clienteSucursal?->nombre)) {
+                $codigos[] = $item->salaCodigo($posicionSala);
+            }
+        }
+        Sala::precargar($codigos);
+    }
+
+    /**
      * Texto siempre presente para pantalla ("…sin nombre registrado" si no hay nombre).
      *
      * @param  array{0: int, 1: int}|null  $posicionSala

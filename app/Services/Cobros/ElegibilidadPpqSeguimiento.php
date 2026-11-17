@@ -127,6 +127,9 @@ class ElegibilidadPpqSeguimiento
             ->where(fn ($q) => $q->where('pago_estado', EstadoPagoCobro::Pagado->value)
                 ->orWhereIn('presentacion_estado', [EstadoPresentacionCobro::Presentada->value, EstadoPresentacionCobro::Recibida->value]))
             ->orderBy('id')->get()->groupBy('ppq_albaran_id');
+        // Las devoluciones AC04 de todos, en una consulta: antes era una por documento.
+        $devoluciones = app(DevolucionesAlbaran::class);
+        $candidatas = $devoluciones->candidatasDe($docs);
         $avisos = [];
         foreach ($docs as $doc) {
             $item = ($items->get($doc->ppq_albaran_id) ?? collect())->first(fn ($item) => $item->dte_id !== $doc->dte_id
@@ -141,7 +144,7 @@ class ElegibilidadPpqSeguimiento
                 $estado = $otro->pago_estado === EstadoPagoCobro::Pagado ? 'pagado' : 'presentado';
                 $duplicado = "El albarán ya va con {$otro->correlativoCorto()}, {$estado}";
             }
-            $avisos[$doc->id] = app(DevolucionesAlbaran::class)->avisos($doc) + [
+            $avisos[$doc->id] = $devoluciones->avisos($doc, candidatas: $candidatas[$doc->id] ?? null) + [
                 'duplicado' => $duplicado,
             ];
         }

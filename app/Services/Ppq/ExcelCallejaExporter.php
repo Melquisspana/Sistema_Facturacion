@@ -2,6 +2,7 @@
 
 namespace App\Services\Ppq;
 
+use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Support\Albaran;
 use App\Support\OrdenCompra;
@@ -55,8 +56,10 @@ class ExcelCallejaExporter
             $hoja->getStyle($col.':'.$col)->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
         }
 
-        // Dónde va la sala dentro de la OC se lee una vez, no en cada fila.
+        // Dónde va la sala dentro de la OC se lee una vez, no en cada fila; y los nombres que
+        // se buscan por código, juntos.
         $posicionSala = OrdenCompra::posicionSala();
+        PpqItem::precargarSalas($lote->items, $posicionSala);
 
         // Filas (orden de Calleja: CCF primero, luego NC; cada grupo por correlativo ascendente).
         $fila = 2;
