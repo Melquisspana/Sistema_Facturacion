@@ -8,6 +8,29 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.16.4] - 2026-11-16
+
+Rutas: el pedido no se pierde sin señal y las cantidades exageradas se confirman (#396). Se puede corregir quién entregó, y hay aviso del viaje abierto (#397). Inicio con «Por cobrar» y «Por entregar» (#398). El pedido web lleva nombre en el viaje y muestra las notas del comprador (#399). Compras: una caída de Gmail ya no avisa como contraseña mala (#402). Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- Rutas › Sacar pedido:
+  - lo escrito se guarda en el celular mientras no hay señal y vuelve al abrir el formulario;
+  - una cantidad de más del triple de lo que suele llevar la sala, o de más de 200 sin historia, pide confirmar antes de guardar (#396).
+- Rutas: la oficina corrige quién entregó un CCF sin deshacer la entrega, con motivo y bitácora, también en días cerrados (#397).
+- Rutas: si el viaje del vendedor sigue abierto desde otro día, Mi salida y Sacar pedido preguntan si sigue en ese viaje o empieza uno nuevo (#397).
+- Inicio: «Por cobrar» y «Por entregar», con la misma cuenta que sus pantallas, para quien puede verlas (#398).
+- Rutas › Por entregar: el pedido web muestra las notas del comprador (#399).
+
+### Cambiado
+
+- Rutas: el pedido web se nombra «Pedido web · Nombre I.» en el detalle del viaje, el tablero y el día del vendedor, en vez de «Sala sin identificar». Cuenta como entrega y no suma al efectivo (#399).
+- Repo: números de orden de compra inventados en las pruebas, y fuera las skills que no se usan (#400).
+
+### Corregido
+
+- Compras: cuando Gmail contesta «[UNAVAILABLE]», una caída suya de minutos, ya no se toma por contraseña mala ni manda el aviso de tarea caída. Una contraseña mala sigue avisando (#402).
+
 ## [2026.11.16.3] - 2026-11-16
 
 Unión con la tienda web: el pedido pagado entra a la fábrica, lleva su factura y llega a Rutas (#386, #388, #389, #390, #393). La tienda queda apagada hasta que se habilite. El historial de pedidos esconde los anulados (#394). El correo diario es corto y trae el detalle en PDF (#395). Cinco migraciones nuevas (pedidos web y su seguimiento) y ningún cambio de permisos.
