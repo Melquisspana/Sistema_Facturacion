@@ -74,6 +74,8 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', $sinCopia])
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         // «Terminar el día» del viaje: ¿mañana sigue en la misma zona? Si no, deja de sumar pedidos.
         Route::post('{salida}/terminar-dia', [MiSalidaController::class, 'terminarDia'])->name('terminar-dia');
+        // «Tu viaje del … sigue abierto» (16/11/2026): «Sí, sigo» o «No, empiezo uno nuevo».
+        Route::post('{salida}/sigue-viaje', [MiSalidaController::class, 'sigueViaje'])->name('sigue-viaje');
     });
 
 /*
@@ -196,6 +198,8 @@ Route::middleware(['auth', 'permission:rutas.ver'])
                 Route::post('/', [SalidaEntregaController::class, 'store'])->name('store');
                 Route::patch('{entrega}', [SalidaEntregaController::class, 'update'])->name('update');
                 Route::patch('{entrega}/deshacer', [SalidaEntregaController::class, 'deshacer'])->name('deshacer');
+                // «Corregir quién» (16/11/2026): solo la persona, con motivo; también en días cerrados.
+                Route::patch('{entrega}/quien', [SalidaEntregaController::class, 'corregirQuien'])->name('quien');
                 Route::delete('{entrega}', [SalidaEntregaController::class, 'destroy'])->name('destroy');
             });
 

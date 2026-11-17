@@ -55,6 +55,7 @@ class MiSalidaController extends Controller
             'viaje' => $viaje,
             'dia' => $viaje ? $this->viajes->dia($viaje) : null,
             'sumando' => $viaje !== null && $this->viajes->sigueSumando($viaje),
+            'preguntarSiSigue' => $viaje !== null && $this->viajes->preguntarSiSigue($viaje, $request->session()->get(Viajes::SESION_SIGUE.$viaje->id)),
             'salasConPedido' => $viaje ? $viaje->pedidos()->vigentes()->distinct()->count('cliente_sucursal_id') : 0,
             'hoy' => $persona ? $this->dia->resumen($persona, $request->user(), HoraNegocio::fechaHoy()) : null,
             'porEntregar' => $persona ? $this->cuantosPorEntregar($viaje) : 0,
@@ -167,6 +168,30 @@ class MiSalidaController extends Controller
         return redirect()->route('rutas.mi-salida.index')->with('status', $sigue
             ? 'Listo. Mañana tus pedidos se siguen sumando a este viaje.'
             : 'Listo. Este viaje ya no suma pedidos; queda abierto para entregar.');
+    }
+
+    /**
+     * La respuesta a «Tu viaje del … sigue abierto» ({@see Viajes::preguntarSiSigue()}). «Sí,
+     * sigo» no cambia nada: hoy no se vuelve a preguntar. «No, empiezo uno nuevo» es «Terminar
+     * el día» con «No, vuelvo»: el viaje deja de sumar y el próximo pedido abre otro. Vuelve a
+     * la pantalla donde contestó (Inicio o Sacar pedido).
+     */
+    public function sigueViaje(Request $request, SalidaRuta $salida): RedirectResponse
+    {
+        Gate::authorize('terminarDia', $salida);
+        $sigue = (bool) $request->validate(['sigue' => ['required', 'boolean']], [
+            'sigue.required' => 'Contestá si seguís en ese viaje.',
+            'sigue.boolean' => 'Contestá si seguís en ese viaje.',
+        ])['sigue'];
+
+        if ($sigue) {
+            $request->session()->put(Viajes::SESION_SIGUE.$salida->id, HoraNegocio::fechaHoy());
+
+            return back(fallback: route('rutas.mi-salida.index'))->with('status', 'Listo. Tus pedidos de hoy se siguen sumando a ese viaje.');
+        }
+        $this->viajes->terminarDia($salida, false, $request->user());
+
+        return back(fallback: route('rutas.mi-salida.index'))->with('status', 'Listo. Ese viaje ya no suma pedidos: tu próximo pedido abre uno nuevo.');
     }
 
     public function deshacer(SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse

@@ -34,6 +34,8 @@
             <a href="{{ route('rutas.por-entregar.index') }}" class="{{ $secundario }} mt-3 w-full">Ver «Por entregar»</a>
         </div>
     @else
+        @include('rutas.mi-salida._aviso-viaje')
+
         <div data-url-salas="{{ route('rutas.sacar-pedido.salas') }}" data-url-tienda="{{ route('rutas.sacar-pedido.tienda-nueva.create') }}"
              x-data="{
                 q: @js($texto),

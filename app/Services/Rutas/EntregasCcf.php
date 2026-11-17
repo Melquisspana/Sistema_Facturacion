@@ -415,6 +415,64 @@ class EntregasCcf
         }
     }
 
+    /** Largo máximo del motivo de «Corregir quién». */
+    public const MOTIVO_QUIEN_MAX = 200;
+
+    /**
+     * «Corregir quién» (16/11/2026): cambia solo a quién se atribuye lo anotado (quién lo
+     * entregó o, en «No entregado», quién fue). Fecha, resultado, cobro y montos quedan igual,
+     * así que vale también en un día cerrado o en una salida liquidada: lo que esas guardaron
+     * son totales de la salida y del día, no de cada persona. El PDF del día de cada uno se
+     * calcula al vuelo ({@see DiaVendedor}): pasa solo de uno al otro. La persona nueva sigue la
+     * regla de siempre ({@see exigirQuienEntrega()}). Con la fila bloqueada y auditado, con
+     * motivo.
+     *
+     * @throws ValidationException
+     */
+    public function corregirQuien(SalidaRutaEntrega $entrega, int $personaId, string $motivo, User $usuario): SalidaRutaEntrega
+    {
+        $motivo = trim($motivo);
+        if ($motivo === '' || mb_strlen($motivo) > self::MOTIVO_QUIEN_MAX) {
+            throw ValidationException::withMessages(['motivo' => 'Escribí un motivo corto, de hasta '.self::MOTIVO_QUIEN_MAX.' caracteres.']);
+        }
+
+        return DB::transaction(function () use ($entrega, $personaId, $motivo, $usuario) {
+            $original = $entrega;
+            $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
+            $entrega = SalidaRutaEntrega::with('entregadoPor:id,nombre')->lockForUpdate()->findOrFail($entrega->id);
+            if ($entrega->estaPendiente() || $entrega->esFacturadoDespues()) {
+                throw ValidationException::withMessages(['entrega' => 'Ese CCF no tiene una entrega anotada: no hay a quién corregir.']);
+            }
+            if ($salida->estado === EstadoSalidaRuta::Cancelada) {
+                throw ValidationException::withMessages(['entrega' => 'La salida está cancelada: no se corrige nada en ella.']);
+            }
+            if ((int) $entrega->entregado_por_id === $personaId) {
+                throw ValidationException::withMessages(['entregado_por_id' => 'Esa persona ya figura: elegí a otra.']);
+            }
+            $this->exigirQuienEntrega($salida, $personaId, $usuario, 'Elegí a alguien que va en la salida.');
+
+            $antes = $entrega->entregadoPor;
+            // Una sola entrada en la bitácora, la de abajo, con el motivo y los nombres.
+            $entrega->disableLogging()->update(['entregado_por_id' => $personaId]);
+            $entrega->enableLogging()->load('entregadoPor:id,nombre');
+
+            activity('salida_ruta_entrega')->performedOn($entrega)->causedBy($usuario)
+                ->withProperties([
+                    'dte_id' => $entrega->dte_id,
+                    'resultado' => $entrega->resultado->value,
+                    'fecha_resultado' => $entrega->fecha_resultado?->toDateTimeString(),
+                    'antes' => ['id' => $antes?->id, 'nombre' => $antes?->nombre],
+                    'despues' => ['id' => $entrega->entregadoPor->id, 'nombre' => $entrega->entregadoPor->nombre],
+                    'motivo' => $motivo,
+                ])
+                ->log('corrigió quién lo entregó');
+
+            $original->setRawAttributes($entrega->getAttributes(), true);
+
+            return $entrega;
+        });
+    }
+
     /** @throws ValidationException */
     private function formaCobro(array $datos, ?FormaCobroEntrega $habitual): ?FormaCobroEntrega
     {
