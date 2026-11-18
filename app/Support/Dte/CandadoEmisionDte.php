@@ -49,6 +49,13 @@ class CandadoEmisionDte
      * De fábrica (10 s, 8 s, 2 reenvíos) son 89 s. Se toma el DOBLE, para las esperas de
      * la base y el trabajo propio, con un piso de 180 s.
      *
+     * Sin conexión, un documento que llega YA firmado hace una llamada más a Hacienda: la
+     * consulta previa y después el ciclo entero, porque lo que nunca salió de la máquina no
+     * gasta intentos (`DteTransmisionResiliente`, «SIN CONEXIÓN»). Sumada a todo lo de
+     * arriba son 97 s de fábrica, y el doble que ya se toma la cubre con cualquier
+     * configuración. La espera entre intentos sin salida no agrega nada: completa hasta
+     * el tiempo de UNA llamada, y cada intento ya está contado como dos.
+     *
      * Si el proceso muere sin soltarlo, el candado se libera solo al cumplirse este plazo.
      */
     public static function segundos(): int

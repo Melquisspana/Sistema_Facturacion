@@ -2,9 +2,11 @@
 
 namespace App\Services\Dte;
 
+use App\Exceptions\Dte\DteHaciendaSinConexionException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use Illuminate\Support\Sleep;
 
 /**
  * POLÍTICA DE REINTENTOS previa a contingencia.
@@ -40,6 +42,9 @@ use App\Models\Dte;
  *        - El MH no lo tiene → reenviar (paso 1), si quedan reenvíos.
  *        - No se pudo DETERMINAR → NO se reenvía. Se corta con
  *          'estado_recepcion_incierto'.
+ *        - Hacienda no contestó NADA y está probado que ningún envío de este documento
+ *          llegó a salir de la máquina → reenviar (paso 1), si quedan reenvíos. Ver
+ *          «SIN CONEXIÓN», más abajo.
  *   4. Sin reenvíos → 'reintentos_agotados'.
  *
  * LA REGLA QUE GOBIERNA TODO: **solo se reenvía cuando se ha DETERMINADO que el
@@ -62,6 +67,24 @@ use App\Models\Dte;
  * tiene, a esta llamada le quedan 2 envíos, no 3. Contarlo de otro modo dejaría 4
  * transmisiones del mismo documento repartidas entre dos pulsaciones del botón, que es
  * exactamente lo que el tope existe para impedir.
+ *
+ * SIN CONEXIÓN (17/11/2026). Si se cae internet la consulta tampoco contesta, y con la
+ * regla de arriba sola el documento quedaba firmado y trabado. Hay un caso en que no
+ * hace falta que Hacienda conteste para saber que no lo tiene: cuando ningún envío de
+ * ese documento llegó a salir de esta máquina. Eso lo prueba la bitácora de envíos
+ * ({@see BitacoraEnvioDte}) con lo que mide cURL en cada intento, y solo vale con la
+ * contingencia encendida ({@see puertaSinSalida()}). No es una excepción a la regla: se
+ * sigue reenviando únicamente cuando está DETERMINADO que no fue recibido.
+ *   - La consulta se hace igual después de cada envío. Si contesta algo, manda lo que
+ *     conteste; la prueba nueva solo vale cuando no hubo NINGUNA respuesta.
+ *   - Un solo envío en duda, de esta corrida o de una anterior, cierra este camino para
+ *     ese documento. No saber no autoriza.
+ *   - Sin token y sin poder pedirlo (el login tampoco conecta) el envío ni se intenta:
+ *     cuenta como un intento que no salió.
+ *   - Lo que nunca salió no gasta el tope: un documento que llega firmado por este
+ *     camino dispone del ciclo completo.
+ *   - Cada intento sin salida dura al menos el umbral del manual antes del siguiente:
+ *     tres rechazos instantáneos no son un corte, son un parpadeo.
  *
  * QUÉ **NO** HACE, a propósito:
  *   - NO activa contingencia. NO crea ni transmite evento de contingencia. Cuando se
@@ -108,6 +131,7 @@ class DteTransmisionResiliente
     public function __construct(
         private readonly DteTransmisionService $transmision,
         private readonly DteConsultaService $consulta,
+        private readonly BitacoraEnvioDte $bitacora,
     ) {}
 
     /**
@@ -122,12 +146,17 @@ class DteTransmisionResiliente
      *     resultado: string, http_status: int|null, mensaje: string, sello: string|null,
      *     envios: int, consultas: int, contingencia_requerida: bool,
      *     consulta_no_disponible: bool, consulta_resultado: string|null,
-     *     traza: array<int, string>
+     *     sin_salida: bool, traza: array<int, string>
      * }
      *
      * `resultado` añade a los de {@see DteTransmisionService::transmitir()}:
      *   'reintentos_agotados'        → se agotaron los reenvíos sin respuesta definitiva.
-     *                                  `contingencia_requerida` = true.
+     *                                  `contingencia_requerida` = true. Hacienda no tiene
+     *                                  el documento, y se sabe por una de dos pruebas: la
+     *                                  consulta contestó «no encontrado»
+     *                                  (`consulta_resultado`), o ningún envío llegó a
+     *                                  salir de la máquina (`sin_salida` = true, con
+     *                                  `consulta_resultado` null).
      *   'estado_recepcion_incierto'  → no se pudo determinar si Hacienda lo tiene. NO se
      *                                  envió ni se reenvió, para no arriesgar un
      *                                  duplicado. El documento queda intacto y NO se
@@ -168,11 +197,19 @@ class DteTransmisionResiliente
         // completo (inicial + reenvíos).
         $yaHuboEnvioPrevio = false;
 
+        // Con qué se probó, la última vez, que Hacienda no tiene el documento: con lo
+        // que contestó la consulta, o con que ningún envío salió de la máquina.
+        $ultimaPrueba = 'consulta';
+
         // --- CASO 2 del manual: el desenlace del intento anterior es incierto. ---
         // En MOCK no se pregunta: no hay nada real que consultar y hacerlo sacaría una
         // petición a la red en el único modo que promete no tocarla.
         if ($estadoIncierto && ! (bool) config('dte.transmision.mock', false)) {
             $consultas++;
+
+            // SIN CONEXIÓN: la consulta no tuvo ninguna respuesta y está probado que
+            // ningún envío de este documento salió nunca.
+            $sinSalida = false;
 
             try {
                 $previa = $this->consulta->consultar($dte);
@@ -180,15 +217,22 @@ class DteTransmisionResiliente
                 // Candado cerrado: se propaga tal cual, no se disfraza de resultado.
                 throw $e;
             } catch (DteTransmisionException $e) {
-                // No se pudo ni formular la consulta (falta NIT, falta código de
-                // generación). Tampoco se determinó nada → misma decisión: no se envía.
-                $traza[] = 'consulta previa no se pudo hacer: NO se envía';
+                // Sin token y sin conexión para pedirlo: la consulta ni se hizo.
+                $sinSalida = $e instanceof DteHaciendaSinConexionException && $this->puertaSinSalida($dte);
 
-                return $this->corteIncierto(
-                    'No se pudo consultar en Hacienda si este DTE ya fue recibido, y no es seguro '
-                        .'reenviarlo hasta saberlo: podría duplicarse.',
-                    $e->getMessage(), null, null, 0, $consultas, $traza,
-                );
+                if (! $sinSalida) {
+                    // No se pudo ni formular la consulta (falta NIT, falta código de
+                    // generación). Tampoco se determinó nada → misma decisión: no se envía.
+                    $traza[] = 'consulta previa no se pudo hacer: NO se envía';
+
+                    return $this->corteIncierto(
+                        'No se pudo consultar en Hacienda si este DTE ya fue recibido, y no es seguro '
+                            .'reenviarlo hasta saberlo: podría duplicarse.',
+                        $e->getMessage(), null, null, 0, $consultas, $traza,
+                    );
+                }
+
+                $previa = ['resultado' => self::SIN_RESPUESTA, 'recibido' => false];
             }
 
             $traza[] = 'consulta previa (estado incierto) → '.$previa['resultado']
@@ -202,6 +246,9 @@ class DteTransmisionResiliente
                 return $this->conMetadatos($aplicado, 0, $consultas, $traza, false);
             }
 
+            $sinSalida = $sinSalida
+                || ($previa['resultado'] === self::SIN_RESPUESTA && $this->puertaSinSalida($dte));
+
             // La consulta no concluyó. NO se envía.
             //
             // El manual manda reenviar cuando se DETERMINA que no fue recibido, y una
@@ -210,7 +257,7 @@ class DteTransmisionResiliente
             // documento duplicado —ya emitido, con numeración oficial gastada, que solo
             // se corrige invalidando ante Hacienda—. El otro lado es un envío que se
             // hace más tarde. No son comparables.
-            if ($previa['resultado'] !== self::NO_RECIBIDO) {
+            if (! $sinSalida && $previa['resultado'] !== self::NO_RECIBIDO) {
                 $traza[] = 'estado previo indeterminado: NO se envía';
 
                 return $this->corteIncierto(
@@ -222,9 +269,15 @@ class DteTransmisionResiliente
 
             // DETERMINADO que no entró: se puede reenviar sin duplicar. Pero el envío
             // del intento anterior ya gastó el primero de los tres, así que a esta
-            // llamada le quedan los reenvíos, no el ciclo completo.
-            $yaHuboEnvioPrevio = true;
-            $traza[] = 'confirmado NO recibido: quedan '.$maxReenvios.' reenvíos';
+            // llamada le quedan los reenvíos, no el ciclo completo. Lo que nunca salió
+            // no gastó nada: por ese camino queda el ciclo entero.
+            if ($sinSalida) {
+                $ultimaPrueba = 'sin_salida';
+                $traza[] = 'sin conexión, y ningún envío de este documento llegó a salir: se envía';
+            } else {
+                $yaHuboEnvioPrevio = true;
+                $traza[] = 'confirmado NO recibido: quedan '.$maxReenvios.' reenvíos';
+            }
         }
 
         // Envío inicial + hasta $maxReenvios reenvíos —o SOLO los reenvíos, si el
@@ -237,7 +290,19 @@ class DteTransmisionResiliente
             $numeroReenvio = $yaHuboEnvioPrevio ? $intento : $intento - 1;
             $etiqueta = $numeroReenvio === 0 ? 'envío inicial' : 'reenvío '.$numeroReenvio.'/'.$maxReenvios;
 
-            $r = $this->transmision->transmitir($dte);
+            $inicioIntento = microtime(true);
+
+            try {
+                $r = $this->transmision->transmitir($dte);
+            } catch (DteHaciendaSinConexionException $e) {
+                // Sin token y sin conexión para pedirlo: el envío no se hizo. Fuera del
+                // camino sin conexión es el error de siempre.
+                if (! $this->puertaSinSalida($dte)) {
+                    throw $e;
+                }
+
+                $r = ['resultado' => self::SIN_RESPUESTA, 'http_status' => null, 'mensaje' => $e->getMessage(), 'sello' => null];
+            }
             $traza[] = $etiqueta.' → '.$r['resultado'];
 
             // Respuesta definitiva: ya la aplicó transmitir(). Terminado.
@@ -253,22 +318,30 @@ class DteTransmisionResiliente
 
             // --- Silencio. Antes de decidir nada, preguntar si entró. ---
             $consultas++;
+            $sinSalida = false;
 
             try {
                 $c = $this->consulta->consultar($dte);
             } catch (DteTransmisionDeshabilitadaException $e) {
                 throw $e;
             } catch (DteTransmisionException $e) {
-                // Mismo criterio que en la consulta previa: sin consulta no hay
-                // determinación, y sin determinación no se reenvía. Acá pesa más
-                // todavía, porque el envío que acaba de quedarse mudo pudo entrar.
-                $traza[] = 'consulta no se pudo hacer: se corta sin reenviar';
+                // Sin token y sin conexión para pedirlo: la consulta ni se hizo.
+                $sinSalida = $e instanceof DteHaciendaSinConexionException && $this->puertaSinSalida($dte);
 
-                return $this->corteIncierto(
-                    'No se pudo consultar en Hacienda si el DTE fue recibido, y no es seguro '
-                        .'reenviarlo hasta saberlo: podría duplicarse.',
-                    $e->getMessage(), null, null, $envios, $consultas, $traza,
-                );
+                if (! $sinSalida) {
+                    // Mismo criterio que en la consulta previa: sin consulta no hay
+                    // determinación, y sin determinación no se reenvía. Acá pesa más
+                    // todavía, porque el envío que acaba de quedarse mudo pudo entrar.
+                    $traza[] = 'consulta no se pudo hacer: se corta sin reenviar';
+
+                    return $this->corteIncierto(
+                        'No se pudo consultar en Hacienda si el DTE fue recibido, y no es seguro '
+                            .'reenviarlo hasta saberlo: podría duplicarse.',
+                        $e->getMessage(), null, null, $envios, $consultas, $traza,
+                    );
+                }
+
+                $c = ['resultado' => self::SIN_RESPUESTA, 'recibido' => false];
             }
 
             $traza[] = 'consulta → '.$c['resultado'].($c['recibido'] ? ' (RECIBIDO)' : '');
@@ -280,6 +353,22 @@ class DteTransmisionResiliente
                 $traza[] = 'estado tomado de la consulta: no se reenvía';
 
                 return $this->conMetadatos($aplicado, $envios, $consultas, $traza, false);
+            }
+
+            // SIN CONEXIÓN: ni el envío ni la consulta tuvieron respuesta, y la bitácora
+            // prueba que ningún envío de este documento salió de la máquina (tampoco el
+            // de recién). Está determinado que Hacienda no lo tiene. Se le pregunta a la
+            // bitácora cada vez: lo que valía en el intento anterior no vale para este.
+            if ($sinSalida || ($c['resultado'] === self::SIN_RESPUESTA && $this->puertaSinSalida($dte))) {
+                $ultimaPrueba = 'sin_salida';
+                $traza[] = 'sin conexión con Hacienda y ningún envío de este documento llegó a salir: '
+                    .'se puede reintentar sin duplicar';
+
+                if ($intento < $enviosPermitidos) {
+                    $this->completarUmbral($inicioIntento);
+                }
+
+                continue;
             }
 
             if ($c['resultado'] !== self::NO_RECIBIDO) {
@@ -296,6 +385,7 @@ class DteTransmisionResiliente
             }
 
             // Confirmado NO recibido: el siguiente giro del bucle reenvía (si queda).
+            $ultimaPrueba = 'consulta';
             $traza[] = 'confirmado NO recibido: se puede reenviar sin duplicar';
         }
 
@@ -314,10 +404,40 @@ class DteTransmisionResiliente
                 .' El documento sigue sin transmitir; NO se activó ningún evento de contingencia '
                 .'(fase pendiente).',
             'sello' => null,
-        ], $envios, $consultas, $traza, true, false, self::NO_RECIBIDO);
+        ], $envios, $consultas, $traza, true, false,
+            $ultimaPrueba === 'consulta' ? self::NO_RECIBIDO : null, $ultimaPrueba === 'sin_salida');
     }
 
     // ---------------------------------------------------------------- interno
+
+    /**
+     * ¿Vale, para este documento y en este momento, la prueba de «ningún envío salió»?
+     *
+     * Solo con la contingencia encendida, fuera del modo simulado, y si la bitácora de
+     * envíos lo demuestra. Se le pregunta a la bitácora CADA VEZ: no se guarda nada en
+     * memoria ni se confía en lo que valía para un intento anterior.
+     */
+    private function puertaSinSalida(Dte $dte): bool
+    {
+        return (bool) config('dte.contingencia.enabled', false)
+            && ! (bool) config('dte.transmision.mock', false)
+            && $this->bitacora->sinEnviosEnDuda($dte);
+    }
+
+    /**
+     * Un intento sin salida dura, como mínimo, el umbral del manual (el tiempo de espera
+     * de Hacienda) antes del siguiente. Una conexión rechazada falla al instante: sin
+     * esto, tres rechazos seguidos declararían una contingencia por un corte de un
+     * segundo. Completa lo que falte; si el intento ya tardó eso, no espera nada.
+     */
+    private function completarUmbral(float $inicioIntento): void
+    {
+        $falta = max(1, (int) config('dte.transmision.timeout', 8)) - (microtime(true) - $inicioIntento);
+
+        if ($falta > 0) {
+            Sleep::for((int) ceil($falta * 1000))->milliseconds();
+        }
+    }
 
     /**
      * Corte por estado indeterminado: NO se envió (ni se reenvió) nada más, NO se tocó
@@ -329,7 +449,7 @@ class DteTransmisionResiliente
      * @param  string|null  $consultaResultado  resultado crudo de la consulta, o null si
      *                                          no se pudo ni formular.
      * @param  array<int, string>  $traza
-     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, envios: int, consultas: int, contingencia_requerida: bool, consulta_no_disponible: bool, consulta_resultado: string|null, traza: array<int, string>}
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, envios: int, consultas: int, contingencia_requerida: bool, consulta_no_disponible: bool, consulta_resultado: string|null, sin_salida: bool, traza: array<int, string>}
      */
     private function corteIncierto(
         string $encabezado,
@@ -353,7 +473,7 @@ class DteTransmisionResiliente
     /**
      * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null}  $r
      * @param  array<int, string>  $traza
-     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, envios: int, consultas: int, contingencia_requerida: bool, consulta_no_disponible: bool, consulta_resultado: string|null, traza: array<int, string>}
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, envios: int, consultas: int, contingencia_requerida: bool, consulta_no_disponible: bool, consulta_resultado: string|null, sin_salida: bool, traza: array<int, string>}
      */
     private function conMetadatos(
         array $r,
@@ -363,6 +483,7 @@ class DteTransmisionResiliente
         bool $contingencia,
         bool $consultaNoDisponible = false,
         ?string $consultaResultado = null,
+        bool $sinSalida = false,
     ): array {
         return array_merge($r, [
             'envios' => $envios,
@@ -370,6 +491,9 @@ class DteTransmisionResiliente
             'contingencia_requerida' => $contingencia,
             self::CONSULTA_NO_DISPONIBLE => $consultaNoDisponible,
             'consulta_resultado' => $consultaResultado,
+            // Hacienda no lo tiene porque ningún envío salió de la máquina, y no porque
+            // lo haya dicho la consulta. Solo puede ser true al agotar los reintentos.
+            'sin_salida' => $sinSalida,
             'traza' => $traza,
         ]);
     }

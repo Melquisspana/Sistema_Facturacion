@@ -3,10 +3,12 @@
 namespace App\Services\Dte;
 
 use App\Enums\AmbienteHacienda;
+use App\Exceptions\Dte\DteHaciendaSinConexionException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -418,6 +420,12 @@ class DteTransmisionAuthService
                 ->asForm()
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->post($url, ['user' => $user, 'pwd' => $pwd]);
+        } catch (ConnectionException $e) {
+            // Hacienda no contestó NADA: no hay token y no se arma ningún envío. Va con
+            // su propia excepción para que la política de reintentos sepa que ese
+            // intento no mandó el documento. Mismo texto de siempre, y SIN encadenar la
+            // excepción original: su pedido lleva usuario y contraseña.
+            throw new DteHaciendaSinConexionException('No se pudo conectar con el servicio de autenticación: '.$e->getMessage());
         } catch (Throwable $e) {
             // El mensaje NUNCA incluye usuario/contraseña.
             throw new DteTransmisionException('No se pudo conectar con el servicio de autenticación: '.$e->getMessage());

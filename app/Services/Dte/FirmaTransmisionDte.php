@@ -53,6 +53,9 @@ class FirmaTransmisionDte
             if ($dte->estado === EstadoDte::Generado) {
                 $this->firma->firmar($dte);
                 $dte->refresh();
+                // Recién firmado: es seguro que todavía no hubo ningún envío. Queda
+                // anotado, y desde acá se anota cada envío de este documento.
+                app(BitacoraEnvioDte::class)->anclarFirma($dte);
             }
         } catch (DteFirmaDeshabilitadaException|DteFirmaException $e) {
             Log::warning('DTE firma: fallo', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);

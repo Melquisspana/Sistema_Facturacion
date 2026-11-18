@@ -11,6 +11,7 @@ use App\Observers\DteObserver;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use App\Support\Dte\IdentidadRespuestaHacienda;
+use App\Support\Dte\PedidoSinSalida;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -203,9 +204,29 @@ class DteTransmisionService
             'Authorization' => $token,
         ];
 
+        // BITÁCORA DE ENVÍOS. Con el token ya en mano y antes de mandar nada, queda
+        // anotado que empieza un envío (solo para los documentos con marca de firma; el
+        // resto sigue como siempre). Si la anotación no se puede guardar, lanza y no se
+        // envía. Se resuelve acá y no en el constructor: hay quien arma este servicio a mano.
+        $bitacora = app(BitacoraEnvioDte::class);
+        $intento = $bitacora->abrir($dte);
+        $transferencias = 0;
+
         try {
-            $resp = Http::timeout($timeout)->acceptJson()->withHeaders($headers)->post($url, $payload);
+            $resp = Http::timeout($timeout)->acceptJson()->withHeaders($headers)
+                // Cuántas transferencias hizo cURL: más de una es redirección o reintento
+                // interno, y entonces el error que se ve es solo el de la última.
+                ->withOptions(['on_stats' => function () use (&$transferencias): void {
+                    $transferencias++;
+                }])
+                ->post($url, $payload);
         } catch (Throwable $e) {
+            // Solo si cURL demuestra que el pedido no llegó a salir se cierra el intento.
+            // Si no, queda abierto: pudo salir, y esa duda no se borra.
+            if ($intento !== null && PedidoSinSalida::probado($e, $url, $transferencias)) {
+                $bitacora->cerrarSinSalida($dte, $intento, PedidoSinSalida::evidencia($e));
+            }
+
             // Error transitorio (conexión/timeout): el documento sigue Firmado y se
             // puede reintentar. No se cambia estado.
             return $this->resultado('error_conexion', null, 'No se pudo conectar con recepción: '.$e->getMessage());

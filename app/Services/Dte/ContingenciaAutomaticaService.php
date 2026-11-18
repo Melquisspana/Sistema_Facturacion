@@ -25,9 +25,19 @@ class ContingenciaAutomaticaService
         private readonly DteSchemaValidator $validador,
         private readonly DteFirmaService $firma,
         private readonly ContingenciaTransporte $transporte,
+        private readonly BitacoraEnvioDte $bitacora,
     ) {}
 
-    /** Exclusivo del resultado confirmado de la política; nunca consulta ni transmite. */
+    /**
+     * Exclusivo del resultado confirmado de la política; nunca consulta ni transmite.
+     *
+     * Convierte solo si está PROBADO que Hacienda no tiene el documento, por una de dos:
+     *   · la consulta contestó «no encontrado»; o
+     *   · ningún envío del documento llegó a salir de la máquina (sin internet la
+     *     consulta tampoco contesta). Esta no se le cree al resultado que llega: se
+     *     vuelve a leer la bitácora de envíos acá, antes de activar nada, y otra vez más
+     *     abajo con el documento bloqueado ({@see BitacoraEnvioDte::sinEnviosEnDuda()}).
+     */
     public function convertirTrasReintentos(Dte $dte, array $resultado, ?User $usuario = null): bool
     {
         if (! config('dte.contingencia.enabled', false)) {
@@ -35,8 +45,13 @@ class ContingenciaAutomaticaService
         }
         if (($resultado['resultado'] ?? null) !== 'reintentos_agotados'
             || ($resultado['contingencia_requerida'] ?? false) !== true
-            || ($resultado['consulta_resultado'] ?? null) !== 'no_encontrado'
             || ! empty($resultado['consulta_no_disponible'])) {
+            return false;
+        }
+        $porConsulta = ($resultado['consulta_resultado'] ?? null) === 'no_encontrado';
+        $porSinSalida = ! $porConsulta && ($resultado['sin_salida'] ?? false) === true
+            && $this->bitacora->sinEnviosEnDuda($dte);
+        if (! $porConsulta && ! $porSinSalida) {
             return false;
         }
 
@@ -78,7 +93,7 @@ class ContingenciaAutomaticaService
             }
         }
 
-        return DB::transaction(function () use ($contingencia, $dte, $usuario) {
+        return DB::transaction(function () use ($contingencia, $dte, $usuario, $resultado, $porSinSalida) {
             $contingencia = Contingencia::whereKey($contingencia->id)->lockForUpdate()->firstOrFail();
             $actual = Dte::whereKey($dte->id)->lockForUpdate()->firstOrFail();
             if ($actual->contingencia_id !== null) {
@@ -86,6 +101,11 @@ class ContingenciaAutomaticaService
             }
             if ($contingencia->estado !== 'activa' || $actual->estado !== EstadoDte::Firmado
                 || filled($actual->sello_recepcion) || blank($actual->json_firmado_path)) {
+                throw new DteTransmisionException('No se puede convertir este documento a contingencia.');
+            }
+            // Con el documento bloqueado no puede empezar otro envío: si entre la primera
+            // lectura y esta alguno empezó, ya no está probado que no salió.
+            if ($porSinSalida && ! $this->bitacora->sinEnviosEnDuda($actual)) {
                 throw new DteTransmisionException('No se puede convertir este documento a contingencia.');
             }
             $disco = Storage::disk(config('dte.storage.disk', 'local'));
@@ -130,7 +150,8 @@ class ContingenciaAutomaticaService
                 'json_generado_path' => $ruta.'.json', 'json_firmado_path' => $ruta.'.jws', 'pdf_path' => null,
             ]);
             activity('dte_contingencia')->performedOn($actual)->causedBy($usuario)
-                ->withProperties(['contingencia_id' => $contingencia->id, 'consulta_resultado' => 'no_encontrado',
+                ->withProperties(['contingencia_id' => $contingencia->id,
+                    'consulta_resultado' => $resultado['consulta_resultado'] ?? null, 'sin_salida' => $porSinSalida,
                     'json_anterior' => $actual->json_generado_path, 'firma_anterior' => $actual->json_firmado_path])
                 ->log('Documento re-firmado en contingencia tras reintentos agotados');
             $dte->refresh();
