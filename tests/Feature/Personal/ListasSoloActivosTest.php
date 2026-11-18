@@ -316,6 +316,43 @@ class ListasSoloActivosTest extends TestCase
             ->assertDontSee('inactiva01@example.test')->assertDontSee(route('personal.accesos.index', ['page' => 2]));
     }
 
+    // ─────────────────────── «Limpiar» y estados raros ───────────────────────
+
+    /** «Activos» es lo que abre: no cuenta como filtro puesto, ni cuando lo manda «Filtrar». */
+    public function test_limpiar_aparece_solo_con_un_filtro_puesto(): void
+    {
+        $this->actingAs($this->admin);
+
+        foreach (['personal.empleados', 'personal.accesos.index'] as $lista) {
+            $this->get(route($lista))->assertOk()->assertDontSee('>Limpiar</a>', false);
+            // Lo que manda «Filtrar» sin tocar nada.
+            $this->get(route($lista, ['q' => '', 'activo' => '1']))->assertOk()->assertDontSee('>Limpiar</a>', false);
+            $this->assertEnlace($this->get(route($lista, ['activo' => '0']))->assertOk(), 'Limpiar', route($lista));
+            $this->assertEnlace($this->get(route($lista, ['q' => 'algo']))->assertOk(), 'Limpiar', route($lista));
+        }
+
+        // En Accesos externos, «Limpiar» no saca de la vista.
+        $this->assertEnlace(
+            $this->get(route('personal.accesos.index', ['externas' => 1, 'activo' => '0']))->assertOk(),
+            'Limpiar', route('personal.accesos.index', ['externas' => 1])
+        );
+    }
+
+    /** Un estado que no existe abre en Activos, como dice el filtro. */
+    public function test_un_estado_que_no_existe_abre_en_activos(): void
+    {
+        $this->persona('Activo De Prueba', 'FICTICIO-1');
+        $this->deBaja();
+        $this->actingAs($this->admin);
+
+        $this->get(route('personal.empleados', ['activo' => 'abc']))->assertOk()
+            ->assertSee('Empleado Activo De Prueba')->assertDontSee('Empleado Baja De Prueba')
+            ->assertSee('value="1" selected>Activos</option>', false);
+        $this->get(route('personal.accesos.index', ['activo' => 'abc']))->assertOk()
+            ->assertSee($this->admin->email)->assertDontSee('sefue@example.test')
+            ->assertSee('value="1" selected>Activos</option>', false);
+    }
+
     // ─────────────────────────────── Permisos ───────────────────────────────
 
     public function test_el_estado_no_abre_las_listas_a_quien_no_tiene_permiso(): void
