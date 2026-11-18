@@ -397,6 +397,30 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertStringContainsString('Vencido:', $render);
     }
 
+    public function test_avisos_por_vencer_6_horas_antes_del_evento_y_del_lote(): void
+    {
+        // Simulacro del 17/11 (F7): antes de vencer no avisaba nada en pantalla.
+        $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
+        app(ContingenciaService::class)->terminar(null);
+        $activa->refresh();
+        $render = fn () => (string) $this->view('components.plazos-contingencia', ['contingencia' => $activa]);
+        Carbon::setTestNow($activa->cese->copy()->addHours(18));
+        $this->assertStringNotContainsString('Por vencer', $render());
+        Carbon::setTestNow(now()->addSecond());
+        $this->assertStringContainsString('Por vencer: quedan menos de 6 horas.', $render());
+        $this->assertStringNotContainsString('Vencido:', $render());
+
+        $evento = $activa->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-000000000001',
+            'estado' => 'recibido', 'fecha_transmision' => now(), 'sello_recibido' => 'SELLO-INVENTADO']);
+        Dte::create(['tipo_dte' => '01', 'ambiente' => '00', 'estado' => 'firmado', 'fecha_emision' => now()->toDateString(),
+            'establecimiento_id' => $this->emisor['estab']->id, 'punto_venta_id' => $this->emisor['pv']->id,
+            'hora_emision' => '10:00:00', 'contingencia_id' => $activa->id, 'contingencia_evento_id' => $evento->id]);
+        $this->assertStringNotContainsString('Por vencer', $render(), 'El lote tiene 72 h desde el aviso recibido.');
+        Carbon::setTestNow($evento->fecha_transmision->copy()->addHours(66)->addSecond());
+        $this->assertStringContainsString('Por vencer: quedan menos de 6 horas.', $render());
+        $this->assertStringContainsString('72 h (lote)', $render());
+    }
+
     public function test_aviso_sin_tabla_no_falla(): void
     {
         Schema::partialMock()->shouldReceive('hasTable')->with('contingencias')->andReturn(false);

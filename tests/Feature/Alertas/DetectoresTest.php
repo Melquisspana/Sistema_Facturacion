@@ -16,6 +16,7 @@ use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
 use App\Models\User;
 use App\Services\Alertas\Avisador;
+use App\Services\Alertas\Detectores\ContingenciaPorVencer;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\FirmadoSinTransmitir;
@@ -89,6 +90,76 @@ class DetectoresTest extends TestCase
 
         config(['dte.contingencia.enabled' => false]);
         $this->assertFalse(app(ContingenciaVencida::class)->aplica());
+    }
+
+    public function test_contingencia_vencida_cuenta_72_horas_del_evento_recibido_y_24_del_rechazo(): void
+    {
+        // Simulacro del 17/11 (F7): con el aviso recibido y el lote en plazo, a las 24 h
+        // del cese llegaba «pasaron el plazo» con 71 h por delante.
+        config(['dte.contingencia.enabled' => true]);
+        $this->travelTo(Carbon::parse('2026-11-02 10:00', 'America/El_Salvador'));
+        $contingencia = Contingencia::create([
+            'tipo' => 1, 'origen' => 'manual', 'estado' => 'informada',
+            'inicio' => now()->subHours(30), 'cese' => now()->subHours(25),
+        ]);
+        $recibido = $contingencia->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-000000000001',
+            'estado' => 'recibido', 'fecha_transmision' => now()->subHour(), 'fecha_procesamiento' => now()->subHour(),
+            'sello_recibido' => 'SELLO-INVENTADO']);
+        $this->dte(['estado' => EstadoDte::Firmado->value, 'contingencia_id' => $contingencia->id, 'contingencia_evento_id' => $recibido->id]);
+
+        $this->assertNull(app(ContingenciaVencida::class)->revisar(), 'Con el aviso recibido corren las 72 h del lote.');
+        $this->travel(71)->hours();
+        $this->assertNull(app(ContingenciaVencida::class)->revisar(), 'Justo a las 72 h todavía está en plazo.');
+        $this->travel(1)->seconds();
+        $this->assertSame(1, app(ContingenciaVencida::class)->revisar()?->conteo);
+
+        // Un aviso rechazado da 24 h desde el rechazo para corregirlo, no desde el cese.
+        $this->travelTo(Carbon::parse('2026-11-02 10:00', 'America/El_Salvador'));
+        $otra = Contingencia::create([
+            'tipo' => 1, 'origen' => 'manual', 'estado' => 'cerrada',
+            'inicio' => now()->subHours(30), 'cese' => now()->subHours(25),
+        ]);
+        $rechazado = $otra->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-000000000002',
+            'estado' => 'rechazado', 'fecha_transmision' => now()->subHours(2), 'rechazado_en' => now()->subHours(2)]);
+        Dte::query()->update(['contingencia_id' => $otra->id, 'contingencia_evento_id' => $rechazado->id]);
+        $this->assertNull(app(ContingenciaVencida::class)->revisar(), 'Rechazado hace 2 h: le quedan 22 h.');
+        $this->travel(22)->hours();
+        $this->travel(1)->seconds();
+        $this->assertSame(1, app(ContingenciaVencida::class)->revisar()?->conteo);
+    }
+
+    public function test_contingencia_por_vencer_avisa_6_horas_antes_de_cada_plazo(): void
+    {
+        config(['dte.contingencia.enabled' => true]);
+        $this->travelTo(Carbon::parse('2026-11-02 10:00', 'America/El_Salvador'));
+        $contingencia = Contingencia::create([
+            'tipo' => 3, 'origen' => 'manual', 'estado' => 'cerrada',
+            'inicio' => now()->subHours(20), 'cese' => now()->subHours(18),
+        ]);
+        $this->dte(['estado' => EstadoDte::Firmado->value, 'contingencia_id' => $contingencia->id]);
+        $detector = collect(app(Avisador::class)->detectores())->first(fn ($d) => $d instanceof ContingenciaPorVencer);
+        $this->assertNotNull($detector, 'El aviso por correo está registrado.');
+        $this->assertTrue($detector->aplica());
+
+        $this->assertNull($detector->revisar(), 'Con 6 h por delante todavía no avisa.');
+        $this->travel(1)->seconds();
+        $h = $detector->revisar();
+        $this->assertSame(1, $h?->conteo);
+        $this->assertStringNotContainsString('SECRETO', $h->titulo.$h->detalle.$h->queHacer);
+        $this->assertNull(app(ContingenciaVencida::class)->revisar(), 'Por vencer no es vencido.');
+
+        // Con el aviso recibido el plazo pasa a 72 h y deja de estar por vencer.
+        $evento = $contingencia->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-000000000003',
+            'estado' => 'recibido', 'fecha_transmision' => now(), 'fecha_procesamiento' => now(), 'sello_recibido' => 'SELLO-INVENTADO']);
+        Dte::query()->update(['contingencia_evento_id' => $evento->id]);
+        $this->assertNull($detector->revisar());
+        $this->travel(66)->hours();
+        $this->assertNull($detector->revisar());
+        $this->travel(1)->seconds();
+        $this->assertSame(1, $detector->revisar()?->conteo);
+
+        config(['dte.contingencia.enabled' => false]);
+        $this->assertFalse($detector->aplica());
     }
 
     public function test_firmado_sin_transmitir_avisa_solo_los_de_produccion_viejos_fuera_de_contingencia(): void

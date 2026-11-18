@@ -36,11 +36,53 @@ class LoteDteService
         private readonly CopiaDeAceptadoTardio $copias,
     ) {}
 
+    /** Cuántas horas antes de vencer un plazo se avisa «por vencer», en pantalla y por correo. */
+    public const HORAS_AVISO_POR_VENCER = 6;
+
     public function plazo(ContingenciaEvento $evento): ?Carbon
     {
         $desde = $evento->fecha_procesamiento ?? $evento->fecha_transmision;
 
         return $desde ? HoraNegocio::aLocal($desde)->addHours(72) : null;
+    }
+
+    /**
+     * Plazo de un documento en contingencia, según la norma: 24 h desde el cese para
+     * informarlo en el aviso a Hacienda (o desde el rechazo del aviso, para corregirlo)
+     * y, con el aviso recibido, 72 h para mandarlo en lote. null si todavía no hay cese.
+     */
+    public function plazoDocumento(Dte $dte): ?Carbon
+    {
+        if (! $dte->contingencia) {
+            return null;
+        }
+        $evento = $dte->contingenciaEvento;
+
+        return $evento?->estado === 'recibido' ? $this->plazo($evento) : $this->eventos->plazo($dte->contingencia, $evento);
+    }
+
+    /** Le quedan menos de {@see HORAS_AVISO_POR_VENCER} horas, o ya venció. */
+    public function porVencer(?Carbon $plazo): bool
+    {
+        return $plazo !== null && HoraNegocio::ahora()->gt($plazo->copy()->subHours(self::HORAS_AVISO_POR_VENCER));
+    }
+
+    /**
+     * Plazo de cada documento emitido en contingencia que sigue sin sello. Lo usan los
+     * avisos por correo de «por vencer» y «vencido».
+     *
+     * @return Collection<int, Carbon|null>
+     */
+    public function plazosSinSello(): Collection
+    {
+        return Dte::query()
+            ->where('estado', EstadoDte::Firmado->value)
+            ->whereNotNull('contingencia_id')
+            ->whereNull('sello_recepcion')
+            ->with(['contingencia', 'contingenciaEvento'])
+            ->get(['id', 'contingencia_id', 'contingencia_evento_id'])
+            ->map(fn (Dte $dte) => $this->plazoDocumento($dte))
+            ->values();
     }
 
     public function actualizarEstado(Contingencia $contingencia): void
