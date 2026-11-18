@@ -44,7 +44,7 @@ class ImportadorProductosPrecios
 
     public function importar(Cliente $cliente, string $ruta): ResultadoImportacion
     {
-        $resultado = new ResultadoImportacion();
+        $resultado = new ResultadoImportacion;
         $filas = $this->lector->leer($ruta, self::ALIAS);
 
         $unidadId = UnidadMedida::where('codigo', '59')->value('id')
@@ -75,7 +75,7 @@ class ImportadorProductosPrecios
             // Producto por código interno (o por barra si no hay código).
             $producto = $codigo !== ''
                 ? Producto::firstOrNew(['codigo' => $codigo])
-                : (Producto::where('codigo_barra', $barra)->first() ?? new Producto());
+                : (Producto::where('codigo_barra', $barra)->first() ?? new Producto);
 
             $creado = ! $producto->exists;
 
@@ -96,10 +96,11 @@ class ImportadorProductosPrecios
             $producto->save();
 
             // Precio especial del cliente (sin duplicar el activo). Conserva el
-            // precio anterior para mostrarlo en el reporte.
-            $precioRegistro = ProductoPrecioCliente::firstOrNew([
-                'producto_id' => $producto->id, 'cliente_id' => $cliente->id, 'cliente_sucursal_id' => null,
-            ]);
+            // precio anterior para mostrarlo en el reporte. Se actualiza el vigente: tomar
+            // uno viejo inactivo lo reactivaba al lado del otro y el CCF seguía con aquel.
+            $clave = ['producto_id' => $producto->id, 'cliente_id' => $cliente->id, 'cliente_sucursal_id' => null];
+            $precioRegistro = ProductoPrecioCliente::where($clave)->orderByDesc('activo')->orderByDesc('id')->first()
+                ?? new ProductoPrecioCliente($clave);
             $precioAnterior = $precioRegistro->exists ? (float) $precioRegistro->precio : null;
 
             $precioRegistro->fill([
@@ -107,6 +108,10 @@ class ImportadorProductosPrecios
                 'activo' => true,
                 'fecha_inicio' => $this->parsearFecha($registro['fecha_inicio'] ?? null),
             ])->save();
+
+            // Si ya había otro activo repetido, deja de estarlo (queda en la bitácora del precio).
+            ProductoPrecioCliente::where($clave)->whereKeyNot($precioRegistro->id)->where('activo', true)->get()
+                ->each(fn (ProductoPrecioCliente $repetido) => $repetido->update(['activo' => false]));
 
             $detallePrecio = $precioAnterior !== null && abs($precioAnterior - $precio) > 0.00001
                 ? sprintf('Precio %s: $%.4f → $%.4f', $cliente->nombre, $precioAnterior, $precio)
