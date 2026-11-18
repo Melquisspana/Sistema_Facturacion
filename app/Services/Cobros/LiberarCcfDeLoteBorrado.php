@@ -8,6 +8,7 @@ use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
+use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Support\EjercicioControl;
@@ -39,20 +40,7 @@ class LiberarCcfDeLoteBorrado
     {
         return DB::transaction(function () use ($lote, $usuario, $aplicar) {
             $items = $lote->items()->where('tipo_dte', '03')->get(['dte_id', 'numero_control', 'ejercicio_control']);
-            $claves = $items->pluck('numero_control')->map(fn ($n) => IdentidadPpq::normalizar($n))->filter()->values();
-
-            $documentos = CobroDocumento::where('tipo_dte', '03')
-                ->when($lote->cliente_id !== null, fn ($q) => $q->deCliente($lote->cliente_id))
-                ->where(fn ($q) => $q->whereIn('dte_id', $items->pluck('dte_id')->filter()->values())
-                    ->orWhereIn('numero_control_norm', $claves))
-                ->orderBy('id')
-                ->when($aplicar, fn ($q) => $q->lockForUpdate())
-                ->get()->filter(fn ($d) => $items->contains(fn ($i) => ($i->dte_id !== null && $i->dte_id === $d->dte_id)
-                    || EjercicioControl::llave($i->numero_control, $i->ejercicio_control) === EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
-            $documentos->load([
-                'solicitud:id,referencia',
-                'eventos' => fn ($q) => $q->where('tipo', TipoEventoCobro::Recibido->value),
-            ]);
+            $documentos = $this->documentosDe($lote, $items, $aplicar);
 
             $ocupadas = app(ElegibilidadPpqSeguimiento::class)->claves($lote->id);
             $resultado = ['liberados' => collect(), 'conservados' => collect(), 'sin_cambio' => collect()];
@@ -86,8 +74,39 @@ class LiberarCcfDeLoteBorrado
         });
     }
 
-    /** @param  Collection<string, int>  $ocupadas */
-    private function motivoParaConservar(CobroDocumento $doc, Collection $ocupadas): ?string
+    /**
+     * Los CCF del Seguimiento que corresponden a estos items del lote (por dte_id o por número
+     * y ejercicio), con lo que necesita {@see motivoParaConservar()}.
+     *
+     * @param  Collection<int, PpqItem>  $items  items CCF del lote
+     * @return Collection<int, CobroDocumento>
+     */
+    public function documentosDe(PpqLote $lote, Collection $items, bool $bloquear = true): Collection
+    {
+        $claves = $items->pluck('numero_control')->map(fn ($n) => IdentidadPpq::normalizar($n))->filter()->values();
+
+        $documentos = CobroDocumento::where('tipo_dte', '03')
+            ->when($lote->cliente_id !== null, fn ($q) => $q->deCliente($lote->cliente_id))
+            ->where(fn ($q) => $q->whereIn('dte_id', $items->pluck('dte_id')->filter()->values())
+                ->orWhereIn('numero_control_norm', $claves))
+            ->orderBy('id')
+            ->when($bloquear, fn ($q) => $q->lockForUpdate())
+            ->get()->filter(fn ($d) => $items->contains(fn ($i) => ($i->dte_id !== null && $i->dte_id === $d->dte_id)
+                || EjercicioControl::llave($i->numero_control, $i->ejercicio_control) === EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
+
+        return $documentos->load([
+            'solicitud:id,referencia',
+            'eventos' => fn ($q) => $q->where('tipo', TipoEventoCobro::Recibido->value),
+        ]);
+    }
+
+    /**
+     * Por qué un CCF que salió de un lote NO vuelve a «por presentar», o null si vuelve. La
+     * comparten el borrado del lote y el «quitar» de un renglón ({@see QuitarItemPpq}).
+     *
+     * @param  Collection<string, int>  $ocupadas  las de {@see ElegibilidadPpqSeguimiento::claves()}, sin este lote
+     */
+    public function motivoParaConservar(CobroDocumento $doc, Collection $ocupadas): ?string
     {
         if ($doc->pago_estado !== EstadoPagoCobro::Pendiente) {
             return 'pagado o con pago registrado';
