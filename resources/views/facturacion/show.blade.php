@@ -13,9 +13,14 @@
                     {{ session('status') }}
                 </div>
             @endif
-            @if (session('error'))
-                <div class="rounded-md bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-                    {{ session('error') }}
+            {{-- Errores de la ficha, en la caja roja de la guía de pantallas. El del CCF
+                 relacionado viene de «Otra nota de crédito para este CCF» (por ejemplo, un CCF
+                 provisional sin sello): la tarjeta no tiene ese campo, y sin esto el pedido
+                 volvía a la ficha sin decir nada (simulacro del 17/11, F11). --}}
+            @if (session('error') || $errors->has('dte_relacionado_id'))
+                <div role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    @if (session('error'))<p>{{ session('error') }}</p>@endif
+                    @error('dte_relacionado_id')<p>{{ $message }}</p>@enderror
                 </div>
             @endif
 
