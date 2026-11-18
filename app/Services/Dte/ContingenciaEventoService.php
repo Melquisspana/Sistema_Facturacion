@@ -254,14 +254,16 @@ class ContingenciaEventoService
                 // Un rechazo al reintentar no prueba que Hacienda no tenga el primer envío:
                 // puede estar rechazando el repetido («YA EXISTE UN REGISTRO CON ESE VALOR» en el
                 // simulacro). Qué contesta Hacienda real a un aviso repetido no está documentado,
-                // así que no se adivina: queda en duda, sin el plazo de corrección de un rechazo,
-                // y otro aviso con código nuevo sale solo si una persona verifica en Hacienda.
+                // así que no se adivina: queda en duda y otro aviso con código nuevo sale solo si
+                // una persona verifica en Hacienda. La hora del rechazo se guarda igual: si Hacienda
+                // no lo tiene, el rechazo fue real y da 24 h para corregir; si lo tiene, valen las
+                // 72 h de los lotes. Ninguno de los dos plazos se cuenta desde el cese.
                 $enDuda = ! $recibido && $reintento;
                 $evento->update(['estado' => $recibido ? 'recibido' : ($enDuda ? 'incierto' : 'rechazado'), 'jws_path' => $ruta.'.jws',
                     'respuesta_mh_path' => $rutaRespuesta, 'respuesta_mh' => $cuerpo,
                     'sello_recibido' => $recibido ? $cuerpo['selloRecibido'] : null,
                     'fecha_transmision' => HoraNegocio::ahora(), 'fecha_procesamiento' => $this->fechaMh($cuerpo['fechaHora'] ?? null),
-                    'rechazado_en' => $recibido || $enDuda ? null : HoraNegocio::ahora()]);
+                    'rechazado_en' => $recibido ? null : HoraNegocio::ahora()]);
                 if ($this->partesVigentes($actual)->every(fn ($parte) => $parte->estado === 'recibido')) {
                     $actual->update(['estado' => 'informada']);
                 }

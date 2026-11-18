@@ -10,6 +10,7 @@ use App\Models\Dte;
 use App\Models\User;
 use App\Services\Dte\ContingenciaEventoService;
 use App\Services\Dte\DteSchemaValidator;
+use App\Services\Dte\LoteDteService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
@@ -477,7 +478,8 @@ class ContingenciaEventoTest extends TestCase
         $dte = $this->documento();
         $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
         $this->assertSame('incierto', $parte->estado);
-        $this->assertNull($parte->rechazado_en);
+        // Si Hacienda no lo tiene, el rechazo fue real: guarda su hora para el plazo de corrección.
+        $this->assertSame('2026-10-10 11:00:00', $parte->rechazado_en?->format('Y-m-d H:i:s'));
         $this->assertSame($parte->id, $dte->refresh()->contingencia_evento_id);
         $this->assertSame('cerrada', $this->contingencia->refresh()->estado);
 
@@ -515,6 +517,28 @@ class ContingenciaEventoTest extends TestCase
         $this->assertSame('informada', $this->contingencia->refresh()->estado);
         $this->assertDatabaseHas('activity_log', ['log_name' => 'dte_contingencia', 'subject_id' => $parte->id,
             'description' => 'Aviso en duda reemplazado por uno nuevo: se verificó en Hacienda que no lo tiene']);
+    }
+
+    public function test_una_parte_en_duda_se_reemplaza_en_las_24_horas_desde_su_rechazo_aunque_ya_pasaron_24_desde_el_cese(): void
+    {
+        // Cese el 10/10 a las 10:15: el aviso sale y se rechaza al reintentar el 11/10 a las 10:00.
+        $dte = $this->documento();
+        Carbon::setTestNow(Carbon::parse('2026-10-11 10:00:00', 'America/El_Salvador'));
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
+
+        // La bandeja y los correos cuentan el plazo desde el rechazo, no desde el cese.
+        $this->assertSame('2026-10-12 10:00:00', app(LoteDteService::class)->plazoDocumento($dte->refresh())?->format('Y-m-d H:i:s'));
+
+        // A las 10:30 ya pasaron 24 h del cese, pero no del rechazo: el reemplazo sale.
+        Carbon::setTestNow(Carbon::parse('2026-10-11 10:30:00', 'America/El_Salvador'));
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia), ['reemplazar_incierto' => '1'])
+            ->assertSessionHasNoErrors();
+
+        $nuevo = ContingenciaEvento::latest('id')->first();
+        $this->assertNotSame($parte->id, $nuevo->id);
+        $this->assertSame('recibido', $nuevo->estado);
+        $this->assertSame($nuevo->id, $dte->refresh()->contingencia_evento_id);
     }
 
     public function test_un_rechazo_despues_de_no_poder_iniciar_sesion_sigue_siendo_un_rechazo_comun(): void
