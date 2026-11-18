@@ -7,6 +7,7 @@ use App\Models\Contingencia;
 use App\Services\Dte\ContingenciaEventoService;
 use App\Services\Dte\ContingenciaTransporte;
 use App\Services\Dte\DteTransmisionAuthService;
+use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\LoteDteService;
 use App\Support\Dte\EndpointsHacienda;
 use App\Support\HoraNegocio;
@@ -23,7 +24,7 @@ class DteContingenciaReconexionCommand extends Command
 
     protected $description = 'Detecta la reconexión del MH y envía avisos pendientes desde las 12 horas del cese';
 
-    public function handle(DteTransmisionAuthService $auth, ContingenciaEventoService $eventos, ContingenciaTransporte $transporte): int
+    public function handle(DteTransmisionAuthService $auth, ContingenciaEventoService $eventos, ContingenciaTransporte $transporte, DteTransmisionService $transmision): int
     {
         if (! config('dte.contingencia.enabled', false) || ! Schema::hasTable('contingencias') || ! Schema::hasTable('contingencia_eventos')) {
             return self::SUCCESS;
@@ -39,7 +40,13 @@ class DteContingenciaReconexionCommand extends Command
                 try {
                     $ambiente = EndpointsHacienda::ambienteTransmision();
                     $transporte->verificar($ambiente, 'auth', EndpointsHacienda::authOficial($ambiente), EndpointsHacienda::auth($ambiente));
+                    $transporte->verificar($ambiente, 'recepcion', EndpointsHacienda::recepcionOficial($ambiente), EndpointsHacienda::recepcion($ambiente));
                     $auth->comprobarConexion();
+                    // El login puede contestar con la recepción todavía caída: sin una
+                    // respuesta de la recepción misma no se le declara un cese a Hacienda.
+                    if (! $transmision->recepcionResponde()) {
+                        throw new DteTransmisionException('La recepción del MH no responde.');
+                    }
                     DB::transaction(function () use ($activa) {
                         $actual = Contingencia::whereKey($activa->id)->lockForUpdate()->firstOrFail();
                         if ($actual->estado !== 'activa' || $actual->origen !== 'automatica') {

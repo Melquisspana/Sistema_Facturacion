@@ -69,7 +69,8 @@ class ContingenciaAutomaticaTest extends TestCase
         parent::tearDown();
     }
 
-    private function simular(bool $internet = true, bool $consultaIncierta = false, bool $mh = false): void
+    /** $recepcion: código HTTP con que contesta la recepción; null = conexión cortada. */
+    private function simular(bool $internet = true, bool $consultaIncierta = false, bool $mh = false, ?int $recepcion = null): void
     {
         Http::swap(new Factory);
         Http::preventStrayRequests();
@@ -80,7 +81,7 @@ class ContingenciaAutomaticaTest extends TestCase
 
                 return Http::response(['status' => 'OK', 'body' => $b64(['alg' => 'RS512']).'.'.$b64($request['dteJson']).'.firma-inventada']);
             },
-            '*recepciondte*' => Http::failedConnection(),
+            '*recepciondte*' => $recepcion ? Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Solicitud inventada'], $recepcion) : Http::failedConnection(),
             '*consultadte*' => $consultaIncierta ? Http::failedConnection() : Http::response([], 404),
             '*seguridad/auth' => $mh ? Http::response(['status' => 'OK', 'body' => ['token' => 'TOKEN-INVENTADO-NUEVO']]) : Http::failedConnection(),
             '*fesv/contingencia' => Http::response(['estado' => 'RECIBIDO', 'selloRecibido' => 'SELLO-INVENTADO', 'fechaHora' => '13/10/2026 22:00:00']),
@@ -248,18 +249,44 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertNull($activa->refresh()->cese);
         Carbon::setTestNow(now()->addMinutes(15));
-        $this->simular(mh: true);
+        $this->simular(mh: true, recepcion: 400);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertSame('10:15:00', $activa->refresh()->cese->format('H:i:s'));
         $cese = $activa->cese->toDateTimeString();
         Carbon::setTestNow(now()->addMinutes(15));
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertSame($cese, $activa->refresh()->cese->toDateTimeString());
-        Http::assertSentCount(1);
+        // Login y recepción, una sola vez.
+        Http::assertSentCount(2);
         $manual = app(ContingenciaService::class)->activar(2, 'Sistema inventado', 'manual', null);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertNull($manual->refresh()->cese);
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
+    }
+
+    public function test_reconexion_no_declara_el_cese_con_el_login_arriba_y_la_recepcion_caida(): void
+    {
+        // Simulacro del 17/11 (F3): el login contestaba y la recepción seguía cortada.
+        $activa = app(ContingenciaService::class)->activar(1, 'MH inventado', 'automatica', null);
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertNull($activa->refresh()->cese, 'Con la recepción cortada no hay cese.');
+        $this->assertSame('activa', $activa->estado);
+
+        // Un error del servidor de recepción tampoco demuestra que esté arriba.
+        $this->simular(mh: true, recepcion: 503);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertNull($activa->refresh()->cese, 'Un 5xx de la recepción no es reconexión.');
+
+        // Cualquier otra respuesta de la recepción sí (a un pedido sin documento contesta 400).
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('10:30:00', $activa->refresh()->cese?->format('H:i:s'));
+        $this->assertSame('cerrada', $activa->estado);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'recepciondte'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'recepciondte') && isset($request['documento']));
     }
 
     public function test_evento_automatico_desde_12_horas_y_una_sola_vez(): void

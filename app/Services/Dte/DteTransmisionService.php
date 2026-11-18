@@ -239,6 +239,31 @@ class DteTransmisionService
     }
 
     /**
+     * ¿Atiende la recepción de Hacienda? La usa la reconexión de la contingencia antes
+     * de declarar el cese. Manda un pedido SIN documento, así que no hay nada que
+     * Hacienda pueda recibir: a eso contesta 400. Cualquier respuesta HTTP que no sea
+     * un error del servidor (5xx) demuestra que la recepción está arriba; sin respuesta,
+     * no está confirmado.
+     *
+     * Ni el login ni la consulta sirven para esto: en el simulacro del 17/11 los dos
+     * contestaban con la recepción cortada (la consulta, 400 «no encontrado»).
+     */
+    public function recepcionResponde(): bool
+    {
+        $token = $this->auth->obtenerToken();
+
+        try {
+            $resp = Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
+                ->withHeaders(['User-Agent' => (string) config('dte.transmision.user_agent', 'DTE/1.0'), 'Authorization' => $token])
+                ->post($this->urlRecepcion(), ['ambiente' => EndpointsHacienda::ambienteTransmision()->value]);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $resp->status() < 500;
+    }
+
+    /**
      * Aplica al documento un resultado DEFINITIVO que vino de la CONSULTA, no de la
      * respuesta a un envío.
      *
