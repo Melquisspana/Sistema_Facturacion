@@ -8,6 +8,14 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.17.3] - 2026-11-17
+
+Inicio: «Rutas por visitar» cuenta también los pedidos web por entregar (#407). Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- Inicio: en «Rutas por visitar», cada ruta muestra cuántos pedidos web tiene por entregar («N web»), al lado de los CCF (#407).
+
 ## [2026.11.17.2] - 2026-11-17
 
 Fábrica: los pedidos de días anteriores ya no van en amarillo (#405). Sin migraciones ni cambios de permisos.
