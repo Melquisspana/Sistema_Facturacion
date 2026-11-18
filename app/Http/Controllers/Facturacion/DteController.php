@@ -1439,8 +1439,9 @@ class DteController extends Controller
                 .$detalle.$sufijoMock);
         }
 
-        // Transitorio: el documento queda firmado y se puede reintentar.
-        return $volver->with('error', 'No se completó la transmisión ('.$r['resultado'].'): '.$r['mensaje']
+        // Transitorio: el documento queda firmado y se puede reintentar. El código del
+        // resultado y el detalle técnico ya quedaron en el registro (FirmaTransmisionDte).
+        return $volver->with('error', 'No se completó la transmisión: '.$r['mensaje']
             .' El documento queda firmado; podés reintentar.');
     }
 

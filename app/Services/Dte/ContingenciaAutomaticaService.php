@@ -171,6 +171,20 @@ class ContingenciaAutomaticaService
         return $emision !== null && ! $emision->lt(HoraNegocio::ahora()->subMinutes($this->topeMinutos()));
     }
 
+    /**
+     * Por qué un documento con los reintentos agotados no pasó a contingencia, en palabras
+     * para quien emite. Null si no hay un motivo que contar: con el interruptor apagado la
+     * contingencia no existe para nadie, y dentro del tope el motivo no es el tiempo.
+     */
+    public function motivoSinContingencia(Dte $dte): ?string
+    {
+        if (! config('dte.contingencia.enabled', false) || $this->dentroDeLaVentana($dte)) {
+            return null;
+        }
+
+        return 'No pasó a contingencia porque se emitió hace más de '.$this->topeMinutos().' minutos.';
+    }
+
     private function topeMinutos(): int
     {
         return max(1, (int) config('dte.contingencia.retroceso_max_minutos', 10));

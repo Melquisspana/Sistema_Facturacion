@@ -215,6 +215,28 @@ class ContingenciaAutomaticaTest extends TestCase
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'generate_204'));
     }
 
+    /**
+     * Simulacro del 17/11 (F10): pasado el tope, la pantalla y la consola decían «NO se
+     * activó ningún evento de contingencia (fase pendiente)», aunque la contingencia existe.
+     * La causa de verdad es el tope de minutos desde la emisión, y eso es lo que se dice.
+     */
+    public function test_documento_fuera_del_tope_dice_por_que_no_paso_a_contingencia(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00; tope por defecto, 10 minutos
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:30:00', 'America/El_Salvador'));
+
+        $this->post(route('facturacion.firmar-transmitir', $dte))->assertRedirect()
+            ->assertSessionHas('error', 'No se completó la transmisión: Hacienda no respondió. No pasó a contingencia porque '
+                .'se emitió hace más de 10 minutos. El documento queda firmado; podés reintentar.');
+
+        $this->simular();
+        $this->artisan('dte:transmitir', ['dte' => $dte->id])
+            ->expectsOutputToContain('No pasó a contingencia porque se emitió hace más de 10 minutos.')
+            ->doesntExpectOutputToContain('fase')
+            ->assertFailed();
+        $this->assertNull($dte->refresh()->contingencia_id);
+    }
+
     public function test_documento_viejo_no_se_suma_a_una_contingencia_activa(): void
     {
         $dte = $this->documento(); // emitido a las 10:00:00

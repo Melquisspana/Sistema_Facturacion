@@ -118,8 +118,8 @@ class DteTransmitirCommand extends Command
         if (! empty($r['contingencia_requerida'])) {
             $this->newLine();
             $this->error('REINTENTOS AGOTADOS — CONTINGENCIA REQUERIDA.');
-            $this->line('No se activó ningún evento de contingencia: esa fase está pendiente y es una');
-            $this->line('decisión con requisitos propios. El documento sigue SIN transmitir.');
+            $this->line((app(ContingenciaAutomaticaService::class)->motivoSinContingencia($dte) ?? 'No pasó a contingencia.')
+                .' El documento sigue SIN transmitir.');
         }
 
         return $r['resultado'] === 'aceptado' ? self::SUCCESS : self::FAILURE;

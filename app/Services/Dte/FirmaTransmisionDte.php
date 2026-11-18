@@ -60,12 +60,13 @@ class FirmaTransmisionDte
         } catch (DteFirmaDeshabilitadaException|DteFirmaException $e) {
             Log::warning('DTE firma: fallo', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
-            return ['error' => 'No se pudo firmar el documento: '.$e->getMessage().' Podés reintentar.'];
+            return ['error' => 'No se pudo firmar el documento: '.self::sinDetalleTecnico($e->getMessage()).' Podés reintentar.'];
         }
 
         // 3. Transmitir el documento firmado, SIEMPRE por la política oficial de
         //    reintentos (Manual V2.0): consulta antes de cualquier reenvío, máximo 2
-        //    reenvíos, y al agotarse un error explícito SIN activar contingencia.
+        //    reenvíos. Al agotarse, la política no activa nada: si está probado que
+        //    Hacienda no lo tiene, lo pasa a contingencia ContingenciaAutomaticaService.
         //    Se resuelve del contenedor en el momento: la política no es una opción de
         //    cada llamador, es la única forma de transmitir.
         if ($dte->esTransitorio()) {
@@ -80,7 +81,9 @@ class FirmaTransmisionDte
                 $r['mensaje'] = 'Documento emitido en contingencia, pendiente de sello de recepción.';
             }
         } catch (DteFirmaException $e) {
-            return ['error' => 'Se activó la contingencia, pero no se pudo re-firmar el documento: '.$e->getMessage()];
+            Log::warning('DTE contingencia: no se pudo re-firmar', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
+
+            return ['error' => 'Se activó la contingencia, pero no se pudo re-firmar el documento: '.self::sinDetalleTecnico($e->getMessage())];
         } catch (DteTransmisionDeshabilitadaException $e) {
             Log::warning('DTE transmisión bloqueada', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
@@ -89,11 +92,48 @@ class FirmaTransmisionDte
         } catch (DteTransmisionException $e) {
             Log::warning('DTE fallo en transmisión', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
-            return ['error' => 'Firmado, pero no se pudo transmitir: '.$e->getMessage()
+            return ['error' => 'Firmado, pero no se pudo transmitir: '.self::sinDetalleTecnico($e->getMessage())
                 .' El documento queda firmado; podés reintentar.'];
         }
 
+        // 4. Sin respuesta definitiva y sin contingencia: lo técnico (códigos, cURL, la
+        //    traza de envíos y consultas) va al registro; quien emite lee qué pasó.
+        if (! in_array($r['resultado'], ['aceptado', 'rechazado', 'transitorio'], true)) {
+            Log::warning('DTE transmisión sin terminar', ['dte_id' => $dte->id, 'resultado' => $r['resultado'],
+                'http_status' => $r['http_status'] ?? null, 'detalle' => $r['mensaje'], 'traza' => $r['traza'] ?? []]);
+            $r['mensaje'] = $this->mensajeSinTerminar($dte, $r);
+        }
+
         return ['resultado' => $r];
+    }
+
+    /**
+     * Qué le pasó al documento, en palabras para quien emite (simulacro del 17/11, F10:
+     * la pantalla mostraba el código del resultado, el texto de cURL y «fase pendiente»).
+     *
+     * @param  array{resultado: string, mensaje: string}  $r
+     */
+    private function mensajeSinTerminar(Dte $dte, array $r): string
+    {
+        return match ($r['resultado']) {
+            DteTransmisionResiliente::ESTADO_INCIERTO => 'No se pudo confirmar si Hacienda recibió el documento, '
+                .'y por eso no se volvió a mandar: podría quedar duplicado.',
+            'reintentos_agotados' => trim('Hacienda no respondió. '
+                .app(ContingenciaAutomaticaService::class)->motivoSinContingencia($dte)),
+            default => self::sinDetalleTecnico($r['mensaje']),
+        };
+    }
+
+    /**
+     * El mensaje sin el texto técnico de una falla de conexión, que Guzzle arma como
+     * «cURL error 7: Failed to connect… (see https://curl.se/…) for https://…». Ese
+     * detalle queda en el registro; a la pantalla va solo lo que está antes.
+     */
+    private static function sinDetalleTecnico(string $mensaje): string
+    {
+        $limpio = (string) preg_replace('/[\s:]*cURL error \d+:.*$/s', '', $mensaje);
+
+        return $limpio === $mensaje ? $mensaje : rtrim($limpio, ' .:').'.';
     }
 
     /**

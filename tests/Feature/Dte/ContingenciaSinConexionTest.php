@@ -29,6 +29,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
@@ -58,6 +59,12 @@ class ContingenciaSinConexionTest extends TestCase
     use PreparaEmisorDte, RefreshDatabase;
 
     private const EN_CONTINGENCIA = 'Documento emitido en contingencia, pendiente de sello de recepción.';
+
+    /** Lo que lee quien emite cuando no se sabe si Hacienda lo recibió (F10: sin códigos ni cURL). */
+    private const INCIERTO = 'No se pudo confirmar si Hacienda recibió el documento, y por eso no se volvió a mandar: podría quedar duplicado.';
+
+    private const SIN_LOGIN = 'Firmado, pero no se pudo transmitir: No se pudo conectar con el servicio de autenticación. '
+        .'El documento queda firmado; podés reintentar.';
 
     private User $usuario;
 
@@ -185,8 +192,8 @@ class ContingenciaSinConexionTest extends TestCase
     /** Quedó para revisión como siempre: firmado, sin contingencia y con el aviso de «incierto». */
     private function assertQuedoIncierto(TestResponse $respuesta, Dte $dte): void
     {
-        $respuesta->assertSessionHas('error', fn ($aviso) => str_contains($aviso, 'estado_recepcion_incierto')
-            && str_contains($aviso, 'NO se activó contingencia'));
+        $respuesta->assertSessionHas('error', fn ($aviso) => str_contains($aviso, self::INCIERTO)
+            && ! str_contains($aviso, 'cURL'));
         $this->assertDatabaseCount('contingencias', 0);
         $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
         $this->assertNull($dte->contingencia_id);
@@ -584,6 +591,7 @@ class ContingenciaSinConexionTest extends TestCase
      * El login no conectó por un problema de este servidor (no confía en el certificado
      * de Hacienda, el saludo TLS falla), con internet y Hacienda funcionando: no es «sin
      * conexión». Se ve el error de verdad y no se declara una contingencia que no ocurrió.
+     * El texto de cURL va al registro, no a la pantalla (F10).
      */
     #[DataProvider('fallasDelLoginQueNoSonUnCorte')]
     public function test_login_con_error_de_certificado_o_de_tls_no_cuenta_como_sin_conexion(int $errno, string $error): void
@@ -592,9 +600,13 @@ class ContingenciaSinConexionTest extends TestCase
         $this->simular(['*seguridad/auth' => $this->fallaDeCurl($errno, $error)]);
         $dte = $this->documento();
 
-        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_starts_with($aviso,
-            'Firmado, pero no se pudo transmitir: No se pudo conectar con el servicio de autenticación: '
-                ."cURL error {$errno}: {$error}"));
+        Log::spy();
+
+        $this->clic($dte)->assertSessionHas('error', self::SIN_LOGIN);
+
+        // El detalle técnico no se pierde: queda en el registro (F10).
+        Log::shouldHaveReceived('warning')->withArgs(fn ($mensaje, $contexto = []) => ($contexto['dte_id'] ?? null) === $dte->id
+            && str_contains((string) ($contexto['error'] ?? ''), "cURL error {$errno}: {$error}"))->once();
 
         $this->assertDatabaseCount('contingencias', 0);
         $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
@@ -603,6 +615,20 @@ class ContingenciaSinConexionTest extends TestCase
         $this->assertSame(0, $this->pedidos('recepciondte'));
         $this->assertSame(0, $this->pedidos('generate_204'));
         Sleep::assertNeverSlept();
+    }
+
+    /** Simulacro del 17/11 (F10, caso 6): con el firmador caído la pantalla mostraba el texto de cURL. */
+    public function test_firmador_caido_se_explica_sin_el_texto_tecnico_de_la_conexion(): void
+    {
+        $this->simular(['*firmardocumento*' => $this->falla('rechazada')]);
+        $dte = $this->documento();
+        Log::spy();
+
+        $this->clic($dte)->assertSessionHas('error', 'No se pudo firmar el documento: No se pudo conectar con el firmador local. Podés reintentar.');
+
+        Log::shouldHaveReceived('warning')->withArgs(fn ($mensaje, $contexto = []) => ($contexto['dte_id'] ?? null) === $dte->id
+            && str_contains((string) ($contexto['error'] ?? ''), 'cURL error'))->once();
+        $this->assertSame(EstadoDte::Generado, $dte->refresh()->estado);
     }
 
     /** @return array<string, array{int, string}> */
@@ -636,7 +662,7 @@ class ContingenciaSinConexionTest extends TestCase
         config(['dte.contingencia.enabled' => false]);
         $dte = $this->documento();
 
-        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, 'estado_recepcion_incierto'));
+        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, self::INCIERTO));
 
         $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
         $this->assertNull($dte->contingencia_id);
@@ -661,7 +687,7 @@ class ContingenciaSinConexionTest extends TestCase
         $dte = $this->firmadoSinEnvios();
         config(['dte.contingencia.enabled' => false, 'dte.transmision.token' => $token]);
 
-        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, 'estado_recepcion_incierto'));
+        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, self::INCIERTO));
 
         Http::assertSentCount(1);
         $this->assertSame(1, $this->pedidos($unicoPedido), 'solo la consulta previa');
@@ -676,8 +702,7 @@ class ContingenciaSinConexionTest extends TestCase
         config(['dte.contingencia.enabled' => false, 'dte.transmision.token' => '']);
         $dte = $this->documento();
 
-        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_starts_with($aviso,
-            'Firmado, pero no se pudo transmitir: No se pudo conectar con el servicio de autenticación:'));
+        $this->clic($dte)->assertSessionHas('error', self::SIN_LOGIN);
 
         $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
         $this->assertSame(1, $this->pedidos('seguridad/auth'));
@@ -781,7 +806,7 @@ class ContingenciaSinConexionTest extends TestCase
         $activa = app(ContingenciaService::class)->activar(3, 'Corte inventado', 'manual', null);
 
         $this->simular();
-        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, 'estado_recepcion_incierto'));
+        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, self::INCIERTO));
 
         $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
         $this->assertNull($dte->contingencia_id);

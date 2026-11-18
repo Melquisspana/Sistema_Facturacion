@@ -237,8 +237,8 @@ return [
         | se consulta el estado. Reenviar a ciegas es lo que produce documentos
         | duplicados con dos códigos de generación para una misma venta.
         |
-        | Al agotarse, el resultado es 'reintentos_agotados' y NO se activa nada:
-        | la contingencia es una decisión con requisitos propios, diferida a su fase.
+        | Al agotarse, el resultado es 'reintentos_agotados' y la política NO activa
+        | nada: con 'contingencia.enabled' lo pasa a contingencia ContingenciaAutomaticaService.
         */
         'reintentos' => [
             // Reenvíos ADICIONALES tras el envío inicial. 2 = hasta 3 intentos en total.

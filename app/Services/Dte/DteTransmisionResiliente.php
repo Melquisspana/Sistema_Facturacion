@@ -93,7 +93,7 @@ use Illuminate\Support\Sleep;
  *   - NO activa contingencia. NO crea ni transmite evento de contingencia. Cuando se
  *     agotan los reintentos devuelve un resultado explícito que dice que la
  *     contingencia haría falta, y ahí se detiene: es una decisión con requisitos
- *     propios, diferida a su fase.
+ *     propios, que toma {@see ContingenciaAutomaticaService} con ese resultado.
  *   - NO regenera el código de generación ni el número de control. Se reenvía el
  *     MISMO documento; regenerarlos convertiría un reintento en un documento nuevo.
  *   - NO inventa candados: todo pasa por {@see DteTransmisionService::transmitir()},
@@ -404,8 +404,7 @@ class DteTransmisionResiliente
                     ? 'No quedaba ningún reenvío permitido (max_reenvios='.$maxReenvios.') y Hacienda '
                         .'no tiene el documento.'
                     : 'Se hicieron '.$envios.' envíos y Hacienda no confirmó la recepción en ninguno.')
-                .' El documento sigue sin transmitir; NO se activó ningún evento de contingencia '
-                .'(fase pendiente).',
+                .' El documento sigue sin transmitir; NO se activó la contingencia.',
             'sello' => null,
         ], $envios, $consultas, $traza, true, false,
             $ultimaPrueba === 'consulta' ? self::NO_RECIBIDO : null, $ultimaPrueba === 'sin_salida');
