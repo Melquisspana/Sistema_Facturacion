@@ -33,6 +33,19 @@ class ProductoPrecioController extends Controller
         $this->authorize('update', $producto);
         $this->verificarPertenencia($producto, $precio);
 
+        // La misma regla que al agregarlo: con dos activos para el mismo cliente y sala, el
+        // CCF toma uno de los dos sin que nadie lo note.
+        $otroActivo = ! $precio->activo && ProductoPrecioCliente::query()
+            ->where('producto_id', $producto->id)
+            ->where('cliente_id', $precio->cliente_id)
+            ->where('cliente_sucursal_id', $precio->cliente_sucursal_id)
+            ->where('activo', true)
+            ->whereKeyNot($precio->id)
+            ->exists();
+        if ($otroActivo) {
+            return back()->withErrors(['precio' => 'No se activó: ya hay otro precio activo para ese cliente y sala. Inactivá ese primero.']);
+        }
+
         $precio->update(['activo' => ! $precio->activo]);
 
         return back()->with('status', $precio->activo ? 'Precio activado.' : 'Precio inactivado.');
