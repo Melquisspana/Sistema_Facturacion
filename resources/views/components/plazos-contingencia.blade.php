@@ -12,7 +12,9 @@
     <p role="alert">Informe Técnico de Contingencia: alcanzó tres días. Presentalo al MH antes del evento si duró más de tres días.</p>
 @endif
 @if ($contingencia->cese)
-    @if ($contingencia->origen === 'automatica')<p>Volvió la conexión: enviá el aviso a Hacienda.</p>@endif
+    {{-- Solo mientras el aviso se puede enviar, igual que el botón «Enviar aviso de
+         contingencia»: recibido, la contingencia pasa a «informada» (simulacro del 17/11, F12). --}}
+    @if ($contingencia->origen === 'automatica' && $contingencia->estado === 'cerrada')<p>Volvió la conexión: enviá el aviso a Hacienda.</p>@endif
     @if ($partesPlazo->isEmpty())
         @php
             $limitePlazo = $eventosPlazo->plazo($contingencia);

@@ -366,6 +366,25 @@ class ContingenciaAutomaticaTest extends TestCase
         Http::assertSentCount(3);
     }
 
+    /**
+     * Simulacro del 17/11 (F12): «Volvió la conexión: enviá el aviso» seguía a la vista
+     * después de enviado y recibido el aviso. Se ve solo mientras se puede enviar, igual
+     * que el botón «Enviar aviso de contingencia».
+     */
+    public function test_la_franja_de_enviar_el_aviso_se_va_cuando_el_aviso_ya_se_envio(): void
+    {
+        $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
+        $this->documento();
+        app(ContingenciaService::class)->terminar(null);
+        $franja = fn () => (string) $this->view('components.plazos-contingencia', ['contingencia' => $activa->refresh()]);
+        $this->assertStringContainsString('Volvió la conexión: enviá el aviso a Hacienda.', $franja());
+
+        app(ContingenciaEventoService::class)->enviar($activa->refresh());
+
+        $this->assertSame('informada', $activa->refresh()->estado);
+        $this->assertStringNotContainsString('Volvió la conexión', $franja());
+    }
+
     public function test_correccion_cese_limites_y_bloqueo_tipo_firmado(): void
     {
         $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
