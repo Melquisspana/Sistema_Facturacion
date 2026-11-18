@@ -92,12 +92,14 @@ class PersonalController extends Controller
             ->count();
         // Abre con los activos (18/11/2026): quien se fue se ve con «Inactivos» o «Todos».
         $activo = in_array($request->query('activo'), ['0', 'todos'], true) ? $request->query('activo') : '1';
+        $lista = $this->filtrar($request, $filas, $activo);
 
         return view('personal.empleados', [
-            'empleados' => $this->paginar($request, $this->filtrar($request, $filas, $activo)),
+            'empleados' => $this->paginar($request, $lista),
             'activo' => $activo,
-            // Para no decir «todavía no hay nadie» cuando solo hay gente de baja.
-            'hayPersonas' => $filas->isNotEmpty(),
+            // Si «Activos» deja la lista vacía pero alguien de baja coincide, la lista lo dice y
+            // ofrece verlo, en vez de «todavía no hay nadie» o de parecer que se borró.
+            'hayInactivos' => $activo === '1' && $lista->isEmpty() && $this->filtrar($request, $filas, '0')->isNotEmpty(),
             'veAsistencia' => $veAsistencia,
             'vePlanilla' => $vePlanilla,
             'verImportes' => $verImportes,

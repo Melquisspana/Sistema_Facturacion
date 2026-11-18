@@ -9,7 +9,8 @@
     $altaUnica = $vePlanilla && auth()->user()->can('planilla.gestionar');
     $altaAsistencia = ! $vePlanilla && $veAsistencia && auth()->user()->can('asistencia.gestionar');
     // «Activos» es lo que abre: no cuenta como filtro puesto.
-    $filtrado = trim((string) request('q')) !== '' || $activo !== '1';
+    $buscar = trim((string) request('q'));
+    $filtrado = $buscar !== '' || $activo !== '1';
 @endphp
 
 <x-app-layout>
@@ -145,11 +146,19 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="8" class="py-10 text-center text-gray-400 dark:text-paper-500">
-                                        @if ($hayPersonas)
-                                            Ninguna persona coincide con el filtro.
-                                        @else
+                                    {{-- Igual que en Accesos (docs/GUIA_PANTALLAS.md › Sin resultados). --}}
+                                    <td colspan="8" class="px-4 py-10 text-center text-gray-500 dark:text-paper-300">
+                                        @if (! $filtrado && ! $hayInactivos)
                                             Todavía no hay personas dadas de alta.
+                                        @else
+                                            Nada coincide con estos filtros.
+                                            @if ($hayInactivos)
+                                                <a href="{{ route('personal.empleados', ($buscar !== '' ? ['q' => $buscar] : []) + ['activo' => '0']) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Ver inactivos</a>
+                                            @endif
+                                            @if ($hayInactivos && $filtrado) · @endif
+                                            @if ($filtrado)
+                                                <a href="{{ route('personal.empleados') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Limpiar filtros</a>
+                                            @endif
                                         @endif
                                     </td>
                                 </tr>

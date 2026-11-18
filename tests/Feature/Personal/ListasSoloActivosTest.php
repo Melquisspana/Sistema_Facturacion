@@ -110,8 +110,14 @@ class ListasSoloActivosTest extends TestCase
         $this->persona('Activo De Prueba', 'FICTICIO-1');
         $this->deBaja();
 
-        $this->actingAs($this->admin)->get(route('personal.empleados', ['q' => 'baja de prueba']))->assertOk()
-            ->assertDontSee('Empleado Baja De Prueba')->assertSee('Ninguna persona coincide con el filtro.');
+        $vacia = $this->actingAs($this->admin)->get(route('personal.empleados', ['q' => 'baja de prueba']))->assertOk()
+            ->assertDontSee('Empleado Baja De Prueba')->assertSee('Nada coincide con estos filtros.');
+        // Quien se busca está de baja: la lista vacía lo dice con «Ver inactivos», con la misma búsqueda.
+        $this->assertEnlace($vacia, 'Ver inactivos', route('personal.empleados', ['q' => 'baja de prueba', 'activo' => '0']));
+        $this->assertEnlace($vacia, 'Limpiar filtros', route('personal.empleados'));
+        // Si tampoco hay nadie de baja que coincida, no lo ofrece.
+        $this->get(route('personal.empleados', ['q' => 'nadie']))->assertOk()
+            ->assertSee('Nada coincide con estos filtros.')->assertDontSee('Ver inactivos');
         $this->get(route('personal.empleados', ['q' => 'baja de prueba', 'activo' => '0']))->assertOk()
             ->assertSee('Empleado Baja De Prueba');
         $this->get(route('personal.empleados', ['q' => 'de prueba', 'activo' => 'todos']))->assertOk()
@@ -126,8 +132,11 @@ class ListasSoloActivosTest extends TestCase
 
         $this->deBaja();
 
-        $this->get(route('personal.empleados'))->assertOk()
-            ->assertDontSee('Todavía no hay personas dadas de alta.')->assertSee('Ninguna persona coincide con el filtro.');
+        $soloBajas = $this->get(route('personal.empleados'))->assertOk()
+            ->assertDontSee('Todavía no hay personas dadas de alta.')->assertSee('Nada coincide con estos filtros.')
+            // No hay búsqueda que limpiar: lo que esconde a la gente es «Activos».
+            ->assertDontSee('Limpiar filtros');
+        $this->assertEnlace($soloBajas, 'Ver inactivos', route('personal.empleados', ['activo' => '0']));
     }
 
     public function test_empleados_la_paginacion_conserva_el_estado(): void
@@ -207,8 +216,15 @@ class ListasSoloActivosTest extends TestCase
         $this->get(route('personal.accesos.index', ['q' => 'inactiva', 'activo' => 'todos']))->assertOk()
             ->assertSee('suelta-inactiva@example.test')->assertSee('externa-inactiva@example.test')
             ->assertDontSee('suelta@example.test')->assertDontSee('externa@example.test');
-        $this->get(route('personal.accesos.index', ['q' => 'inactiva']))->assertOk()
+        $vacia = $this->get(route('personal.accesos.index', ['q' => 'inactiva']))->assertOk()
             ->assertSee('Nada coincide con estos filtros.')->assertDontSee('suelta-inactiva@example.test');
+        $this->assertEnlace($vacia, 'Ver inactivos', route('personal.accesos.index', ['q' => 'inactiva', 'activo' => '0']));
+        $this->assertEnlace($vacia, 'Limpiar filtros', route('personal.accesos.index'));
+        // «Ver inactivos» y «Limpiar filtros» no sacan de la vista puesta.
+        $sinFicha = $this->get(route('personal.accesos.index', ['sin_ficha' => 1, 'q' => 'suelta-inactiva']))->assertOk()
+            ->assertSee('Nada coincide con estos filtros.');
+        $this->assertEnlace($sinFicha, 'Ver inactivos', route('personal.accesos.index', ['sin_ficha' => 1, 'q' => 'suelta-inactiva', 'activo' => '0']));
+        $this->assertEnlace($sinFicha, 'Limpiar filtros', route('personal.accesos.index', ['sin_ficha' => 1]));
         $this->get(route('personal.accesos.index', ['externas' => 1, 'activo' => '0', 'q' => 'nadie']))->assertOk()
             ->assertSee('Nada coincide con estos filtros.');
     }
