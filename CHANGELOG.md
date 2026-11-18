@@ -8,6 +8,25 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.18] - 2026-11-18
+
+Contingencia: arreglos del simulacro del 17/11 (#410). El sistema queda listo para entrar solo en contingencia sin internet, pero sigue **apagado** (`DTE_CONTINGENCIA_ENABLED`) hasta la prueba en el servidor, el ensayo en apitest y la prueba física. PPQ: «quitar» ya no deja facturas trabadas (#411). Sin migraciones ni cambios de permisos.
+
+### Corregido
+
+- Contingencia:
+  - sin internet, entra sola en contingencia cuando el documento nunca salió de la máquina. Ante cualquier duda de que salió, queda para revisión como antes (#410);
+  - si la tarea automática se corta a la mitad, vuelve a correr en minutos y no al día siguiente (#410);
+  - la reconexión da por terminada la contingencia solo cuando la recepción de Hacienda contesta, no basta con el login (#410);
+  - con el firmador o el inicio de sesión caídos, el aviso y los lotes dicen qué pasó y se pueden reintentar, sin error del servidor (#410);
+  - un aviso de contingencia que quedó en duda no se manda repetido sin que una persona lo verifique. Hay dos botones: «Ya verifiqué en Hacienda» y «Hacienda sí lo tiene» (#410);
+  - un lote rechazado se reintenta con espera creciente, para al tercer rechazo y avisa por correo (#410);
+  - el aviso de plazo vencido cuenta bien las 72 h y avisa 6 horas antes; una contingencia manual con Hacienda respondiendo avisa que hay que terminarla (#410);
+  - los mensajes dicen qué pasó en palabras simples, y la nota de crédito sobre un CCF provisional dice por qué no se puede (#410).
+- PPQ:
+  - «quitar» un CCF de un lote lo devuelve a «por presentar», con nota y bitácora; si deja su nota de crédito en el lote, lo avisa (#411);
+  - completar el historial ya no marca «presentado» lo que solo está en un lote borrado o lo que se devolvió para el próximo PPQ (#411).
+
 ## [2026.11.17.3] - 2026-11-17
 
 Inicio: «Rutas por visitar» cuenta también los pedidos web por entregar (#407). Sin migraciones ni cambios de permisos.
