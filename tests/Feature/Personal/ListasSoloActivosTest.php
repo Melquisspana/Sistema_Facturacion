@@ -281,7 +281,23 @@ class ListasSoloActivosTest extends TestCase
         $filtrada = $this->get(route('personal.accesos.index', ['sin_ficha' => 1, 'activo' => 'todos']))->assertOk()
             ->assertSee('suelta-inactiva@example.test')
             ->assertSee('Mostrando solo las cuentas sin ficha en Personal.');
-        $this->assertEnlace($filtrada, 'Ver todos', route('personal.accesos.index'));
+        $this->assertEnlace($filtrada, 'Quitar este filtro', route('personal.accesos.index', ['activo' => 'todos']));
+    }
+
+    /** «Todos» es una opción de Estado: los enlaces que vuelven a la lista no lo prometen. */
+    public function test_accesos_los_enlaces_para_volver_no_prometen_todos(): void
+    {
+        User::factory()->create(['email' => 'suelta@example.test', 'activo' => true]);
+        $this->actingAs($this->admin);
+
+        $externas = $this->get(route('personal.accesos.index', ['externas' => 1, 'activo' => 'todos']))->assertOk()
+            ->assertDontSee('Todos los accesos');
+        $this->assertEnlace($externas, 'Volver a accesos', route('personal.accesos.index'));
+
+        // «Quitar este filtro» quita solo «sin ficha»: la búsqueda y el estado elegidos quedan.
+        $sinFicha = $this->get(route('personal.accesos.index', ['sin_ficha' => 1, 'q' => 'suelta', 'activo' => 'todos']))->assertOk()
+            ->assertSee('suelta@example.test')->assertDontSee('>Ver todos</a>', false);
+        $this->assertEnlace($sinFicha, 'Quitar este filtro', route('personal.accesos.index', ['q' => 'suelta', 'activo' => 'todos']));
     }
 
     public function test_accesos_la_paginacion_conserva_el_estado(): void

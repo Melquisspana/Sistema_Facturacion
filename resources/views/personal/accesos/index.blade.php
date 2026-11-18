@@ -17,6 +17,9 @@
     $filtrado = $filtros['q'] !== '' || $filtros['activo'] !== '1';
     // La misma búsqueda y vista, con las cuentas apagadas.
     $verInactivos = route('personal.accesos.index', $vista + ($filtros['q'] !== '' ? ['q' => $filtros['q']] : []) + ['activo' => '0']);
+    // Quita solo «sin ficha»: la búsqueda y el estado elegidos quedan. «Todos» es una opción del
+    // Estado, por eso ningún enlace que vuelve a la lista se llama así.
+    $sinFiltroFicha = route('personal.accesos.index', array_filter(['q' => $filtros['q'] !== '' ? $filtros['q'] : null, 'activo' => $filtros['activo'] !== '1' ? $filtros['activo'] : null], fn ($v) => $v !== null));
 @endphp
 
 <x-app-layout>
@@ -25,7 +28,7 @@
             <h1 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $filtros['externas'] ? 'Accesos externos' : 'Accesos al sistema' }}</h1>
             <div class="flex flex-wrap items-center gap-3">
                 @if ($filtros['externas'])
-                    <a href="{{ route('personal.accesos.index') }}" class="{{ $secundario }}">Todos los accesos</a>
+                    <a href="{{ route('personal.accesos.index') }}" class="{{ $secundario }}">Volver a accesos</a>
                 @else
                     <a href="{{ route('personal.accesos.index', ['externas' => 1]) }}" class="{{ $secundario }}">Accesos externos</a>
                 @endif
@@ -65,7 +68,7 @@
                         Mostrando solo las cuentas sin ficha en Personal.
                     @endif
                     @if ($filtros['sin_ficha'])
-                        <a href="{{ route('personal.accesos.index') }}" class="font-medium underline">Ver todos</a>
+                        <a href="{{ $sinFiltroFicha }}" class="font-medium underline">Quitar este filtro</a>
                     @else
                         <a href="{{ route('personal.accesos.index', ['sin_ficha' => 1]) }}" class="font-medium underline">Ver solo esos</a>
                     @endif
