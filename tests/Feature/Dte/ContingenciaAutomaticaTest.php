@@ -331,7 +331,8 @@ class ContingenciaAutomaticaTest extends TestCase
         $manual->refresh();
         $this->assertSame('activa', $manual->estado, 'Una manual no se cierra sola: pudo activarse por otro motivo.');
         $this->assertNull($manual->cese);
-        $this->assertStringContainsString('Hacienda ya responde', (string) $this->view('components.aviso-contingencia'));
+        // Con la fecha: la marca puede seguir de un día para otro.
+        $this->assertStringContainsString('Hacienda ya responde desde las 10:15 del 13/10/2026.', (string) $this->view('components.aviso-contingencia'));
         $this->assertSame(1, DB::table('activity_log')->where('description', 'Reconexión: Hacienda ya responde y la contingencia manual sigue activa')->count(),
             'Se audita una vez, no en cada vuelta.');
         $detector = collect(app(Avisador::class)->detectores())->first(fn ($d) => $d instanceof ContingenciaManualSinTerminar);

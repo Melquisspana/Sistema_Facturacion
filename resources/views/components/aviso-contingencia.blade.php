@@ -27,7 +27,7 @@
         {{-- Una manual no se cierra sola: la reconexión solo anota que Hacienda ya responde. --}}
         @php($haciendaRespondeDesde = app(\App\Services\Dte\ContingenciaService::class)->haciendaRespondeDesde($contingencia))
         @if ($haciendaRespondeDesde)
-            <p class="font-semibold">Hacienda ya responde desde las {{ $haciendaRespondeDesde->format('H:i') }}. Si el motivo de la contingencia ya pasó, hay que terminarla: mientras siga activa, todo sale provisional.</p>
+            <p class="font-semibold">Hacienda ya responde desde las {{ $haciendaRespondeDesde->format('H:i') }} del {{ $haciendaRespondeDesde->format('d/m/Y') }}. Si el motivo de la contingencia ya pasó, hay que terminarla: mientras siga activa, todo sale provisional.</p>
         @endif
         @if (\Illuminate\Support\Facades\Schema::hasTable('contingencia_eventos'))
             <x-plazos-contingencia :contingencia="$contingencia" />
