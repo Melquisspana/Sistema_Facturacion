@@ -15,6 +15,7 @@ use App\Services\Dte\Serializadores\SerializadorContingenciaMh;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\Dte\EndpointsHacienda;
+use App\Support\Dte\PedidoSinSalida;
 use App\Support\HoraNegocio;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -225,7 +226,7 @@ class ContingenciaEventoService
                 $disco = Storage::disk(config('dte.storage.disk', 'local'));
                 // Primero el token: sin poder iniciar sesión no se firma ni se guarda nada.
                 $token = app(ContingenciaTransporte::class)->token();
-                // El JWS se guarda justo antes de mandarlo: si ya está, este aviso ya salió
+                // El JWS se guarda justo antes de mandarlo: si ya está, este aviso pudo salir
                 // una vez y no se supo qué hizo Hacienda con él (se cortó o contestó algo raro).
                 $reintento = $disco->exists($ruta.'.jws');
                 // Ante un timeout se reintenta EXACTAMENTE el mismo JSON, UUID y JWS.
@@ -233,11 +234,24 @@ class ContingenciaEventoService
                 if (! $disco->exists($ruta.'.jws')) {
                     $this->guardar($ruta.'.jws', $jws);
                 }
+                $url = EndpointsHacienda::contingencia($ambiente);
+                $transferencias = 0;
                 try {
                     $respuesta = Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
                         ->withHeaders(['Authorization' => $token, 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')])
-                        ->post(EndpointsHacienda::contingencia($ambiente), ['nit' => $json['emisor']['nit'], 'documento' => $jws]);
-                } catch (ConnectionException) {
+                        ->withOptions(['on_stats' => function () use (&$transferencias): void {
+                            $transferencias++;
+                        }])
+                        ->post($url, ['nit' => $json['emisor']['nit'], 'documento' => $jws]);
+                } catch (ConnectionException $e) {
+                    // Si cURL demuestra que este primer envío no salió de la máquina, Hacienda
+                    // no pudo recibirlo: sin el JWS, el intento siguiente vuelve a ser el
+                    // primero y su rechazo es un rechazo común. Si pudo salir, el JWS queda.
+                    if (! $reintento && PedidoSinSalida::probado($e, $url, $transferencias)) {
+                        Log::info('Contingencia: el aviso no salió de la máquina', ['evento_id' => $evento->id] + PedidoSinSalida::evidencia($e));
+                        $disco->delete($ruta.'.jws');
+                    }
+
                     return ['resultado' => 'error_conexion', 'mensaje' => 'No se pudo conectar con el MH. Se puede reintentar.'];
                 }
                 $cuerpo = $respuesta->json();

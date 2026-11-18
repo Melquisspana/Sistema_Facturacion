@@ -18,8 +18,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\SimulaFallasDeConexion;
 use Tests\TestCase;
 
 class ContingenciaEventoTest extends TestCase
@@ -561,6 +563,39 @@ class ContingenciaEventoTest extends TestCase
 
         $this->assertSame('rechazado', $parte->refresh()->estado);
         $this->assertNotNull($parte->rechazado_en);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function primerEnvioCortado(): array
+    {
+        return [
+            'no pudo conectar: el aviso no salió' => ['rechazada', 'rechazado'],
+            'salió y se perdió la respuesta' => ['salio_sin_respuesta', 'incierto'],
+        ];
+    }
+
+    /**
+     * Con Hacienda caída del todo y el token guardado, el primer envío ni conecta. El
+     * rechazo siguiente es de ese primer envío: un rechazo común, con su plazo para
+     * corregir, sin ir a verificar en Hacienda. Si el pedido pudo salir, sigue en duda.
+     */
+    #[DataProvider('primerEnvioCortado')]
+    public function test_un_rechazo_despues_de_un_envio_que_no_salio_de_la_maquina_es_un_rechazo_comun(string $falla, string $estado): void
+    {
+        $this->documento();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FIRMA.INVENTADA.JWS']),
+            '*consultadte*' => Http::response([], 404),
+            '*fesv/contingencia' => SimulaFallasDeConexion::repetir(SimulaFallasDeConexion::fallaReal($falla))]);
+        $this->assertSame('error_conexion', $this->service()->enviar($this->contingencia)[0]['resultado']);
+
+        $this->simular('RECHAZADO');
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia));
+
+        $parte = ContingenciaEvento::sole();
+        $this->assertSame($estado, $parte->estado);
+        $this->assertSame('2026-10-10 11:00:00', $parte->rechazado_en?->format('Y-m-d H:i:s'));
     }
 
     public function test_con_la_firma_apagada_el_aviso_muestra_su_propio_mensaje_y_no_un_error_del_servidor(): void
