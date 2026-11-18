@@ -96,8 +96,9 @@ class AdministracionEmpleadosTest extends TestCase
         AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
         AsistenciaEmpleado::factory()->inactivo()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
 
+        // Beto está inactivo: la lista abre con los activos y se lo busca entre «Todos».
         $this->actingAs($this->admin())
-            ->get(route('personal.empleados', ['q' => 'Beto']))
+            ->get(route('personal.empleados', ['q' => 'Beto', 'activo' => 'todos']))
             ->assertOk()
             ->assertSee('Beto Relleno')
             ->assertDontSee('Ana Prueba');

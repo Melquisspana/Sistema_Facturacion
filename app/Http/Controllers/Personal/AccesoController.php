@@ -28,8 +28,8 @@ use Illuminate\View\View;
  * A una persona del personal se le da acceso en su ficha («Agregar acceso o módulos», con
  * AltaEmpleado), y ahí mismo se le cambia el rol, el correo, la contraseña o se le desactiva:
  * las acciones de este controlador, dibujadas en `personal/accesos/_acciones`. Acá queda la
- * lista de quién entra (todos, para la administración) y lo único que se crea acá: la cuenta
- * externa (la contadora, que no es empleada).
+ * lista de quién entra (para la administración; abre con los activos) y lo único que se crea
+ * acá: la cuenta externa (la contadora, que no es empleada).
  *
  * El permiso es el mismo de antes: `usuarios.gestionar` (middleware de la ruta y UserPolicy).
  */
@@ -47,6 +47,8 @@ class AccesoController extends Controller
         $busqueda = trim((string) $request->input('q', ''));
         // «Accesos externos»: las cuentas de gente de afuera (la contadora), sin ficha.
         $externas = $request->boolean('externas');
+        // Abre con los activos, igual que Empleados (18/11/2026): «Inactivos» o «Todos» muestran al resto.
+        $activo = in_array($request->query('activo'), ['0', 'todos'], true) ? $request->query('activo') : '1';
 
         $usuarios = User::query()
             ->with($this->conPersonal() ? ['roles', 'planillaEmpleado'] : ['roles'])
@@ -55,13 +57,15 @@ class AccesoController extends Controller
                 ->orWhere('email', 'like', "%{$busqueda}%")))
             ->when($this->conPersonal() && $request->boolean('sin_ficha'), fn ($q) => $this->sinFicha($q))
             ->when($externas, fn ($q) => $this->externas($q))
+            ->when($activo !== 'todos', fn ($q) => $q->where('activo', $activo === '1'))
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
 
         return view('personal.accesos.index', [
-            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha'), 'externas' => $externas],
-            'sinFicha' => $this->conPersonal() ? $this->sinFicha(User::query())->count() : 0,
+            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha'), 'externas' => $externas, 'activo' => $activo],
+            // Solo quien sigue entrando: el aviso dice eso y «Ver solo esos» abre con los activos.
+            'sinFicha' => $this->conPersonal() ? $this->sinFicha(User::query())->where('activo', true)->count() : 0,
             'conPersonal' => $this->conPersonal(), 'verFichas' => $request->user()->can('planilla.ver'),
         ]);
     }

@@ -2,12 +2,14 @@
      las dos. La columna «Huellas» cuenta solo las VIGENTES.
 
      No hay botón de eliminar, y no falta: borrar a alguien borra su historial laboral.
-     Quien se va se desactiva. --}}
+     Quien se va se desactiva, y la lista abre sin él: se ve con «Inactivos» o «Todos». --}}
 @php
     use App\Services\Gastos\Dinero;
 
     $altaUnica = $vePlanilla && auth()->user()->can('planilla.gestionar');
     $altaAsistencia = ! $vePlanilla && $veAsistencia && auth()->user()->can('asistencia.gestionar');
+    // «Activos» es lo que abre: no cuenta como filtro puesto.
+    $filtrado = trim((string) request('q')) !== '' || $activo !== '1';
 @endphp
 
 <x-app-layout>
@@ -63,22 +65,16 @@
                 </div>
             @endif
 
+            {{-- Misma forma que el filtro de Accesos (docs/GUIA_PANTALLAS.md › Filtros). --}}
             <form method="GET" class="flex flex-wrap items-end gap-3">
-                <div>
+                <div class="w-full sm:w-72">
                     <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Buscar</label>
                     <input id="q" type="text" name="q" value="{{ request('q') }}" placeholder="Nombre, apellido o código…"
-                           class="mt-1 w-72 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                           class="mt-1 block min-h-11 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 </div>
-                <div>
-                    <label for="activo" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
-                    <select id="activo" name="activo" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                        <option value="">Todos</option>
-                        <option value="1" @selected(request('activo') === '1')>Activos</option>
-                        <option value="0" @selected(request('activo') === '0')>Inactivos</option>
-                    </select>
-                </div>
-                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
-                @if (request()->hasAny(['q', 'activo']))
+                @include('personal._filtro-estado')
+                <button class="inline-flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">Filtrar</button>
+                @if ($filtrado)
                     <a href="{{ route('personal.empleados') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
@@ -150,7 +146,7 @@
                             @empty
                                 <tr>
                                     <td colspan="8" class="py-10 text-center text-gray-400 dark:text-paper-500">
-                                        @if (request()->hasAny(['q', 'activo']))
+                                        @if ($hayPersonas)
                                             Ninguna persona coincide con el filtro.
                                         @else
                                             Todavía no hay personas dadas de alta.

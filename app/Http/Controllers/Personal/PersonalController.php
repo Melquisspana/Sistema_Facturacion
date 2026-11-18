@@ -86,12 +86,18 @@ class PersonalController extends Controller
             );
         }
 
+        // Sobre todas las filas, no sobre las filtradas: cuenta a los activos mire uno lo que mire.
         $bajoMinimo = $minimo === null ? 0 : $filas
             ->filter(fn (array $f) => $f['activo'] && $f['mensual'] !== null && $f['mensual'] < $minimo)
             ->count();
+        // Abre con los activos (18/11/2026): quien se fue se ve con «Inactivos» o «Todos».
+        $activo = in_array($request->query('activo'), ['0', 'todos'], true) ? $request->query('activo') : '1';
 
         return view('personal.empleados', [
-            'empleados' => $this->paginar($request, $this->filtrar($request, $filas)),
+            'empleados' => $this->paginar($request, $this->filtrar($request, $filas, $activo)),
+            'activo' => $activo,
+            // Para no decir «todavía no hay nadie» cuando solo hay gente de baja.
+            'hayPersonas' => $filas->isNotEmpty(),
             'veAsistencia' => $veAsistencia,
             'vePlanilla' => $vePlanilla,
             'verImportes' => $verImportes,
@@ -275,7 +281,8 @@ class PersonalController extends Controller
         }
     }
 
-    private function filtrar(Request $request, Collection $filas): Collection
+    /** `$activo`: «1» (activos), «0» (inactivos) o «todos». */
+    private function filtrar(Request $request, Collection $filas, string $activo): Collection
     {
         $buscar = Str::lower(Str::ascii(trim((string) $request->query('q'))));
 
@@ -283,7 +290,7 @@ class PersonalController extends Controller
             ->when($buscar !== '', fn ($f) => $f->filter(
                 fn (array $fila) => str_contains(Str::lower(Str::ascii($fila['nombre'].' '.$fila['codigo'])), $buscar)
             ))
-            ->when($request->filled('activo'), fn ($f) => $f->where('activo', $request->boolean('activo')))
+            ->when($activo !== 'todos', fn ($f) => $f->where('activo', $activo === '1'))
             ->sortBy(fn (array $fila) => Str::lower(Str::ascii($fila['nombre'])))
             ->values();
     }

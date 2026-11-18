@@ -1,4 +1,5 @@
-{{-- Personal › Accesos: quién entra al sistema (todos; lo ve solo quien administra accesos).
+{{-- Personal › Accesos: quién entra al sistema (lo ve solo quien administra accesos). Abre con
+     los activos, igual que Empleados; las cuentas apagadas se ven con «Inactivos» o «Todos».
      Antes era el módulo «Usuarios». El acceso de una persona del personal se da y se cambia
      en su ficha; acá solo se crea la cuenta externa y se llega a las cuentas sin ficha. --}}
 @php
@@ -12,6 +13,8 @@
         : route('personal.accesos.show', $u);
     // Lo que se conserva al filtrar o limpiar la búsqueda.
     $vista = array_filter(['sin_ficha' => $filtros['sin_ficha'] ? 1 : null, 'externas' => $filtros['externas'] ? 1 : null]);
+    // «Activos» es lo que abre: no cuenta como filtro puesto.
+    $filtrado = $filtros['q'] !== '' || $filtros['activo'] !== '1';
 @endphp
 
 <x-app-layout>
@@ -69,8 +72,9 @@
                     <input id="q" type="text" name="q" value="{{ $filtros['q'] }}" placeholder="Nombre o correo…"
                            class="mt-1 block min-h-11 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 </div>
+                @include('personal._filtro-estado', ['activo' => $filtros['activo']])
                 <button class="{{ $secundario }}">Filtrar</button>
-                @if ($filtros['q'] !== '')
+                @if ($filtrado)
                     <a href="{{ route('personal.accesos.index', $vista) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
@@ -125,9 +129,9 @@
                             @empty
                                 <tr>
                                     <td colspan="{{ $columnas }}" class="px-4 py-10 text-center text-gray-500 dark:text-paper-300">
-                                        @if ($filtros['externas'] && $filtros['q'] === '')
-                                            Todavía no hay accesos externos. <a href="{{ route('personal.accesos.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear el primero</a>
-                                        @elseif ($filtros['q'] !== '' || $filtros['sin_ficha'] || $filtros['externas'])
+                                        @if ($filtros['externas'] && ! $filtrado)
+                                            Todavía no hay accesos externos activos. <a href="{{ route('personal.accesos.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear el primero</a>
+                                        @elseif ($filtrado || $filtros['sin_ficha'] || $filtros['externas'])
                                             Nada coincide con estos filtros. <a href="{{ route('personal.accesos.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Limpiar filtros</a>
                                         @else
                                             Todavía no hay accesos.
