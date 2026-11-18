@@ -401,7 +401,8 @@ class PpqItemController extends Controller
         if (! $r['quitado']) {
             return back()->with('error', match (true) {
                 $r['conservado']?->estaConciliado() === true => "No se quitó {$documento}: ya tiene un cobro registrado.",
-                $r['conservado'] !== null => "No se quitó {$documento}: tiene historia de conciliación con el archivo de pagos.",
+                $r['conservado'] !== null => "No se quitó {$documento}: ya pasó por el archivo de pagos y eso queda guardado. "
+                    .'Si no va en este PPQ, eliminá el lote y armalo de nuevo desde Cobros.',
                 default => 'Ese documento ya no estaba en el lote.',
             });
         }

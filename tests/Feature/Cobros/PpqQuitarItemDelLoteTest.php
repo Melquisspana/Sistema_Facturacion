@@ -204,7 +204,7 @@ class PpqQuitarItemDelLoteTest extends TestCase
         $this->quitar($user, $lote, $itemPagado)
             ->assertSessionHas('error', 'No se quitó el CCF '.$pagado->correlativoCorto().': ya tiene un cobro registrado.');
         $this->quitar($user, $lote, $itemHistoria)
-            ->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'tiene historia de conciliación'));
+            ->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'ya pasó por el archivo de pagos'));
 
         $this->assertSame(2, $lote->items()->count());
         $this->assertDatabaseHas('ppq_conciliacion_movimientos', ['ppq_item_id' => $itemHistoria->id]);
@@ -234,6 +234,31 @@ class PpqQuitarItemDelLoteTest extends TestCase
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->refresh()->presentacion_estado);
         $this->actingAs($user)->get(route('cobros.index', ['cliente_id' => $this->cliente->id, 'etapa' => 'listos']))
             ->assertOk()->assertViewHas('listosPpq', fn ($listos) => $listos->has($doc->id));
+    }
+
+    /**
+     * Al renglón se le quitó el cobro: ya no tiene cobro, pero sí historia con el archivo de
+     * pagos, que no se borra. El aviso dice cómo sacarlo del PPQ, y ese camino funciona.
+     */
+    public function test_un_renglon_al_que_se_le_quito_el_cobro_no_se_quita_y_el_aviso_dice_que_hacer(): void
+    {
+        $doc = $this->ccf();
+        $otro = $this->ccf();
+        $lote = $this->crear([$doc, $otro]);
+        $item = $lote->items()->where('dte_id', $doc->dte_id)->sole();
+        $item->update(['conciliacion_estado' => 'pagado', 'monto_pagado' => '100.00', 'fecha_pago' => '2026-09-20', 'conciliado_en' => now()]);
+        $user = $this->usuario();
+        $this->actingAs($user)->post(route('ppq.lotes.items.revertir-cobro', [$lote, $item]), ['motivo' => 'Prueba'])
+            ->assertSessionHas('status');
+        $this->assertTrue($lote->refresh()->esEditable());
+
+        $this->quitar($user, $lote, $item->refresh())->assertSessionHas('error', 'No se quitó el CCF '.$doc->correlativoCorto()
+            .': ya pasó por el archivo de pagos y eso queda guardado. Si no va en este PPQ, eliminá el lote y armalo de nuevo desde Cobros.');
+        $this->assertTrue($lote->items()->whereKey($item->id)->exists());
+
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))
+            ->assertSessionHas('status', fn ($mensaje) => str_contains($mensaje, '2 CCF volvieron a por presentar'));
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->refresh()->presentacion_estado);
     }
 
     /**
