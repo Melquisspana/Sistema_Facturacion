@@ -59,9 +59,9 @@ class ContingenciaAutomaticaService
         // pero no sin límite: un documento firmado hace horas (por ejemplo, con el worker
         // caído) no puede declarar contingencia por horas en que Hacienda sí respondía. Más
         // allá del tope no se convierte ni se activa nada: queda para revisión manual.
-        $emision = $this->emision($dte);
-        $tope = max(1, (int) config('dte.contingencia.retroceso_max_minutos', 10));
-        if ($emision === null || $emision->lt(HoraNegocio::ahora()->subMinutes($tope))) {
+        if (! $this->dentroDeLaVentana($dte)) {
+            $emision = $this->emision($dte);
+            $tope = $this->topeMinutos();
             Log::warning('Contingencia: documento fuera de la ventana para la entrada automática', [
                 'dte_id' => $dte->id, 'emision' => $emision?->toDateTimeString(), 'tope_minutos' => $tope]);
             activity('dte_contingencia')->performedOn($dte)
@@ -158,6 +158,22 @@ class ContingenciaAutomaticaService
 
             return true;
         });
+    }
+
+    /**
+     * ¿Se emitió el documento dentro del tope de minutos que permite pasarlo a contingencia
+     * (`retroceso_max_minutos`)? Sin una emisión legible en su JSON, no.
+     */
+    public function dentroDeLaVentana(Dte $dte): bool
+    {
+        $emision = $this->emision($dte);
+
+        return $emision !== null && ! $emision->lt(HoraNegocio::ahora()->subMinutes($this->topeMinutos()));
+    }
+
+    private function topeMinutos(): int
+    {
+        return max(1, (int) config('dte.contingencia.retroceso_max_minutos', 10));
     }
 
     /** Emisión del documento según su JSON generado (lo que el MH compara), en hora local. */

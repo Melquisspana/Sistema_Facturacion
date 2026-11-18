@@ -558,20 +558,54 @@ class ContingenciaSinConexionTest extends TestCase
         Sleep::assertNeverSlept();
     }
 
-    /** El tope de minutos desde la emisión se sigue respetando por el camino nuevo. */
-    public function test_documento_emitido_hace_mas_del_tope_no_entra_sola(): void
+    /**
+     * Pasado el tope de minutos desde la emisión, el documento ya no puede pasar a
+     * contingencia: tampoco se hace la vuelta sin conexión. Corta enseguida como incierto,
+     * igual que antes, sin repetir envíos ni dejar renglones de «revisión manual».
+     */
+    public function test_documento_emitido_hace_mas_del_tope_no_hace_la_vuelta_sin_conexion(): void
     {
         $dte = $this->documento(); // emitido a las 10:00:00; tope de fábrica, 10 minutos
         Carbon::setTestNow(Carbon::parse('2026-11-17 10:30:00', 'America/El_Salvador'));
 
-        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, 'reintentos_agotados'));
+        $respuesta = $this->clic($dte);
 
-        $this->assertDatabaseCount('contingencias', 0);
-        $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
-        $this->assertNull($dte->contingencia_id);
-        $this->assertSame(3, $this->pedidos('recepciondte'));
-        $this->assertSame(0, $this->pedidos('generate_204'));
+        $this->assertQuedoIncierto($respuesta, $dte);
+        $this->assertSame(1, $this->pedidos('recepciondte'), 'el envío inicial y ningún reenvío');
+        $this->assertSame(1, $this->pedidos('consultadte'));
         $this->assertSame(1, $this->pedidos('firmardocumento'), 'no se vuelve a firmar');
+        Sleep::assertNeverSlept();
+        $this->assertSame(0, Activity::where('log_name', 'dte_contingencia')->count(), 'ninguna revisión manual');
+    }
+
+    /**
+     * Un firmado que nunca salió y vuelve a intentarse después del tope (por ejemplo, la
+     * tienda web cada 5 minutos): ni un envío, con o sin token guardado.
+     */
+    #[DataProvider('tokenGuardadoONo')]
+    public function test_firmado_sin_envios_despues_del_tope_queda_incierto_sin_enviar(string $token, string $unicoPedido): void
+    {
+        $dte = $this->firmadoSinEnvios();
+        config(['dte.transmision.token' => $token]);
+        Carbon::setTestNow(Carbon::parse('2026-11-17 10:30:00', 'America/El_Salvador'));
+
+        $respuesta = $this->clic($dte);
+
+        $this->assertQuedoIncierto($respuesta, $dte);
+        Http::assertSentCount(1);
+        $this->assertSame(1, $this->pedidos($unicoPedido), 'solo la consulta previa');
+        Sleep::assertNeverSlept();
+        $this->assertSame(0, Activity::where('log_name', 'dte_contingencia')->count(), 'ninguna revisión manual');
+        $this->assertSame(['marca' => 1, 'empezo' => 0, 'no_salio' => 0], $this->anotaciones($dte));
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function tokenGuardadoONo(): array
+    {
+        return [
+            'con token guardado' => ['Bearer INVENTADO', 'consultadte'],
+            'sin token guardado' => ['', 'seguridad/auth'],
+        ];
     }
 
     /** La entrada de siempre (la consulta dice «no lo tengo») sigue igual y no espera. */

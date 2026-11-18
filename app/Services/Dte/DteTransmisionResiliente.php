@@ -79,6 +79,9 @@ use Illuminate\Support\Sleep;
  *     conteste; la prueba nueva solo vale cuando no hubo NINGUNA respuesta.
  *   - Un solo envío en duda, de esta corrida o de una anterior, cierra este camino para
  *     ese documento. No saber no autoriza.
+ *   - Un documento emitido hace más del tope que permite pasarlo a contingencia
+ *     (`retroceso_max_minutos`) tampoco lo usa: no podría convertirse, y se corta como
+ *     siempre en vez de repetir envíos que no llevan a nada.
  *   - Sin token y sin poder pedirlo (el login tampoco conecta) el envío ni se intenta:
  *     cuenta como un intento que no salió.
  *   - Lo que nunca salió no gasta el tope: un documento que llega firmado por este
@@ -413,15 +416,18 @@ class DteTransmisionResiliente
     /**
      * ¿Vale, para este documento y en este momento, la prueba de «ningún envío salió»?
      *
-     * Solo con la contingencia encendida, fuera del modo simulado, y si la bitácora de
-     * envíos lo demuestra. Se le pregunta a la bitácora CADA VEZ: no se guarda nada en
+     * Solo con la contingencia encendida, fuera del modo simulado, si la bitácora de
+     * envíos lo demuestra y si el documento todavía puede pasar a contingencia por el
+     * tope de minutos desde su emisión. Fuera de ese tope la vuelta sin conexión no
+     * llevaría a nada: se corta como siempre. Se pregunta CADA VEZ: no se guarda nada en
      * memoria ni se confía en lo que valía para un intento anterior.
      */
     private function puertaSinSalida(Dte $dte): bool
     {
         return (bool) config('dte.contingencia.enabled', false)
             && ! (bool) config('dte.transmision.mock', false)
-            && $this->bitacora->sinEnviosEnDuda($dte);
+            && $this->bitacora->sinEnviosEnDuda($dte)
+            && app(ContingenciaAutomaticaService::class)->dentroDeLaVentana($dte);
     }
 
     /**
