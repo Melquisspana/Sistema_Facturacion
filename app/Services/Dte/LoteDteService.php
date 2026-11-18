@@ -7,6 +7,7 @@ use App\Models\Contingencia;
 use App\Models\ContingenciaEvento;
 use App\Models\Dte;
 use App\Models\LoteDte;
+use App\Services\Alertas\Detectores\ContingenciaLotesRechazados;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\Dte\EndpointsHacienda;
 use App\Support\HoraNegocio;
@@ -143,9 +144,50 @@ class LoteDteService
         });
     }
 
-    public function enviar(ContingenciaEvento $evento): array
+    /** Lotes rechazados enteros de un mismo aviso desde los que la tarea programada ya no reenvía sola. */
+    public const TOPE_RECHAZOS_AUTOMATICOS = 3;
+
+    /** Minutos que espera la tarea programada para volver a armar lotes, según cuántos rechazó Hacienda. */
+    private const ESPERA_TRAS_RECHAZOS_MINUTOS = [1 => 15, 2 => 60];
+
+    /**
+     * Por qué la tarea programada todavía no vuelve a armar lotes de este aviso, o null.
+     *
+     * Un lote rechazado entero libera sus documentos, y Hacienda suele rechazar igual el
+     * siguiente: antes salía otro cada 5 minutos hasta vencer las 72 h. Ahora la tarea
+     * espera 15 minutos después del primer rechazo y una hora después del segundo; desde
+     * el tercero ya no los reenvía sola y queda para una persona, con el botón «Enviar a
+     * Hacienda», que no espera. Avisa {@see ContingenciaLotesRechazados}.
+     */
+    public function pausaTrasRechazos(ContingenciaEvento $evento): ?string
     {
-        $lotes = $this->preparar($evento);
+        $rechazados = $evento->lotes()->where('estado', 'error');
+        $cantidad = (clone $rechazados)->count();
+        if ($cantidad === 0) {
+            return null;
+        }
+        if ($cantidad >= self::TOPE_RECHAZOS_AUTOMATICOS) {
+            return 'Hacienda rechazó '.$cantidad.' lotes enteros del aviso '.$evento->codigo_generacion
+                .': la tarea ya no los reenvía sola. Revisá la respuesta en «Pendientes de envío» y reenviá con «Enviar a Hacienda».';
+        }
+        // Se guardó con la hora del negocio: se compara reloj contra reloj en esa zona.
+        $desde = Carbon::parse((string) $rechazados->max('enviado_en'), HoraNegocio::zona())
+            ->addMinutes(self::ESPERA_TRAS_RECHAZOS_MINUTOS[$cantidad]);
+
+        return HoraNegocio::ahora()->lt($desde)
+            ? 'Hacienda rechazó el último lote del aviso '.$evento->codigo_generacion.': la tarea lo vuelve a intentar desde las '.$desde->format('H:i').'.'
+            : null;
+    }
+
+    /**
+     * @param  bool  $armarLotesNuevos  false: solo sale lo que ya tiene lote pendiente (una
+     *                                  respuesta perdida, con su mismo idEnvio), sin volver a
+     *                                  armar lotes con lo que liberó un rechazo
+     */
+    public function enviar(ContingenciaEvento $evento, bool $armarLotesNuevos = true): array
+    {
+        $lotes = $armarLotesNuevos ? $this->preparar($evento)
+            : LoteDte::where('contingencia_evento_id', $evento->id)->orderBy('id')->get();
         $resultados = [];
         foreach ($lotes->where('estado', 'pendiente') as $lote) {
             $resultado = $this->enviarLote($lote);

@@ -35,7 +35,12 @@ class DteContingenciaLotesCommand extends Command
                 continue;
             }
             foreach ($eventos->partesVigentes($contingencia)->where('estado', 'recibido') as $evento) {
-                $bloqueada = ! $this->intentar(fn () => $service->enviar($evento)) || $bloqueada;
+                // Tras un lote rechazado entero espera más cada vez, con tope.
+                $pausa = $service->pausaTrasRechazos($evento);
+                if ($pausa !== null) {
+                    $this->warn($pausa);
+                }
+                $bloqueada = ! $this->intentar(fn () => $service->enviar($evento, $pausa === null)) || $bloqueada;
             }
         }
         foreach (LoteDte::where('estado', 'recibido')->get() as $lote) {

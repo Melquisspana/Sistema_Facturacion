@@ -12,6 +12,8 @@ use App\Models\Dte;
 use App\Models\LoteDte;
 use App\Models\Producto;
 use App\Models\User;
+use App\Services\Alertas\Avisador;
+use App\Services\Alertas\Detectores\ContingenciaLotesRechazados;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\LoteDteService;
@@ -679,5 +681,100 @@ class ContingenciaLotesTest extends TestCase
             ->assertSessionHasErrors('contingencia');
         $this->assertStringContainsString('No se hizo ninguna petición', session('errors')->first('contingencia'));
         Http::assertNothingSent();
+    }
+
+    // ─────────── Lote rechazado entero: espera, tope y aviso ───────────
+    //
+    // En el simulacro del 17/11/2026 un lote rechazado entero se volvía a mandar cada 5
+    // minutos con otro idEnvio, sin tope, hasta vencer las 72 h (unos 860 intentos).
+
+    private function haciendaRechazaLotes(): void
+    {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*recepcionlote' => Http::response(['estado' => 'RECHAZADO', 'mensaje' => 'Lote rechazado inventado'], 400)]);
+    }
+
+    public function test_un_lote_rechazado_entero_la_tarea_lo_reintenta_con_espera_creciente_hasta_un_tope(): void
+    {
+        $dte = $this->documento();
+        $this->haciendaRechazaLotes();
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        Http::assertSentCount(1);
+
+        // Después del primer rechazo espera 15 minutos.
+        $this->pasanMinutos(14);
+        $this->artisan('dte:contingencia-lotes')->expectsOutputToContain('Hacienda rechazó el último lote')->assertSuccessful();
+        Http::assertSentCount(1);
+        $this->pasanMinutos(1);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        Http::assertSentCount(2);
+
+        // Después del segundo, una hora.
+        $this->pasanMinutos(59);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        Http::assertSentCount(2);
+        $this->pasanMinutos(1);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        Http::assertSentCount(3);
+
+        // Desde el tercero ya no lo reenvía sola: queda para una persona.
+        $this->pasanMinutos(24 * 60);
+        $this->artisan('dte:contingencia-lotes')->expectsOutputToContain('ya no los reenvía sola')->assertSuccessful();
+        Http::assertSentCount(3);
+        $this->assertSame(3, LoteDte::where('estado', 'error')->count());
+        $this->assertNull($dte->refresh()->lote_dte_id);
+
+        // El botón «Enviar a Hacienda» no espera.
+        $this->simular();
+        $this->post(route('facturacion.contingencia.lotes.enviar', $this->evento))->assertSessionHasNoErrors();
+        $this->assertSame('recibido', $dte->refresh()->loteDte->estado);
+    }
+
+    public function test_mientras_espera_por_un_rechazo_un_lote_con_la_respuesta_perdida_sale_igual_con_su_idenvio(): void
+    {
+        config(['dte.contingencia.lote_max' => 1]);
+        $rechazado = $this->documento();
+        $perdido = $this->documento();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*recepcionlote' => Http::sequence()
+            ->push(['estado' => 'RECHAZADO', 'mensaje' => 'Lote rechazado inventado'], 400)->pushFailedConnection()]);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        $pendiente = LoteDte::where('estado', 'pendiente')->sole();
+        $this->assertSame($pendiente->id, $perdido->refresh()->lote_dte_id);
+
+        $this->pasanMinutos(5);
+        $this->simular();
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+
+        $this->assertSame('recibido', $pendiente->refresh()->estado);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/recepcionlote') && $r['idEnvio'] === $pendiente->id_envio);
+        // El liberado por el rechazo sigue esperando su turno.
+        $this->assertNull($rechazado->refresh()->lote_dte_id);
+        $this->assertSame(2, LoteDte::count());
+    }
+
+    public function test_un_lote_rechazado_entero_abre_un_aviso_por_correo_hasta_que_sus_documentos_vuelven_a_salir(): void
+    {
+        $detector = collect(app(Avisador::class)->detectores())->first(fn ($d) => $d instanceof ContingenciaLotesRechazados);
+        $this->assertNotNull($detector, 'El aviso por correo está registrado.');
+        $this->assertTrue($detector->aplica());
+        $this->documento();
+        $this->documento();
+        $this->assertNull($detector->revisar());
+
+        $this->haciendaRechazaLotes();
+        $this->service()->enviar($this->evento);
+        $hallazgo = $detector->revisar();
+        $this->assertSame(2, $hallazgo?->conteo);
+        $this->assertSame('facturacion.contingencia.pendientes', $hallazgo->enlace);
+
+        $this->simular();
+        $this->service()->enviar($this->evento);
+        $this->assertNull($detector->revisar());
+
+        config(['dte.contingencia.enabled' => false]);
+        $this->assertFalse($detector->aplica());
     }
 }
