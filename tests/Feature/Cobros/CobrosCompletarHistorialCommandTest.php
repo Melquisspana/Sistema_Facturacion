@@ -162,6 +162,32 @@ class CobrosCompletarHistorialCommandTest extends TestCase
     }
 
     /**
+     * PPQ 27 de producción: se borró el lote y sus CCF volvieron a por presentar. Sus items
+     * quedan (borrado blando del lote), pero no prueban que se presentaron.
+     */
+    public function test_un_ccf_que_solo_esta_en_un_lote_borrado_no_pasa_a_presentado(): void
+    {
+        $cliente = $this->clienteDeCobros();
+        $soloEnBorrado = $this->doc($cliente, '201', '2026-08-01', false);
+        $enVigente = $this->doc($cliente, '202', '2026-08-01', false);
+        foreach (['201' => true, '202' => false] as $n => $borrar) {
+            $lote = PpqLote::create(['cliente_id' => $cliente->id, 'referencia' => 'PPQ-'.$n, 'fecha' => '2026-08-05', 'estado' => 'borrador']);
+            $lote->items()->create(['origen' => 'local', 'tipo_dte' => '03', 'monto_dte' => '100.00', 'sin_albaran' => true,
+                'numero_control' => 'DTE-03-M001P002-'.str_pad($n, 15, '0', STR_PAD_LEFT)]);
+            if ($borrar) {
+                $lote->delete();
+            }
+        }
+
+        $this->artisan('cobros:completar-historial', ['--cliente' => $cliente->id, '--aplicar' => true])
+            ->expectsOutputToContain('Marcados como presentados por estar en un lote PPQ: 1.')
+            ->assertSuccessful();
+
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $soloEnBorrado->refresh()->presentacion_estado);
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $enVigente->refresh()->presentacion_estado);
+    }
+
+    /**
      * Issue #13: el mismo TXT ya se aplicó en otro cliente y su QD quedó allá. En el cliente
      * correcto el QD no se trae ni se mueve, pero el CF sí se aplica y el QD se avisa.
      */

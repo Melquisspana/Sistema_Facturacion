@@ -94,8 +94,9 @@ class CobrosCompletarHistorialCommand extends Command
             }
         }
 
-        // 2. Lo que viajó en un lote PPQ ya se presentó.
-        $enLotes = PpqItem::query()->get()->map(fn ($i) => EjercicioControl::llave($i->numero_control, $i->ejercicio_control))->filter()->flip();
+        // 2. Lo que viajó en un lote PPQ ya se presentó. Un lote borrado no cuenta: sus items
+        //    quedan, pero sus CCF volvieron a por presentar (borrado blando del lote).
+        $enLotes = PpqItem::query()->whereHas('lote')->get()->map(fn ($i) => EjercicioControl::llave($i->numero_control, $i->ejercicio_control))->filter()->flip();
 
         $pendientes = CobroDocumento::deCliente($cliente->id)
             ->whereIn('presentacion_estado', [EstadoPresentacionCobro::SinPresentar->value, EstadoPresentacionCobro::Preparada->value])
