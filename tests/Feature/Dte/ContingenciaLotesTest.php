@@ -598,4 +598,86 @@ class ContingenciaLotesTest extends TestCase
 
         $this->assertNotEmpty(array_filter($ruta->gatherMiddleware(), fn ($m) => is_string($m) && str_starts_with($m, 'throttle:')));
     }
+
+    // ─────────── Inicio de sesión caído o candado de seguridad en la tarea de lotes ───────────
+    //
+    // En el simulacro del 17/11/2026, sin poder iniciar sesión en Hacienda la tarea terminaba
+    // con error en el primer aviso y no hacía lo demás, y el botón daba un error 500.
+
+    /** Un lote ya recibido esperando su resultado, y otro documento todavía sin lote. */
+    private function loteEnCursoYUnoSinLote(): array
+    {
+        $enLote = $this->documento();
+        $this->service()->enviar($this->evento);
+
+        return [$enLote, LoteDte::sole(), $this->documento()];
+    }
+
+    public function test_sin_poder_iniciar_sesion_la_tarea_avisa_sigue_con_lo_demas_y_termina_bien(): void
+    {
+        [$enLote, $lote, $sinLote] = $this->loteEnCursoYUnoSinLote();
+        config(['dte.transmision.token' => '', 'dte.transmision.usuario_testing' => 'usuario-inventado',
+            'dte.transmision.password_testing' => 'clave-inventada']);
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake([
+            '*seguridad/auth' => Http::sequence()->pushFailedConnection()
+                ->push(['status' => 'OK', 'body' => ['token' => 'TOKEN-INVENTADO-NUEVO']]),
+            '*consultadtelote/*' => Http::response(['procesados' => [
+                ['codigoGeneracion' => $enLote->codigo_generacion, 'selloRecibido' => 'SELLO-INVENTADO']]]),
+        ]);
+
+        $this->artisan('dte:contingencia-lotes')
+            ->expectsOutputToContain('No se pudo iniciar sesión en Hacienda')
+            ->assertSuccessful();
+
+        // El lote nuevo quedó armado y sin salir, para la corrida siguiente.
+        $nuevo = LoteDte::whereKeyNot($lote->id)->sole();
+        $this->assertSame('pendiente', $nuevo->estado);
+        $this->assertSame($nuevo->id, $sinLote->refresh()->lote_dte_id);
+        Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/recepcionlote'));
+        // Y la consulta del lote anterior se hizo igual.
+        $this->assertSame(EstadoDte::Aceptado, $enLote->refresh()->estado);
+        $this->assertSame('procesado', $lote->refresh()->estado);
+    }
+
+    public function test_sin_poder_iniciar_sesion_el_boton_de_enviar_dice_que_paso(): void
+    {
+        $this->documento();
+        config(['dte.transmision.token' => '', 'dte.transmision.usuario_testing' => 'usuario-inventado',
+            'dte.transmision.password_testing' => 'clave-inventada']);
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*seguridad/auth' => Http::failedConnection()]);
+
+        $this->post(route('facturacion.contingencia.lotes.enviar', $this->evento))->assertRedirect()
+            ->assertSessionHasErrors(['contingencia' => 'No se pudo iniciar sesión en Hacienda. No se envió nada: probá de nuevo en unos minutos.']);
+        $this->assertSame('pendiente', LoteDte::sole()->estado);
+    }
+
+    public function test_un_candado_de_seguridad_en_la_tarea_sale_con_su_mensaje_sin_frenar_lo_demas(): void
+    {
+        [$enLote, $lote] = $this->loteEnCursoYUnoSinLote();
+        config(['dte.ambientes.00.lote_url' => 'https://impostor.invalid/recepcionlote']);
+        $this->simular(['procesados' => [['codigoGeneracion' => $enLote->codigo_generacion, 'selloRecibido' => 'SELLO-INVENTADO']]]);
+
+        $this->artisan('dte:contingencia-lotes')
+            ->expectsOutputToContain('No se hizo ninguna petición ni se enviaron credenciales.')
+            ->assertFailed();
+
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'impostor'));
+        $this->assertSame('procesado', $lote->refresh()->estado);
+        $this->assertSame(EstadoDte::Aceptado, $enLote->refresh()->estado);
+    }
+
+    public function test_un_candado_de_seguridad_en_el_boton_muestra_su_mensaje_y_no_un_error_del_servidor(): void
+    {
+        $this->documento();
+        config(['dte.ambientes.00.lote_url' => 'https://impostor.invalid/recepcionlote']);
+
+        $this->post(route('facturacion.contingencia.lotes.enviar', $this->evento))->assertRedirect()
+            ->assertSessionHasErrors('contingencia');
+        $this->assertStringContainsString('No se hizo ninguna petición', session('errors')->first('contingencia'));
+        Http::assertNothingSent();
+    }
 }

@@ -373,4 +373,84 @@ class ContingenciaEventoTest extends TestCase
         $this->assertNull($dte->sello_recepcion);
         $this->assertSame($this->contingencia->id, $dte->contingencia_id);
     }
+
+    // ─────────── Firmador o inicio de sesión caídos al enviar el aviso ───────────
+    //
+    // En el simulacro del 17/11/2026 «Enviar aviso de contingencia» daba un error 500 con
+    // el firmador caído o sin poder iniciar sesión en Hacienda. No se perdía nada, pero la
+    // pantalla no decía qué pasaba ni que se podía volver a probar.
+
+    /** Sin token guardado: cada envío tiene que iniciar sesión en Hacienda. */
+    private function sinTokenGuardado(): void
+    {
+        config(['dte.transmision.token' => '', 'dte.transmision.usuario_testing' => 'usuario-inventado',
+            'dte.transmision.password_testing' => 'clave-inventada']);
+    }
+
+    public function test_con_el_firmador_caido_el_aviso_dice_que_paso_y_se_puede_reintentar(): void
+    {
+        $this->documento();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*firmardocumento*' => Http::failedConnection(), '*consultadte*' => Http::response([], 404)]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertRedirect()
+            ->assertSessionHasErrors(['contingencia' => 'No se pudo firmar el aviso. No se envió nada a Hacienda: revisá que el firmador esté encendido y probá de nuevo en unos minutos.']);
+        $this->assertSame('preparado', ContingenciaEvento::sole()->estado);
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/fesv/contingencia'));
+
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHasNoErrors();
+        $this->assertSame('recibido', ContingenciaEvento::sole()->estado);
+    }
+
+    public function test_sin_poder_iniciar_sesion_el_aviso_armado_dice_que_paso_y_se_puede_reintentar(): void
+    {
+        $this->documento();
+        $parte = $this->service()->preparar($this->contingencia)->sole();
+        $this->sinTokenGuardado();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*seguridad/auth' => Http::failedConnection(),
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FIRMA.INVENTADA.JWS'])]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertRedirect()
+            ->assertSessionHasErrors(['contingencia' => 'No se pudo iniciar sesión en Hacienda. No se envió nada: probá de nuevo en unos minutos.']);
+        $this->assertSame('preparado', $parte->refresh()->estado);
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/fesv/contingencia'));
+
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*seguridad/auth' => Http::response(['status' => 'OK', 'body' => ['token' => 'TOKEN-INVENTADO-NUEVO']]),
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FIRMA.INVENTADA.JWS']),
+            '*fesv/contingencia' => Http::response(['estado' => 'RECIBIDO', 'selloRecibido' => 'SELLO-EVENTO-INVENTADO'])]);
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHasNoErrors();
+        $this->assertSame('recibido', $parte->refresh()->estado);
+        $this->assertDatabaseCount('contingencia_eventos', 1);
+    }
+
+    public function test_sin_poder_iniciar_sesion_la_consulta_previa_al_aviso_dice_que_paso(): void
+    {
+        $dte = $this->documento();
+        $this->sinTokenGuardado();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*seguridad/auth' => Http::failedConnection()]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertRedirect()
+            ->assertSessionHasErrors(['contingencia' => 'No se pudo consultar en Hacienda el documento '.$dte->codigo_generacion.'. No se envió nada: probá de nuevo en unos minutos.']);
+        $this->assertDatabaseCount('contingencia_eventos', 0);
+        Http::assertNotSent(fn ($request) => ! str_contains($request->url(), 'seguridad/auth'));
+    }
+
+    public function test_con_la_firma_apagada_el_aviso_muestra_su_propio_mensaje_y_no_un_error_del_servidor(): void
+    {
+        $this->documento();
+        config(['dte.firma.enabled' => false]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertRedirect()
+            ->assertSessionHasErrors(['contingencia' => 'La firma está deshabilitada (dte.firma.enabled=false). No se firmó el evento.']);
+        $this->assertSame('preparado', ContingenciaEvento::sole()->estado);
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/fesv/contingencia'));
+    }
 }

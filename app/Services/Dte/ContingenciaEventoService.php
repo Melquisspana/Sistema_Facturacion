@@ -4,6 +4,10 @@ namespace App\Services\Dte;
 
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
+use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
+use App\Exceptions\Dte\DteFirmaException;
+use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
+use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Contingencia;
 use App\Models\ContingenciaEvento;
 use App\Models\Dte;
@@ -17,6 +21,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -26,7 +31,6 @@ class ContingenciaEventoService
         private readonly SerializadorContingenciaMh $serializador,
         private readonly DteSchemaValidator $validador,
         private readonly DteFirmaService $firma,
-        private readonly DteTransmisionAuthService $auth,
         private readonly DteConsultaService $consulta,
         private readonly DteTransmisionService $transmision,
     ) {}
@@ -124,7 +128,15 @@ class ContingenciaEventoService
             if ($dte->estado !== EstadoDte::Firmado) {
                 $this->error('Todos los documentos del evento deben estar firmados.');
             }
-            $resultado = $this->consulta->consultar($dte);
+            try {
+                $resultado = $this->consulta->consultar($dte);
+            } catch (DteTransmisionDeshabilitadaException $e) {
+                throw $e;
+            } catch (DteTransmisionException $e) {
+                // Casi siempre es no poder iniciar sesión en Hacienda: no se armó ni se envió nada.
+                Log::warning('Contingencia: no se pudo consultar un documento', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
+                $this->error('No se pudo consultar en Hacienda el documento '.$dte->codigo_generacion.'. No se envió nada: probá de nuevo en unos minutos.');
+            }
             if ($resultado['resultado'] === 'aceptado' && filled($resultado['sello'])) {
                 $this->transmision->aplicarResultadoDeConsulta($dte, $resultado);
                 // La aceptación de una consulta solo se guarda si se pudo comprobar (sello,
@@ -196,12 +208,13 @@ class ContingenciaEventoService
                 }
                 $ruta = substr($evento->json_path, 0, -5);
                 $disco = Storage::disk(config('dte.storage.disk', 'local'));
+                // Primero el token: sin poder iniciar sesión no se firma ni se guarda nada.
+                $token = app(ContingenciaTransporte::class)->token();
                 // Ante un timeout se reintenta EXACTAMENTE el mismo JSON, UUID y JWS.
-                $jws = $disco->exists($ruta.'.jws') ? $disco->get($ruta.'.jws') : $this->firma->firmarJson($json);
+                $jws = $disco->exists($ruta.'.jws') ? $disco->get($ruta.'.jws') : $this->firmar($json);
                 if (! $disco->exists($ruta.'.jws')) {
                     $this->guardar($ruta.'.jws', $jws);
                 }
-                $token = $this->auth->obtenerToken();
                 try {
                     $respuesta = Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
                         ->withHeaders(['Authorization' => $token, 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')])
@@ -242,6 +255,22 @@ class ContingenciaEventoService
         }
 
         return $resultados;
+    }
+
+    /**
+     * Con el firmador caído todavía no se envió nada: sale un mensaje para volver a probar,
+     * no un error del servidor. La firma apagada sigue con su propio mensaje.
+     */
+    private function firmar(array $json): string
+    {
+        try {
+            return $this->firma->firmarJson($json);
+        } catch (DteFirmaDeshabilitadaException $e) {
+            throw $e;
+        } catch (DteFirmaException $e) {
+            Log::warning('Contingencia: no se pudo firmar el aviso', ['error' => $e->getMessage()]);
+            $this->error('No se pudo firmar el aviso. No se envió nada a Hacienda: revisá que el firmador esté encendido y probá de nuevo en unos minutos.');
+        }
     }
 
     private function guardar(string $ruta, string $contenido): void

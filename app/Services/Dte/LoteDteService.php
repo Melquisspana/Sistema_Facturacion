@@ -31,7 +31,6 @@ class LoteDteService
     public function __construct(
         private readonly ContingenciaTransporte $transporte,
         private readonly ContingenciaEventoService $eventos,
-        private readonly DteTransmisionAuthService $auth,
         private readonly DteTransmisionService $transmision,
         private readonly CopiaDeAceptadoTardio $copias,
     ) {}
@@ -247,7 +246,7 @@ class LoteDteService
     private function cliente(): PendingRequest
     {
         return Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
-            ->withHeaders(['Authorization' => $this->auth->obtenerToken(), 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')]);
+            ->withHeaders(['Authorization' => $this->transporte->token(), 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')]);
     }
 
     /**
