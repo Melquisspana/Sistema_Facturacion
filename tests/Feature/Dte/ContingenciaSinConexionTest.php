@@ -24,6 +24,7 @@ use Closure;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Promise\Create;
+use GuzzleHttp\TransferStats;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
@@ -366,6 +367,29 @@ class ContingenciaSinConexionTest extends TestCase
         // El envío empezó y nunca se cerró como «no salió»: queda en duda.
         $this->assertSame(['marca' => 1, 'empezo' => 1, 'no_salio' => 0], $this->anotaciones($dte));
         Sleep::assertNeverSlept();
+    }
+
+    /**
+     * cURL hizo más de una transferencia (redirección o reintento interno): el error que
+     * se ve es solo el de la última, y la primera pudo llevar el documento. Ese envío
+     * queda en duda aunque la última falla diga que no salió nada.
+     */
+    public function test_un_envio_con_mas_de_una_transferencia_queda_en_duda(): void
+    {
+        $noSalio = $this->falla('rechazada');
+        $this->simular(['*recepciondte*' => function ($request, $options) use ($noSalio) {
+            $options['on_stats'](new TransferStats($request->toPsrRequest()));
+            $options['on_stats'](new TransferStats($request->toPsrRequest()));
+
+            return $noSalio($request);
+        }]);
+        $dte = $this->documento();
+
+        $respuesta = $this->clic($dte);
+
+        $this->assertQuedoIncierto($respuesta, $dte);
+        $this->assertSame(1, $this->pedidos('recepciondte'), 'no se reenvía lo que pudo haber llegado');
+        $this->assertSame(['marca' => 1, 'empezo' => 1, 'no_salio' => 0], $this->anotaciones($dte));
     }
 
     /** Un solo intento en duda alcanza, aunque los demás no hayan salido. */
