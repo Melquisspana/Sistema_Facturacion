@@ -17,6 +17,7 @@ use App\Services\Dte\ContingenciaService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\DteTransmisionResiliente;
 use App\Services\Dte\DteTransmisionService;
 use Carbon\CarbonInterval;
 use Closure;
@@ -492,6 +493,40 @@ class ContingenciaSinConexionTest extends TestCase
 
         $this->assertDatabaseCount('contingencias', 0);
         Http::assertNothingSent();
+    }
+
+    /**
+     * Si entre la primera lectura de la bitácora y el bloqueo del documento empieza otro
+     * envío, la segunda lectura (con el documento bloqueado) frena la conversión y el
+     * documento no se toca.
+     */
+    public function test_un_envio_que_empieza_justo_antes_del_bloqueo_frena_la_conversion(): void
+    {
+        $dte = $this->firmadoSinEnvios();
+        $resultado = app(DteTransmisionResiliente::class)->transmitir($dte, true);
+        $this->assertSame('reintentos_agotados', $resultado['resultado']);
+        $this->assertTrue($resultado['sin_salida']);
+        $rutas = [$dte->refresh()->json_generado_path, $dte->json_firmado_path];
+
+        // Primera lectura limpia; en la segunda, con el documento bloqueado, ya empezó otro envío.
+        $this->partialMock(BitacoraEnvioDte::class, fn ($bitacora) => $bitacora
+            ->shouldReceive('sinEnviosEnDuda')->twice()->andReturn(true, false));
+
+        try {
+            app(ContingenciaAutomaticaService::class)->convertirTrasReintentos($dte, $resultado);
+            $this->fail('No tenía que convertirse.');
+        } catch (DteTransmisionException $e) {
+            $this->assertSame('No se puede convertir este documento a contingencia.', $e->getMessage());
+        }
+
+        $dte->refresh();
+        $this->assertSame(EstadoDte::Firmado, $dte->estado);
+        $this->assertNull($dte->contingencia_id);
+        $this->assertSame($rutas, [$dte->json_generado_path, $dte->json_firmado_path]);
+        $this->assertSame(0, Activity::where('log_name', 'dte_contingencia')
+            ->where('description', 'Documento re-firmado en contingencia tras reintentos agotados')->count());
+        // La contingencia sí queda activada: se activa antes de bloquear el documento.
+        $this->assertDatabaseCount('contingencias', 1);
     }
 
     /** Un login que Hacienda contestó (rechazo, error, cualquier cosa) no es «sin conexión». */
