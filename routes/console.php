@@ -9,16 +9,35 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
-// Contingencia: no trabaja con el interruptor apagado.
+/*
+| Contingencia: no trabaja con el interruptor apagado.
+|
+| EL CANDADO LLEVA MINUTOS. `withoutOverlapping()` a secas dura 1440 (un día) y en
+| producción la caché es la base: si el programador muere a mitad de la tarea
+| (despliegue, reinicio, corte de luz), el candado queda puesto y la tarea no vuelve a
+| correr hasta el día siguiente, sin avisar. Pasó en el simulacro del 17/11/2026.
+|
+| Reconexión, 15 minutos: una corrida es el login (8 s como mucho) y, por cada
+| contingencia con el aviso pendiente, una consulta por documento, la firma y el envío.
+| Con 101 documentos tardó 4 s; con Hacienda lenta, unos pocos minutos. Es además lo que
+| dura el candado propio del comando (900 s).
+|
+| Lotes, 10 minutos: una corrida es un envío por cada 100 documentos y una consulta por
+| lote abierto, de 8 s como mucho cada uno, y corta en la primera falla de conexión.
+| Normalmente tarda menos de un segundo; con Hacienda lenta, 2 o 3 minutos.
+|
+| Si una corrida durara más que su candado, la siguiente no duplica nada: el aviso y cada
+| lote bloquean su fila y vuelven a mirar el estado antes de enviar.
+*/
 Schedule::command('dte:contingencia-reconexion')
     ->cron('*/'.max(1, min(15, (int) config('dte.contingencia.reconexion_minutos', 15))).' * * * *')
     ->when(fn () => (bool) config('dte.contingencia.enabled', false))
-    ->withoutOverlapping();
+    ->withoutOverlapping(15);
 
 Schedule::command('dte:contingencia-lotes')
     ->everyFiveMinutes()
     ->when(fn () => (bool) config('dte.contingencia.enabled', false))
-    ->withoutOverlapping();
+    ->withoutOverlapping(10);
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

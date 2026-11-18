@@ -338,6 +338,27 @@ class ContingenciaModoTest extends TestCase
         app(DteBorradorService::class)->crearNotaCredito($dte);
     }
 
+    /**
+     * Simulacro del 17/11 (F11): pedir la nota de crédito desde la ficha de un CCF
+     * provisional volvía a la ficha sin decir nada. El motivo venía en un campo que la
+     * ficha no muestra.
+     */
+    public function test_nc_desde_la_ficha_de_un_ccf_transitorio_dice_por_que_no_se_puede(): void
+    {
+        $this->activar();
+        $ccf = $this->generar(TipoDte::CreditoFiscal);
+        $this->firmar($ccf);
+        $this->assertTrue($ccf->esTransitorio());
+
+        $this->from(route('facturacion.show', $ccf))->followingRedirects()
+            ->post(route('facturacion.nota-credito.store', $ccf), ['modalidad' => 'pronto_pago'])
+            ->assertOk()
+            ->assertSee('El CCF es transitorio: esperá el sello de recepción antes de crear una NC.');
+
+        $this->assertSame(0, Dte::where('tipo_dte', TipoDte::NotaCredito->value)->count());
+        Http::assertNothingSent();
+    }
+
     public function test_campos_fiscales_y_vinculo_inmutables_despues_de_generar(): void
     {
         $this->activar();

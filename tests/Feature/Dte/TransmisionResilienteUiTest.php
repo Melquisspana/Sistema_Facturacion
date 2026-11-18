@@ -20,9 +20,12 @@ use App\Services\Dte\DteTransmisionResiliente;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -49,7 +52,7 @@ use Tests\TestCase;
  */
 class TransmisionResilienteUiTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private Establecimiento $estab;
@@ -186,7 +189,7 @@ class TransmisionResilienteUiTest extends TestCase
      * consultar cuando recepción no responde. Si no consultara, estaría usando el
      * servicio pelado y un reenvío podría duplicar el documento.
      */
-    #[\PHPUnit\Framework\Attributes\DataProvider('tiposHabilitados')]
+    #[DataProvider('tiposHabilitados')]
     public function test_la_ui_transmite_por_la_politica_resiliente(TipoDte $tipo): void
     {
         // La NC (05) no entra en este proveedor: exige un CCF aceptado detrás y tiene
@@ -258,6 +261,53 @@ class TransmisionResilienteUiTest extends TestCase
 
         Http::assertNotSent(fn ($request) => str_contains($request->url(), '/fesv/contingencia')
             || str_contains($request->url(), '/fesv/recepcionlote'));
+        $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
+    }
+
+    /**
+     * Simulacro del 17/11 (F10): al agotar los reintentos la pantalla mostraba el código
+     * «reintentos_agotados» y «NO se activó ningún evento de contingencia (fase pendiente)».
+     * Quien emite lee qué pasó en palabras simples; lo técnico queda en el registro.
+     */
+    public function test_al_agotar_reintentos_la_pantalla_lo_dice_simple_y_lo_tecnico_queda_en_el_registro(): void
+    {
+        $this->habilitar();
+        $this->fakeRecepcionMuda($envios, $consultas);
+        Log::spy();
+        $dte = $this->generado(TipoDte::CreditoFiscal);
+
+        $this->actingAs($this->usuario())
+            ->post(route('facturacion.firmar-transmitir', $dte), [])
+            ->assertRedirect()
+            ->assertSessionHas('error', 'No se completó la transmisión: Hacienda no respondió. El documento queda firmado; podés reintentar.');
+
+        Log::shouldHaveReceived('warning')->withArgs(fn ($mensaje, $contexto = []) => ($contexto['dte_id'] ?? null) === $dte->id
+            && ($contexto['resultado'] ?? null) === 'reintentos_agotados'
+            && str_contains((string) ($contexto['detalle'] ?? ''), 'Se hicieron 3 envíos'))->once();
+    }
+
+    /**
+     * Simulacro del 17/11 (F10): sin respuesta de la consulta, la pantalla mostraba el
+     * texto de cURL («cURL error 28: Operation timed out… for https://…») y el código
+     * «estado_recepcion_incierto». Ese texto va al registro, no a la pantalla.
+     */
+    public function test_estado_incierto_se_explica_sin_el_texto_tecnico_de_la_conexion(): void
+    {
+        $this->habilitar();
+        Http::fake(['*' => Http::failedConnection()]);
+        Log::spy();
+        $dte = $this->generado(TipoDte::CreditoFiscal);
+
+        $this->actingAs($this->usuario())
+            ->post(route('facturacion.firmar-transmitir', $dte), [])
+            ->assertRedirect()
+            // Sin dos «:» seguidos ni un «podés reintentar» al lado de «podría quedar duplicado».
+            ->assertSessionHas('error', 'No se pudo confirmar si Hacienda recibió el documento. Para no duplicarlo, no se volvió a mandar. '
+                .'Queda firmado: probá «Firmar y transmitir» en unos minutos. Antes de mandarlo otra vez, el sistema le pregunta a Hacienda si ya lo tiene.');
+
+        Log::shouldHaveReceived('warning')->withArgs(fn ($mensaje, $contexto = []) => ($contexto['dte_id'] ?? null) === $dte->id
+            && ($contexto['resultado'] ?? null) === DteTransmisionResiliente::ESTADO_INCIERTO
+            && str_contains((string) ($contexto['detalle'] ?? ''), 'cURL error 6'))->once();
         $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
     }
 

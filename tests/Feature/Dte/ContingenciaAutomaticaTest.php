@@ -13,6 +13,8 @@ use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Producto;
 use App\Models\User;
+use App\Services\Alertas\Avisador;
+use App\Services\Alertas\Detectores\ContingenciaManualSinTerminar;
 use App\Services\Dte\ContingenciaAutomaticaService;
 use App\Services\Dte\ContingenciaEventoService;
 use App\Services\Dte\ContingenciaService;
@@ -69,7 +71,8 @@ class ContingenciaAutomaticaTest extends TestCase
         parent::tearDown();
     }
 
-    private function simular(bool $internet = true, bool $consultaIncierta = false, bool $mh = false): void
+    /** $recepcion: código HTTP con que contesta la recepción; null = conexión cortada. */
+    private function simular(bool $internet = true, bool $consultaIncierta = false, bool $mh = false, ?int $recepcion = null): void
     {
         Http::swap(new Factory);
         Http::preventStrayRequests();
@@ -80,7 +83,7 @@ class ContingenciaAutomaticaTest extends TestCase
 
                 return Http::response(['status' => 'OK', 'body' => $b64(['alg' => 'RS512']).'.'.$b64($request['dteJson']).'.firma-inventada']);
             },
-            '*recepciondte*' => Http::failedConnection(),
+            '*recepciondte*' => $recepcion ? Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Solicitud inventada'], $recepcion) : Http::failedConnection(),
             '*consultadte*' => $consultaIncierta ? Http::failedConnection() : Http::response([], 404),
             '*seguridad/auth' => $mh ? Http::response(['status' => 'OK', 'body' => ['token' => 'TOKEN-INVENTADO-NUEVO']]) : Http::failedConnection(),
             '*fesv/contingencia' => Http::response(['estado' => 'RECIBIDO', 'selloRecibido' => 'SELLO-INVENTADO', 'fechaHora' => '13/10/2026 22:00:00']),
@@ -212,6 +215,28 @@ class ContingenciaAutomaticaTest extends TestCase
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'generate_204'));
     }
 
+    /**
+     * Simulacro del 17/11 (F10): pasado el tope, la pantalla y la consola decían «NO se
+     * activó ningún evento de contingencia (fase pendiente)», aunque la contingencia existe.
+     * La causa de verdad es el tope de minutos desde la emisión, y eso es lo que se dice.
+     */
+    public function test_documento_fuera_del_tope_dice_por_que_no_paso_a_contingencia(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00; tope por defecto, 10 minutos
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:30:00', 'America/El_Salvador'));
+
+        $this->post(route('facturacion.firmar-transmitir', $dte))->assertRedirect()
+            ->assertSessionHas('error', 'No se completó la transmisión: Hacienda no respondió. No pasó a contingencia porque '
+                .'se emitió hace más de 10 minutos. El documento queda firmado; podés reintentar.');
+
+        $this->simular();
+        $this->artisan('dte:transmitir', ['dte' => $dte->id])
+            ->expectsOutputToContain('No pasó a contingencia porque se emitió hace más de 10 minutos.')
+            ->doesntExpectOutputToContain('fase')
+            ->assertFailed();
+        $this->assertNull($dte->refresh()->contingencia_id);
+    }
+
     public function test_documento_viejo_no_se_suma_a_una_contingencia_activa(): void
     {
         $dte = $this->documento(); // emitido a las 10:00:00
@@ -248,18 +273,80 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertNull($activa->refresh()->cese);
         Carbon::setTestNow(now()->addMinutes(15));
-        $this->simular(mh: true);
+        $this->simular(mh: true, recepcion: 400);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertSame('10:15:00', $activa->refresh()->cese->format('H:i:s'));
         $cese = $activa->cese->toDateTimeString();
         Carbon::setTestNow(now()->addMinutes(15));
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertSame($cese, $activa->refresh()->cese->toDateTimeString());
-        Http::assertSentCount(1);
+        // Login y recepción, una sola vez.
+        Http::assertSentCount(2);
         $manual = app(ContingenciaService::class)->activar(2, 'Sistema inventado', 'manual', null);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        // A la manual también se le prueba la conexión (para avisar), pero no se cierra.
         $this->assertNull($manual->refresh()->cese);
-        Http::assertSentCount(1);
+        $this->assertSame('activa', $manual->estado);
+        Http::assertSentCount(4);
+    }
+
+    public function test_reconexion_no_declara_el_cese_con_el_login_arriba_y_la_recepcion_caida(): void
+    {
+        // Simulacro del 17/11 (F3): el login contestaba y la recepción seguía cortada.
+        $activa = app(ContingenciaService::class)->activar(1, 'MH inventado', 'automatica', null);
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertNull($activa->refresh()->cese, 'Con la recepción cortada no hay cese.');
+        $this->assertSame('activa', $activa->estado);
+
+        // Un error del servidor de recepción tampoco demuestra que esté arriba.
+        $this->simular(mh: true, recepcion: 503);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertNull($activa->refresh()->cese, 'Un 5xx de la recepción no es reconexión.');
+
+        // Cualquier otra respuesta de la recepción sí (a un pedido sin documento contesta 400).
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('10:30:00', $activa->refresh()->cese?->format('H:i:s'));
+        $this->assertSame('cerrada', $activa->estado);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'recepciondte'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'recepciondte') && isset($request['documento']));
+    }
+
+    public function test_manual_no_se_cierra_sola_pero_avisa_cuando_hacienda_ya_responde(): void
+    {
+        // Simulacro del 17/11 (F9): con Hacienda de vuelta la manual seguía activa sin aviso.
+        $manual = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertStringNotContainsString('Hacienda ya responde', (string) $this->view('components.aviso-contingencia'));
+
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+
+        $manual->refresh();
+        $this->assertSame('activa', $manual->estado, 'Una manual no se cierra sola: pudo activarse por otro motivo.');
+        $this->assertNull($manual->cese);
+        // Con la fecha: la marca puede seguir de un día para otro.
+        $this->assertStringContainsString('Hacienda ya responde desde las 10:15 del 13/10/2026.', (string) $this->view('components.aviso-contingencia'));
+        $this->assertSame(1, DB::table('activity_log')->where('description', 'Reconexión: Hacienda ya responde y la contingencia manual sigue activa')->count(),
+            'Se audita una vez, no en cada vuelta.');
+        $detector = collect(app(Avisador::class)->detectores())->first(fn ($d) => $d instanceof ContingenciaManualSinTerminar);
+        $this->assertNotNull($detector, 'El aviso por correo está registrado.');
+        $hallazgo = $detector->revisar();
+        $this->assertNotNull($hallazgo);
+        $this->assertSame('10:15', $hallazgo->desde?->format('H:i'), 'Desde la primera vez que respondió.');
+
+        // Si Hacienda se vuelve a caer, el aviso se va.
+        $this->simular();
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertStringNotContainsString('Hacienda ya responde', (string) $this->view('components.aviso-contingencia'));
+        $this->assertNull($detector->revisar());
+        $this->assertSame('activa', $manual->refresh()->estado);
     }
 
     public function test_evento_automatico_desde_12_horas_y_una_sola_vez(): void
@@ -278,6 +365,25 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 12 horas del cese']);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         Http::assertSentCount(3);
+    }
+
+    /**
+     * Simulacro del 17/11 (F12): «Volvió la conexión: enviá el aviso» seguía a la vista
+     * después de enviado y recibido el aviso. Se ve solo mientras se puede enviar, igual
+     * que el botón «Enviar aviso de contingencia».
+     */
+    public function test_la_franja_de_enviar_el_aviso_se_va_cuando_el_aviso_ya_se_envio(): void
+    {
+        $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
+        $this->documento();
+        app(ContingenciaService::class)->terminar(null);
+        $franja = fn () => (string) $this->view('components.plazos-contingencia', ['contingencia' => $activa->refresh()]);
+        $this->assertStringContainsString('Volvió la conexión: enviá el aviso a Hacienda.', $franja());
+
+        app(ContingenciaEventoService::class)->enviar($activa->refresh());
+
+        $this->assertSame('informada', $activa->refresh()->estado);
+        $this->assertStringNotContainsString('Volvió la conexión', $franja());
     }
 
     public function test_correccion_cese_limites_y_bloqueo_tipo_firmado(): void
@@ -331,6 +437,30 @@ class ContingenciaAutomaticaTest extends TestCase
         $render = (string) $this->view('components.plazos-contingencia', ['contingencia' => $activa]);
         $this->assertStringContainsString('72 h (lote)', $render);
         $this->assertStringContainsString('Vencido:', $render);
+    }
+
+    public function test_avisos_por_vencer_6_horas_antes_del_evento_y_del_lote(): void
+    {
+        // Simulacro del 17/11 (F7): antes de vencer no avisaba nada en pantalla.
+        $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
+        app(ContingenciaService::class)->terminar(null);
+        $activa->refresh();
+        $render = fn () => (string) $this->view('components.plazos-contingencia', ['contingencia' => $activa]);
+        Carbon::setTestNow($activa->cese->copy()->addHours(18));
+        $this->assertStringNotContainsString('Por vencer', $render());
+        Carbon::setTestNow(now()->addSecond());
+        $this->assertStringContainsString('Por vencer: quedan menos de 6 horas.', $render());
+        $this->assertStringNotContainsString('Vencido:', $render());
+
+        $evento = $activa->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-000000000001',
+            'estado' => 'recibido', 'fecha_transmision' => now(), 'sello_recibido' => 'SELLO-INVENTADO']);
+        Dte::create(['tipo_dte' => '01', 'ambiente' => '00', 'estado' => 'firmado', 'fecha_emision' => now()->toDateString(),
+            'establecimiento_id' => $this->emisor['estab']->id, 'punto_venta_id' => $this->emisor['pv']->id,
+            'hora_emision' => '10:00:00', 'contingencia_id' => $activa->id, 'contingencia_evento_id' => $evento->id]);
+        $this->assertStringNotContainsString('Por vencer', $render(), 'El lote tiene 72 h desde el aviso recibido.');
+        Carbon::setTestNow($evento->fecha_transmision->copy()->addHours(66)->addSecond());
+        $this->assertStringContainsString('Por vencer: quedan menos de 6 horas.', $render());
+        $this->assertStringContainsString('72 h (lote)', $render());
     }
 
     public function test_aviso_sin_tabla_no_falla(): void

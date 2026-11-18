@@ -61,6 +61,7 @@ use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
+use App\Services\Dte\DteTransmisionResiliente;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Dte\FirmaTransmisionDte;
@@ -1439,8 +1440,14 @@ class DteController extends Controller
                 .$detalle.$sufijoMock);
         }
 
-        // Transitorio: el documento queda firmado y se puede reintentar.
-        return $volver->with('error', 'No se completó la transmisión ('.$r['resultado'].'): '.$r['mensaje']
+        // Sin confirmar si Hacienda lo recibió: el mensaje ya dice qué pasó y qué hacer.
+        if ($r['resultado'] === DteTransmisionResiliente::ESTADO_INCIERTO) {
+            return $volver->with('error', $r['mensaje']);
+        }
+
+        // Transitorio: el documento queda firmado y se puede reintentar. El código del
+        // resultado y el detalle técnico ya quedaron en el registro (FirmaTransmisionDte).
+        return $volver->with('error', 'No se completó la transmisión: '.$r['mensaje']
             .' El documento queda firmado; podés reintentar.');
     }
 

@@ -509,6 +509,19 @@ a frenar lo ya resuelto. Hoy no existe ninguna depuración de `activity_log`; si
 una (por ejemplo `activitylog:clean`), tiene que excluir ese nombre. Las copias hechas antes
 de este cambio no tienen esa anotación y no quedan protegidas.
 
+**Bitácora de envíos (`dte_envio`): también es estado operativo y no se depura.** Cada envío
+de un documento a recepción queda anotado en `activity_log` con `log_name = 'dte_envio'`
+(`App\Services\Dte\BitacoraEnvioDte`): la marca de que se firmó y todavía no se envió,
+«Empezó un envío» antes de mandarlo y «No salió» cuando cURL demuestra que el pedido no llegó
+a escribirse (`App\Support\Dte\PedidoSinSalida`). Con eso se decide si un documento puede
+pasar a contingencia sin que Hacienda conteste (decisión 0006, «Sin conexión»). Borrar un
+«Empezó un envío» y dejar la marca haría pasar por no enviado un documento que pudo salir, y
+podría duplicarse en Hacienda: una depuración de `activity_log` tiene que excluir también ese
+nombre. Si se borra entera no se duplica nada: los documentos vuelven a quedar en duda. Un
+documento con marca no se envía si su envío no se puede anotar, así que con la bitácora apagada
+(`ACTIVITY_LOGGER_ENABLED=false`) esos documentos no salen. Los firmados antes de este cambio,
+o con el interruptor de contingencia apagado, no tienen marca y se comportan como siempre.
+
 ## 9. Estado del código vs manual
 
 `DteTransmisionService` ya está alineado con el manual en estructura (sin transmitir):

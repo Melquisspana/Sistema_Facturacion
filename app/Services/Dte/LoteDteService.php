@@ -7,6 +7,7 @@ use App\Models\Contingencia;
 use App\Models\ContingenciaEvento;
 use App\Models\Dte;
 use App\Models\LoteDte;
+use App\Services\Alertas\Detectores\ContingenciaLotesRechazados;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\Dte\EndpointsHacienda;
 use App\Support\HoraNegocio;
@@ -31,16 +32,57 @@ class LoteDteService
     public function __construct(
         private readonly ContingenciaTransporte $transporte,
         private readonly ContingenciaEventoService $eventos,
-        private readonly DteTransmisionAuthService $auth,
         private readonly DteTransmisionService $transmision,
         private readonly CopiaDeAceptadoTardio $copias,
     ) {}
+
+    /** Cuántas horas antes de vencer un plazo se avisa «por vencer», en pantalla y por correo. */
+    public const HORAS_AVISO_POR_VENCER = 6;
 
     public function plazo(ContingenciaEvento $evento): ?Carbon
     {
         $desde = $evento->fecha_procesamiento ?? $evento->fecha_transmision;
 
         return $desde ? HoraNegocio::aLocal($desde)->addHours(72) : null;
+    }
+
+    /**
+     * Plazo de un documento en contingencia, según la norma: 24 h desde el cese para
+     * informarlo en el aviso a Hacienda (o desde el rechazo del aviso, para corregirlo)
+     * y, con el aviso recibido, 72 h para mandarlo en lote. null si todavía no hay cese.
+     */
+    public function plazoDocumento(Dte $dte): ?Carbon
+    {
+        if (! $dte->contingencia) {
+            return null;
+        }
+        $evento = $dte->contingenciaEvento;
+
+        return $evento?->estado === 'recibido' ? $this->plazo($evento) : $this->eventos->plazo($dte->contingencia, $evento);
+    }
+
+    /** Le quedan menos de {@see HORAS_AVISO_POR_VENCER} horas, o ya venció. */
+    public function porVencer(?Carbon $plazo): bool
+    {
+        return $plazo !== null && HoraNegocio::ahora()->gt($plazo->copy()->subHours(self::HORAS_AVISO_POR_VENCER));
+    }
+
+    /**
+     * Plazo de cada documento emitido en contingencia que sigue sin sello. Lo usan los
+     * avisos por correo de «por vencer» y «vencido».
+     *
+     * @return Collection<int, Carbon|null>
+     */
+    public function plazosSinSello(): Collection
+    {
+        return Dte::query()
+            ->where('estado', EstadoDte::Firmado->value)
+            ->whereNotNull('contingencia_id')
+            ->whereNull('sello_recepcion')
+            ->with(['contingencia', 'contingenciaEvento'])
+            ->get(['id', 'contingencia_id', 'contingencia_evento_id'])
+            ->map(fn (Dte $dte) => $this->plazoDocumento($dte))
+            ->values();
     }
 
     public function actualizarEstado(Contingencia $contingencia): void
@@ -78,14 +120,20 @@ class LoteDteService
         }
     }
 
-    public function preparar(ContingenciaEvento $evento): Collection
+    /** @param  bool  $esperarTrasRechazos  ver {@see enviar()} */
+    public function preparar(ContingenciaEvento $evento, bool $esperarTrasRechazos = false): Collection
     {
         $this->verificarEvento($evento);
 
-        return DB::transaction(function () use ($evento) {
+        return DB::transaction(function () use ($evento, $esperarTrasRechazos) {
             Contingencia::whereKey($evento->contingencia_id)->lockForUpdate()->firstOrFail();
             $evento = ContingenciaEvento::whereKey($evento->id)->lockForUpdate()->firstOrFail();
             $this->verificarEvento($evento);
+            // Con el candado tomado: cuenta también el lote que un envío del botón acaba de
+            // ver rechazado mientras esta llamada esperaba.
+            if ($esperarTrasRechazos && $this->pausaTrasRechazos($evento) !== null) {
+                return LoteDte::where('contingencia_evento_id', $evento->id)->orderBy('id')->get();
+            }
             $documentos = $evento->dtes()->whereNull('lote_dte_id')->where('estado', EstadoDte::Firmado->value)
                 ->where(fn ($q) => $q->whereNull('sello_recepcion')->orWhere('sello_recepcion', ''))
                 ->orderBy('id')->lockForUpdate()->get();
@@ -102,9 +150,51 @@ class LoteDteService
         });
     }
 
-    public function enviar(ContingenciaEvento $evento): array
+    /** Lotes rechazados enteros de un mismo aviso desde los que la tarea programada ya no reenvía sola. */
+    public const TOPE_RECHAZOS_AUTOMATICOS = 3;
+
+    /** Minutos que espera la tarea programada para volver a armar lotes, según cuántos rechazó Hacienda. */
+    private const ESPERA_TRAS_RECHAZOS_MINUTOS = [1 => 15, 2 => 60];
+
+    /**
+     * Por qué la tarea programada todavía no vuelve a armar lotes de este aviso, o null.
+     *
+     * Un lote rechazado entero libera sus documentos, y Hacienda suele rechazar igual el
+     * siguiente: antes salía otro cada 5 minutos hasta vencer las 72 h. Ahora la tarea
+     * espera 15 minutos después del primer rechazo y una hora después del segundo; desde
+     * el tercero ya no los reenvía sola y queda para una persona, con el botón «Enviar a
+     * Hacienda», que no espera. Avisa {@see ContingenciaLotesRechazados}.
+     */
+    public function pausaTrasRechazos(ContingenciaEvento $evento): ?string
     {
-        $lotes = $this->preparar($evento);
+        $rechazados = $evento->lotes()->where('estado', 'error');
+        $cantidad = (clone $rechazados)->count();
+        if ($cantidad === 0) {
+            return null;
+        }
+        if ($cantidad >= self::TOPE_RECHAZOS_AUTOMATICOS) {
+            return 'Hacienda rechazó '.$cantidad.' lotes enteros del aviso '.$evento->codigo_generacion
+                .': la tarea ya no los reenvía sola. Revisá la respuesta en «Pendientes de envío» y reenviá con «Enviar a Hacienda».';
+        }
+        // Se guardó con la hora del negocio: se compara reloj contra reloj en esa zona.
+        $desde = Carbon::parse((string) $rechazados->max('enviado_en'), HoraNegocio::zona())
+            ->addMinutes(self::ESPERA_TRAS_RECHAZOS_MINUTOS[$cantidad]);
+
+        return HoraNegocio::ahora()->lt($desde)
+            ? 'Hacienda rechazó el último lote del aviso '.$evento->codigo_generacion.': la tarea lo vuelve a intentar desde las '.$desde->format('H:i').'.'
+            : null;
+    }
+
+    /**
+     * @param  bool  $esperarTrasRechazos  la tarea programada: mientras dure la espera de
+     *                                     {@see pausaTrasRechazos()}, solo sale lo que ya tiene
+     *                                     lote pendiente (una respuesta perdida, con su mismo
+     *                                     idEnvio), sin armar lotes con lo que liberó un rechazo.
+     *                                     El botón «Enviar a Hacienda» no espera.
+     */
+    public function enviar(ContingenciaEvento $evento, bool $esperarTrasRechazos = false): array
+    {
+        $lotes = $this->preparar($evento, $esperarTrasRechazos);
         $resultados = [];
         foreach ($lotes->where('estado', 'pendiente') as $lote) {
             $resultado = $this->enviarLote($lote);
@@ -205,7 +295,7 @@ class LoteDteService
     private function cliente(): PendingRequest
     {
         return Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
-            ->withHeaders(['Authorization' => $this->auth->obtenerToken(), 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')]);
+            ->withHeaders(['Authorization' => $this->transporte->token(), 'User-Agent' => config('dte.transmision.user_agent', 'DTE/1.0')]);
     }
 
     /**

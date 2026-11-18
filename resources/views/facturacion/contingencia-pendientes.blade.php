@@ -59,7 +59,7 @@
                     @php
                         $evento = $dte->contingenciaEvento;
                         $recibido = $evento?->estado === 'recibido';
-                        $plazo = $recibido ? $service->plazo($evento) : $eventos->plazo($dte->contingencia, $evento);
+                        $plazo = $service->plazoDocumento($dte);
                         $vencido = $dte->contingencia->estado === 'vencida' || ($plazo && \App\Support\HoraNegocio::ahora()->gt($plazo));
                         $final = in_array($dte->estado->value, ['aceptado', 'rechazado'], true);
                         $estado = $final ? $dte->estado->value : ($dte->lote_dte_id ? 'en lote' : ($recibido ? 'informado' : 'pendiente'));

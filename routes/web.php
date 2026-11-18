@@ -220,6 +220,8 @@ Route::middleware('auth')->group(function () {
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.pendientes');
         Route::post('contingencia/eventos/{evento}/lotes', [ContingenciaController::class, 'enviarLotes'])
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.lotes.enviar');
+        Route::post('contingencia/eventos/{evento}/recibido', [ContingenciaController::class, 'darPorRecibido'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.eventos.recibido');
         // Cada consulta le pega a Hacienda: tope de pedidos por persona, además de la
         // espera por lote que aplica el servicio al volver a consultar uno ya cerrado.
         Route::post('contingencia/lotes/{lote}/consultar', [ContingenciaController::class, 'consultarLote'])

@@ -3,10 +3,13 @@
 namespace App\Services\Dte;
 
 use App\Enums\AmbienteHacienda;
+use App\Exceptions\Dte\DteHaciendaSinConexionException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use App\Support\Dte\PedidoSinSalida;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -418,6 +421,19 @@ class DteTransmisionAuthService
                 ->asForm()
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->post($url, ['user' => $user, 'pwd' => $pwd]);
+        } catch (ConnectionException $e) {
+            // No hubo conexión con Hacienda (no resolvió el nombre, no conectó o se acabó
+            // el tiempo): no hay token y no se arma ningún envío. Va con su propia
+            // excepción para que la política de reintentos sepa que ese intento no mandó
+            // el documento. Un certificado que este servidor no acepta o un saludo TLS que
+            // falla NO es eso: sale como el error de siempre, así se ve y no se declara
+            // una contingencia que no ocurrió. Mismo texto en los dos casos, y SIN
+            // encadenar la excepción original: su pedido lleva usuario y contraseña.
+            $mensaje = 'No se pudo conectar con el servicio de autenticación: '.$e->getMessage();
+
+            throw PedidoSinSalida::noConecto($e)
+                ? new DteHaciendaSinConexionException($mensaje)
+                : new DteTransmisionException($mensaje);
         } catch (Throwable $e) {
             // El mensaje NUNCA incluye usuario/contraseña.
             throw new DteTransmisionException('No se pudo conectar con el servicio de autenticación: '.$e->getMessage());

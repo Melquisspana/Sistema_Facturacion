@@ -11,6 +11,7 @@ use App\Observers\DteObserver;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use App\Support\Dte\IdentidadRespuestaHacienda;
+use App\Support\Dte\PedidoSinSalida;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -203,9 +204,29 @@ class DteTransmisionService
             'Authorization' => $token,
         ];
 
+        // BITÁCORA DE ENVÍOS. Con el token ya en mano y antes de mandar nada, queda
+        // anotado que empieza un envío (solo para los documentos con marca de firma; el
+        // resto sigue como siempre). Si la anotación no se puede guardar, lanza y no se
+        // envía. Se resuelve acá y no en el constructor: hay quien arma este servicio a mano.
+        $bitacora = app(BitacoraEnvioDte::class);
+        $intento = $bitacora->abrir($dte);
+        $transferencias = 0;
+
         try {
-            $resp = Http::timeout($timeout)->acceptJson()->withHeaders($headers)->post($url, $payload);
+            $resp = Http::timeout($timeout)->acceptJson()->withHeaders($headers)
+                // Cuántas transferencias hizo cURL: más de una es redirección o reintento
+                // interno, y entonces el error que se ve es solo el de la última.
+                ->withOptions(['on_stats' => function () use (&$transferencias): void {
+                    $transferencias++;
+                }])
+                ->post($url, $payload);
         } catch (Throwable $e) {
+            // Solo si cURL demuestra que el pedido no llegó a salir se cierra el intento.
+            // Si no, queda abierto: pudo salir, y esa duda no se borra.
+            if ($intento !== null && PedidoSinSalida::probado($e, $url, $transferencias)) {
+                $bitacora->cerrarSinSalida($dte, $intento, PedidoSinSalida::evidencia($e));
+            }
+
             // Error transitorio (conexión/timeout): el documento sigue Firmado y se
             // puede reintentar. No se cambia estado.
             return $this->resultado('error_conexion', null, 'No se pudo conectar con recepción: '.$e->getMessage());
@@ -215,6 +236,31 @@ class DteTransmisionService
         // (solo aceptado) y se avanza el estado por la máquina. Errores transitorios
         // (token inválido, malformada, etc.) NO cambian el estado.
         return $this->aplicarResultado($dte, $this->interpretarRespuesta($resp));
+    }
+
+    /**
+     * ¿Atiende la recepción de Hacienda? La usa la reconexión de la contingencia antes
+     * de declarar el cese. Manda un pedido SIN documento, así que no hay nada que
+     * Hacienda pueda recibir: a eso contesta 400. Cualquier respuesta HTTP que no sea
+     * un error del servidor (5xx) demuestra que la recepción está arriba; sin respuesta,
+     * no está confirmado.
+     *
+     * Ni el login ni la consulta sirven para esto: en el simulacro del 17/11 los dos
+     * contestaban con la recepción cortada (la consulta, 400 «no encontrado»).
+     */
+    public function recepcionResponde(): bool
+    {
+        $token = $this->auth->obtenerToken();
+
+        try {
+            $resp = Http::timeout((int) config('dte.transmision.timeout', 8))->acceptJson()
+                ->withHeaders(['User-Agent' => (string) config('dte.transmision.user_agent', 'DTE/1.0'), 'Authorization' => $token])
+                ->post($this->urlRecepcion(), ['ambiente' => EndpointsHacienda::ambienteTransmision()->value]);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $resp->status() < 500;
     }
 
     /**

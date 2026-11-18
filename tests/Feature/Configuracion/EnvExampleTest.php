@@ -58,6 +58,16 @@ class EnvExampleTest extends TestCase
             $clave.' es un candado fiscal que el código consume pero .env.example no documenta.');
     }
 
+    /**
+     * El interruptor de la contingencia (decisión 0006) no estaba en el archivo (simulacro
+     * del 17/11). Va documentado y apagado: se enciende a mano en cada servidor.
+     */
+    public function test_el_interruptor_de_contingencia_esta_documentado_y_apagado(): void
+    {
+        $this->assertMatchesRegularExpression('/^DTE_CONTINGENCIA_ENABLED=false$/m', $this->contenido(),
+            'DTE_CONTINGENCIA_ENABLED falta en .env.example o no viene apagado.');
+    }
+
     public function test_la_base_de_datos_esta_documentada(): void
     {
         // El proyecto corre sobre MySQL: sin estas claves un despliegue nuevo no arranca.

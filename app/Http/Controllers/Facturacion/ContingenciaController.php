@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Facturacion;
 
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
+use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
+use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Http\Controllers\Controller;
 use App\Models\Contingencia;
 use App\Models\ContingenciaEvento;
@@ -17,6 +19,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ContingenciaController extends Controller
@@ -44,7 +47,7 @@ class ContingenciaController extends Controller
     public function enviarLotes(ContingenciaEvento $evento, LoteDteService $service): RedirectResponse
     {
         $this->authorize('contingencia', Dte::class);
-        $resultados = $service->enviar($evento);
+        $resultados = $this->conBloqueosVisibles(fn () => $service->enviar($evento));
 
         return back()->with('status', collect($resultados)->pluck('resultado')->implode(' | '));
     }
@@ -54,7 +57,20 @@ class ContingenciaController extends Controller
         $this->authorize('contingencia', Dte::class);
 
         // «Volver a consultar en Hacienda»: un lote ya cerrado que dejó rechazados.
-        return back()->with('status', $service->consultar($lote, $request->boolean('reconciliar'))['resultado']);
+        return back()->with('status', $this->conBloqueosVisibles(fn () => $service->consultar($lote, $request->boolean('reconciliar')))['resultado']);
+    }
+
+    /**
+     * La integración apagada o un candado de seguridad no son un error del servidor: la
+     * persona ve su mensaje, igual que los demás motivos por los que no se envió nada.
+     */
+    private function conBloqueosVisibles(callable $accion): mixed
+    {
+        try {
+            return $accion();
+        } catch (DteTransmisionDeshabilitadaException|DteFirmaDeshabilitadaException $e) {
+            throw ValidationException::withMessages(['contingencia' => $e->getMessage()]);
+        }
     }
 
     public function emitirCorregido(Request $request, Dte $dte, DteBorradorService $borradores): RedirectResponse
@@ -77,13 +93,26 @@ class ContingenciaController extends Controller
         ]);
     }
 
-    public function enviar(Contingencia $contingencia, ContingenciaEventoService $service): RedirectResponse
+    public function enviar(Request $request, Contingencia $contingencia, ContingenciaEventoService $service): RedirectResponse
     {
         $this->authorize('contingencia', Dte::class);
-        $resultados = $service->enviar($contingencia);
+        // La casilla «Ya verifiqué en Hacienda»: reemplazar una parte que quedó en duda.
+        $resultados = $this->conBloqueosVisibles(fn () => $service->enviar($contingencia, $request->boolean('reemplazar_incierto')));
 
         return to_route('facturacion.contingencia.show', $contingencia)
             ->with('status', collect($resultados)->map(fn ($r) => $r['resultado'].': '.($r['mensaje'] ?? ''))->implode(' | '));
+    }
+
+    /** «Hacienda sí lo tiene»: una persona vio en Hacienda el aviso de una parte en duda. */
+    public function darPorRecibido(Request $request, ContingenciaEvento $evento, ContingenciaEventoService $service): RedirectResponse
+    {
+        $this->authorize('contingencia', Dte::class);
+        $request->validate(['confirmo_recibido' => ['accepted']],
+            ['confirmo_recibido.accepted' => 'Marcá la casilla para confirmar que viste el aviso en Hacienda. No se cambió nada.']);
+        $service->darPorRecibido($evento);
+
+        return to_route('facturacion.contingencia.show', $evento->contingencia_id)
+            ->with('status', 'Parte '.$evento->parte.' dada por recibida, sin mandar otro aviso. Sus documentos ya pueden salir en lote.');
     }
 
     public function actualizar(Request $request, Contingencia $contingencia, ContingenciaService $service): RedirectResponse
