@@ -3,7 +3,6 @@
 namespace App\Services\Cobros;
 
 use App\Console\Commands\PpqLiberarLotesBorradosCommand;
-use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
@@ -22,7 +21,8 @@ use Illuminate\Support\Facades\DB;
  * deshacía (issue #8).
  *
  * Solo se libera lo que estaba ahí POR ESTE LOTE. No se toca, y se informa:
- *  · lo pagado o con pago registrado;
+ *  · lo pagado o con pago registrado, salvo lo pagado de menos que el TXT devolvió para el
+ *    próximo PPQ;
  *  · lo que va en una solicitud de cobro (su estado viene de la solicitud);
  *  · lo que sigue en otro lote vigente (p. ej. el duplicado de un doble clic);
  *  · lo que Calleja registró en un caso: es una presentación real, con evidencia.
@@ -108,7 +108,9 @@ class LiberarCcfDeLoteBorrado
      */
     public function motivoParaConservar(CobroDocumento $doc, Collection $ocupadas): ?string
     {
-        if ($doc->pago_estado !== EstadoPagoCobro::Pendiente) {
+        // Lo pagado de menos que el TXT devolvió para el próximo PPQ sí vuelve, con la misma
+        // regla que lo dejó entrar en el lote ({@see ElegibilidadPpqSeguimiento::pagoAdmitePpq()}).
+        if (! app(ElegibilidadPpqSeguimiento::class)->pagoAdmitePpq($doc)) {
             return 'pagado o con pago registrado';
         }
         if ($doc->cobro_solicitud_id !== null) {

@@ -281,6 +281,51 @@ class CobrosTxtNoPagadosTest extends TestCase
         }
     }
 
+    /** B, pagado de menos, se dejó listo para el próximo PPQ y entró en uno nuevo. */
+    private function pagadoDeMenosEnPpqNuevo(): array
+    {
+        $e = $this->escenario();
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente),
+            ['hash' => $hash, 'items' => [$this->item($e['lote'], $e['b']->dte_id)->id]])->assertSessionHas('status');
+        $nuevo = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$e['b']->id]);
+        $this->assertSame(EstadoPagoCobro::Parcial, $e['b']->refresh()->pago_estado);
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $e['b']->presentacion_estado);
+
+        return [$e['b'], $nuevo, $usuario];
+    }
+
+    private function listoParaPpq(CobroDocumento $doc, User $usuario): bool
+    {
+        return $this->actingAs($usuario)->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))
+            ->assertOk()->viewData('listosPpq')->has($doc->id);
+    }
+
+    /** Antes se quedaba «en PPQ» sin estar en ninguno y el aviso decía «pagado o con pago registrado». */
+    public function test_el_pagado_de_menos_reenviado_que_se_quita_del_ppq_nuevo_vuelve_a_por_presentar(): void
+    {
+        [$b, $nuevo, $usuario] = $this->pagadoDeMenosEnPpqNuevo();
+
+        $this->actingAs($usuario)->from(route('ppq.lotes.show', $nuevo))
+            ->delete(route('ppq.lotes.items.destroy', [$nuevo, $this->item($nuevo, $b->dte_id)]))
+            ->assertSessionHas('status', 'El CCF '.$b->correlativoCorto().' salió del lote y volvió a por presentar.');
+
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $b->refresh()->presentacion_estado);
+        $this->assertTrue($this->listoParaPpq($b, $usuario));
+    }
+
+    public function test_el_pagado_de_menos_reenviado_vuelve_a_por_presentar_si_se_borra_el_ppq_nuevo(): void
+    {
+        [$b, $nuevo, $usuario] = $this->pagadoDeMenosEnPpqNuevo();
+
+        $this->actingAs($usuario)->delete(route('ppq.lotes.destroy', $nuevo))
+            ->assertSessionHas('status', 'Lote PPQ eliminado. 1 CCF volvieron a por presentar.');
+
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $b->refresh()->presentacion_estado);
+        $this->assertTrue($this->listoParaPpq($b, $usuario));
+    }
+
     public function test_lo_pagado_de_menos_no_marcado_sigue_sin_poder_entrar_en_un_ppq(): void
     {
         $e = $this->escenario();

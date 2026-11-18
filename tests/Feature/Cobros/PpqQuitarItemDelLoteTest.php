@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Cobros;
 
+use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\OrigenCobroDocumento;
+use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
 use App\Models\Cliente;
@@ -208,6 +210,29 @@ class PpqQuitarItemDelLoteTest extends TestCase
         $this->assertSame(EstadoPresentacionCobro::Preparada, $pagado->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::Preparada, $conHistoria->refresh()->presentacion_estado);
         $this->assertSame(0, DB::table('activity_log')->where('description', 'ppq.item_quitado')->count());
+    }
+
+    /**
+     * El TXT lo pagó de menos y se devolvió para el próximo PPQ (nota `txt-…-fuera`): ese pago
+     * no le impide volver a por presentar. Antes se quedaba «en PPQ» sin estar en ninguno, con
+     * el aviso «pagado o con pago registrado».
+     */
+    public function test_un_pagado_de_menos_devuelto_por_el_txt_vuelve_a_por_presentar_al_quitarlo(): void
+    {
+        $doc = $this->ccf();
+        $doc->forceFill(['pago_estado' => EstadoPagoCobro::Parcial->value, 'monto_pagado' => '90.00'])->save();
+        $doc->eventos()->create(['tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => 'txt-abcdef123456-fuera',
+            'origen' => 'manual', 'fecha' => today()->toDateString(), 'detalle' => 'Devuelto para el próximo PPQ por el TXT de pagos.']);
+        $lote = $this->crear([$doc]);
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $doc->refresh()->presentacion_estado);
+        $user = $this->usuario();
+
+        $this->quitar($user, $lote, $lote->items()->sole())
+            ->assertSessionHas('status', 'El CCF '.$doc->correlativoCorto().' salió del lote y volvió a por presentar.');
+
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->refresh()->presentacion_estado);
+        $this->actingAs($user)->get(route('cobros.index', ['cliente_id' => $this->cliente->id, 'etapa' => 'listos']))
+            ->assertOk()->assertViewHas('listosPpq', fn ($listos) => $listos->has($doc->id));
     }
 
     public function test_un_lote_no_editable_sigue_rechazando(): void

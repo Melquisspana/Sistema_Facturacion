@@ -12,6 +12,7 @@ use App\Models\Cobros\CobroEvento;
 use App\Models\PpqItem;
 use App\Support\EjercicioControl;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 
 /**
@@ -21,6 +22,25 @@ use Illuminate\Support\Collection;
  */
 class ElegibilidadPpqSeguimiento
 {
+    /** Pagos de menos que el TXT puede devolver para el próximo PPQ (nota `txt-…-fuera`). */
+    private const PAGOS_DEVUELTOS_POR_TXT = [EstadoPagoCobro::Parcial, EstadoPagoCobro::Diferencia];
+
+    /**
+     * El pago no le impide entrar en un PPQ: está pendiente, o es un pago de menos que el TXT
+     * devolvió para el próximo PPQ. Es la misma condición de {@see consulta()}; la usan también
+     * {@see motivo()} y el quitar o borrar de un lote ({@see LiberarCcfDeLoteBorrado::motivoParaConservar()}).
+     */
+    public function pagoAdmitePpq(CobroDocumento $doc): bool
+    {
+        return $doc->pago_estado === EstadoPagoCobro::Pendiente
+            || (in_array($doc->pago_estado, self::PAGOS_DEVUELTOS_POR_TXT, true) && self::devueltoPorTxt($doc->eventos())->exists());
+    }
+
+    private static function devueltoPorTxt(Builder|HasMany $eventos): Builder|HasMany
+    {
+        return $eventos->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-fuera');
+    }
+
     /**
      * Identidades ocupadas en un lote VIGENTE: número normalizado o «dte:{id}» => id del lote.
      *
@@ -86,8 +106,8 @@ class ElegibilidadPpqSeguimiento
     {
         return $q->where('tipo_dte', '03')
             ->where(fn ($p) => $p->where('pago_estado', EstadoPagoCobro::Pendiente->value)
-                ->orWhere(fn ($p) => $p->whereIn('pago_estado', [EstadoPagoCobro::Parcial->value, EstadoPagoCobro::Diferencia->value])
-                    ->whereHas('eventos', fn ($e) => $e->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-fuera'))))
+                ->orWhere(fn ($p) => $p->whereIn('pago_estado', array_map(fn (EstadoPagoCobro $e) => $e->value, self::PAGOS_DEVUELTOS_POR_TXT))
+                    ->whereHas('eventos', fn ($e) => self::devueltoPorTxt($e))))
             ->where('presentacion_estado', EstadoPresentacionCobro::SinPresentar->value)
             ->whereNotNull('ppq_albaran_id')
             ->where('revisar_historico', false)
@@ -166,8 +186,7 @@ class ElegibilidadPpqSeguimiento
         return match (true) {
             $doc->estaInvalidado() => 'fue invalidado en Hacienda',
             $doc->ppq_albaran_id === null => 'no tiene albarán (no entregado)',
-            $doc->pago_estado !== EstadoPagoCobro::Pendiente && ! (in_array($doc->pago_estado, [EstadoPagoCobro::Parcial, EstadoPagoCobro::Diferencia], true)
-                && $doc->eventos()->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-fuera')->exists()) => 'ya tiene pago',
+            ! $this->pagoAdmitePpq($doc) => 'ya tiene pago',
             $enRevision => 'tiene pagos en revisión',
             $doc->revisar_historico => 'falta la revisión histórica',
             in_array($doc->presentacion_estado, [EstadoPresentacionCobro::Presentada, EstadoPresentacionCobro::Recibida], true) => 'ya se presentó',
