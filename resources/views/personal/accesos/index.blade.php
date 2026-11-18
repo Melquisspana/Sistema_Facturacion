@@ -15,6 +15,8 @@
     $vista = array_filter(['sin_ficha' => $filtros['sin_ficha'] ? 1 : null, 'externas' => $filtros['externas'] ? 1 : null]);
     // «Activos» es lo que abre: no cuenta como filtro puesto.
     $filtrado = $filtros['q'] !== '' || $filtros['activo'] !== '1';
+    // La misma búsqueda y vista, con las cuentas apagadas.
+    $verInactivos = route('personal.accesos.index', $vista + ($filtros['q'] !== '' ? ['q' => $filtros['q']] : []) + ['activo' => '0']);
 @endphp
 
 <x-app-layout>
@@ -128,13 +130,21 @@
                                 </tr>
                             @empty
                                 <tr>
+                                    {{-- Igual que en Empleados (docs/GUIA_PANTALLAS.md › Sin resultados). --}}
                                     <td colspan="{{ $columnas }}" class="px-4 py-10 text-center text-gray-500 dark:text-paper-300">
-                                        @if ($filtros['externas'] && ! $filtrado)
-                                            Todavía no hay accesos externos activos. <a href="{{ route('personal.accesos.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear el primero</a>
-                                        @elseif ($filtrado || $filtros['sin_ficha'] || $filtros['externas'])
-                                            Nada coincide con estos filtros. <a href="{{ route('personal.accesos.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Limpiar filtros</a>
-                                        @else
+                                        @if (! $filtrado && ! $hayInactivos && $filtros['externas'])
+                                            Todavía no hay accesos externos. <a href="{{ route('personal.accesos.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear el primero</a>
+                                        @elseif (! $filtrado && ! $hayInactivos && ! $filtros['sin_ficha'])
                                             Todavía no hay accesos.
+                                        @else
+                                            Nada coincide con estos filtros.
+                                            @if ($hayInactivos)
+                                                <a href="{{ $verInactivos }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Ver inactivos</a>
+                                            @endif
+                                            @if ($hayInactivos && $filtrado) · @endif
+                                            @if ($filtrado)
+                                                <a href="{{ route('personal.accesos.index', $vista) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Limpiar filtros</a>
+                                            @endif
                                         @endif
                                     </td>
                                 </tr>

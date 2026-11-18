@@ -50,13 +50,16 @@ class AccesoController extends Controller
         // Abre con los activos, igual que Empleados (18/11/2026): «Inactivos» o «Todos» muestran al resto.
         $activo = in_array($request->query('activo'), ['0', 'todos'], true) ? $request->query('activo') : '1';
 
-        $usuarios = User::query()
-            ->with($this->conPersonal() ? ['roles', 'planillaEmpleado'] : ['roles'])
+        // La búsqueda y la vista (sin ficha, externas), sin el estado.
+        $consulta = fn () => User::query()
             ->when($busqueda !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$busqueda}%")
                 ->orWhere('email', 'like', "%{$busqueda}%")))
             ->when($this->conPersonal() && $request->boolean('sin_ficha'), fn ($q) => $this->sinFicha($q))
-            ->when($externas, fn ($q) => $this->externas($q))
+            ->when($externas, fn ($q) => $this->externas($q));
+
+        $usuarios = $consulta()
+            ->with($this->conPersonal() ? ['roles', 'planillaEmpleado'] : ['roles'])
             ->when($activo !== 'todos', fn ($q) => $q->where('activo', $activo === '1'))
             ->orderBy('name')
             ->paginate(15)
@@ -64,6 +67,9 @@ class AccesoController extends Controller
 
         return view('personal.accesos.index', [
             'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha'), 'externas' => $externas, 'activo' => $activo],
+            // Si «Activos» deja la lista vacía pero hay cuentas apagadas que coinciden, la lista lo
+            // dice y ofrece verlas, en vez de «todavía no hay» (y de invitar a crear otra igual).
+            'hayInactivos' => $activo === '1' && $usuarios->total() === 0 && $consulta()->where('activo', false)->exists(),
             // Solo quien sigue entrando: el aviso dice eso y «Ver solo esos» abre con los activos.
             'sinFicha' => $this->conPersonal() ? $this->sinFicha(User::query())->where('activo', true)->count() : 0,
             'conPersonal' => $this->conPersonal(), 'verFichas' => $request->user()->can('planilla.ver'),

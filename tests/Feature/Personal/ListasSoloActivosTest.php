@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -67,6 +68,16 @@ class ListasSoloActivosTest extends TestCase
         app(BajaEmpleado::class)->dar($this->admin, $e, '2026-11-02', 'otro');
 
         return $e->fresh();
+    }
+
+    /** Que la página tenga un enlace con ese texto a esa dirección. */
+    private function assertEnlace(TestResponse $respuesta, string $texto, string $url): void
+    {
+        $this->assertMatchesRegularExpression(
+            '#<a href="'.preg_quote(e($url), '#').'"[^>]*>\s*'.preg_quote($texto, '#').'\s*</a>#u',
+            $respuesta->getContent(),
+            "Falta el enlace «{$texto}» a {$url}."
+        );
     }
 
     // ─────────────────────────────── Empleados ───────────────────────────────
@@ -200,6 +211,28 @@ class ListasSoloActivosTest extends TestCase
             ->assertSee('Nada coincide con estos filtros.')->assertDontSee('suelta-inactiva@example.test');
         $this->get(route('personal.accesos.index', ['externas' => 1, 'activo' => '0', 'q' => 'nadie']))->assertOk()
             ->assertSee('Nada coincide con estos filtros.');
+    }
+
+    /**
+     * Con una cuenta externa apagada no dice «Crear el primero»: crearla otra vez choca con su
+     * correo o duplica a la persona. Ofrece verla con «Inactivos», donde se reactiva.
+     */
+    public function test_accesos_externos_con_solo_una_apagada_ofrece_verla_y_no_crear_otra(): void
+    {
+        $externas = route('personal.accesos.index', ['externas' => 1]);
+
+        $vacia = $this->actingAs($this->admin)->get($externas)->assertOk()
+            ->assertSee('Todavía no hay accesos externos.')->assertDontSee('Ver inactivos');
+        $this->assertEnlace($vacia, 'Crear el primero', route('personal.accesos.create'));
+
+        User::factory()->create(['email' => 'externa-inactiva@example.test', 'activo' => false, 'cuenta_externa' => true]);
+
+        $apagada = $this->get($externas)->assertOk()
+            ->assertDontSee('Todavía no hay accesos externos')->assertDontSee('Crear el primero')
+            ->assertSee('Nada coincide con estos filtros.');
+        $this->assertEnlace($apagada, 'Ver inactivos', route('personal.accesos.index', ['externas' => 1, 'activo' => '0']));
+        $this->get(route('personal.accesos.index', ['externas' => 1, 'activo' => '0']))->assertOk()
+            ->assertSee('externa-inactiva@example.test');
     }
 
     /** El aviso dice «siguen entrando» y «Ver solo esos» abre en Activos: cuenta solo a esos. */
