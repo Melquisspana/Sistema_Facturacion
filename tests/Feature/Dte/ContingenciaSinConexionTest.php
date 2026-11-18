@@ -61,7 +61,7 @@ class ContingenciaSinConexionTest extends TestCase
     private const EN_CONTINGENCIA = 'Documento emitido en contingencia, pendiente de sello de recepción.';
 
     /** Lo que lee quien emite cuando no se sabe si Hacienda lo recibió (F10: sin códigos ni cURL). */
-    private const INCIERTO = 'No se pudo confirmar si Hacienda recibió el documento, y por eso no se volvió a mandar: podría quedar duplicado.';
+    private const INCIERTO = 'No se pudo confirmar si Hacienda recibió el documento. Para no duplicarlo, no se volvió a mandar.';
 
     private const SIN_LOGIN = 'Firmado, pero no se pudo transmitir: No se pudo conectar con el servicio de autenticación. '
         .'El documento queda firmado; podés reintentar.';

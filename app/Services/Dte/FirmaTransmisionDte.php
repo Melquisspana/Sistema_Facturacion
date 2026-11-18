@@ -116,8 +116,10 @@ class FirmaTransmisionDte
     private function mensajeSinTerminar(Dte $dte, array $r): string
     {
         return match ($r['resultado']) {
-            DteTransmisionResiliente::ESTADO_INCIERTO => 'No se pudo confirmar si Hacienda recibió el documento, '
-                .'y por eso no se volvió a mandar: podría quedar duplicado.',
+            // Completo: la pantalla lo muestra solo, sin el «podés reintentar» de los demás.
+            DteTransmisionResiliente::ESTADO_INCIERTO => 'No se pudo confirmar si Hacienda recibió el documento. '
+                .'Para no duplicarlo, no se volvió a mandar. Queda firmado: probá «Firmar y transmitir» en unos minutos. '
+                .'Antes de mandarlo otra vez, el sistema le pregunta a Hacienda si ya lo tiene.',
             'reintentos_agotados' => trim('Hacienda no respondió. '
                 .app(ContingenciaAutomaticaService::class)->motivoSinContingencia($dte)),
             default => self::sinDetalleTecnico($r['mensaje']),

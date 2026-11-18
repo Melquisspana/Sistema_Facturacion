@@ -301,8 +301,9 @@ class TransmisionResilienteUiTest extends TestCase
         $this->actingAs($this->usuario())
             ->post(route('facturacion.firmar-transmitir', $dte), [])
             ->assertRedirect()
-            ->assertSessionHas('error', 'No se completó la transmisión: No se pudo confirmar si Hacienda recibió el documento, '
-                .'y por eso no se volvió a mandar: podría quedar duplicado. El documento queda firmado; podés reintentar.');
+            // Sin dos «:» seguidos ni un «podés reintentar» al lado de «podría quedar duplicado».
+            ->assertSessionHas('error', 'No se pudo confirmar si Hacienda recibió el documento. Para no duplicarlo, no se volvió a mandar. '
+                .'Queda firmado: probá «Firmar y transmitir» en unos minutos. Antes de mandarlo otra vez, el sistema le pregunta a Hacienda si ya lo tiene.');
 
         Log::shouldHaveReceived('warning')->withArgs(fn ($mensaje, $contexto = []) => ($contexto['dte_id'] ?? null) === $dte->id
             && ($contexto['resultado'] ?? null) === DteTransmisionResiliente::ESTADO_INCIERTO
