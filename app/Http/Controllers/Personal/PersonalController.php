@@ -90,12 +90,19 @@ class PersonalController extends Controller
         $bajoMinimo = $minimo === null ? 0 : $filas
             ->filter(fn (array $f) => $f['activo'] && $f['mensual'] !== null && $f['mensual'] < $minimo)
             ->count();
-        // Abre con los activos (18/11/2026): quien se fue se ve con «Inactivos» o «Todos».
-        $activo = in_array($request->query('activo'), ['0', 'todos'], true) ? $request->query('activo') : '1';
+        // Abre con los activos (18/11/2026): quien se fue se ve con «Inactivos» o «Todos». El
+        // «Todos» del filtro viejo mandaba `activo=` vacío: un enlace guardado así sigue
+        // mostrando a todos, igual que en Clientes.
+        $activo = match (true) {
+            in_array($request->query('activo'), ['0', 'todos'], true) => $request->query('activo'),
+            $request->query->has('activo') && blank($request->query('activo')) => 'todos',
+            default => '1',
+        };
         $lista = $this->filtrar($request, $filas, $activo);
 
         return view('personal.empleados', [
-            'empleados' => $this->paginar($request, $lista),
+            // Las páginas siguientes llevan el estado que se ve (el `activo=` viejo, como «todos»).
+            'empleados' => $this->paginar($request, $lista)->appends('activo', $activo === '1' ? null : $activo),
             'activo' => $activo,
             // Si «Activos» deja la lista vacía pero alguien de baja coincide, la lista lo dice y
             // ofrece verlo, en vez de «todavía no hay nadie» o de parecer que se borró.

@@ -154,6 +154,29 @@ class ListasSoloActivosTest extends TestCase
         // Por defecto no hay nadie activo: tampoco hay página 2.
         $this->get(route('personal.empleados'))->assertOk()
             ->assertDontSee('Inactivo Prueba 01')->assertDontSee(route('personal.empleados', ['page' => 2]));
+
+        // Con el «Todos» viejo (`activo=` vacío), la página 2 sigue mostrando a todos.
+        $this->get(route('personal.empleados', ['activo' => '']))->assertOk()
+            ->assertSee('Inactivo Prueba 01')->assertSee(route('personal.empleados', ['activo' => 'todos', 'page' => 2]));
+    }
+
+    /**
+     * El «Todos» del filtro viejo mandaba `activo=` vacío. Un enlace o favorito guardado así
+     * sigue mostrando a todos, también por la dirección vieja de Asistencia, como en Clientes.
+     */
+    public function test_empleados_un_enlace_guardado_con_el_todos_viejo_sigue_mostrando_a_todos(): void
+    {
+        $this->persona('Activo De Prueba', 'FICTICIO-1');
+        $this->deBaja();
+        $this->actingAs($this->admin);
+
+        $this->get(route('personal.empleados', ['activo' => '']))->assertOk()
+            ->assertSee('Empleado Activo De Prueba')->assertSee('Empleado Baja De Prueba')
+            ->assertSee('value="todos" selected>Todos</option>', false);
+        $this->get(route('personal.empleados', ['q' => 'baja de prueba', 'activo' => '']))->assertOk()
+            ->assertSee('Empleado Baja De Prueba');
+        $this->get(route('asistencia.empleados.index', ['activo' => '']))
+            ->assertRedirect(route('personal.empleados', ['activo' => '']));
     }
 
     /** «Bajo el mínimo» cuenta solo a los activos, mire uno los activos o los inactivos. */
