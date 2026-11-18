@@ -13,7 +13,8 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * «quitar» un renglón en la ficha de un lote editable. Sale con constancia y con el resguardo
+ * «quitar» un renglón en la ficha de un lote editable (se revisa con el lote bloqueado; si ya
+ * no lo es, no se toca nada y vuelve `no_editable`). Sale con constancia y con el resguardo
  * de {@see RetirarItemsPpq} (observación y bitácora; lo conciliado o con historia no sale).
  *
  * Si es un CCF que estaba «en PPQ», vuelve a «por presentar» con la regla del borrado del lote
@@ -25,16 +26,22 @@ use Illuminate\Support\Facades\DB;
 class QuitarItemPpq
 {
     /**
-     * @return array{quitado: bool, conservado: ?PpqItem, devueltos: Collection<int, CobroDocumento>, conservados: Collection<int, array{documento: CobroDocumento, motivo: string}>, sin_cambio: Collection<int, CobroDocumento>, notas: Collection<int, PpqItem>}
+     * @return array{quitado: bool, no_editable: bool, conservado: ?PpqItem, devueltos: Collection<int, CobroDocumento>, conservados: Collection<int, array{documento: CobroDocumento, motivo: string}>, sin_cambio: Collection<int, CobroDocumento>, notas: Collection<int, PpqItem>}
      */
     public function quitar(PpqLote $lote, PpqItem $item, ?User $usuario = null): array
     {
         return DB::transaction(function () use ($lote, $item, $usuario) {
             $lote = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            $resultado = ['quitado' => false, 'no_editable' => false, 'conservado' => null, 'devueltos' => collect(),
+                'conservados' => collect(), 'sin_cambio' => collect(), 'notas' => collect()];
+            // Se revisa con el candado puesto: otro pudo marcarlo presentado mientras este esperaba.
+            if (! $lote->esEditable()) {
+                $resultado['no_editable'] = true;
+
+                return $resultado;
+            }
             $items = $lote->items()->with('dte')->lockForUpdate()->get();
             $item = $items->firstWhere('id', $item->id);
-            $resultado = ['quitado' => false, 'conservado' => null, 'devueltos' => collect(), 'conservados' => collect(),
-                'sin_cambio' => collect(), 'notas' => collect()];
             if ($item === null) {
                 return $resultado;
             }

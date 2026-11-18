@@ -17,6 +17,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\QuitarItemPpq;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -233,6 +234,30 @@ class PpqQuitarItemDelLoteTest extends TestCase
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->refresh()->presentacion_estado);
         $this->actingAs($user)->get(route('cobros.index', ['cliente_id' => $this->cliente->id, 'etapa' => 'listos']))
             ->assertOk()->assertViewHas('listosPpq', fn ($listos) => $listos->has($doc->id));
+    }
+
+    /**
+     * Otra persona marcó el lote presentado mientras este pedido esperaba el candado: el lote
+     * que trajo la ruta decía borrador, pero ya no admite cambios y no se toca nada.
+     */
+    public function test_si_el_lote_dejo_de_ser_editable_mientras_esperaba_no_quita_nada(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $item = $lote->items()->sole();
+        $observaciones = $lote->observaciones;
+        PpqLote::whereKey($lote->id)->update(['estado' => 'enviado']);
+        $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::Presentada->value])->save();
+        $this->assertTrue($lote->esEditable(), 'El lote en memoria todavía dice borrador.');
+
+        $r = app(QuitarItemPpq::class)->quitar($lote, $item, $this->usuario());
+
+        $this->assertFalse($r['quitado']);
+        $this->assertTrue($r['no_editable']);
+        $this->assertDatabaseHas('ppq_items', ['id' => $item->id]);
+        $this->assertSame($observaciones, $lote->refresh()->observaciones);
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->refresh()->presentacion_estado);
+        $this->assertSame(0, DB::table('activity_log')->where('description', 'ppq.item_quitado')->count());
     }
 
     public function test_un_lote_no_editable_sigue_rechazando(): void

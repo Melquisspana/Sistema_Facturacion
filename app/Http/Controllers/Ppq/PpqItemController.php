@@ -392,11 +392,11 @@ class PpqItemController extends Controller
     {
         abort_unless($item->ppq_lote_id === $lote->id, 404);
 
-        if (! $lote->esEditable()) {
-            return back()->with('error', 'El lote está en estado '.$lote->estado->label().' y no admite cambios.');
-        }
-
+        // Si el lote admite cambios lo decide el servicio, con el lote bloqueado.
         $r = $quitador->quitar($lote, $item, $request->user());
+        if ($r['no_editable']) {
+            return back()->with('error', 'El lote está en estado '.$lote->refresh()->estado->label().' y no admite cambios.');
+        }
         $documento = ($item->esNc() ? 'la NC ' : 'el CCF ').$item->correlativoNumero();
         if (! $r['quitado']) {
             return back()->with('error', match (true) {
