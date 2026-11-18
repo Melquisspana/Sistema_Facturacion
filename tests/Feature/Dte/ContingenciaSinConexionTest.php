@@ -302,7 +302,54 @@ class ContingenciaSinConexionTest extends TestCase
         Sleep::assertSleptTimes(2);
     }
 
+    /** Llega firmado, sin token guardado y sin internet: la consulta previa ni se hace, y entra igual. */
+    public function test_firmado_que_nunca_salio_sin_token_guardado_entra_sola(): void
+    {
+        $dte = $this->firmadoSinEnvios();
+        config(['dte.transmision.token' => '']);
+
+        $this->clic($dte)->assertSessionHas('status', self::EN_CONTINGENCIA);
+
+        $this->assertTrue($dte->refresh()->esTransitorio());
+        $this->assertSame(3, $dte->contingencia->tipo);
+        $this->assertSame(0, $this->pedidos('recepciondte'));
+        $this->assertSame(0, $this->pedidos('consultadte'));
+        // El token se pidió para la consulta previa y, en cada uno de los tres intentos,
+        // para enviar y para consultar.
+        $this->assertSame(7, $this->pedidos('seguridad/auth'));
+        $this->assertSame(['marca' => 1, 'empezo' => 0, 'no_salio' => 0], $this->anotaciones($dte));
+    }
+
     // ------------------------------------------------------------- nunca duplicar
+
+    /**
+     * Un envío en duda de un clic anterior y ahora sin token guardado: la consulta previa
+     * no se puede hacer, así que no se envía nada, aunque el pedido del token vuelva a
+     * andar justo después.
+     */
+    #[DataProvider('elTokenDespuesDeLaDuda')]
+    public function test_envio_en_duda_y_sin_token_guardado_no_se_envia(bool $elTokenVuelve): void
+    {
+        $this->simular(['*recepciondte*' => $this->falla('salio_sin_respuesta')]);
+        $dte = $this->documento();
+        $this->clic($dte)->assertSessionHas('error');
+
+        config(['dte.transmision.token' => '']);
+        $this->simular($elTokenVuelve ? ['*seguridad/auth' => $this->enOrden($this->falla('rechazada'),
+            Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer INVENTADO-2']]))] : []);
+        $respuesta = $this->clic($dte);
+
+        $this->assertQuedoIncierto($respuesta, $dte);
+        $this->assertSame(0, $this->pedidos('recepciondte'), 'ningún envío nuevo');
+        $this->assertSame(1, $this->pedidos('seguridad/auth'));
+        $this->assertSame(['marca' => 1, 'empezo' => 1, 'no_salio' => 0], $this->anotaciones($dte));
+    }
+
+    /** @return array<string, array{bool}> */
+    public static function elTokenDespuesDeLaDuda(): array
+    {
+        return ['el token sigue sin conectar' => [false], 'el token vuelve enseguida' => [true]];
+    }
 
     /** El pedido SALIÓ y se perdió la respuesta: Hacienda puede tenerlo. No se toca nada. */
     public function test_pedido_que_salio_y_perdio_la_respuesta_no_entra_y_queda_para_revision(): void
