@@ -4,6 +4,7 @@ namespace Tests\Feature\Cobros;
 
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
+use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroAjuste;
@@ -185,6 +186,35 @@ class CobrosCompletarHistorialCommandTest extends TestCase
 
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $soloEnBorrado->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::Presentada, $enVigente->refresh()->presentacion_estado);
+    }
+
+    /**
+     * El TXT o un caso del portal lo devolvieron para el próximo PPQ, pero su renglón se
+     * quedó en el lote viejo por su historia. No se volvió a presentar: sigue por presentar.
+     */
+    public function test_un_ccf_devuelto_para_el_proximo_ppq_que_sigue_en_el_lote_viejo_no_pasa_a_presentado(): void
+    {
+        $cliente = $this->clienteDeCobros();
+        $porTxt = $this->doc($cliente, '301', '2026-08-01', false);
+        $porCaso = $this->doc($cliente, '302', '2026-08-01', false);
+        $lote = PpqLote::create(['cliente_id' => $cliente->id, 'referencia' => 'PPQ-viejo', 'fecha' => '2026-08-05', 'estado' => 'enviado']);
+        foreach (['301', '302'] as $n) {
+            $lote->items()->create(['origen' => 'local', 'tipo_dte' => '03', 'monto_dte' => '100.00', 'sin_albaran' => true,
+                'numero_control' => 'DTE-03-M001P002-'.str_pad($n, 15, '0', STR_PAD_LEFT)]);
+        }
+        $porTxt->eventos()->create(['tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => 'txt-abcdef123456-fuera',
+            'origen' => 'manual', 'fecha' => '2026-08-20', 'detalle' => 'Devuelto para el próximo PPQ por el TXT de pagos.',
+            'datos' => ['ppq_lote_id' => $lote->id, 'hash' => str_repeat('a', 64)]]);
+        $porCaso->eventos()->create(['tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => 'caso-555-fuera',
+            'origen' => 'manual', 'fecha' => '2026-08-20', 'detalle' => 'No lo tomaron en el caso 555: va en el siguiente PPQ.',
+            'datos' => ['caso' => '555', 'ppq_lote_id' => $lote->id]]);
+
+        $this->artisan('cobros:completar-historial', ['--cliente' => $cliente->id, '--aplicar' => true])
+            ->expectsOutputToContain('Marcados como presentados por estar en un lote PPQ: 0.')
+            ->assertSuccessful();
+
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $porTxt->refresh()->presentacion_estado);
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $porCaso->refresh()->presentacion_estado);
     }
 
     /**

@@ -8,9 +8,9 @@ use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqConciliacion;
-use App\Models\PpqItem;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\AplicadorPagosTxt;
+use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
 use App\Support\EjercicioControl;
@@ -33,7 +33,7 @@ class CobrosCompletarHistorialCommand extends Command
 
     protected $description = 'Marca pagado/presentado lo que ya consta en los lotes PPQ y sus TXT de pago';
 
-    public function handle(AplicadorPagosTxt $aplicador, ConciliacionTxtParser $parser): int
+    public function handle(AplicadorPagosTxt $aplicador, ConciliacionTxtParser $parser, ElegibilidadPpqSeguimiento $elegibilidad): int
     {
         $cliente = Cliente::find($this->option('cliente'));
         if ($cliente === null) {
@@ -94,14 +94,17 @@ class CobrosCompletarHistorialCommand extends Command
             }
         }
 
-        // 2. Lo que viajó en un lote PPQ ya se presentó. Un lote borrado no cuenta: sus items
-        //    quedan, pero sus CCF volvieron a por presentar (borrado blando del lote).
-        $enLotes = PpqItem::query()->whereHas('lote')->get()->map(fn ($i) => EjercicioControl::llave($i->numero_control, $i->ejercicio_control))->filter()->flip();
+        // 2. Lo que viajó en un lote PPQ ya se presentó, con la regla única de los lotes
+        //    vigentes ({@see ElegibilidadPpqSeguimiento::claves()}). No cuenta un lote borrado
+        //    (sus CCF volvieron a por presentar) ni lo que el TXT o un caso del portal devolvieron
+        //    para el próximo PPQ aunque su renglón siga en el lote viejo.
+        $enLotes = $elegibilidad->claves();
 
         $pendientes = CobroDocumento::deCliente($cliente->id)
             ->whereIn('presentacion_estado', [EstadoPresentacionCobro::SinPresentar->value, EstadoPresentacionCobro::Preparada->value])
             ->get()
-            ->filter(fn (CobroDocumento $d) => $enLotes->has(EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
+            ->filter(fn (CobroDocumento $d) => $enLotes->has(EjercicioControl::llave($d->numero_control, $d->ejercicio_control))
+                || ($d->dte_id !== null && $enLotes->has('dte:'.$d->dte_id)));
 
         if ($aplicar) {
             foreach ($pendientes as $doc) {
