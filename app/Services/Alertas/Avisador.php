@@ -5,6 +5,7 @@ namespace App\Services\Alertas;
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Facades\Ajustes;
 use App\Mail\AlertaSistemaCorreo;
+use App\Services\Alertas\Detectores\ContingenciaManualSinTerminar;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\EventosRecientes;
@@ -62,6 +63,7 @@ class Avisador
             app(DteRechazados::class),
             app(PedidosWebParaRevisar::class),
             app(ContingenciaVencida::class),
+            app(ContingenciaManualSinTerminar::class),
             app(FirmadoSinTransmitir::class),
             app(RespaldoFallido::class),
             app(LectorSinPing::class),

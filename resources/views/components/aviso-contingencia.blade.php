@@ -24,6 +24,11 @@
         Tipo {{ $contingencia->tipo }}: {{ [1 => 'MH no disponible', 2 => 'Sistema del emisor no disponible', 3 => 'Falla de internet del emisor', 4 => 'Falla de energía del emisor', 5 => 'Otro'][$contingencia->tipo] ?? '' }}.
         {{ $contingencia->motivo }}
         <p>Los documentos se generan y firman, pero todavía no se envían a Hacienda.</p>
+        {{-- Una manual no se cierra sola: la reconexión solo anota que Hacienda ya responde. --}}
+        @php($haciendaRespondeDesde = app(\App\Services\Dte\ContingenciaService::class)->haciendaRespondeDesde($contingencia))
+        @if ($haciendaRespondeDesde)
+            <p class="font-semibold">Hacienda ya responde desde las {{ $haciendaRespondeDesde->format('H:i') }}. Si el motivo de la contingencia ya pasó, hay que terminarla: mientras siga activa, todo sale provisional.</p>
+        @endif
         @if (\Illuminate\Support\Facades\Schema::hasTable('contingencia_eventos'))
             <x-plazos-contingencia :contingencia="$contingencia" />
         @endif

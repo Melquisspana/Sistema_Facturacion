@@ -13,6 +13,8 @@ use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Producto;
 use App\Models\User;
+use App\Services\Alertas\Avisador;
+use App\Services\Alertas\Detectores\ContingenciaManualSinTerminar;
 use App\Services\Dte\ContingenciaAutomaticaService;
 use App\Services\Dte\ContingenciaEventoService;
 use App\Services\Dte\ContingenciaService;
@@ -260,8 +262,10 @@ class ContingenciaAutomaticaTest extends TestCase
         Http::assertSentCount(2);
         $manual = app(ContingenciaService::class)->activar(2, 'Sistema inventado', 'manual', null);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        // A la manual también se le prueba la conexión (para avisar), pero no se cierra.
         $this->assertNull($manual->refresh()->cese);
-        Http::assertSentCount(2);
+        $this->assertSame('activa', $manual->estado);
+        Http::assertSentCount(4);
     }
 
     public function test_reconexion_no_declara_el_cese_con_el_login_arriba_y_la_recepcion_caida(): void
@@ -287,6 +291,39 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame('cerrada', $activa->estado);
         Http::assertSent(fn ($request) => str_contains($request->url(), 'recepciondte'));
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'recepciondte') && isset($request['documento']));
+    }
+
+    public function test_manual_no_se_cierra_sola_pero_avisa_cuando_hacienda_ya_responde(): void
+    {
+        // Simulacro del 17/11 (F9): con Hacienda de vuelta la manual seguía activa sin aviso.
+        $manual = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertStringNotContainsString('Hacienda ya responde', (string) $this->view('components.aviso-contingencia'));
+
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+
+        $manual->refresh();
+        $this->assertSame('activa', $manual->estado, 'Una manual no se cierra sola: pudo activarse por otro motivo.');
+        $this->assertNull($manual->cese);
+        $this->assertStringContainsString('Hacienda ya responde', (string) $this->view('components.aviso-contingencia'));
+        $this->assertSame(1, DB::table('activity_log')->where('description', 'Reconexión: Hacienda ya responde y la contingencia manual sigue activa')->count(),
+            'Se audita una vez, no en cada vuelta.');
+        $detector = collect(app(Avisador::class)->detectores())->first(fn ($d) => $d instanceof ContingenciaManualSinTerminar);
+        $this->assertNotNull($detector, 'El aviso por correo está registrado.');
+        $hallazgo = $detector->revisar();
+        $this->assertNotNull($hallazgo);
+        $this->assertSame('10:15', $hallazgo->desde?->format('H:i'), 'Desde la primera vez que respondió.');
+
+        // Si Hacienda se vuelve a caer, el aviso se va.
+        $this->simular();
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertStringNotContainsString('Hacienda ya responde', (string) $this->view('components.aviso-contingencia'));
+        $this->assertNull($detector->revisar());
+        $this->assertSame('activa', $manual->refresh()->estado);
     }
 
     public function test_evento_automatico_desde_12_horas_y_una_sola_vez(): void

@@ -12,6 +12,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -95,6 +96,40 @@ class ContingenciaService
 
             return $contingencia;
         });
+    }
+
+    /**
+     * La reconexión anota cuándo Hacienda empezó a responder (login y recepción)
+     * mientras sigue activa una contingencia manual. La manual no se cierra sola,
+     * porque pudo activarse por otro motivo (el firmador, la luz), pero se avisa en
+     * pantalla y por correo para que alguien la termine. Si Hacienda se vuelve a caer,
+     * la marca se borra; si la tarea deja de correr, se vence sola en tres vueltas.
+     *
+     * @return bool true si recién se notó que responde (para auditarlo una sola vez)
+     */
+    public function anotarHaciendaResponde(Contingencia $contingencia, bool $responde): bool
+    {
+        $clave = 'dte.contingencia.hacienda_responde.'.$contingencia->id;
+        if (! $responde) {
+            Cache::forget($clave);
+
+            return false;
+        }
+        $desde = Cache::get($clave);
+        Cache::put($clave, is_int($desde) ? $desde : HoraNegocio::ahora()->getTimestamp(), now()->addMinutes(45));
+
+        return ! is_int($desde);
+    }
+
+    /** Desde cuándo responde Hacienda con esta contingencia manual todavía activa. */
+    public function haciendaRespondeDesde(Contingencia $contingencia): ?Carbon
+    {
+        if ($contingencia->estado !== 'activa' || $contingencia->origen !== 'manual') {
+            return null;
+        }
+        $desde = Cache::get('dte.contingencia.hacienda_responde.'.$contingencia->id);
+
+        return is_int($desde) ? Carbon::createFromTimestamp($desde, HoraNegocio::zona()) : null;
     }
 
     public function eventoEnviado(Contingencia $contingencia): bool
