@@ -524,6 +524,25 @@ class ContingenciaEventoTest extends TestCase
             'description' => 'Aviso en duda reemplazado por uno nuevo: se verificó en Hacienda que no lo tiene']);
     }
 
+    public function test_el_envio_automatico_reintenta_el_reemplazo_de_una_parte_en_duda_que_se_corto(): void
+    {
+        $this->documento();
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
+        $this->simular(conexion: true);
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia), ['reemplazar_incierto' => '1']);
+        $nuevo = ContingenciaEvento::latest('id')->first();
+        $this->assertNotSame($parte->id, $nuevo->id);
+        $this->assertSame('preparado', $nuevo->estado);
+
+        // La parte en duda ya se reemplazó: lo que queda es un corte común, que se reintenta solo.
+        Carbon::setTestNow(Carbon::parse('2026-10-10 22:16:00', 'America/El_Salvador'));
+        $this->simular();
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('recibido', $nuevo->refresh()->estado);
+        $this->assertSame('informada', $this->contingencia->refresh()->estado);
+        $this->assertDatabaseCount('contingencia_eventos', 2);
+    }
+
     public function test_si_hacienda_si_tiene_el_aviso_en_duda_se_da_por_recibido_sin_mandar_otro_y_salen_los_lotes(): void
     {
         // El aviso se armó y salió a las 11:00; el reintento, rechazado, fue a las 12:00.
