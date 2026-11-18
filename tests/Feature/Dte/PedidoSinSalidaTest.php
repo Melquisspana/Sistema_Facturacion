@@ -126,6 +126,23 @@ class PedidoSinSalidaTest extends TestCase
         return $casos;
     }
 
+    /** Para el pedido del token: solo no resolver, no conectar o quedarse sin tiempo es «no conectó». */
+    public function test_no_conecto_solo_con_los_errores_de_conexion(): void
+    {
+        foreach ([6, 7, 28] as $errno) {
+            $this->assertTrue(PedidoSinSalida::noConecto($this->falla(['errno' => $errno])), "error {$errno}");
+        }
+
+        foreach ([35, 52, 56, 60, 77, 0] as $errno) {
+            $this->assertFalse(PedidoSinSalida::noConecto($this->falla(['errno' => $errno])), "error {$errno}");
+        }
+
+        $this->assertFalse(PedidoSinSalida::noConecto($this->falla(['errno' => '7: no pudo conectar'])));
+        $this->assertFalse(PedidoSinSalida::noConecto($this->falla(['errno' => 7], ['errno'])));
+        $this->assertFalse(PedidoSinSalida::noConecto($this->fallaInventada()), 'sin datos de cURL');
+        $this->assertFalse(PedidoSinSalida::noConecto(new RuntimeException('cURL error 7: no pudo conectar')));
+    }
+
     public function test_sin_los_datos_de_curl_no_hay_prueba(): void
     {
         $pedido = new Request('POST', self::URL);

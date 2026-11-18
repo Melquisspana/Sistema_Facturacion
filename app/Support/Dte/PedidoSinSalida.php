@@ -73,11 +73,27 @@ final class PedidoSinSalida
             }
         }
 
-        return in_array((float) $contexto['errno'], self::ERRORES_SIN_ENVIO, true)
+        return self::noConecto($e)
             && (float) $contexto['request_size'] === 0.0
             && (float) $contexto['size_upload'] === 0.0
             && (float) $contexto['pretransfer_time'] === 0.0
             && (string) $e->getPrevious()->getRequest()->getUri() === $url;
+    }
+
+    /**
+     * ¿La falla es de no poder hablar con el servidor? Solo los errores 6, 7 y 28 de cURL:
+     * no resolvió el nombre, no pudo conectar o se acabó el tiempo. Un certificado que este
+     * servidor no acepta (60, 77) o un saludo TLS que falla (35) NO son eso: hay conexión,
+     * y el problema es otro.
+     *
+     * No dice si un pedido se escribió: para eso está {@see probado()}. Sirve sola para el
+     * pedido del token, que no lleva el documento.
+     */
+    public static function noConecto(Throwable $e): bool
+    {
+        $errno = self::contexto($e)['errno'] ?? null;
+
+        return is_numeric($errno) && in_array((float) $errno, self::ERRORES_SIN_ENVIO, true);
     }
 
     /**

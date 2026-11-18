@@ -20,6 +20,9 @@ use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteTransmisionService;
 use Carbon\CarbonInterval;
 use Closure;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Promise\Create;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
@@ -469,6 +472,55 @@ class ContingenciaSinConexionTest extends TestCase
             'servicio caído (503)' => [503, ''],
             'página de otro (200 con HTML)' => [200, '<html><body>Sin saldo</body></html>'],
         ];
+    }
+
+    /**
+     * El login no conectó por un problema de este servidor (no confía en el certificado
+     * de Hacienda, el saludo TLS falla), con internet y Hacienda funcionando: no es «sin
+     * conexión». Se ve el error de verdad y no se declara una contingencia que no ocurrió.
+     */
+    #[DataProvider('fallasDelLoginQueNoSonUnCorte')]
+    public function test_login_con_error_de_certificado_o_de_tls_no_cuenta_como_sin_conexion(int $errno, string $error): void
+    {
+        config(['dte.transmision.token' => '']);
+        $this->simular(['*seguridad/auth' => $this->fallaDeCurl($errno, $error)]);
+        $dte = $this->documento();
+
+        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_starts_with($aviso,
+            'Firmado, pero no se pudo transmitir: No se pudo conectar con el servicio de autenticación: '
+                ."cURL error {$errno}: {$error}"));
+
+        $this->assertDatabaseCount('contingencias', 0);
+        $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
+        $this->assertNull($dte->contingencia_id);
+        $this->assertSame(1, $this->pedidos('seguridad/auth'), 'no se reintenta');
+        $this->assertSame(0, $this->pedidos('recepciondte'));
+        $this->assertSame(0, $this->pedidos('generate_204'));
+        Sleep::assertNeverSlept();
+    }
+
+    /** @return array<string, array{int, string}> */
+    public static function fallasDelLoginQueNoSonUnCorte(): array
+    {
+        return [
+            'certificado no confiable (60)' => [60, 'SSL certificate problem: unable to get local issuer certificate'],
+            'saludo TLS fallido (35)' => [35, 'OpenSSL SSL_connect: SSL_ERROR_SYSCALL'],
+        ];
+    }
+
+    /**
+     * Una falla de cURL con su número, armada como la arma Guzzle: el 35 como falla de
+     * conexión y el 60 como falla del pedido sin respuesta. Los contadores en cero, como
+     * cuando no se llegó a escribir nada.
+     */
+    private function fallaDeCurl(int $errno, string $error): Closure
+    {
+        $contexto = ['errno' => $errno, 'error' => $error, 'request_size' => 0, 'size_upload' => 0.0, 'pretransfer_time' => 0.0];
+        $mensaje = "cURL error {$errno}: {$error}";
+
+        return fn ($request) => Create::rejectionFor($errno === 60
+            ? new RequestException($mensaje, $request->toPsrRequest(), null, null, $contexto)
+            : new ConnectException($mensaje, $request->toPsrRequest(), null, $contexto));
     }
 
     // ------------------------------------------------------------ lo que no cambia
