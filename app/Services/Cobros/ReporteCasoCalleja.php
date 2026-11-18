@@ -201,8 +201,8 @@ Caso {$caso} de Calleja."),
         return $documentos->first(fn ($doc) => $this->mismoDocumento($item, $doc));
     }
 
-    /** Resuelve también las NC y CCF guardados como snapshots sin dte_id. */
-    private function ccfDeNota(PpqItem $nota, Collection $items): ?PpqItem
+    /** El item CCF de `$items` al que va esta NC. Resuelve también los snapshots sin dte_id. */
+    public function ccfDeNota(PpqItem $nota, Collection $items): ?PpqItem
     {
         $dte = $nota->dte_id ? $nota->dte : IdentidadPpq::dteLocal($nota->numero_control, null, $nota->ejercicio_control);
         if (! $dte?->dte_relacionado_id) {

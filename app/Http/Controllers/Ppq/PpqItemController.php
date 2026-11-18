@@ -10,6 +10,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\PpqSala;
+use App\Services\Cobros\QuitarItemPpq;
 use App\Services\Ppq\AlbaranPersistidor;
 use App\Services\Ppq\AlbaranPropioNc;
 use App\Services\Ppq\SalaResolver;
@@ -386,16 +387,45 @@ class PpqItemController extends Controller
         return app(AlbaranPersistidor::class)->registrar($d, $origen);
     }
 
-    public function destroy(PpqLote $lote, PpqItem $item): RedirectResponse
+    /** Quita el renglón con constancia y devuelve su CCF a «por presentar» ({@see QuitarItemPpq}). */
+    public function destroy(Request $request, PpqLote $lote, PpqItem $item, QuitarItemPpq $quitador): RedirectResponse
     {
         abort_unless($item->ppq_lote_id === $lote->id, 404);
 
-        if (! $lote->esEditable()) {
-            return back()->with('error', 'El lote está en estado '.$lote->estado->label().' y no admite cambios.');
+        // Si el lote admite cambios lo decide el servicio, con el lote bloqueado.
+        $r = $quitador->quitar($lote, $item, $request->user());
+        if ($r['no_editable']) {
+            return back()->with('error', 'El lote está en estado '.$lote->refresh()->estado->label().' y no admite cambios.');
+        }
+        $documento = ($item->esNc() ? 'la NC ' : 'el CCF ').$item->correlativoNumero();
+        if (! $r['quitado']) {
+            return back()->with('error', match (true) {
+                $r['conservado']?->estaConciliado() === true => "No se quitó {$documento}: ya tiene un cobro registrado.",
+                $r['conservado'] !== null => "No se quitó {$documento}: ya pasó por el archivo de pagos y eso queda guardado. "
+                    .'Si no va en este PPQ, eliminá el lote y armalo de nuevo desde Cobros.',
+                default => 'Ese documento ya no estaba en el lote.',
+            });
         }
 
-        $item->delete();
+        $mensaje = ucfirst($documento).' salió del lote';
+        if ($item->esNc()) {
+            $mensaje .= '.';
+        } elseif ($r['devueltos']->isNotEmpty()) {
+            $mensaje .= ' y volvió a por presentar.';
+        } elseif (($fila = $r['conservados']->first()) !== null) {
+            $mensaje .= ', pero no volvió a por presentar: '.$fila['motivo'].'.';
+        } elseif ($r['sin_cambio']->isNotEmpty()) {
+            $mensaje .= '; ya estaba por presentar.';
+        } else {
+            $mensaje .= '.';
+        }
+        if ($r['notas']->isNotEmpty()) {
+            $numeros = $r['notas']->map(fn (PpqItem $nc) => $nc->correlativoNumero())->join(', ', ' y ');
+            $mensaje .= $r['notas']->count() === 1
+                ? " Su nota de crédito {$numeros} sigue en el lote: quitala también si no va."
+                : " Sus notas de crédito {$numeros} siguen en el lote: quitalas también si no van.";
+        }
 
-        return back()->with('status', 'Item quitado del lote.');
+        return back()->with('status', $mensaje);
     }
 }
