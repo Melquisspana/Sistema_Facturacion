@@ -591,6 +591,27 @@ class ContingenciaSinConexionTest extends TestCase
         Sleep::assertNeverSlept();
     }
 
+    /**
+     * Firmado con el interruptor encendido (tiene marca) y el interruptor apagado después:
+     * lo de siempre. Solo la consulta previa, ningún envío, sin esperas y el aviso de
+     * «incierto».
+     */
+    #[DataProvider('tokenGuardadoONo')]
+    public function test_con_el_interruptor_apagado_un_documento_con_marca_sigue_como_siempre(string $token, string $unicoPedido): void
+    {
+        $dte = $this->firmadoSinEnvios();
+        config(['dte.contingencia.enabled' => false, 'dte.transmision.token' => $token]);
+
+        $this->clic($dte)->assertSessionHas('error', fn ($aviso) => str_contains($aviso, 'estado_recepcion_incierto'));
+
+        Http::assertSentCount(1);
+        $this->assertSame(1, $this->pedidos($unicoPedido), 'solo la consulta previa');
+        $this->assertSame(0, $this->pedidos('recepciondte'));
+        Sleep::assertNeverSlept();
+        $this->assertDatabaseCount('contingencias', 0);
+        $this->assertSame(EstadoDte::Firmado, $dte->refresh()->estado);
+    }
+
     public function test_con_el_interruptor_apagado_y_sin_token_sale_el_error_de_siempre(): void
     {
         config(['dte.contingencia.enabled' => false, 'dte.transmision.token' => '']);
