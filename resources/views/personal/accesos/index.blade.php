@@ -55,10 +55,15 @@
                 </p>
             @endif
 
-            @if ($conPersonal && $sinFicha > 0 && ! $filtros['externas'])
+            {{-- Con «sin ficha» puesto se ve aunque no quede ninguna activa: dice que la lista está filtrada y cómo salir. --}}
+            @if ($conPersonal && ! $filtros['externas'] && ($sinFicha > 0 || $filtros['sin_ficha']))
                 <p role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                    {{ $sinFicha === 1 ? 'Hay 1 usuario sin ficha en Personal.' : 'Hay '.$sinFicha.' usuarios sin ficha en Personal.' }}
-                    Siguen entrando; enlazalos desde la ficha de su persona, en «Agregar acceso o módulos».
+                    @if ($sinFicha > 0)
+                        {{ $sinFicha === 1 ? 'Hay 1 usuario sin ficha en Personal.' : 'Hay '.$sinFicha.' usuarios sin ficha en Personal.' }}
+                        Siguen entrando; enlazalos desde la ficha de su persona, en «Agregar acceso o módulos».
+                    @else
+                        Mostrando solo las cuentas sin ficha en Personal.
+                    @endif
                     @if ($filtros['sin_ficha'])
                         <a href="{{ route('personal.accesos.index') }}" class="font-medium underline">Ver todos</a>
                     @else

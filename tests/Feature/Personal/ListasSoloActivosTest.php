@@ -264,6 +264,26 @@ class ListasSoloActivosTest extends TestCase
             ->assertSee('Hay 2 usuarios sin ficha en Personal.')->assertSee('suelta-inactiva@example.test');
     }
 
+    /**
+     * Con «sin ficha» puesto, el aviso sigue aunque ya no quede ninguna cuenta activa sin ficha:
+     * la lista puede seguir mostrando las apagadas y es lo único que dice que está filtrada.
+     */
+    public function test_accesos_sin_ficha_sin_ninguna_activa_igual_avisa_el_filtro_y_deja_salir(): void
+    {
+        // El administrador ya tiene ficha: no queda ninguna cuenta activa sin ficha.
+        $this->persona('Administrador De Prueba', 'FICTICIO-ADM')->update(['user_id' => $this->admin->id]);
+        User::factory()->create(['email' => 'suelta-inactiva@example.test', 'activo' => false]);
+        $this->actingAs($this->admin);
+
+        $this->get(route('personal.accesos.index'))->assertOk()
+            ->assertDontSee('Mostrando solo las cuentas sin ficha')->assertDontSee('usuarios sin ficha en Personal');
+
+        $filtrada = $this->get(route('personal.accesos.index', ['sin_ficha' => 1, 'activo' => 'todos']))->assertOk()
+            ->assertSee('suelta-inactiva@example.test')
+            ->assertSee('Mostrando solo las cuentas sin ficha en Personal.');
+        $this->assertEnlace($filtrada, 'Ver todos', route('personal.accesos.index'));
+    }
+
     public function test_accesos_la_paginacion_conserva_el_estado(): void
     {
         foreach (range(1, 16) as $n) {
