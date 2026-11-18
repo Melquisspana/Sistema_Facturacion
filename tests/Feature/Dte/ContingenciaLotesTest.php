@@ -21,6 +21,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -729,6 +730,36 @@ class ContingenciaLotesTest extends TestCase
         $this->simular();
         $this->post(route('facturacion.contingencia.lotes.enviar', $this->evento))->assertSessionHasNoErrors();
         $this->assertSame('recibido', $dte->refresh()->loteDte->estado);
+    }
+
+    /**
+     * La tarea mira la espera y una persona aprieta «Enviar a Hacienda» en ese momento: el
+     * lote del botón sale rechazado y libera sus documentos. La tarea no los vuelve a mandar
+     * enseguida: la espera se decide de nuevo con el candado de la contingencia tomado.
+     */
+    public function test_un_rechazo_del_boton_mientras_corre_la_tarea_tambien_la_hace_esperar(): void
+    {
+        $dte = $this->documento();
+        $this->haciendaRechazaLotes();
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        Http::assertSentCount(1);
+        $this->pasanMinutos(20);
+
+        // Justo después de que la tarea calculó la espera, el botón manda otro lote y Hacienda lo rechaza.
+        $boton = false;
+        DB::listen(function ($consulta) use (&$boton) {
+            if (! $boton && str_contains($consulta->sql, 'lotes_dte') && str_contains($consulta->sql, 'max(')) {
+                $boton = true;
+                $this->service()->enviar($this->evento);
+            }
+        });
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+
+        $this->assertTrue($boton);
+        Http::assertSentCount(2);
+        $this->assertSame(2, LoteDte::where('estado', 'error')->count());
+        $this->assertSame(2, LoteDte::count());
+        $this->assertNull($dte->refresh()->lote_dte_id);
     }
 
     public function test_mientras_espera_por_un_rechazo_un_lote_con_la_respuesta_perdida_sale_igual_con_su_idenvio(): void

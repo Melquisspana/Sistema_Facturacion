@@ -120,14 +120,20 @@ class LoteDteService
         }
     }
 
-    public function preparar(ContingenciaEvento $evento): Collection
+    /** @param  bool  $esperarTrasRechazos  ver {@see enviar()} */
+    public function preparar(ContingenciaEvento $evento, bool $esperarTrasRechazos = false): Collection
     {
         $this->verificarEvento($evento);
 
-        return DB::transaction(function () use ($evento) {
+        return DB::transaction(function () use ($evento, $esperarTrasRechazos) {
             Contingencia::whereKey($evento->contingencia_id)->lockForUpdate()->firstOrFail();
             $evento = ContingenciaEvento::whereKey($evento->id)->lockForUpdate()->firstOrFail();
             $this->verificarEvento($evento);
+            // Con el candado tomado: cuenta también el lote que un envío del botón acaba de
+            // ver rechazado mientras esta llamada esperaba.
+            if ($esperarTrasRechazos && $this->pausaTrasRechazos($evento) !== null) {
+                return LoteDte::where('contingencia_evento_id', $evento->id)->orderBy('id')->get();
+            }
             $documentos = $evento->dtes()->whereNull('lote_dte_id')->where('estado', EstadoDte::Firmado->value)
                 ->where(fn ($q) => $q->whereNull('sello_recepcion')->orWhere('sello_recepcion', ''))
                 ->orderBy('id')->lockForUpdate()->get();
@@ -180,14 +186,15 @@ class LoteDteService
     }
 
     /**
-     * @param  bool  $armarLotesNuevos  false: solo sale lo que ya tiene lote pendiente (una
-     *                                  respuesta perdida, con su mismo idEnvio), sin volver a
-     *                                  armar lotes con lo que liberó un rechazo
+     * @param  bool  $esperarTrasRechazos  la tarea programada: mientras dure la espera de
+     *                                     {@see pausaTrasRechazos()}, solo sale lo que ya tiene
+     *                                     lote pendiente (una respuesta perdida, con su mismo
+     *                                     idEnvio), sin armar lotes con lo que liberó un rechazo.
+     *                                     El botón «Enviar a Hacienda» no espera.
      */
-    public function enviar(ContingenciaEvento $evento, bool $armarLotesNuevos = true): array
+    public function enviar(ContingenciaEvento $evento, bool $esperarTrasRechazos = false): array
     {
-        $lotes = $armarLotesNuevos ? $this->preparar($evento)
-            : LoteDte::where('contingencia_evento_id', $evento->id)->orderBy('id')->get();
+        $lotes = $this->preparar($evento, $esperarTrasRechazos);
         $resultados = [];
         foreach ($lotes->where('estado', 'pendiente') as $lote) {
             $resultado = $this->enviarLote($lote);
