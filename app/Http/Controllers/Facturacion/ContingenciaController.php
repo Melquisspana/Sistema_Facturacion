@@ -93,10 +93,11 @@ class ContingenciaController extends Controller
         ]);
     }
 
-    public function enviar(Contingencia $contingencia, ContingenciaEventoService $service): RedirectResponse
+    public function enviar(Request $request, Contingencia $contingencia, ContingenciaEventoService $service): RedirectResponse
     {
         $this->authorize('contingencia', Dte::class);
-        $resultados = $this->conBloqueosVisibles(fn () => $service->enviar($contingencia));
+        // La casilla «Ya verifiqué en Hacienda»: reemplazar una parte que quedó en duda.
+        $resultados = $this->conBloqueosVisibles(fn () => $service->enviar($contingencia, $request->boolean('reemplazar_incierto')));
 
         return to_route('facturacion.contingencia.show', $contingencia)
             ->with('status', collect($resultados)->map(fn ($r) => $r['resultado'].': '.($r['mensaje'] ?? ''))->implode(' | '));

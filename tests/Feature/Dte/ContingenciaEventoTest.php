@@ -443,6 +443,102 @@ class ContingenciaEventoTest extends TestCase
         Http::assertNotSent(fn ($request) => ! str_contains($request->url(), 'seguridad/auth'));
     }
 
+    // ─────────── Aviso con la respuesta perdida ───────────
+    //
+    // En el simulacro el primer envío se cortó por tiempo, pero Hacienda lo guardó. El
+    // reintento, con el mismo aviso, recibió «YA EXISTE UN REGISTRO CON ESE VALOR», quedó
+    // «rechazado» y el clic siguiente mandó otro aviso para los mismos documentos: dos en
+    // Hacienda. Qué contesta Hacienda real a un aviso repetido no está documentado, así
+    // que no se adivina: queda en duda y una persona lo verifica.
+
+    private function avisoConLaRespuestaPerdidaRechazadoAlReintentar(): ContingenciaEvento
+    {
+        $this->simular(conexion: true);
+        $this->assertSame('error_conexion', $this->service()->enviar($this->contingencia)[0]['resultado']);
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake([
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'OTRA.FIRMA.JWS']),
+            '*fesv/contingencia' => Http::response(['estado' => 'RECHAZADO', 'fechaHora' => '10/10/2026 11:00:08', 'mensaje' => 'Rechazado inventado',
+                'observaciones' => ['[identificacion.codigoGeneracion] YA EXISTE UN REGISTRO CON ESE VALOR']], 400),
+        ]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHasNoErrors()
+            ->assertSessionHas('status', fn (string $status) => str_contains($status, 'Verificá en Hacienda'));
+        // El reintento manda el mismo aviso, con la misma firma.
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/fesv/contingencia') && $request['documento'] === 'FIRMA.INVENTADA.JWS');
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'firmardocumento'));
+
+        return ContingenciaEvento::sole();
+    }
+
+    public function test_un_aviso_con_la_respuesta_perdida_que_hacienda_rechaza_al_reintentar_queda_en_duda_y_no_se_reemplaza_solo(): void
+    {
+        $dte = $this->documento();
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
+        $this->assertSame('incierto', $parte->estado);
+        $this->assertNull($parte->rechazado_en);
+        $this->assertSame($parte->id, $dte->refresh()->contingencia_evento_id);
+        $this->assertSame('cerrada', $this->contingencia->refresh()->estado);
+
+        // El clic siguiente avisa y no arma otro aviso con código nuevo.
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))
+            ->assertSessionHas('status', fn (string $status) => str_contains($status, 'Verificá en Hacienda'));
+        $this->assertDatabaseCount('contingencia_eventos', 1);
+        Http::assertNothingSent();
+        $this->get(route('facturacion.contingencia.show', $this->contingencia))->assertOk()
+            ->assertSee('YA EXISTE UN REGISTRO CON ESE VALOR')->assertSee('Ya verifiqué en Hacienda');
+
+        // Tampoco el envío automático de las 12 horas.
+        Carbon::setTestNow(Carbon::parse('2026-10-10 22:16:00', 'America/El_Salvador'));
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertDatabaseCount('contingencia_eventos', 1);
+        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 12 horas del cese']);
+        Http::assertNothingSent();
+    }
+
+    public function test_con_la_verificacion_marcada_el_aviso_en_duda_se_reemplaza_por_uno_nuevo_y_queda_registrado(): void
+    {
+        $dte = $this->documento();
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
+
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia), ['reemplazar_incierto' => '1'])
+            ->assertSessionHasNoErrors();
+
+        $nuevo = ContingenciaEvento::latest('id')->first();
+        $this->assertNotSame($parte->codigo_generacion, $nuevo->codigo_generacion);
+        $this->assertSame('recibido', $nuevo->estado);
+        $this->assertSame('incierto', $parte->refresh()->estado);
+        $this->assertSame($nuevo->id, $dte->refresh()->contingencia_evento_id);
+        $this->assertSame('informada', $this->contingencia->refresh()->estado);
+        $this->assertDatabaseHas('activity_log', ['log_name' => 'dte_contingencia', 'subject_id' => $parte->id,
+            'description' => 'Aviso en duda reemplazado por uno nuevo: se verificó en Hacienda que no lo tiene']);
+    }
+
+    public function test_un_rechazo_despues_de_no_poder_iniciar_sesion_sigue_siendo_un_rechazo_comun(): void
+    {
+        $this->documento();
+        $parte = $this->service()->preparar($this->contingencia)->sole();
+        $this->sinTokenGuardado();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*seguridad/auth' => Http::failedConnection()]);
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHasErrors('contingencia');
+
+        // Sin sesión no se firmó ni se mandó nada: el rechazo siguiente es del primer envío.
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*seguridad/auth' => Http::response(['status' => 'OK', 'body' => ['token' => 'TOKEN-INVENTADO-NUEVO']]),
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FIRMA.INVENTADA.JWS']),
+            '*fesv/contingencia' => Http::response(['estado' => 'RECHAZADO', 'mensaje' => 'Responsable incorrecto'], 400)]);
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia));
+
+        $this->assertSame('rechazado', $parte->refresh()->estado);
+        $this->assertNotNull($parte->rechazado_en);
+    }
+
     public function test_con_la_firma_apagada_el_aviso_muestra_su_propio_mensaje_y_no_un_error_del_servidor(): void
     {
         $this->documento();

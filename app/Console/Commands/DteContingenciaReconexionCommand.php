@@ -78,9 +78,9 @@ class DteContingenciaReconexionCommand extends Command
             foreach (Contingencia::where('estado', 'cerrada')->whereNotNull('cese')
                 ->where('cese', '<=', HoraNegocio::ahora()->subHours(max(12, (int) config('dte.contingencia.envio_automatico_horas', 12))))->get() as $pendiente) {
                 try {
-                    // Un rechazo exige revisión humana. Las partes recibidas se
-                    // omiten en enviar(); un timeout de otra parte sigue pendiente.
-                    if ($pendiente->eventos()->where('estado', 'rechazado')->exists()) {
+                    // Un rechazo o una parte en duda exigen revisión humana. Las partes
+                    // recibidas se omiten en enviar(); un timeout de otra parte sigue pendiente.
+                    if ($pendiente->eventos()->whereIn('estado', ['rechazado', 'incierto'])->exists()) {
                         continue;
                     }
                     $resultados = $eventos->enviar($pendiente);

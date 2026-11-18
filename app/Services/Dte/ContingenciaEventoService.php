@@ -71,21 +71,29 @@ class ContingenciaEventoService
         return $contingencia->eventos()->orderBy('id')->get()->keyBy('parte')->sortKeys()->values();
     }
 
-    public function preparar(Contingencia $contingencia): Collection
+    /**
+     * @param  bool  $reemplazarIncierto  una persona verificó en Hacienda que no tiene la
+     *                                    parte en duda: se arma otra con código nuevo
+     */
+    public function preparar(Contingencia $contingencia, bool $reemplazarIncierto = false): Collection
     {
         abort_unless(config('dte.contingencia.enabled', false), 404);
 
-        return DB::transaction(function () use ($contingencia) {
+        return DB::transaction(function () use ($contingencia, $reemplazarIncierto) {
             $contingencia = Contingencia::whereKey($contingencia->id)->lockForUpdate()->firstOrFail();
             $ambiente = EndpointsHacienda::ambienteTransmision();
             CandadoEndpointOficial::verificar($ambiente, 'contingencia', EndpointsHacienda::contingenciaOficial($ambiente), EndpointsHacienda::contingencia($ambiente));
             $partes = $this->partesVigentes($contingencia);
             if ($partes->isNotEmpty()) {
                 foreach ($partes as $parte) {
-                    if ($parte->estado !== 'rechazado') {
+                    if ($parte->estado !== 'rechazado' && ! ($reemplazarIncierto && $parte->estado === 'incierto')) {
                         continue;
                     }
                     $this->verificar($contingencia, $parte);
+                    if ($parte->estado === 'incierto') {
+                        activity('dte_contingencia')->performedOn($parte)
+                            ->log('Aviso en duda reemplazado por uno nuevo: se verificó en Hacienda que no lo tiene');
+                    }
                     $documentos = $parte->dtes()->with(['establecimiento.empresa', 'puntoVenta'])->orderBy('id')->get();
                     $documentos = $this->consultarDocumentos($documentos);
                     if ($documentos->isEmpty()) {
@@ -178,15 +186,22 @@ class ContingenciaEventoService
         }
     }
 
-    public function enviar(Contingencia $contingencia): array
+    /** @param  bool  $reemplazarIncierto  ver {@see preparar()} */
+    public function enviar(Contingencia $contingencia, bool $reemplazarIncierto = false): array
     {
         $resultados = [];
-        $partes = $this->preparar($contingencia);
+        $partes = $this->preparar($contingencia, $reemplazarIncierto);
         if ($partes->isEmpty()) {
             return [['resultado' => 'sin_documentos', 'mensaje' => 'No quedan documentos pendientes para informar al MH.']];
         }
         foreach ($partes as $evento) {
             if (in_array($evento->estado, ['recibido', 'sin_documentos'], true)) {
+                continue;
+            }
+            // Sin la verificación de una persona, una parte en duda no se vuelve a mandar.
+            if ($evento->estado === 'incierto') {
+                $resultados[] = ['resultado' => 'incierto', 'mensaje' => $this->mensajeEnDuda($evento)];
+
                 continue;
             }
             $resultados[] = DB::transaction(function () use ($contingencia, $evento) {
@@ -210,8 +225,11 @@ class ContingenciaEventoService
                 $disco = Storage::disk(config('dte.storage.disk', 'local'));
                 // Primero el token: sin poder iniciar sesión no se firma ni se guarda nada.
                 $token = app(ContingenciaTransporte::class)->token();
+                // El JWS se guarda justo antes de mandarlo: si ya está, este aviso ya salió
+                // una vez y no se supo qué hizo Hacienda con él (se cortó o contestó algo raro).
+                $reintento = $disco->exists($ruta.'.jws');
                 // Ante un timeout se reintenta EXACTAMENTE el mismo JSON, UUID y JWS.
-                $jws = $disco->exists($ruta.'.jws') ? $disco->get($ruta.'.jws') : $this->firmar($json);
+                $jws = $reintento ? $disco->get($ruta.'.jws') : $this->firmar($json);
                 if (! $disco->exists($ruta.'.jws')) {
                     $this->guardar($ruta.'.jws', $jws);
                 }
@@ -233,17 +251,23 @@ class ContingenciaEventoService
                     return ['resultado' => 'respuesta_incierta', 'mensaje' => 'Respuesta del MH no concluyente. Revisar antes de reintentar.'];
                 }
                 $recibido = $estado === 'RECIBIDO';
-                $evento->update(['estado' => $recibido ? 'recibido' : 'rechazado', 'jws_path' => $ruta.'.jws',
+                // Un rechazo al reintentar no prueba que Hacienda no tenga el primer envío:
+                // puede estar rechazando el repetido («YA EXISTE UN REGISTRO CON ESE VALOR» en el
+                // simulacro). Qué contesta Hacienda real a un aviso repetido no está documentado,
+                // así que no se adivina: queda en duda, sin el plazo de corrección de un rechazo,
+                // y otro aviso con código nuevo sale solo si una persona verifica en Hacienda.
+                $enDuda = ! $recibido && $reintento;
+                $evento->update(['estado' => $recibido ? 'recibido' : ($enDuda ? 'incierto' : 'rechazado'), 'jws_path' => $ruta.'.jws',
                     'respuesta_mh_path' => $rutaRespuesta, 'respuesta_mh' => $cuerpo,
                     'sello_recibido' => $recibido ? $cuerpo['selloRecibido'] : null,
                     'fecha_transmision' => HoraNegocio::ahora(), 'fecha_procesamiento' => $this->fechaMh($cuerpo['fechaHora'] ?? null),
-                    'rechazado_en' => $recibido ? null : HoraNegocio::ahora()]);
+                    'rechazado_en' => $recibido || $enDuda ? null : HoraNegocio::ahora()]);
                 if ($this->partesVigentes($actual)->every(fn ($parte) => $parte->estado === 'recibido')) {
                     $actual->update(['estado' => 'informada']);
                 }
                 activity('dte_contingencia')->performedOn($evento)->withProperties(['estado' => $evento->estado])->log('Evento de contingencia enviado');
 
-                return ['resultado' => $evento->estado, 'mensaje' => $cuerpo['mensaje'] ?? '', 'evento_id' => $evento->id];
+                return ['resultado' => $evento->estado, 'mensaje' => $enDuda ? $this->mensajeEnDuda($evento) : ($cuerpo['mensaje'] ?? ''), 'evento_id' => $evento->id];
             });
             if (in_array(end($resultados)['resultado'], ['error_conexion', 'respuesta_incierta'], true)) {
                 break;
@@ -255,6 +279,12 @@ class ContingenciaEventoService
         }
 
         return $resultados;
+    }
+
+    private function mensajeEnDuda(ContingenciaEvento $evento): string
+    {
+        return 'La parte '.$evento->parte.' quedó en duda: un envío anterior se cortó y Hacienda pudo haberlo recibido. '
+            .'Verificá en Hacienda antes de reenviar; si no lo tiene, marcá «Ya verifiqué en Hacienda» y enviá de nuevo.';
     }
 
     /**

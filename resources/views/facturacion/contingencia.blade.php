@@ -40,6 +40,9 @@
                     @endif
                 @endif
             </p>
+            @if ($parte->estado === 'incierto')
+                <p role="alert" class="rounded border border-amber-500 p-3">Parte {{ $parte->parte }} en duda: un envío anterior se cortó y, al reintentar, Hacienda la rechazó. Puede que ya la tenga. Verificá en Hacienda antes de mandar otro aviso con los mismos documentos.</p>
+            @endif
         @endforeach
         @foreach ($eventos as $evento)
             <section class="rounded border border-gray-400 p-4">
@@ -55,8 +58,15 @@
         @endforeach
         @if ($contingencia->cese && $contingencia->estado === 'cerrada')
             <p>Revisá los datos del responsable en la configuración antes de firmar. Un rechazo permite corregir y reenviar con un código nuevo durante 24 horas.</p>
-            <form method="POST" action="{{ route('facturacion.contingencia.enviar', $contingencia) }}">
+            <form method="POST" action="{{ route('facturacion.contingencia.enviar', $contingencia) }}" class="space-y-2">
                 @csrf
+                {{-- Confirmación de nivel 3 (toca a Hacienda): sin la casilla, una parte en duda no se reemplaza. --}}
+                @if ($partes->contains('estado', 'incierto'))
+                    <label class="flex items-start gap-2">
+                        <input type="checkbox" name="reemplazar_incierto" value="1" class="mt-1 h-5 w-5">
+                        <span>Ya verifiqué en Hacienda que no tiene la parte en duda: mandar un aviso nuevo, con otro código, para sus documentos.</span>
+                    </label>
+                @endif
                 <button type="submit" class="rounded border border-blue-500 px-4 py-2 font-semibold">Enviar aviso de contingencia</button>
             </form>
         @endif
