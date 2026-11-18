@@ -103,6 +103,18 @@ class ContingenciaController extends Controller
             ->with('status', collect($resultados)->map(fn ($r) => $r['resultado'].': '.($r['mensaje'] ?? ''))->implode(' | '));
     }
 
+    /** «Hacienda sí lo tiene»: una persona vio en Hacienda el aviso de una parte en duda. */
+    public function darPorRecibido(Request $request, ContingenciaEvento $evento, ContingenciaEventoService $service): RedirectResponse
+    {
+        $this->authorize('contingencia', Dte::class);
+        $request->validate(['confirmo_recibido' => ['accepted']],
+            ['confirmo_recibido.accepted' => 'Marcá la casilla para confirmar que viste el aviso en Hacienda. No se cambió nada.']);
+        $service->darPorRecibido($evento);
+
+        return to_route('facturacion.contingencia.show', $evento->contingencia_id)
+            ->with('status', 'Parte '.$evento->parte.' dada por recibida, sin mandar otro aviso. Sus documentos ya pueden salir en lote.');
+    }
+
     public function actualizar(Request $request, Contingencia $contingencia, ContingenciaService $service): RedirectResponse
     {
         $this->authorize('contingencia', Dte::class);

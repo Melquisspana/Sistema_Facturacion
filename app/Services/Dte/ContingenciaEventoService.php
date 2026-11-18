@@ -300,7 +300,43 @@ class ContingenciaEventoService
     private function mensajeEnDuda(ContingenciaEvento $evento): string
     {
         return 'La parte '.$evento->parte.' quedó en duda: un envío anterior se cortó y Hacienda pudo haberlo recibido. '
-            .'Verificá en Hacienda antes de reenviar; si no lo tiene, marcá «Ya verifiqué en Hacienda» y enviá de nuevo.';
+            .'Verificá en Hacienda antes de reenviar. Si lo tiene, apretá «Hacienda sí lo tiene» y no mandes otro aviso. '
+            .'Si no lo tiene, marcá «Ya verifiqué en Hacienda» y enviá de nuevo.';
+    }
+
+    /**
+     * La otra respuesta de la verificación de una parte en duda: Hacienda SÍ tiene el aviso
+     * (simulacro del 17/11, caso 5c: el primer envío se cortó, pero Hacienda lo guardó). No
+     * se manda otro aviso: la parte queda recibida y sus documentos salen en lote, que no
+     * usa el sello del evento. Las 72 h cuentan desde la hora escrita en el aviso, anterior
+     * a cualquier envío: nunca dan más plazo que el real.
+     */
+    public function darPorRecibido(ContingenciaEvento $evento): void
+    {
+        abort_unless(config('dte.contingencia.enabled', false), 404);
+        DB::transaction(function () use ($evento) {
+            $contingencia = Contingencia::whereKey($evento->contingencia_id)->lockForUpdate()->firstOrFail();
+            $evento = ContingenciaEvento::whereKey($evento->id)->lockForUpdate()->firstOrFail();
+            if ($evento->estado !== 'incierto' || $contingencia->estado !== 'cerrada'
+                || $this->partesVigentes($contingencia)->firstWhere('parte', $evento->parte)?->id !== $evento->id) {
+                $this->error('Esta parte del aviso ya no está en duda. No se cambió nada.');
+            }
+            $evento->update(['estado' => 'recibido', 'fecha_transmision' => $this->horaDelAviso($evento),
+                'fecha_procesamiento' => null, 'rechazado_en' => null]);
+            if ($this->partesVigentes($contingencia)->every(fn ($parte) => $parte->estado === 'recibido')) {
+                $contingencia->update(['estado' => 'informada']);
+            }
+            activity('dte_contingencia')->performedOn($evento)->withProperties(['fecha_transmision' => $evento->fecha_transmision])
+                ->log('Aviso en duda dado por recibido: se verificó en Hacienda que lo tiene');
+        });
+    }
+
+    /** La hora escrita en el aviso (fTransmision y hTransmision): se armó antes de mandarlo. */
+    public function horaDelAviso(ContingenciaEvento $evento): Carbon
+    {
+        $json = json_decode(Storage::disk(config('dte.storage.disk', 'local'))->get($evento->json_path), true, 512, JSON_THROW_ON_ERROR);
+
+        return Carbon::createFromFormat('Y-m-d H:i:s', $json['identificacion']['fTransmision'].' '.$json['identificacion']['hTransmision'], HoraNegocio::zona());
     }
 
     /**

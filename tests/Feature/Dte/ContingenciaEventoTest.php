@@ -454,10 +454,13 @@ class ContingenciaEventoTest extends TestCase
     // Hacienda. Qué contesta Hacienda real a un aviso repetido no está documentado, así
     // que no se adivina: queda en duda y una persona lo verifica.
 
-    private function avisoConLaRespuestaPerdidaRechazadoAlReintentar(): ContingenciaEvento
+    private function avisoConLaRespuestaPerdidaRechazadoAlReintentar(?string $horaDelReintento = null): ContingenciaEvento
     {
         $this->simular(conexion: true);
         $this->assertSame('error_conexion', $this->service()->enviar($this->contingencia)[0]['resultado']);
+        if ($horaDelReintento !== null) {
+            Carbon::setTestNow(Carbon::parse($horaDelReintento, 'America/El_Salvador'));
+        }
         Http::swap(new Factory);
         Http::preventStrayRequests();
         Http::fake([
@@ -519,6 +522,54 @@ class ContingenciaEventoTest extends TestCase
         $this->assertSame('informada', $this->contingencia->refresh()->estado);
         $this->assertDatabaseHas('activity_log', ['log_name' => 'dte_contingencia', 'subject_id' => $parte->id,
             'description' => 'Aviso en duda reemplazado por uno nuevo: se verificó en Hacienda que no lo tiene']);
+    }
+
+    public function test_si_hacienda_si_tiene_el_aviso_en_duda_se_da_por_recibido_sin_mandar_otro_y_salen_los_lotes(): void
+    {
+        // El aviso se armó y salió a las 11:00; el reintento, rechazado, fue a las 12:00.
+        $dte = $this->documento();
+        $dte->json_firmado_path = 'inventados/'.$dte->codigo_generacion.'.jws';
+        $dte->save();
+        Storage::put($dte->json_firmado_path, 'FIRMA.INVENTADA.'.$dte->codigo_generacion);
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar('2026-10-10 12:00:00');
+        $this->get(route('facturacion.contingencia.show', $this->contingencia))->assertOk()
+            ->assertSee('Hacienda sí lo tiene')->assertSee($parte->codigo_generacion);
+
+        // Sin permiso no se puede, y sin marcar la casilla tampoco.
+        $persona = auth()->user();
+        $this->actingAs(User::factory()->create()->assignRole('facturacion'))
+            ->post(route('facturacion.contingencia.eventos.recibido', $parte), ['confirmo_recibido' => '1'])->assertForbidden();
+        $this->actingAs($persona)->post(route('facturacion.contingencia.eventos.recibido', $parte))
+            ->assertSessionHasErrors('confirmo_recibido');
+        $this->assertSame('incierto', $parte->refresh()->estado);
+
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake();
+        $this->post(route('facturacion.contingencia.eventos.recibido', $parte), ['confirmo_recibido' => '1'])
+            ->assertRedirect(route('facturacion.contingencia.show', $this->contingencia))->assertSessionHasNoErrors();
+        Http::assertNothingSent();
+
+        $parte->refresh();
+        $this->assertSame('recibido', $parte->estado);
+        $this->assertNull($parte->rechazado_en);
+        $this->assertDatabaseCount('contingencia_eventos', 1);
+        $this->assertSame('informada', $this->contingencia->refresh()->estado);
+        // Las 72 h de los lotes cuentan desde la hora del aviso, antes de que pudiera llegar.
+        $this->assertSame('2026-10-13 11:00:00', app(LoteDteService::class)->plazo($parte)?->format('Y-m-d H:i:s'));
+        $this->assertDatabaseHas('activity_log', ['log_name' => 'dte_contingencia', 'subject_id' => $parte->id,
+            'causer_id' => $persona->id, 'description' => 'Aviso en duda dado por recibido: se verificó en Hacienda que lo tiene']);
+
+        // Un segundo clic no cambia nada.
+        $this->post(route('facturacion.contingencia.eventos.recibido', $parte), ['confirmo_recibido' => '1'])
+            ->assertSessionHasErrors('contingencia');
+
+        // Y sus documentos salen en lote.
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*recepcionlote' => fn ($r) => Http::response(['estado' => 'RECIBIDO', 'codigoLote' => 'LOTE-'.$r['idEnvio']])]);
+        $this->post(route('facturacion.contingencia.lotes.enviar', $parte))->assertSessionHasNoErrors();
+        $this->assertSame('recibido', $dte->refresh()->loteDte?->estado);
     }
 
     public function test_una_parte_en_duda_se_reemplaza_en_las_24_horas_desde_su_rechazo_aunque_ya_pasaron_24_desde_el_cese(): void

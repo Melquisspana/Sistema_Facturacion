@@ -41,7 +41,21 @@
                 @endif
             </p>
             @if ($parte->estado === 'incierto')
-                <p role="alert" class="rounded border border-amber-500 p-3">Parte {{ $parte->parte }} en duda: un envío anterior se cortó y, al reintentar, Hacienda la rechazó. Puede que ya la tenga. Verificá en Hacienda antes de mandar otro aviso con los mismos documentos.</p>
+                <p role="alert" class="rounded border border-amber-500 p-3">Parte {{ $parte->parte }} en duda: un envío anterior se cortó y, al reintentar, Hacienda la rechazó. Puede que ya la tenga.
+                    Buscá en Hacienda el aviso con el código {{ $parte->codigo_generacion }}. Si lo tiene, no mandes otro: confirmalo abajo con «Hacienda sí lo tiene».
+                    Si no lo tiene, marcá «Ya verifiqué en Hacienda que no tiene la parte en duda» y enviá el aviso de nuevo.</p>
+                @if ($contingencia->estado === 'cerrada')
+                    @php($horaDelAviso = $service->horaDelAviso($parte))
+                    <form method="POST" action="{{ route('facturacion.contingencia.eventos.recibido', $parte) }}" class="space-y-2">
+                        @csrf
+                        {{-- Confirmación de nivel 3 (toca a Hacienda): dice qué pasa con los documentos y el plazo. --}}
+                        <label class="flex items-start gap-2">
+                            <input type="checkbox" name="confirmo_recibido" value="1" required class="mt-1 h-5 w-5">
+                            <span>Vi en Hacienda el aviso {{ $parte->codigo_generacion }}. Se da por recibido sin mandar otro, sus {{ $parte->dtes()->count() }} documentos salen en lote y las 72 horas para mandarlos cuentan desde las {{ $horaDelAviso->format('H:i') }} del {{ $horaDelAviso->format('d/m/Y') }}, la hora del aviso.</span>
+                        </label>
+                        <x-secondary-button type="submit">Hacienda sí lo tiene</x-secondary-button>
+                    </form>
+                @endif
             @endif
         @endforeach
         @foreach ($eventos as $evento)
