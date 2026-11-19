@@ -279,8 +279,14 @@ class PpqLoteController extends Controller
         });
     }
 
-    public function edit(PpqLote $lote): View
+    public function edit(PpqLote $lote): View|RedirectResponse
     {
+        // La misma regla que update(): un enlace guardado a «/editar» no abre el formulario
+        // de un lote que ya no se edita.
+        if (($motivo = $this->motivoNoEditable($lote)) !== null) {
+            return redirect()->route('ppq.lotes.show', $lote)->with('error', $motivo);
+        }
+
         return view('ppq.lotes.edit', [
             'lote' => $lote,
             'clientes' => Cliente::orderBy('nombre')->get(['id', 'nombre']),
@@ -297,12 +303,8 @@ class PpqLoteController extends Controller
     {
         return DB::transaction(function () use ($request, $lote) {
             $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
-            $real = app(EstadoRealLotePpq::class)->calcular(collect([$actual]))[$actual->id];
-            if (! $actual->seEditaSegun($real)) {
-                $estado = $actual->esEditable() ? $real['estado']['label'] : $actual->estado->label();
-
-                return redirect()->route('ppq.lotes.show', $lote)
-                    ->with('error', 'Este PPQ está '.$estado.' y ya no se edita.');
+            if (($motivo = $this->motivoNoEditable($actual)) !== null) {
+                return redirect()->route('ppq.lotes.show', $lote)->with('error', $motivo);
             }
 
             $antes = $actual->only(['referencia', 'fecha', 'observaciones']);
@@ -315,6 +317,17 @@ class PpqLoteController extends Controller
                 ->route('ppq.lotes.show', $lote)
                 ->with('status', 'Lote PPQ actualizado.');
         });
+    }
+
+    /** Por qué el lote ya no se edita ({@see PpqLote::seEditaSegun()}), o null si se edita. */
+    private function motivoNoEditable(PpqLote $lote): ?string
+    {
+        $real = app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id];
+        if ($lote->seEditaSegun($real)) {
+            return null;
+        }
+
+        return 'Este PPQ está '.($lote->esEditable() ? $real['estado']['label'] : $lote->estado->label()).' y ya no se edita.';
     }
 
     /**

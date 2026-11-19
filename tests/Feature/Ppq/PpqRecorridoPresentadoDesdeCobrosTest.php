@@ -201,6 +201,9 @@ class PpqRecorridoPresentadoDesdeCobrosTest extends TestCase
             'referencia' => 'Cambiada', 'fecha' => '2026-09-01',
         ])->assertSessionHas('error', 'Este PPQ está Presentado y ya no se edita.');
         $this->assertSame($referencia, $lote->refresh()->referencia);
+        // Abrir «/editar» a mano (un enlace guardado) tampoco muestra el formulario.
+        $this->actingAs($oficina)->get(route('ppq.lotes.edit', $lote))
+            ->assertRedirect(route('ppq.lotes.show', $lote))->assertSessionHas('error', 'Este PPQ está Presentado y ya no se edita.');
 
         // Tampoco se vuelve a marcar presentado a mano.
         $this->actingAs($oficina)->post(route('ppq.lotes.marcar-presentado', $lote), ['fecha' => today()->toDateString()])
