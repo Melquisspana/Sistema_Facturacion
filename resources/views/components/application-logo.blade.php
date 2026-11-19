@@ -1,5 +1,6 @@
-{{-- El logo de la empresa: el mismo de los PDF de los DTE (public/images/dte, ver config/dte.php),
-     ya reducido (192×288, 12 KB). Proporción 2:3: quien lo usa fija la altura y deja w-auto.
-     En oscuro va sobre un fondo claro redondeado, porque el logo es oscuro y no se veía.
-     Son clases que ya están en el CSS de producción, que allá no se recompila. --}}
-<img src="{{ asset('images/dte/logo-pdf.png') }}" alt="{{ \App\Support\NombreEmpresa::actual() }}" width="192" height="288" {{ $attributes->merge(['class' => 'rounded p-0.5 dark:bg-paper-100']) }}>
+{{-- El logo de la empresa en las pantallas: solo la cara de la niña, sin cuadro (18/11/2026,
+     pedido de Melqui). Lleva un borde crema fino recortado a su silueta para que el pelo negro se
+     vea también en modo oscuro, sin el fondo claro de antes. Mide 216×288 y pesa 19 KB.
+     Quien lo usa fija la altura y deja w-auto.
+     Los PDF de los DTE siguen con su logo de siempre (images/dte/logo-pdf.png, ver config/dte.php). --}}
+<img src="{{ asset('images/logo-cara.png') }}" alt="{{ \App\Support\NombreEmpresa::actual() }}" width="216" height="288" {{ $attributes }}>
