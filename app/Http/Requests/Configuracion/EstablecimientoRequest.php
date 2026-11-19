@@ -24,9 +24,11 @@ class EstablecimientoRequest extends FormRequest
             'empresa_id' => ['required', 'exists:empresas,id'],
             'codigo' => [
                 'required', 'string', 'max:4',
+                // Como lo acepta Hacienda en el número de control (DTE-03-M001P001-…).
+                'regex:/^[MBSP][0-9]{3}$/',
+                // Con los borrados también: la base no deja repetir el código en la empresa.
                 Rule::unique('establecimientos', 'codigo')
                     ->where(fn ($q) => $q->where('empresa_id', $this->empresa_id))
-                    ->whereNull('deleted_at')
                     ->ignore($establecimientoId),
             ],
             'nombre' => ['required', 'string', 'max:255'],
@@ -58,6 +60,8 @@ class EstablecimientoRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'codigo.regex' => 'El código tiene que ser M, B, S o P y tres números, como M001: así lo pide Hacienda en el número de control.',
+            'codigo.unique' => 'Ese código ya lo tiene otro establecimiento de esta empresa, o uno que se borró.',
             'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
             'distrito_id.required' => 'El distrito es obligatorio para el establecimiento del emisor.',
             'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',

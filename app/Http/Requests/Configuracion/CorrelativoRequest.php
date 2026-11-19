@@ -34,7 +34,8 @@ class CorrelativoRequest extends FormRequest
             ],
             'ambiente' => ['required', 'in:'.implode(',', array_column(AmbienteHacienda::cases(), 'value'))],
             'serie' => ['nullable', 'string', 'max:10'],
-            'ultimo_numero' => ['required', 'integer', 'min:0'],
+            // El número de control lleva el correlativo en 15 cifras: el siguiente tiene que caber.
+            'ultimo_numero' => ['required', 'integer', 'min:0', 'max:999999999999998'],
             'activo' => ['required', 'boolean'],
 
             // Unicidad de la combinación, ignorando el propio registro al editar.
@@ -64,6 +65,7 @@ class CorrelativoRequest extends FormRequest
         return [
             'tipo_dte_combo.unique' => 'Ya existe un correlativo para esa combinación de tipo de DTE, establecimiento, punto de venta y ambiente.',
             'establecimiento_id.exists' => 'El establecimiento no existe o fue eliminado.',
+            'ultimo_numero.max' => 'No puede pasar de 999999999999998: el número de control lleva 15 cifras.',
             'punto_venta_id.exists' => 'El punto de venta tiene que ser del establecimiento elegido y estar vigente.',
         ];
     }

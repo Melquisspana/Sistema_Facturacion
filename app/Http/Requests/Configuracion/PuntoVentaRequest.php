@@ -19,17 +19,29 @@ class PuntoVentaRequest extends FormRequest
         $puntoVentaId = $this->route('puntoVenta')?->id;
 
         return [
-            'establecimiento_id' => ['required', 'exists:establecimientos,id'],
+            // Vigente: en uno borrado no se emite.
+            'establecimiento_id' => ['required', Rule::exists('establecimientos', 'id')->whereNull('deleted_at')],
             'codigo' => [
                 'required', 'string', 'max:4',
+                // Como lo acepta Hacienda en el número de control (DTE-03-M001P001-…).
+                'regex:/^P[0-9]{3}$/',
+                // Con los borrados también: la base no deja repetir el código en el establecimiento.
                 Rule::unique('puntos_venta', 'codigo')
                     ->where(fn ($q) => $q->where('establecimiento_id', $this->establecimiento_id))
-                    ->whereNull('deleted_at')
                     ->ignore($puntoVentaId),
             ],
             'nombre' => ['required', 'string', 'max:255'],
             'descripcion' => ['nullable', 'string', 'max:255'],
             'activo' => ['required', 'boolean'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'establecimiento_id.exists' => 'El establecimiento no existe o fue eliminado.',
+            'codigo.regex' => 'El código tiene que ser P y tres números, como P001: así lo pide Hacienda en el número de control.',
+            'codigo.unique' => 'Ese código ya lo tiene otro punto de venta de este establecimiento, o uno que se borró.',
         ];
     }
 
