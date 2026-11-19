@@ -78,6 +78,7 @@ class ImportarPedidosWebTest extends TestCase
             '*/pedidos-pagados*' => Http::response(['pedidos' => $pedidos]),
             '*/estado' => Http::response(['error' => $error, 'actual' => 'entregado'], $estado),
             '*/limpieza' => Http::response([], 200),
+            '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
         ]);
     }
 

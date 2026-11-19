@@ -13,39 +13,86 @@ use App\Models\PedidoWeb;
 use App\Models\Producto;
 use App\Services\Rutas\PropuestaRutas;
 use App\Support\HoraNegocio;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
+/**
+ * Trae los pedidos pagados de la tienda. Con --aplicar deja además en la caché, para
+ * los avisos de la tienda (TiendaWebSinRespuesta y TiendaWebFallas), cómo terminó la
+ * lectura, los pedidos que la página dejó en revisión y su lista de errores. Solo
+ * números, motivos de una lista fija y códigos de pedido: nada del cliente, del cuerpo
+ * remoto ni de la excepción.
+ */
 class ImportarPedidosWeb
 {
+    /** {ok, fallo, fallo_desde, invalidos, invalidos_ids}: la última lectura buena y la falla que siguió. */
+    public const CLAVE_LECTURA = 'tienda.lectura';
+
+    /** {en, cobra, errores}: lo que contestó GET /api/sistema/errores, ya filtrado. */
+    public const CLAVE_ERRORES = 'tienda.errores';
+
+    /** Desde cuándo se vigila si nunca hubo lectura: da la gracia tras vaciar la caché. */
+    public const CLAVE_VIGILANDO = 'tienda.vigilando';
+
+    /** {en, n, codigos}: pedidos que la página dejó en revisión y no llegaron al sistema. */
+    public const CLAVE_REVISION = 'tienda.revision';
+
+    /** Los únicos tipos que se aceptan de la lista de errores de la página. */
+    public const TIPOS_ERROR = ['error_cobro', 'error_interno', 'error_consulta', 'consulta_fallida', 'firma_invalida', 'vencido_sin_confirmar'];
+
+    private const NOMBRADOS = 3;
+
+    private const MAX_ERRORES = 20;
+
+    private const CODIGO = '/^LN-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/D';
+
     public function __construct(private readonly ConfiguracionTiendaWeb $configuracion) {}
 
     /** Una pasada completa. Nunca conserva el cursor entre pasadas. */
     public function ejecutar(bool $aplicar): array
     {
         if (! $this->configuracion->completo()) {
+            if ($aplicar) {
+                $this->anotarFallo('configuracion');
+            }
             throw new RuntimeException('La integración con la tienda no está completa.');
         }
 
         $conteo = ['importados' => 0, 'para_revisar' => 0, 'existentes' => 0, 'invalidos' => 0, 'avisos_pendientes' => 0];
         $intentados = [];
+        $invalidosIds = [];
+        // Por qué se cortó, de una lista fija: nunca del cuerpo ni de la excepción.
+        $motivo = null;
         try {
             $despues = 0;
             do {
                 $respuesta = $this->http()->get($this->configuracion->url().'/api/sistema/pedidos-pagados', [
                     'despues' => $despues, 'limite' => 100,
                 ]);
-                if (! $respuesta->successful() || ! is_array($pedidos = $respuesta->json('pedidos')) || ! array_is_list($pedidos)) {
+                if (! $respuesta->successful()) {
+                    $motivo = match (true) {
+                        $respuesta->status() === 401 => 'clave',
+                        $respuesta->status() === 503 => 'apagada',
+                        $respuesta->redirect() || in_array($respuesta->status(), [404, 405], true) => 'direccion',
+                        default => 'error',
+                    };
+                    throw new RuntimeException('Respuesta de tienda inválida.');
+                }
+                if (! is_array($pedidos = $respuesta->json('pedidos')) || ! array_is_list($pedidos)) {
+                    $motivo = 'respuesta';
                     throw new RuntimeException('Respuesta de tienda inválida.');
                 }
                 foreach ($pedidos as $datos) {
                     // Sin un id entero no se puede seguir paginando: eso sí corta la pasada.
                     if (! is_array($datos) || ! is_int($datos['id'] ?? null) || $datos['id'] <= $despues) {
+                        $motivo = 'respuesta';
                         throw new RuntimeException('Paginación de tienda inválida.');
                     }
                     $despues = $datos['id'];
@@ -54,6 +101,9 @@ class ImportarPedidosWeb
                     // pedido posterior entraría nunca.
                     if (! $this->esValido($datos)) {
                         $conteo['invalidos']++;
+                        if (count($invalidosIds) < self::NOMBRADOS) {
+                            $invalidosIds[] = $datos['id'];
+                        }
 
                         continue;
                     }
@@ -70,12 +120,24 @@ class ImportarPedidosWeb
                     }
                 }
             } while (count($pedidos) === 100);
-        } catch (Throwable) {
+            if ($aplicar) {
+                // Solo una lectura completa: una a medias nunca baja los que no se pudieron leer.
+                $this->guardar(self::CLAVE_LECTURA, [
+                    'ok' => now()->getTimestamp(), 'fallo' => null, 'fallo_desde' => null,
+                    'invalidos' => $conteo['invalidos'], 'invalidos_ids' => $invalidosIds,
+                ]);
+            }
+        } catch (Throwable $e) {
+            if ($aplicar) {
+                $this->anotarFallo($motivo ?? ($e instanceof ConnectionException ? 'sin_conexion' : 'sistema'));
+            }
             // Ni el cuerpo remoto ni excepciones HTTP/SQL (con bindings) salen al log.
             throw new RuntimeException('No se pudo completar la lectura de pedidos de la tienda. Se reintentará en la próxima pasada.');
         } finally {
             if ($aplicar) {
                 $this->traerAlertas();
+                // Con su propio catch: si la página no tiene esta ruta, la importación no se marca caída.
+                $this->traerErrores();
                 // También cubre la caída tras el POST remoto: puede ya no venir en el GET.
                 // Por pedido de fábrica y no por estado: la factura (etapa 2) lo mueve a
                 // «facturando» o «facturado» aunque el aviso todavía no haya salido.
@@ -98,6 +160,27 @@ class ImportarPedidosWeb
     private function http(): PendingRequest
     {
         return $this->configuracion->cliente();
+    }
+
+    /** La última lectura buena y los ilegibles se conservan; el desde de la falla, también. */
+    private function anotarFallo(string $motivo): void
+    {
+        $anterior = rescue(fn () => Cache::get(self::CLAVE_LECTURA), null, report: false);
+        $anterior = is_array($anterior) ? $anterior : [];
+        $this->guardar(self::CLAVE_LECTURA, [
+            'ok' => $anterior['ok'] ?? null, 'fallo' => $motivo,
+            'fallo_desde' => $anterior['fallo_desde'] ?? now()->getTimestamp(),
+            'invalidos' => $anterior['invalidos'] ?? 0, 'invalidos_ids' => $anterior['invalidos_ids'] ?? [],
+        ]);
+    }
+
+    /** Sin caché no hay dónde anotar: la pasada sigue su curso y la excepción no sale. */
+    private function guardar(string $clave, array $valor): void
+    {
+        try {
+            Cache::forever($clave, $valor);
+        } catch (Throwable) {
+        }
     }
 
     private function esValido(array $datos): bool
@@ -221,6 +304,8 @@ class ImportarPedidosWeb
 
     private function traerAlertas(): void
     {
+        $revision = 0;
+        $codigos = [];
         try {
             $despues = 0;
             do {
@@ -238,11 +323,70 @@ class ImportarPedidosWeb
                         PedidoWeb::where('web_id', $datos['id'])->where(fn ($q) => $q->whereNull('alerta')->orWhere('alerta', ''))
                             ->update(['alerta' => 'pago_doble']);
                     }
+                    // En revisión en la página y nunca llegado al sistema: el pago no se pudo confirmar.
+                    if (($datos['estado'] ?? null) === 'para_revisar' && ! in_array($datos['pasarela'] ?? null, ['demo', 'wompi-prueba'], true)
+                        && ! PedidoWeb::where('web_id', $datos['id'])->exists()) {
+                        $revision++;
+                        if (count($codigos) < self::NOMBRADOS && is_string($datos['codigo'] ?? null) && preg_match(self::CODIGO, $datos['codigo']) === 1) {
+                            $codigos[] = $datos['codigo'];
+                        }
+                    }
                 }
             } while (count($pedidos) === 100);
+            // Solo si se recorrió la lista completa: una a medias no baja el número.
+            Cache::forever(self::CLAVE_REVISION, ['en' => now()->getTimestamp(), 'n' => $revision, 'codigos' => $codigos]);
         } catch (Throwable) {
             // Mejor esfuerzo: se vuelve a consultar en la próxima pasada.
         }
+    }
+
+    /**
+     * La lista de errores de la página (GET /api/sistema/errores), fila por fila: solo
+     * tipos conocidos, cantidades enteras, fechas válidas y un detalle corto de
+     * caracteres comunes y sin código de pedido. Si la respuesta no sirve (una página
+     * vieja sin la ruta, un error), la caché no se toca y el aviso la ve envejecer.
+     */
+    private function traerErrores(): void
+    {
+        try {
+            $respuesta = $this->http()->get($this->configuracion->url().'/api/sistema/errores');
+            $errores = $respuesta->json('errores');
+            $cobra = $respuesta->json('cobra');
+            if ($respuesta->status() !== 200 || ! is_array($errores) || ! array_is_list($errores) || ! is_bool($cobra)) {
+                return;
+            }
+            $filas = [];
+            foreach ($errores as $fila) {
+                if (count($filas) === self::MAX_ERRORES) {
+                    break;
+                }
+                if (! is_array($fila) || ! in_array($fila['tipo'] ?? null, self::TIPOS_ERROR, true)
+                    || ! is_int($fila['cantidad'] ?? null) || $fila['cantidad'] < 1
+                    || ($primera = $this->fecha($fila['primera'] ?? null)) === null
+                    || ($ultima = $this->fecha($fila['ultima'] ?? null)) === null) {
+                    continue;
+                }
+                $detalle = $fila['detalle'] ?? '';
+                if (! is_string($detalle) || mb_strlen($detalle) > 120 || str_contains($detalle, 'LN-')
+                    || preg_match('/^[\p{L}\p{N} .:·_\/-]*$/u', $detalle) !== 1) {
+                    $detalle = '';
+                }
+                $filas[] = ['tipo' => $fila['tipo'], 'detalle' => $detalle, 'cantidad' => $fila['cantidad'], 'primera' => $primera, 'ultima' => $ultima];
+            }
+            Cache::put(self::CLAVE_ERRORES, ['en' => now()->getTimestamp(), 'cobra' => $cobra, 'errores' => $filas], now()->addDay());
+        } catch (Throwable) {
+            // Mejor esfuerzo y sin log: la lista vieja envejece y eso es lo que avisa.
+        }
+    }
+
+    /** Una fecha ISO de la página («2026-11-19T20:00:00.000Z») como marca de tiempo. */
+    private function fecha(mixed $texto): ?int
+    {
+        if (! is_string($texto) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/D', $texto) !== 1) {
+            return null;
+        }
+
+        return rescue(fn () => Carbon::parse($texto)->getTimestamp(), null, report: false);
     }
 
     private function informar(PedidoWeb $pedido): void
