@@ -16,6 +16,8 @@
 **Desde:** {{ $desde }}
 
 **Qué hacer:** {{ $hallazgo->queHacer }}
+
+Mientras no se arregle, este aviso también se ve en el Inicio.
 @endif
 
 <x-mail::button :url="$enlace">
