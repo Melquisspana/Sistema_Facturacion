@@ -89,6 +89,28 @@ class ClienteSucursal extends Model
     }
 
     /**
+     * Lo que ya se hizo con esta sala y la sigue nombrando. Con algo de esto la sala no se
+     * borra, ni de forma suave: el pedido, el CCF o la entrega quedarían «sin sala», porque
+     * ninguna de esas relaciones ve las salas borradas. Se inactiva.
+     *
+     * @return list<string> lo que tiene, para decirlo en el aviso
+     */
+    public function movimientos(): array
+    {
+        $id = $this->id;
+
+        return collect([
+            'pedidos' => fn () => PedidoSala::where('cliente_sucursal_id', $id)->exists(),
+            'documentos' => fn () => Dte::where(fn (Builder $q) => $q->where('cliente_sucursal_id', $id)
+                ->orWhere('sucursal_averia_id', $id))->exists(),
+            'entregas de ruta' => fn () => SalidaRutaEntrega::where('cliente_sucursal_id', $id)->exists(),
+            'albaranes' => fn () => PpqAlbaran::where('cliente_sucursal_id', $id)->exists(),
+            'órdenes de compra' => fn () => OrdenCompraRecibida::instalada()
+                && OrdenCompraRecibida::where('cliente_sucursal_id', $id)->exists(),
+        ])->filter(fn (\Closure $tiene) => $tiene())->keys()->all();
+    }
+
+    /**
      * Buscador de salas de Rutas: activas, por nombre, código, cliente o pueblo (distrito). Lo
      * usan el buscador de la oficina y «Sacar pedido» del vendedor.
      */

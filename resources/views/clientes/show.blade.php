@@ -12,6 +12,11 @@
             @if (session('status'))
                 <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
             @endif
+            {{-- Error de la guía (x-avisos todavía no existe): sin él, «no se eliminó la sala» y
+                 «no se enlazó al pedido» volvían a la ficha sin decir nada. --}}
+            @if (session('error'))
+                <div role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ session('error') }}</div>
+            @endif
 
             @php
                 $esContribuyente = $cliente->tipo_cliente === \App\Enums\TipoCliente::Contribuyente;
