@@ -161,9 +161,9 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->cargarNcAlPortal($oficina, $lote);
         $quedan = $this->presentarQuedan($oficina, $a, $b);
 
-        // Quitar el CCF no aceptado y su NC.
-        $this->quitar($oficina, $lote, $a->dte_id)
-            ->assertSessionHas('status', fn (string $m) => str_contains($m, 'salió del lote y volvió a por presentar'));
+        // Quitar el CCF no aceptado y su NC. El aviso dice de qué quedan salió.
+        $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "salió del lote y del quedan {$quedan->referencia}, y volvió a por presentar."));
         $this->quitar($oficina, $lote, $ncA->id)->assertSessionHas('status');
 
         // A vuelve a «por presentar», suelto del quedan viejo, con constancia en su historial.
@@ -224,8 +224,8 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $quedan = $this->presentarQuedan($oficina, $a, $b);
         $this->acuse($oficina, $quedan, '41002')->assertSessionHasNoErrors();
 
-        $this->quitar($oficina, $lote, $a->dte_id)
-            ->assertSessionHas('status', fn (string $m) => str_contains($m, 'no volvió a por presentar'));
+        $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "no volvió a por presentar: el cliente ya dio el acuse del quedan {$quedan->referencia}."));
 
         $a->refresh();
         $this->assertSame(EstadoPresentacionCobro::Recibida, $a->presentacion_estado);

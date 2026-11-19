@@ -36,14 +36,16 @@ use Illuminate\Support\Facades\DB;
 class QuitarItemPpq
 {
     /**
-     * @return array{quitado: bool, no_editable: bool, conservado: ?PpqItem, devueltos: Collection<int, CobroDocumento>, conservados: Collection<int, array{documento: CobroDocumento, motivo: string}>, sin_cambio: Collection<int, CobroDocumento>, notas: Collection<int, PpqItem>}
+     * `quedan`: la referencia del quedan del que salió el CCF, para decirlo en el aviso.
+     *
+     * @return array{quitado: bool, no_editable: bool, conservado: ?PpqItem, devueltos: Collection<int, CobroDocumento>, conservados: Collection<int, array{documento: CobroDocumento, motivo: string}>, sin_cambio: Collection<int, CobroDocumento>, notas: Collection<int, PpqItem>, quedan: ?string}
      */
     public function quitar(PpqLote $lote, PpqItem $item, ?User $usuario = null): array
     {
         return DB::transaction(function () use ($lote, $item, $usuario) {
             $lote = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
             $resultado = ['quitado' => false, 'no_editable' => false, 'conservado' => null, 'devueltos' => collect(),
-                'conservados' => collect(), 'sin_cambio' => collect(), 'notas' => collect()];
+                'conservados' => collect(), 'sin_cambio' => collect(), 'notas' => collect(), 'quedan' => null];
             // Se revisa con el candado puesto: otro pudo marcarlo presentado mientras este esperaba.
             if (! $lote->esEditable()) {
                 $resultado['no_editable'] = true;
@@ -100,6 +102,7 @@ class QuitarItemPpq
                     $doc->presentacion_estado === EstadoPresentacionCobro::Preparada => $liberador->motivoParaConservar($doc, $ocupadas),
                     $quedan !== null => $liberador->motivoParaConservar($doc, $ocupadas, sueltaDelQuedan: true),
                     $enQuedanPresentado => $liberador->motivoParaConservar($doc, $ocupadas), // «va en la solicitud …»
+                    $solicitud?->estado === EstadoSolicitudCobro::Recibida => "el cliente ya dio el acuse del quedan {$solicitud->referencia}",
                     default => 'ya figura como presentado',
                 };
                 if ($motivo !== null) {
@@ -121,6 +124,7 @@ class QuitarItemPpq
                     activity('cobros_solicitud')->performedOn($quedan)->causedBy($usuario)
                         ->withProperties(['cobro_documento_id' => $doc->id, 'numero_control' => $doc->numero_control, 'ppq_lote_id' => $lote->id])
                         ->log('un CCF salió del quedan presentado al quitarlo del PPQ');
+                    $resultado['quedan'] = $quedan->referencia;
                 }
                 $resultado['devueltos']->push($doc);
             }

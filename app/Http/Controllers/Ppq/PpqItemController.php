@@ -411,7 +411,7 @@ class PpqItemController extends Controller
         if ($item->esNc()) {
             $mensaje .= '.';
         } elseif ($r['devueltos']->isNotEmpty()) {
-            $mensaje .= ' y volvió a por presentar.';
+            $mensaje .= $r['quedan'] !== null ? " y del quedan {$r['quedan']}, y volvió a por presentar." : ' y volvió a por presentar.';
         } elseif (($fila = $r['conservados']->first()) !== null) {
             $mensaje .= ', pero no volvió a por presentar: '.$fila['motivo'].'.';
         } elseif ($r['sin_cambio']->isNotEmpty()) {
