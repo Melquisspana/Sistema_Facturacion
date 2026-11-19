@@ -172,6 +172,15 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertNull($a->cobro_solicitud_id);
         $nota = $a->eventos()->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', "ppq-{$lote->id}-quitado")->sole();
         $this->assertStringContainsString($quedan->referencia, $nota->detalle);
+        $this->assertSame($quedan->id, $nota->datos['cobro_solicitud_id']);
+
+        // Del lado del quedan, la bitácora dice qué CCF salió, desde qué lote y quién lo sacó:
+        // la ficha del quedan no muestra por qué un renglón «ya no cuelga».
+        $bitacora = Activity::where('log_name', 'cobros_solicitud')->sole();
+        $this->assertTrue($bitacora->subject->is($quedan));
+        $this->assertTrue($bitacora->causer->is($oficina));
+        $this->assertSame($a->id, $bitacora->properties['cobro_documento_id']);
+        $this->assertSame($lote->id, $bitacora->properties['ppq_lote_id']);
 
         // El quedan viejo no cambia: sigue presentado, con los dos renglones como constancia,
         // y su ficha avisa que A ya no cuelga de él. B sigue en él.
@@ -221,6 +230,7 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $a->refresh();
         $this->assertSame(EstadoPresentacionCobro::Recibida, $a->presentacion_estado);
         $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count(), 'No salió nada del quedan.');
         $this->crearPpq($oficina, $a)->assertSessionHasErrors('documentos');
         $this->assertSame(1, PpqLote::count());
     }
