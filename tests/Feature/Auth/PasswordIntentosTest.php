@@ -109,25 +109,69 @@ class PasswordIntentosTest extends TestCase
             ->assertSessionMissing('auth.password_confirmed_at');
     }
 
-    public function test_confirmar_tiene_limite_de_intentos_por_usuario(): void
+    /** Confirma con la sesión limpia: así un acierto anterior no tapa lo que pasó en este. */
+    private function confirmar(User $user, string $clave)
+    {
+        $this->flushSession();
+
+        return $this->actingAs($user)
+            ->from('/confirm-password')
+            ->post('/confirm-password', ['password' => $clave]);
+    }
+
+    public function test_confirmar_tiene_limite_de_intentos_fallidos_con_aviso_en_el_formulario(): void
     {
         $user = User::factory()->create();
 
         for ($i = 0; $i < 6; $i++) {
-            $this->actingAs($user)
-                ->post('/confirm-password', ['password' => 'probando-'.$i])
-                ->assertSessionHasErrors('password');
+            $this->confirmar($user, 'probando-'.$i)->assertSessionHasErrors('password');
         }
 
-        // El séptimo intento del minuto no se procesa, aunque traiga la contraseña buena.
-        $this->actingAs($user)
-            ->post('/confirm-password', ['password' => 'password'])
-            ->assertStatus(429)
+        // El séptimo del minuto no se procesa, aunque traiga la contraseña buena: vuelve al
+        // formulario con el aviso, como en el login, no a una página de error suelta.
+        $this->confirmar($user, 'password')
+            ->assertRedirect('/confirm-password')
             ->assertSessionMissing('auth.password_confirmed_at');
+        $this->assertMatchesRegularExpression('/^Demasiados intentos\. Probá de nuevo en \d+ segundos\.$/', session('errors')->first('password'));
 
         // El límite es de esa cuenta: otra persona sigue pudiendo confirmar.
-        $this->actingAs(User::factory()->create())
-            ->post('/confirm-password', ['password' => 'password'])
+        $this->confirmar(User::factory()->create(), 'password')
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('auth.password_confirmed_at');
+
+        // Pasado el minuto, la misma persona vuelve a poder.
+        $this->travel(61)->seconds();
+        $this->confirmar($user, 'password')
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('auth.password_confirmed_at');
+    }
+
+    public function test_confirmar_bien_muchas_veces_seguidas_no_frena_a_nadie(): void
+    {
+        $user = User::factory()->create();
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->confirmar($user, 'password')
+                ->assertSessionHasNoErrors()
+                ->assertSessionHas('auth.password_confirmed_at');
+        }
+    }
+
+    public function test_un_acierto_borra_los_fallos_anteriores(): void
+    {
+        $user = User::factory()->create();
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->confirmar($user, 'probando-'.$i)->assertSessionHasErrors('password');
+        }
+        $this->confirmar($user, 'password')->assertSessionHas('auth.password_confirmed_at');
+
+        // Con el contador en cero, cinco fallos más todavía no bloquean la contraseña buena.
+        for ($i = 0; $i < 5; $i++) {
+            $this->confirmar($user, 'otra-'.$i)->assertSessionHasErrors('password');
+        }
+        $this->confirmar($user, 'password')
+            ->assertSessionHasNoErrors()
             ->assertSessionHas('auth.password_confirmed_at');
     }
 
@@ -155,7 +199,7 @@ class PasswordIntentosTest extends TestCase
         $this->assertTrue(Hash::check('password', $user->refresh()->password));
     }
 
-    public function test_cambiar_la_contrasena_tiene_limite_de_intentos(): void
+    public function test_cambiar_la_contrasena_tiene_limite_de_intentos_con_aviso_en_el_formulario(): void
     {
         $user = User::factory()->create();
 
@@ -163,9 +207,43 @@ class PasswordIntentosTest extends TestCase
             $this->cambiar($user, 'probando-'.$i)->assertSessionHasErrorsIn('updatePassword', 'current_password');
         }
 
-        // El séptimo intento del minuto no se procesa, aunque traiga la contraseña buena.
-        $this->cambiar($user, 'password')->assertStatus(429);
-
+        // El séptimo del minuto no se procesa, aunque traiga la contraseña buena: vuelve al
+        // perfil con el aviso junto al campo de la contraseña actual.
+        $this->cambiar($user, 'password')
+            ->assertRedirect('/profile')
+            ->assertSessionHasErrorsIn('updatePassword', 'current_password');
+        $this->assertMatchesRegularExpression(
+            '/^Demasiados intentos\. Probá de nuevo en \d+ segundos\.$/',
+            session('errors')->getBag('updatePassword')->first('current_password'),
+        );
         $this->assertTrue(Hash::check('password', $user->refresh()->password));
+
+        // Pasado el minuto, sí la cambia.
+        $this->travel(61)->seconds();
+        $this->cambiar($user, 'password')->assertSessionHasNoErrors();
+        $this->assertTrue(Hash::check(self::NUEVA, $user->refresh()->password));
+    }
+
+    /**
+     * Solo cuenta la contraseña actual equivocada: quien la pone bien y se equivoca en la
+     * nueva (muy corta, no coincide la confirmación) no se queda afuera.
+     */
+    public function test_con_la_contrasena_actual_correcta_los_errores_de_la_nueva_no_cuentan(): void
+    {
+        $user = User::factory()->create();
+
+        for ($i = 0; $i < 7; $i++) {
+            $this->actingAs($user)
+                ->from('/profile')
+                ->put('/password', [
+                    'current_password' => 'password',
+                    'password' => self::NUEVA,
+                    'password_confirmation' => 'no-coincide-'.$i,
+                ])
+                ->assertSessionHasErrorsIn('updatePassword', 'password');
+        }
+
+        $this->cambiar($user, 'password')->assertSessionHasNoErrors();
+        $this->assertTrue(Hash::check(self::NUEVA, $user->refresh()->password));
     }
 }
