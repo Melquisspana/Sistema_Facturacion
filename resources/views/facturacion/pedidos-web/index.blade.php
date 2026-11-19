@@ -33,9 +33,12 @@
                     @php
                         // Sin filtro, dos partes en la misma tabla: arriba lo que requiere atención y
                         // debajo los últimos 30 días. Con un filtro, la lista de siempre, sin títulos.
+                        // Abajo solo se dice que no entró ningún pedido si de verdad no hay nada: los
+                        // de arriba o los de otra página también entraron.
                         $secciones = $atencion !== null ? [
                             ['titulo' => 'Requieren atención', 'filas' => $atencion, 'vacio' => 'Nada requiere atención.', 'enlace' => null],
-                            ['titulo' => 'Últimos 30 días', 'filas' => $pedidos, 'vacio' => 'No entró ningún pedido de la página en los últimos 30 días.',
+                            ['titulo' => 'Últimos 30 días', 'filas' => $pedidos,
+                                'vacio' => $atencion->total() > 0 || $pedidos->total() > 0 ? 'Ningún otro pedido en los últimos 30 días.' : 'No entró ningún pedido de la página en los últimos 30 días.',
                                 'enlace' => ['Ver todos', route('facturacion.pedidos-web.index', ['estado' => 'todos'])]],
                         ] : [
                             $estado === 'todos'

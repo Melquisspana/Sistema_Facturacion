@@ -409,12 +409,21 @@ class FabricaPedidoWebTest extends TestCase
         $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()
             ->assertSee('Todavía no entró ningún pedido de la página.')->assertDontSee('Nada coincide con estos filtros.');
 
-        $this->pedido(); // facturado de hoy
+        $hoy = $this->pedido()->pedidoWeb; // facturado de hoy
         $this->get(route('facturacion.pedidos-web.index'))->assertOk()
             ->assertSee('Nada requiere atención.')->assertDontSee('No entró ningún pedido');
         $this->get(route('facturacion.pedidos-web.index', ['estado' => 'para_revisar']))->assertOk()
             ->assertSee('Nada coincide con estos filtros.')->assertSee('Limpiar filtros')
             ->assertDontSee('Nada requiere atención.');
+        // Una página que no existe no dice que no entró ningún pedido.
+        $this->get(route('facturacion.pedidos-web.index', ['page' => 3]))->assertOk()
+            ->assertSee('Ningún otro pedido en los últimos 30 días.')->assertDontSee('No entró ningún pedido');
+
+        // El único pedido de hoy quedó Para revisar: está arriba, y abajo no se contradice.
+        $hoy->update(['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado']);
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()
+            ->assertSeeInOrder(['Requieren atención', $hoy->codigo, 'Últimos 30 días', 'Ningún otro pedido en los últimos 30 días.'])
+            ->assertDontSee('No entró ningún pedido')->assertDontSee('Nada requiere atención.');
     }
 
     public function test_reintentar_solo_revision_sin_factura_y_auditoria_sin_datos_personales(): void
