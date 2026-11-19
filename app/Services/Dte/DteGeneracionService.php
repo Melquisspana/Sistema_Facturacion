@@ -177,13 +177,17 @@ class DteGeneracionService
                 $correlativo->ultimo_numero = 0;
             }
 
-            $numero = $correlativo->ultimo_numero + 1;
-            $correlativo->ultimo_numero = $numero;
-            $correlativo->save();
-
             // Aún en borrador: el observer permite estos cambios de cabecera.
             $dte->correlativo_id = $correlativo->id;
             $dte->ejercicio = $ejercicio;
+
+            // Nunca un número que ya usó esta serie (tipo, ambiente, ejercicio, establecimiento
+            // y punto de venta), aunque lo haya usado otro correlativo: uno sin punto de venta
+            // creado desde cero, o el de la caja que vuelve después de que otro numeró por él.
+            $numero = max($correlativo->ultimo_numero, $this->mayorUsadoEnSerie($dte)) + 1;
+            $correlativo->ultimo_numero = $numero;
+            $correlativo->save();
+
             $dte->numero_interno = $this->formatearNumeroInterno($dte, $numero);
 
             // Numeración GLOBAL VISIBLE del sistema: este es su punto irreversible, el
@@ -388,6 +392,19 @@ class DteGeneracionService
         }
 
         return $correlativo;
+    }
+
+    /**
+     * El número más alto ya usado en la serie del documento (mismo prefijo de número interno),
+     * borrados incluidos, porque siguen ocupando el número. Con el correlativo a 15 cifras
+     * y relleno de ceros, el mayor texto es el mayor número. 0 si la serie está vacía.
+     */
+    private function mayorUsadoEnSerie(Dte $dte): int
+    {
+        $prefijo = substr($this->formatearNumeroInterno($dte, 0), 0, -15);
+        $mayor = Dte::withTrashed()->where('numero_interno', 'like', $prefijo.'%')->max('numero_interno');
+
+        return (int) substr((string) $mayor, -15);
     }
 
     /**
