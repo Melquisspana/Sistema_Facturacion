@@ -8,6 +8,20 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.19.2] - 2026-11-19
+
+Facturación: detalles de la primera Factura de la página (#416). Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- Facturación › Pedidos web abre con «Requieren atención» arriba y, debajo, los pedidos de los últimos 30 días, el más nuevo primero. Antes, si nada requería atención, la lista quedaba vacía y parecía que el pedido no había entrado (#416).
+
+### Corregido
+
+- El PDF que recibe el cliente (correo, Rutas, fábrica y paquete de contabilidad) ya no lleva el «Estado técnico (interno)». La copia de la oficina en Facturación lo conserva (#416).
+- El PDF ya no muestra «Descuento global -$0.00» cuando no hay descuento. La columna «Código» sigue con el código de barras (#416).
+- La bitácora del JSON dice el tipo real del documento (Factura, CCF, Exportación o Nota de Crédito) y no siempre «CCF» (#416).
+
 ## [2026.11.19] - 2026-11-19
 
 Personal: Empleados y Accesos abren solo con los activos (#412). Pantallas: el logo sin el cuadro claro y con ícono de pestaña (#414). Sin migraciones ni cambios de permisos.
