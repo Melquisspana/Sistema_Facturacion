@@ -23,6 +23,7 @@ use App\Services\Ppq\EstadoRealLotePpq;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\Models\Activity;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -220,5 +221,34 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertSame($quedan->id, $a->cobro_solicitud_id);
         $this->crearPpq($oficina, $a)->assertSessionHasErrors('documentos');
         $this->assertSame(1, PpqLote::count());
+    }
+
+    /**
+     * El quedan se presentó directo desde Cobros y después alguien agregó ese CCF a mano a un
+     * lote. Quitarlo de ese lote no lo saca del quedan: el quedan no salió de este lote. Antes
+     * volvía a «por presentar» y se podía presentar dos veces.
+     */
+    public function test_un_ccf_agregado_al_lote_despues_de_presentar_su_quedan_no_sale_del_quedan_al_quitarlo(): void
+    {
+        $oficina = $this->usuario();
+        $x = $this->ccf();
+        $y = $this->ccf();
+        $quedan = $this->presentarQuedan($oficina, $x);
+        $this->crearPpq($oficina, $y)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+
+        $this->travel(5)->minutes();
+        $this->actingAs($oficina)->from(route('ppq.lotes.show', $lote))
+            ->post(route('ppq.lotes.items.store', $lote), ['dte_id' => $x->dte_id, 'sin_albaran' => '1'])
+            ->assertSessionMissing('error');
+        $this->assertSame(2, $lote->items()->count());
+
+        $this->quitar($oficina, $lote, $x->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "no volvió a por presentar: va en la solicitud {$quedan->referencia}"));
+
+        $x->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $x->presentacion_estado);
+        $this->assertSame($quedan->id, $x->cobro_solicitud_id);
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
     }
 }

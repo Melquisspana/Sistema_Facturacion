@@ -26,7 +26,9 @@ use Illuminate\Support\Facades\DB;
  * CCF que el cliente no aceptó: sale de ese quedan (sus renglones quedan como constancia de lo
  * que se presentó ese día) y vuelve a «por presentar», para entrar en otro PPQ. Antes se
  * quedaba «presentado» colgando del quedan viejo y no entraba en ningún lote. Lo que el cliente
- * ya recibió queda como está.
+ * ya recibió queda como está. Solo sale si el renglón ya estaba en este lote cuando se armó ese
+ * quedan (no hay otro vínculo entre lote y quedan): uno agregado a mano después se conserva
+ * «en la solicitud», porque ese quedan no salió de este lote.
  *
  * Quitar una NC no toca su CCF. Quitar un CCF no saca sus NC: se informan en `notas`.
  */
@@ -76,13 +78,18 @@ class QuitarItemPpq
 
                     continue;
                 }
-                // Vuelve lo que este lote dejó «en PPQ» y lo de un quedan presentado sin acuse;
-                // lo demás presentado queda como está.
-                $quedan = $doc->presentacion_estado === EstadoPresentacionCobro::Presentada
-                    && $doc->solicitud?->estado === EstadoSolicitudCobro::Presentada ? $doc->solicitud : null;
+                // Vuelve lo que este lote dejó «en PPQ» y lo de un quedan presentado sin acuse
+                // que salió de este lote: el renglón ya estaba cuando se armó el quedan. Uno
+                // agregado a mano después no lo suelta (el quedan no es de este lote). Lo demás
+                // presentado queda como está.
+                $solicitud = $doc->solicitud;
+                $enQuedanPresentado = $doc->presentacion_estado === EstadoPresentacionCobro::Presentada
+                    && $solicitud?->estado === EstadoSolicitudCobro::Presentada;
+                $quedan = $enQuedanPresentado && $item->created_at?->lte($solicitud->created_at) ? $solicitud : null;
                 $motivo = match (true) {
                     $doc->presentacion_estado === EstadoPresentacionCobro::Preparada => $liberador->motivoParaConservar($doc, $ocupadas),
                     $quedan !== null => $liberador->motivoParaConservar($doc, $ocupadas, sueltaDelQuedan: true),
+                    $enQuedanPresentado => $liberador->motivoParaConservar($doc, $ocupadas), // «va en la solicitud …»
                     default => 'ya figura como presentado',
                 };
                 if ($motivo !== null) {
