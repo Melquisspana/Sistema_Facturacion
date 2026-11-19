@@ -85,11 +85,12 @@ class DteJsonService
             $dte->json_generado_path = $ruta;
             $dte->save();
 
-            // 9. Auditoría (sin firma/transmisión).
+            // 9. Auditoría (sin firma/transmisión), con el tipo que se generó: antes decía
+            // «del CCF» también para la Factura 01.
             activity('dte_json')
                 ->performedOn($dte)
                 ->withProperties(['numero_control' => $dte->numero_control, 'codigo_generacion' => $dte->codigo_generacion, 'ruta' => $ruta])
-                ->log('generó el JSON oficial preliminar del CCF (sin firma ni transmisión)');
+                ->log('generó el JSON oficial preliminar ('.$dte->tipo_dte->label().', sin firma ni transmisión)');
 
             return [
                 'ruta' => $ruta,
