@@ -128,6 +128,10 @@ class ImportadorProductosPrecios
             $detallePrecio = $precioAnterior !== null && abs($precioAnterior - $precio) > 0.00001
                 ? sprintf('Precio %s: $%.4f → $%.4f', $cliente->nombre, $precioAnterior, $precio)
                 : sprintf('Precio %s: $%.4f', $cliente->nombre, $precio);
+            // El precio entra, pero el producto sigue fuera del catálogo: no se puede facturar.
+            if (! $producto->activo) {
+                $detallePrecio .= ' (el producto está inactivo: activalo en Productos si se vuelve a vender)';
+            }
 
             $creado
                 ? $resultado->creada($numero, $producto->nombre, $detallePrecio)

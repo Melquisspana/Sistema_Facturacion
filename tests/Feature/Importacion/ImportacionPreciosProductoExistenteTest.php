@@ -55,7 +55,9 @@ class ImportacionPreciosProductoExistenteTest extends TestCase
             'tipo_producto' => TipoProducto::Servicio->value, 'tipo_impuesto' => TipoImpuesto::Exento->value,
         ]);
 
-        $this->importar('1.2000')->assertSessionHas('resumen', fn (array $r) => $r['actualizadas'] === 1);
+        // El resumen avisa que sigue inactivo: si no, la oficina cree que ya lo puede facturar.
+        $this->importar('1.2000')->assertSessionHas('resumen', fn (array $r) => $r['actualizadas'] === 1
+            && str_contains($r['detalles'][0]['detalle'], '$1.2000 (el producto está inactivo: activalo en Productos si se vuelve a vender)'));
 
         $producto->refresh();
         $this->assertTrue($producto->maneja_inventario, 'Seguía llevando inventario.');
@@ -69,7 +71,8 @@ class ImportacionPreciosProductoExistenteTest extends TestCase
 
     public function test_un_producto_nuevo_nace_con_los_valores_de_siempre(): void
     {
-        $this->importar('1.0500')->assertSessionHas('resumen', fn (array $r) => $r['creadas'] === 1);
+        $this->importar('1.0500')->assertSessionHas('resumen', fn (array $r) => $r['creadas'] === 1
+            && ! str_contains($r['detalles'][0]['detalle'], 'inactivo'));
 
         $producto = Producto::where('codigo', 'PRB-1')->sole();
         $this->assertFalse($producto->maneja_inventario);
