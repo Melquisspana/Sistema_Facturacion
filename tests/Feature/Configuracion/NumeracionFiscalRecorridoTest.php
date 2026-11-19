@@ -298,8 +298,8 @@ class NumeracionFiscalRecorridoTest extends TestCase
     }
 
     /**
-     * Desde 2027 un correlativo nuevo sin documentos arranca el año en cero aunque se le
-     * ponga un número: igual tiene que seguir después de lo que ya numeró la caja ese año.
+     * En 2027 un correlativo nuevo sigue después de lo que ya numeró la caja ese año. El
+     * número que le pone la oficina también se respeta: lo prueba NumeroFijadoPorLaOficinaTest.
      */
     public function test_en_2027_un_correlativo_nuevo_sigue_despues_de_lo_que_la_caja_ya_numero_ese_anio(): void
     {

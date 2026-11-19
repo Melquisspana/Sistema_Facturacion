@@ -151,15 +151,7 @@ class DteGeneracionService
             $dte->hora_emision = $ahora->format('H:i:s');
 
             $ejercicio = $ahora->year;
-            $ultimo = Dte::withTrashed()
-                ->where('correlativo_id', $correlativo->id)
-                ->whereNotNull('ejercicio')
-                ->max('ejercicio');
-
-            if ($ultimo === null && $correlativo->ultimo_numero > 0) {
-                // Antes de 2027 no hubo reinicios: los números sin DTE pertenecen a 2026.
-                $ultimo = EjercicioControl::ANTERIOR_AL_REINICIO;
-            }
+            $ultimo = $this->ejercicioDelUltimoNumero($correlativo, $ejercicio);
 
             if ($ultimo !== null && $ejercicio < $ultimo) {
                 // Solo pasa si el reloj del servidor volvió atrás: la fecha es la de hoy.
@@ -418,6 +410,33 @@ class DteGeneracionService
         }
 
         return $correlativo;
+    }
+
+    /**
+     * El ejercicio al que pertenece el último número del correlativo: el de su último
+     * documento. Sin documentos, el número lo fijó la oficina (por ejemplo, para seguir lo que
+     * se numeró en Conta Portable) y es del año en que se guardó: antes de 2027 no hubo
+     * reinicios, así que lo anterior cuenta como 2026. Sin documentos nunca pasa del año de
+     * hoy, porque no hay una numeración ya emitida que frene la emisión. null si está en cero.
+     */
+    private function ejercicioDelUltimoNumero(Correlativo $correlativo, int $hoy): ?int
+    {
+        $deDocumentos = Dte::withTrashed()
+            ->where('correlativo_id', $correlativo->id)
+            ->whereNotNull('ejercicio')
+            ->max('ejercicio');
+        if ($deDocumentos !== null) {
+            return (int) $deDocumentos;
+        }
+        if ($correlativo->ultimo_numero <= 0) {
+            return null;
+        }
+
+        $guardado = $correlativo->updated_at === null
+            ? EjercicioControl::ANTERIOR_AL_REINICIO
+            : EjercicioControl::de(HoraNegocio::aLocal($correlativo->updated_at));
+
+        return min($guardado, $hoy);
     }
 
     /**
