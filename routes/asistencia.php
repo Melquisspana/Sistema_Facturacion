@@ -47,8 +47,9 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         | DESACTIVA.
         */
         // La lista y la ficha viven en Personal. Estas dos direcciones se quedan para que
-        // no se rompa ningún enlace guardado.
-        Route::get('empleados', fn (Request $request) => redirect()->route('personal.empleados', $request->query(), 301))->name('empleados.index');
+        // no se rompa ningún enlace guardado. El `activo=` vacío (el «Todos» del filtro viejo)
+        // llega vacío y no se pierde: sin él, la lista abriría solo con los activos.
+        Route::get('empleados', fn (Request $request) => redirect()->route('personal.empleados', array_map(fn ($v) => $v ?? '', $request->query()), 301))->name('empleados.index');
         Route::get('empleados/crear', [EmpleadoController::class, 'create'])->middleware($gestionar)->name('empleados.create');
         Route::post('empleados', [EmpleadoController::class, 'store'])->middleware($gestionar)->name('empleados.store');
         Route::get('empleados/{empleado}', fn (AsistenciaEmpleado $empleado) => redirect()->route('personal.empleados.show', 'a'.$empleado->id, 301))->name('empleados.show');

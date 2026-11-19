@@ -191,7 +191,8 @@ class AreaPersonalTest extends TestCase
         ]);
 
         $this->actingAs($this->admin);
-        $this->get(route('personal.empleados', ['q' => 'beto']))->assertSee('Beto Ejemplo')->assertSee('Sin huella')->assertDontSee('Ana Ficticia');
+        // Beto está de baja: la lista abre con los activos y se lo busca entre «Todos».
+        $this->get(route('personal.empleados', ['q' => 'beto', 'activo' => 'todos']))->assertSee('Beto Ejemplo')->assertSee('Sin huella')->assertDontSee('Ana Ficticia');
         $this->get(route('personal.empleados', ['activo' => '1']))->assertSee('Ana Ficticia')->assertDontSee('Beto Ejemplo');
     }
 
