@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Alertas\RegistroEventos;
 use App\Services\TiendaWeb\FacturarPedidoWeb;
 use App\Services\TiendaWeb\ImportarPedidosWeb;
 use App\Services\TiendaWeb\InformarEstadoPedidoWeb;
@@ -30,6 +31,9 @@ class TiendaTraerPedidos extends Command
             $conteo += $facturador->pasada($aplicar);
         } catch (Throwable) {
             $this->error('No se pudo completar la facturación de los pedidos web. Se reintentará en la próxima pasada.');
+            // La tarea corre en segundo plano y no dispara ScheduledTaskFailed: sin esto, nadie se entera.
+            // La lectura caída no se anota acá: ya la avisa TiendaWebSinRespuesta.
+            RegistroEventos::anotar(RegistroEventos::TAREAS, 'tienda:traer-pedidos (facturación)');
             $fallo = true;
         }
         $estados->pasada($aplicar);

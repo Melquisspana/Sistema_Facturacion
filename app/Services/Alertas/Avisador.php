@@ -18,6 +18,8 @@ use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
 use App\Services\Alertas\Detectores\PedidosWebParaRevisar;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\SaludDelSistema;
+use App\Services\Alertas\Detectores\TiendaWebFallas;
+use App\Services\Alertas\Detectores\TiendaWebSinRespuesta;
 use App\Services\Alertas\Detectores\TrabajosFallidos;
 use App\Support\Correo\CandadoCorreoReal;
 use App\Support\HoraNegocio;
@@ -64,6 +66,9 @@ class Avisador
             app(TrabajosFallidos::class),
             app(DteRechazados::class),
             app(PedidosWebParaRevisar::class),
+            app(TiendaWebSinRespuesta::class),
+            TiendaWebFallas::pagos(),
+            TiendaWebFallas::otras(),
             app(ContingenciaVencida::class),
             app(ContingenciaPorVencer::class),
             app(ContingenciaManualSinTerminar::class),
