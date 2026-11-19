@@ -140,4 +140,16 @@ class PpqLote extends Model
     {
         return $this->estado->esEditable();
     }
+
+    /**
+     * Referencia, fecha y observaciones se cambian solo mientras el lote se arma. La columna
+     * sola no alcanza: presentar sus CCF desde Cobros la deja en borrador, y el estado real
+     * ya dice presentado. La misma condición la usan update() y el botón «Editar».
+     *
+     * @param  array{estado: array{key: string}}  $estadoReal  el de EstadoRealLotePpq para este lote
+     */
+    public function seEditaSegun(array $estadoReal): bool
+    {
+        return $this->esEditable() && in_array($estadoReal['estado']['key'], ['armado', 'anterior'], true);
+    }
 }

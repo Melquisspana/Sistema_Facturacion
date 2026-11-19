@@ -15,6 +15,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -209,6 +210,38 @@ class PpqLoteAltaYEdicionTest extends TestCase
             ->delete(route('ppq.lotes.items.destroy', [$lote, $item]))->assertSessionHas('error');
         $this->assertTrue($lote->items()->whereKey($item->id)->exists());
         $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->refresh()->presentacion_estado);
+    }
+
+    /**
+     * Presentar el CCF con una solicitud de Cobros no toca la columna del lote: sigue en
+     * borrador aunque la ficha ya lo muestre presentado, y se seguía editando la referencia
+     * y la fecha de un PPQ que el cliente ya recibió.
+     */
+    public function test_un_ppq_cuyo_ccf_se_presento_desde_cobros_no_se_edita_aunque_siga_en_borrador(): void
+    {
+        $usuario = $this->usuario();
+        $doc = $this->ccf();
+        $lote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$doc->id]);
+        $this->actingAs($usuario)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSee(route('ppq.lotes.edit', $lote), false);
+
+        $solicitudes = app(SolicitudCobroService::class);
+        $solicitudes->registrarPresentacion($solicitudes->crear($this->cliente, [$doc->id], $usuario), $usuario);
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->refresh()->presentacion_estado);
+        $this->assertSame(EstadoPpq::Borrador, $lote->refresh()->estado, 'La columna del lote no la mueve Cobros.');
+        $antes = $lote->only(['referencia', 'observaciones']) + ['fecha' => $lote->fecha->toDateString()];
+
+        $this->actingAs($usuario)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSee('Presentado')->assertDontSee(route('ppq.lotes.edit', $lote), false);
+
+        $this->actingAs($usuario)->from(route('ppq.lotes.show', $lote))->put(route('ppq.lotes.update', $lote), [
+            'referencia' => 'Cambiada después de presentar', 'fecha' => '2026-09-01', 'observaciones' => 'No va',
+        ])->assertRedirect(route('ppq.lotes.show', $lote))
+            ->assertSessionHas('error', 'Este PPQ está Presentado y ya no se edita.');
+
+        $lote->refresh();
+        $this->assertSame($antes, $lote->only(['referencia', 'observaciones']) + ['fecha' => $lote->fecha->toDateString()]);
+        $this->assertSame(0, DB::table('activity_log')->where('description', 'ppq.lote_editado')->count());
     }
 
     public function test_un_ppq_pagado_tampoco_se_edita(): void

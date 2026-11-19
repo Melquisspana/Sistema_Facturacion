@@ -25,7 +25,7 @@
                         Generar formato quedan
                     </a>
                 @endif
-                @if ($lote->esEditable())
+                @if ($lote->seEditaSegun($estadoReal))
                     @can('ppq.gestionar')
                         <a href="{{ route('ppq.lotes.edit', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
                     @endcan

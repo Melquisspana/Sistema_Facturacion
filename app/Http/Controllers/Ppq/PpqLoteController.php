@@ -290,15 +290,19 @@ class PpqLoteController extends Controller
 
     /**
      * Referencia, fecha y observaciones de un lote que todavía se arma. Presentado o pagado
-     * ya no se edita, como en la ficha, que solo muestra «Editar» mientras es editable.
+     * ya no se edita, aunque lo haya presentado Cobros y la columna siga en borrador: como
+     * en la ficha, que solo muestra «Editar» mientras se arma.
      */
     public function update(PpqLoteRequest $request, PpqLote $lote): RedirectResponse
     {
         return DB::transaction(function () use ($request, $lote) {
             $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
-            if (! $actual->esEditable()) {
+            $real = app(EstadoRealLotePpq::class)->calcular(collect([$actual]))[$actual->id];
+            if (! $actual->seEditaSegun($real)) {
+                $estado = $actual->esEditable() ? $real['estado']['label'] : $actual->estado->label();
+
                 return redirect()->route('ppq.lotes.show', $lote)
-                    ->with('error', 'Este PPQ está '.$actual->estado->label().' y ya no se edita.');
+                    ->with('error', 'Este PPQ está '.$estado.' y ya no se edita.');
             }
 
             $antes = $actual->only(['referencia', 'fecha', 'observaciones']);
