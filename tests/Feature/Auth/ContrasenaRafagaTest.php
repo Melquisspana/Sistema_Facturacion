@@ -4,11 +4,13 @@ namespace Tests\Feature\Auth;
 
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\PasswordController;
+use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\User;
 use Closure;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Redirector;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -93,6 +95,25 @@ class ContrasenaRafagaTest extends TestCase
             ])));
 
         $this->assertSame(6, $comprobadas);
+    }
+
+    public function test_en_una_rafaga_al_cambiar_el_correo_solo_se_comprueban_6_contrasenas(): void
+    {
+        $user = User::factory()->create();
+
+        $comprobadas = $this->rafaga($user, function (string $clave) use ($user) {
+            $request = ProfileUpdateRequest::createFrom($this->pedido($user, '/profile', [
+                'name' => $user->name,
+                'email' => 'nuevo@ejemplo.com',
+                'current_password' => $clave,
+            ]));
+            $request->setContainer($this->app)->setRedirector($this->app->make(Redirector::class));
+            $request->setUserResolver(fn () => $user);
+            $request->validateResolved();
+        });
+
+        $this->assertSame(6, $comprobadas);
+        $this->assertNotSame('nuevo@ejemplo.com', $user->refresh()->email);
     }
 }
 
