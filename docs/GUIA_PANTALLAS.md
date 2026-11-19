@@ -331,6 +331,6 @@ Tomadas el 03/11/2026:
 
 ### Pedidos web en oficina (16/11/2026)
 
-La lista usa los filtros, filas apiladas, insignias y modal compartidos. Por defecto muestra Para revisar y Facturando con más de 30 minutos sin cambios. Reintentar exige permiso de gestión, confirmación y ausencia de factura; si ya existe, se corrige en Facturación. Hasta que exista la presentación en App\Support\Dinero, se reutiliza App\Services\Gastos\Dinero::mostrar para centavos, con $ delante.
+La lista usa los filtros, filas apiladas, insignias y modal compartidos. Por defecto muestra, en la misma tabla, dos partes con su título: arriba «Requieren atención» (alertas, avisos rechazados, Para revisar y Facturando con más de 30 minutos sin cambios, sin importar la fecha) y debajo «Últimos 30 días», el más nuevo primero y sin repetir los de arriba, para que la pantalla no quede vacía cuando todo va bien (19/11/2026). Cada parte dice claro cuando no tiene nada. Con un filtro de estado, la lista de siempre. Reintentar exige permiso de gestión, confirmación y ausencia de factura; si ya existe, se corrige en Facturación. Hasta que exista la presentación en App\Support\Dinero, se reutiliza App\Services\Gastos\Dinero::mostrar para centavos, con $ delante.
 
 En el pedido abierto, solo la fila de otros pedidos se actualiza cada 30 segundos, sin tocar lo marcado. Un pedido web nuevo avisa durante ocho segundos con role=status y aria-live=polite.

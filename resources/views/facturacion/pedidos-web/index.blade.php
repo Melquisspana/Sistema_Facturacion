@@ -7,13 +7,13 @@
     <div class="py-6">
         <div class="mx-auto max-w-7xl space-y-4 px-4 sm:px-6 lg:px-8">
             <x-rutas.avisos />
-            <p class="text-sm text-gray-600">Primero los pedidos con alertas, avisos rechazados, para revisar y los que llevan más de 30 minutos facturando. Si un pedido ya tiene factura, corregila en Facturación.</p>
+            <p class="text-sm text-gray-600">@if ($atencion !== null)Arriba, lo que requiere atención: alertas, avisos rechazados, pedidos para revisar y los que llevan más de 30 minutos facturando. Debajo, los pedidos pagados en los últimos 30 días. @endif Si un pedido ya tiene factura, corregila en Facturación.</p>
             <x-filtros-celular :activos="$estado !== '' ? 1 : 0" id="filtros-pedidos-web">
                 <form method="GET" action="{{ route('facturacion.pedidos-web.index') }}" class="flex flex-wrap items-end gap-3">
                     <div>
                         <label for="estado" class="block text-sm font-medium text-gray-700">Estado</label>
                         <select id="estado" name="estado" class="min-h-11 rounded-md border-gray-300">
-                            @foreach (['' => 'Requieren atención', 'todos' => 'Todos', 'importado' => 'Importado', 'facturando' => 'Facturando', 'facturado' => 'Facturado', 'para_revisar' => 'Para revisar'] as $valor => $texto)
+                            @foreach (['' => 'Atención y últimos 30 días', 'todos' => 'Todos', 'importado' => 'Importado', 'facturando' => 'Facturando', 'facturado' => 'Facturado', 'para_revisar' => 'Para revisar'] as $valor => $texto)
                                 <option value="{{ $valor }}" @selected($estado === $valor)>{{ $texto }}</option>
                             @endforeach
                         </select>
@@ -30,8 +30,27 @@
                     <thead class="hidden bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:table-header-group">
                         <tr>@foreach (['Código', 'Pago', 'Cliente', 'Entrega', 'Total', 'Estado', 'Motivo', 'Acciones'] as $titulo)<th scope="col" class="px-4 py-3">{{ $titulo }}</th>@endforeach</tr>
                     </thead>
+                    @php
+                        // Sin filtro, dos partes en la misma tabla: arriba lo que requiere atención y
+                        // debajo los últimos 30 días. Con un filtro, la lista de siempre, sin títulos.
+                        $secciones = $atencion !== null ? [
+                            ['titulo' => 'Requieren atención', 'filas' => $atencion, 'vacio' => 'Nada requiere atención.', 'enlace' => null],
+                            ['titulo' => 'Últimos 30 días', 'filas' => $pedidos, 'vacio' => 'No entró ningún pedido de la página en los últimos 30 días.',
+                                'enlace' => ['Ver todos', route('facturacion.pedidos-web.index', ['estado' => 'todos'])]],
+                        ] : [
+                            $estado === 'todos'
+                                ? ['titulo' => null, 'filas' => $pedidos, 'vacio' => 'Todavía no entró ningún pedido de la página.', 'enlace' => null]
+                                : ['titulo' => null, 'filas' => $pedidos, 'vacio' => 'Nada coincide con estos filtros.', 'enlace' => ['Limpiar filtros', route('facturacion.pedidos-web.index')]],
+                        ];
+                    @endphp
+                    @foreach ($secciones as $seccion)
                     <tbody class="block md:table-row-group">
-                        @forelse ($pedidos as $web)
+                        @if ($seccion['titulo'])
+                            <tr class="block border-t border-gray-200 bg-gray-50 md:table-row">
+                                <th colspan="8" scope="rowgroup" class="px-4 py-2 text-left text-sm font-semibold text-gray-700">{{ $seccion['titulo'] }}</th>
+                            </tr>
+                        @endif
+                        @forelse ($seccion['filas'] as $web)
                             <tr class="grid grid-cols-2 border-t border-gray-100 md:table-row">
                                 <td class="col-span-2 px-4 py-3 text-sm font-semibold text-gray-800">{{ $web->codigo }}</td>
                                 <td class="px-4 py-3 text-sm tabular-nums"><span class="block text-xs text-gray-500 md:hidden">Pago</span>{{ $web->pagado_en->format('d/m/Y H:i') }}</td>
@@ -102,9 +121,14 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr class="block md:table-row"><td colspan="8" class="py-10 text-center text-gray-500">Nada coincide con estos filtros. <a href="{{ route('facturacion.pedidos-web.index', ['estado' => 'todos']) }}" class="text-indigo-700">Ver todos</a></td></tr>
+                            <tr class="block md:table-row"><td colspan="8" class="py-10 text-center text-gray-500">{{ $seccion['vacio'] }}
+                                @if ($seccion['enlace'])<a href="{{ $seccion['enlace'][1] }}" class="text-indigo-700">{{ $seccion['enlace'][0] }}</a>@endif</td></tr>
                         @endforelse
+                        @if ($seccion['filas'] === $atencion && $atencion->hasPages())
+                            <tr class="block md:table-row"><td colspan="8" class="border-t border-gray-100 px-4 py-3">{{ $atencion->links() }}</td></tr>
+                        @endif
                     </tbody>
+                    @endforeach
                 </table>
                 <div class="border-t border-gray-100 px-4 py-3">{{ $pedidos->links() }}</div>
             </div>

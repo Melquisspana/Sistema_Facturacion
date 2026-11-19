@@ -24,19 +24,31 @@ class PedidoWebController extends Controller
         $estado = $request->validate([
             'estado' => ['nullable', Rule::in(['todos', ...array_column(EstadoPedidoWeb::cases(), 'value')])],
         ])['estado'] ?? '';
-        $pedidos = PedidoWeb::query()
+        $requiereAtencion = fn ($q) => $q->where('estado', EstadoPedidoWeb::ParaRevisar)
+            ->orWhere('alerta', '<>', '')->orWhereNotNull('motivo_revision')
+            ->orWhere(fn ($q) => $q->where('estado', EstadoPedidoWeb::Facturando)->where('updated_at', '<', now()->subMinutes(30)));
+        $lista = fn () => PedidoWeb::query()
             // No cargar ni descifrar teléfono, dirección, correo ni regalos para esta lista.
             ->select(['id', 'codigo', 'pagado_en', 'cliente_nombre', 'entrega_tipo', 'total_centavos', 'estado', 'alerta', 'motivo_revision', 'dte_id', 'pedido_sala_id', 'updated_at'])
-            ->with(['pedidoSala.ruta:id,nombre', 'pedidoSala.salida.ruta:id,nombre'])
-            ->when($estado === '', fn ($q) => $q->where(fn ($q) => $q
-                ->where('estado', EstadoPedidoWeb::ParaRevisar)
-                ->orWhere('alerta', '<>', '')->orWhereNotNull('motivo_revision')
-                ->orWhere(fn ($q) => $q->where('estado', EstadoPedidoWeb::Facturando)->where('updated_at', '<', now()->subMinutes(30)))))
-            ->when($estado !== '' && $estado !== 'todos', fn ($q) => $q->where('estado', $estado))
-            ->orderByRaw('CASE WHEN estado = ? THEN 0 ELSE 1 END', [EstadoPedidoWeb::ParaRevisar->value])
-            ->orderBy('pagado_en')->orderBy('id')->paginate(25)->withQueryString();
+            ->with(['pedidoSala.ruta:id,nombre', 'pedidoSala.salida.ruta:id,nombre']);
+        $atencion = null;
+        if ($estado === '') {
+            // Sin filtro, arriba lo que requiere atención (aunque sea viejo) y debajo los pedidos
+            // de los últimos 30 días que no están arriba, el más nuevo primero. Antes solo se veía
+            // lo primero y, cuando todo iba bien, la lista quedaba vacía.
+            $atencion = $lista()->where($requiereAtencion)
+                ->orderByRaw('CASE WHEN estado = ? THEN 0 ELSE 1 END', [EstadoPedidoWeb::ParaRevisar->value])
+                ->orderBy('pagado_en')->orderBy('id')->paginate(25, pageName: 'pagina_atencion')->withQueryString();
+            $pedidos = $lista()->where('pagado_en', '>=', now()->subDays(30))
+                ->whereNotIn('id', PedidoWeb::query()->select('id')->where($requiereAtencion))
+                ->orderByDesc('pagado_en')->orderByDesc('id')->paginate(25)->withQueryString();
+        } else {
+            $pedidos = $lista()->when($estado !== 'todos', fn ($q) => $q->where('estado', $estado))
+                ->orderByRaw('CASE WHEN estado = ? THEN 0 ELSE 1 END', [EstadoPedidoWeb::ParaRevisar->value])
+                ->orderBy('pagado_en')->orderBy('id')->paginate(25)->withQueryString();
+        }
 
-        return view('facturacion.pedidos-web.index', compact('pedidos', 'estado'));
+        return view('facturacion.pedidos-web.index', compact('pedidos', 'atencion', 'estado'));
     }
 
     public function revisado(Request $request, PedidoWeb $pedidoWeb, ConfiguracionTiendaWeb $tienda): RedirectResponse
