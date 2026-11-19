@@ -8,6 +8,16 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.19] - 2026-11-19
+
+Personal: Empleados y Accesos abren solo con los activos (#412). Pantallas: el logo sin el cuadro claro y con ícono de pestaña (#414). Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- Personal › Empleados y Personal › Accesos abren solo con los activos. Quien se dio de baja sigue en el filtro «Inactivos» o «Todos», con su ficha y su historial intactos. Si «Activos» deja la lista vacía, ofrece «Ver inactivos» (#412).
+- Personal › Accesos: el aviso «Hay N usuarios sin ficha» cuenta solo las cuentas activas. «Todos los accesos» pasa a llamarse «Volver a accesos» (#412).
+- Pantallas: el logo de arriba a la izquierda es solo la cara de la niña, sin el cuadro claro, también en modo oscuro. La pestaña del navegador muestra la cara, porque antes el ícono estaba vacío (#414).
+
 ## [2026.11.18] - 2026-11-18
 
 Contingencia: arreglos del simulacro del 17/11 (#410). El sistema queda listo para entrar solo en contingencia sin internet, pero sigue **apagado** (`DTE_CONTINGENCIA_ENABLED`) hasta la prueba en el servidor, el ensayo en apitest y la prueba física. PPQ: «quitar» ya no deja facturas trabadas (#411). Sin migraciones ni cambios de permisos.
