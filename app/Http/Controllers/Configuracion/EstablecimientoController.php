@@ -51,9 +51,10 @@ class EstablecimientoController extends Controller
 
     public function destroy(Establecimiento $establecimiento): RedirectResponse
     {
-        // Soft delete. Más adelante se bloqueará si tiene documentos relacionados.
-        if ($establecimiento->puntosVenta()->exists() || $establecimiento->correlativos()->exists()) {
-            return back()->with('error', 'No se puede eliminar: tiene puntos de venta o correlativos asociados. Desactívelo en su lugar.');
+        // Borrado suave. Con documentos tampoco: su número de control saldría con códigos
+        // de relleno al no encontrar el establecimiento.
+        if ($establecimiento->puntosVenta()->exists() || $establecimiento->correlativos()->exists() || $establecimiento->tieneDocumentos()) {
+            return back()->with('error', 'No se puede eliminar: tiene puntos de venta, correlativos o facturas. Desactivalo en su lugar.');
         }
 
         $establecimiento->delete();

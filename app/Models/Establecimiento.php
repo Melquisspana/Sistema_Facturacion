@@ -95,4 +95,19 @@ class Establecimiento extends Model
     {
         return $this->hasMany(Correlativo::class);
     }
+
+    public function dtes(): HasMany
+    {
+        return $this->hasMany(Dte::class);
+    }
+
+    /**
+     * ¿Ya hay documentos de este establecimiento, propios o de sus correlativos? Su código
+     * va en el número de control de cada uno: con documentos no se cambia ni se borra.
+     */
+    public function tieneDocumentos(): bool
+    {
+        return $this->dtes()->exists()
+            || Dte::query()->whereIn('correlativo_id', $this->correlativos()->select('id'))->exists();
+    }
 }

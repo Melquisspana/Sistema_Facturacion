@@ -54,8 +54,8 @@ class PuntoVentaController extends Controller
 
     public function destroy(PuntoVenta $puntoVenta): RedirectResponse
     {
-        if ($puntoVenta->correlativos()->exists()) {
-            return back()->with('error', 'No se puede eliminar: tiene correlativos asociados. Desactívelo en su lugar.');
+        if ($puntoVenta->correlativos()->exists() || $puntoVenta->tieneDocumentos()) {
+            return back()->with('error', 'No se puede eliminar: tiene correlativos o facturas. Desactivalo en su lugar.');
         }
 
         $puntoVenta->delete();

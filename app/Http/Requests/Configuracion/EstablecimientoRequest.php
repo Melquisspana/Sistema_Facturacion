@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Configuracion;
 
 use App\Enums\TipoEstablecimiento;
+use App\Models\Establecimiento;
 use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -86,6 +87,17 @@ class EstablecimientoRequest extends FormRequest
                 $validator->errors()->add('distrito_id', $problema);
             }
         });
+
+        // El código va en el número de control de cada documento, y anular uno viejo usa
+        // el código de hoy: con documentos no se cambia.
+        $establecimiento = $this->route('establecimiento');
+        if ($establecimiento instanceof Establecimiento) {
+            $validator->after(function ($validator) use ($establecimiento) {
+                if ((string) $this->input('codigo') !== (string) $establecimiento->codigo && $establecimiento->tieneDocumentos()) {
+                    $validator->errors()->add('codigo', 'Este establecimiento ya tiene facturas: el código no se puede cambiar, porque va en el número de control de cada una.');
+                }
+            });
+        }
     }
 
     protected function prepareForValidation(): void
