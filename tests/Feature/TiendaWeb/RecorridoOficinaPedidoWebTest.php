@@ -290,7 +290,8 @@ class RecorridoOficinaPedidoWebTest extends TestCase
 
         // El de hace 40 días no se perdió: está en Todos y en su estado.
         $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()
-            ->assertViewHas('atencion', null)->assertSee('LN-VIEJO')->assertDontSee('Últimos 30 días')
+            ->assertViewHas('atencion', fn ($a) => $a === null)->assertDontSee('Requieren atención')
+            ->assertSee('LN-VIEJO')->assertDontSee('Últimos 30 días')
             ->assertViewHas('pedidos', fn ($lista) => $lista->total() === 8);
         $this->get(route('facturacion.pedidos-web.index', ['estado' => 'facturado']))->assertOk()
             ->assertSee('LN-VIEJO')->assertSee('LN-HOY')->assertDontSee('LN-TRABADO');

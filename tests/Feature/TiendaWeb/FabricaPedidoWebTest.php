@@ -392,7 +392,8 @@ class FabricaPedidoWebTest extends TestCase
             ->assertSee('$987.65')->assertDontSee('telefono-secreto')->assertDontSee('direccion-secreta');
         foreach (EstadoPedidoWeb::cases() as $estado) {
             $this->get(route('facturacion.pedidos-web.index', ['estado' => $estado->value]))
-                ->assertOk()->assertViewHas('atencion', null)->assertDontSee('Últimos 30 días')
+                ->assertOk()->assertViewHas('atencion', fn ($a) => $a === null)
+                ->assertDontSee('Requieren atención')->assertDontSee('Últimos 30 días')
                 ->assertViewHas('pedidos', fn ($lista) => $lista->count() > 0 && $lista->every(fn ($p) => $p->estado === $estado));
         }
         $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()
