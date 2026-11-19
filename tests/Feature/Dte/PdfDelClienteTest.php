@@ -25,7 +25,9 @@ use Tests\TestCase;
  * Lo que ve el cliente en la representación gráfica, revisado con la primera Factura (01)
  * real de la tienda web:
  *
- *   · la columna «Código» dice el mismo código que va en el JSON, en todos los tipos;
+ *   · la columna «Código» sigue con el código de barras, en todos los tipos; el código
+ *     interno solo de respaldo si no hay barras, y «—» si no hay ninguno. Decisión de
+ *     Melqui (19/11/2026): en Calleja comparan las barras con la orden de compra;
  *   · el «Estado técnico (interno)» no sale en el PDF que llega al cliente; solo en la
  *     copia de la oficina (ver, imprimir y descargar desde Facturación);
  *   · sin descuento no se imprime «Descuento global -$0.00».
@@ -106,27 +108,39 @@ class PdfDelClienteTest extends TestCase
     }
 
     #[DataProvider('tipos')]
-    public function test_la_columna_codigo_dice_el_mismo_codigo_del_json(TipoDte $tipo): void
+    public function test_la_columna_codigo_muestra_el_codigo_de_barras(TipoDte $tipo): void
     {
         $dte = $this->generado($tipo);
         $json = json_decode(Storage::disk('local')->get($dte->json_generado_path), true);
-        $codigoJson = $json['cuerpoDocumento'][0]['codigo'];
-        $this->assertSame('990001', $codigoJson, 'El JSON debe llevar el código del producto.');
+        $this->assertSame('990001', $json['cuerpoDocumento'][0]['codigo'], 'El JSON lleva el código del producto.');
 
         $html = $this->htmlDelPdf($dte);
 
-        $this->assertStringContainsString('<span class="cod">'.$codigoJson.'</span>', $html);
-        $this->assertStringNotContainsString('7400000000017', $html, 'El PDF no debe mostrar un código distinto del JSON.');
+        $this->assertStringContainsString('<span class="cod">7400000000017</span>', $html);
+        // Un solo código por línea: con barras no se imprime también el interno.
+        $this->assertStringNotContainsString('<span class="cod">990001</span>', $html);
     }
 
-    public function test_sin_codigo_en_el_json_la_columna_queda_vacia_aunque_haya_barras(): void
+    public function test_sin_barras_la_columna_muestra_el_codigo_interno_de_respaldo(): void
     {
         $dte = $this->generado(TipoDte::Factura);
-        $dte->lineas()->update(['codigo' => null]);
+        $dte->lineas()->update(['codigo_barra' => null]);
 
         $html = $this->htmlDelPdf($dte->refresh());
 
+        $this->assertStringContainsString('<span class="cod">990001</span>', $html);
         $this->assertStringNotContainsString('7400000000017', $html);
+    }
+
+    public function test_sin_barras_ni_codigo_la_columna_muestra_una_raya(): void
+    {
+        $dte = $this->generado(TipoDte::Factura);
+        $dte->lineas()->update(['codigo_barra' => null, 'codigo' => null]);
+
+        $html = $this->htmlDelPdf($dte->refresh());
+
+        $this->assertStringNotContainsString('class="cod"', $html);
+        $this->assertMatchesRegularExpression('#<td class="ci">1</td>\s*<td>\s*<span class="dash">—</span>\s*</td>#u', $html);
     }
 
     #[DataProvider('tipos')]

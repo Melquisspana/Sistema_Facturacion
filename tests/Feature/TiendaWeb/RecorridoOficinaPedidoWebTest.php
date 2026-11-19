@@ -155,7 +155,7 @@ class RecorridoOficinaPedidoWebTest extends TestCase
 
     // ---------- 1. Factura (01) de un pedido web ----------
 
-    public function test_pedido_web_facturado_llega_al_cliente_con_el_codigo_del_json_y_sin_estado_interno(): void
+    public function test_pedido_web_facturado_llega_al_cliente_con_el_codigo_de_barras_y_sin_estado_interno(): void
     {
         Producto::factory()->create([
             'codigo' => 'WEB01', 'nombre' => 'Dulce inventado', 'codigo_barra' => self::BARRA_WEB,
@@ -177,7 +177,7 @@ class RecorridoOficinaPedidoWebTest extends TestCase
         $dte = Dte::findOrFail($web->dte_id);
         $this->assertSame(TipoDte::Factura, $dte->tipo_dte);
         $this->assertSame(EstadoDte::Aceptado, $dte->estado);
-        $this->assertSame('WEB01', $this->codigoDelJson($dte), 'El JSON lleva el código del producto, no las barras.');
+        $this->assertSame('WEB01', $this->codigoDelJson($dte), 'El JSON lleva el código del producto.');
         $this->assertSame(
             'generó el JSON oficial preliminar (Factura, sin firma ni transmisión)',
             Activity::where('log_name', 'dte_json')->where('subject_id', $dte->id)->sole()->description,
@@ -193,8 +193,9 @@ class RecorridoOficinaPedidoWebTest extends TestCase
         $this->assertCount(1, $vistas);
         $delCliente = $vistas[0]->render();
         $this->assertStringContainsString($dte->numero_control, $delCliente);
-        $this->assertStringContainsString('<span class="cod">WEB01</span>', $delCliente);
-        $this->assertStringNotContainsString(self::BARRA_WEB, $delCliente);
+        // La columna «Código» lleva las barras (decisión de Melqui, 19/11/2026), no el interno.
+        $this->assertStringContainsString('<span class="cod">'.self::BARRA_WEB.'</span>', $delCliente);
+        $this->assertStringNotContainsString('<span class="cod">WEB01</span>', $delCliente);
         $this->assertStringNotContainsString('Estado técnico (interno):', $delCliente);
         $this->assertStringNotContainsString('JSON generado:', $delCliente);
         $this->assertStringNotContainsString('Descuento global', $delCliente);
@@ -210,8 +211,8 @@ class RecorridoOficinaPedidoWebTest extends TestCase
             $deLaOficina = $vistas[0]->render();
             $this->assertStringContainsString('Estado técnico (interno):', $deLaOficina, $ruta);
             $this->assertStringContainsString('Sello de recepción: <strong>sí</strong>', $deLaOficina, $ruta);
-            $this->assertStringContainsString('<span class="cod">WEB01</span>', $deLaOficina, $ruta);
-            $this->assertStringNotContainsString(self::BARRA_WEB, $deLaOficina, $ruta);
+            $this->assertStringContainsString('<span class="cod">'.self::BARRA_WEB.'</span>', $deLaOficina, $ruta);
+            $this->assertStringNotContainsString('<span class="cod">WEB01</span>', $deLaOficina, $ruta);
             $this->assertStringNotContainsString('Descuento global', $deLaOficina, $ruta);
         }
         $this->assertStringContainsString('dte-01-'.$dte->id.'.pdf', (string) $this->get(route('facturacion.pdf.descargar', $dte))->headers->get('content-disposition'));
@@ -219,7 +220,7 @@ class RecorridoOficinaPedidoWebTest extends TestCase
 
     // ---------- 2. CCF (03) y nota de crédito (05) ----------
 
-    public function test_ccf_y_nota_de_credito_siguen_saliendo_con_el_codigo_del_json(): void
+    public function test_ccf_y_nota_de_credito_siguen_saliendo_con_el_codigo_de_barras(): void
     {
         $ccf = $this->ccfAceptado();
         $nc = $this->ncGenerada($ccf);
@@ -232,8 +233,8 @@ class RecorridoOficinaPedidoWebTest extends TestCase
 
         foreach ([$ccf, $nc] as $dte) {
             $html = $this->htmlDelPdf($dte);
-            $this->assertStringContainsString('<span class="cod">CCF-001</span>', $html, $dte->tipo_dte->label());
-            $this->assertStringNotContainsString('7400000000024', $html, $dte->tipo_dte->label());
+            $this->assertStringContainsString('<span class="cod">7400000000024</span>', $html, $dte->tipo_dte->label());
+            $this->assertStringNotContainsString('<span class="cod">CCF-001</span>', $html, $dte->tipo_dte->label());
             $this->assertStringNotContainsString('Estado técnico (interno):', $html, $dte->tipo_dte->label());
             $this->assertStringNotContainsString('Descuento global', $html, $dte->tipo_dte->label());
             // El PDF de verdad (Dompdf) sale sin errores.

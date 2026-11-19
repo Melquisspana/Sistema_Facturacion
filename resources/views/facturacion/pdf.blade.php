@@ -504,16 +504,18 @@
         <tbody>
             @forelse ($dte->lineas as $linea)
                 @php
+                    $cb = trim((string) $linea->codigo_barra);
                     $cc = trim((string) $linea->codigo);
                     $pres = \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte);
                 @endphp
                 <tr>
                     <td class="ci">{{ $linea->numero_linea }}</td>
                     <td>
-                        {{-- El mismo código que va en el JSON (`codigo` del ítem), en todos los tipos.
-                             Antes se imprimía el código de barras y el documento decía un código
-                             distinto del que recibió Hacienda. --}}
-                        @if ($cc !== '')
+                        {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras.
+                             Decisión de Melqui (19/11/2026): el número de barras se queda; en Calleja lo comparan con la orden de compra. --}}
+                        @if ($cb !== '')
+                            <span class="cod">{{ $cb }}</span>
+                        @elseif ($cc !== '')
                             <span class="cod">{{ $cc }}</span>
                         @else
                             <span class="dash">—</span>

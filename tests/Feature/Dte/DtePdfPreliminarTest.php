@@ -172,7 +172,7 @@ class DtePdfPreliminarTest extends TestCase
         $this->assertStringNotContainsString('0000-000000-000-0', $html);
     }
 
-    public function test_tabla_muestra_el_codigo_del_json_y_encabezado(): void
+    public function test_tabla_muestra_codigo_de_barras_y_encabezado(): void
     {
         $producto = Producto::factory()->create([
             'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value,
@@ -189,14 +189,14 @@ class DtePdfPreliminarTest extends TestCase
         $html = $this->html($dte->refresh());
 
         $this->assertStringContainsString('Código', $html);          // encabezado de columna
-        // El mismo código que va en el JSON, aunque haya barras (solo un código a la vez).
-        $this->assertStringContainsString('CAL-777', $html);
-        $this->assertStringNotContainsString('7412201700031', $html);
+        $this->assertStringContainsString('7412201700031', $html);   // código de barras visible
+        // Si hay código de barras, NO se muestra el código interno (solo un código a la vez).
+        $this->assertStringNotContainsString('CAL-777', $html);
     }
 
     public function test_codigo_interno_solo_como_respaldo_sin_barras(): void
     {
-        // Producto sin código de barras: en la tabla se muestra igual el código del JSON.
+        // Producto sin código de barras: en la tabla se muestra el código interno como respaldo.
         $producto = Producto::factory()->create([
             'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value,
             'codigo' => 'INT-555', 'codigo_barra' => null,
