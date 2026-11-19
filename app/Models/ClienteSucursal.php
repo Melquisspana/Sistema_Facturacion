@@ -107,6 +107,9 @@ class ClienteSucursal extends Model
             'albaranes' => fn () => PpqAlbaran::where('cliente_sucursal_id', $id)->exists(),
             'órdenes de compra' => fn () => OrdenCompraRecibida::instalada()
                 && OrdenCompraRecibida::where('cliente_sucursal_id', $id)->exists(),
+            // Activo o no: sin la sala, la ficha del producto lo mostraba como precio para
+            // «Todas», y el CCF no lo usa.
+            'precios especiales' => fn () => ProductoPrecioCliente::where('cliente_sucursal_id', $id)->exists(),
         ])->filter(fn (\Closure $tiene) => $tiene())->keys()->all();
     }
 

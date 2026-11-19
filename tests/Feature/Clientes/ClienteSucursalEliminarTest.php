@@ -10,9 +10,11 @@ use App\Models\ClienteSucursal;
 use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
 use App\Models\PpqAlbaran;
+use App\Models\Producto;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
+use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Activitylog\Models\Activity;
@@ -81,6 +83,10 @@ class ClienteSucursalEliminarTest extends TestCase
             'una entrega de ruta' => ['entrega'],
             'un albarán' => ['albaran'],
             'una orden de compra recibida' => ['orden'],
+            // La ficha del producto lo mostraba como precio para «Todas» y el CCF no lo usa.
+            'un precio especial de la sala' => ['precio'],
+            // Inactivo también: al activarlo volvería a verse como precio para «Todas».
+            'un precio especial inactivo de la sala' => ['precio_inactivo'],
         ];
     }
 
@@ -132,6 +138,15 @@ class ClienteSucursalEliminarTest extends TestCase
                 ]);
 
                 return fn () => $orden->fresh()->clienteSucursal;
+            case 'precio':
+            case 'precio_inactivo':
+                $this->seed(CatalogosMhSeeder::class); // la unidad de medida del producto
+                $precio = Producto::factory()->create()->preciosCliente()->create([
+                    'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $sala, 'precio' => '1.40',
+                    'activo' => $tipo === 'precio',
+                ]);
+
+                return fn () => $precio->fresh()->clienteSucursal;
         }
 
         throw new \LogicException("Movimiento desconocido: {$tipo}");
@@ -161,6 +176,17 @@ class ClienteSucursalEliminarTest extends TestCase
         $this->eliminar($this->usuario())->assertRedirect();
         $this->get(route('clientes.show', $this->cliente))->assertOk()
             ->assertSee('No se eliminó la sala «Sala de prueba Norte»: tiene pedidos', false)
+            ->assertSee('Sala de prueba Norte');
+    }
+
+    public function test_el_aviso_nombra_los_precios_especiales_y_el_producto_sigue_mostrando_la_sala(): void
+    {
+        $this->crearMovimiento('precio');
+        $admin = $this->usuario();
+
+        $this->eliminar($admin)->assertSessionHas('error', fn (string $mensaje) => str_contains($mensaje, 'tiene precios especiales'));
+
+        $this->actingAs($admin)->get(route('productos.show', Producto::sole()))->assertOk()
             ->assertSee('Sala de prueba Norte');
     }
 
