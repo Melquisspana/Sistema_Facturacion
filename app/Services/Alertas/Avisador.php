@@ -5,6 +5,7 @@ namespace App\Services\Alertas;
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Facades\Ajustes;
 use App\Mail\AlertaSistemaCorreo;
+use App\Services\Alertas\Detectores\CobrosFueraDeRegla;
 use App\Services\Alertas\Detectores\ContingenciaLotesRechazados;
 use App\Services\Alertas\Detectores\ContingenciaManualSinTerminar;
 use App\Services\Alertas\Detectores\ContingenciaPorVencer;
@@ -80,6 +81,7 @@ class Avisador
             app(PaqueteMensualPendiente::class),
             EventosRecientes::errores500(),
             EventosRecientes::tareasProgramadas(),
+            app(CobrosFueraDeRegla::class),
         ];
     }
 
