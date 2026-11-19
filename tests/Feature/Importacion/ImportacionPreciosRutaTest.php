@@ -122,6 +122,43 @@ class ImportacionPreciosRutaTest extends TestCase
             ->where('description', 'actualizó un precio especial')->count(), 'El que se apaga queda en la bitácora.');
     }
 
+    /**
+     * Exportar, corregir en Excel y volver a subir el mismo archivo. El archivo trae también
+     * los precios inactivos (una promo que ya terminó): su fila caía sobre el vigente y lo
+     * dejaba con el precio y la fecha de la promo, y el CCF siguiente salía con ese.
+     */
+    public function test_volver_a_subir_el_archivo_exportado_no_cambia_el_precio_vigente_ni_su_fecha(): void
+    {
+        $admin = $this->usuario();
+        $producto = Producto::factory()->create(['codigo' => 'PRB-1', 'nombre' => 'PRODUCTO DE PRUEBA', 'precio_unitario' => '2.00']);
+        // Primero el que hoy vale y después la promo, ya inactiva: es el orden en que quedan al
+        // volver de la promo (inactivar la promo y después activar el anterior).
+        $vigente = $producto->preciosCliente()->create([
+            'cliente_id' => $this->cliente->id, 'precio' => '1.25', 'activo' => true, 'fecha_inicio' => '2026-10-01',
+        ]);
+        $promo = $producto->preciosCliente()->create([
+            'cliente_id' => $this->cliente->id, 'precio' => '1.10', 'activo' => false, 'fecha_inicio' => '2026-08-01',
+        ]);
+
+        $csv = $this->actingAs($admin)->get(route('importaciones.precios.exportar', ['cliente_id' => $this->cliente->id]))
+            ->assertOk()->streamedContent();
+        $this->assertStringContainsString('1.1000,2026-08-01,No', $csv, 'El archivo exportado trae la promo inactiva.');
+
+        $this->importar($admin, UploadedFile::fake()->createWithContent('precios.csv', $csv))
+            ->assertSessionHas('resumen', fn (array $resumen) => $resumen['actualizadas'] === 1 && $resumen['ignoradas'] === 1
+                && collect($resumen['detalles'])->contains(fn (array $d) => $d['accion'] === 'ignorado'
+                    && str_contains($d['detalle'], 'Precio inactivo en el archivo')));
+
+        $vigente->refresh();
+        $this->assertTrue($vigente->activo);
+        $this->assertSame('1.2500', $vigente->precio);
+        $this->assertSame('2026-10-01', $vigente->fecha_inicio->toDateString(), 'La fecha del vigente no se cambia por la de la promo.');
+        $promo->refresh();
+        $this->assertFalse($promo->activo);
+        $this->assertSame('1.1000', $promo->precio);
+        $this->assertSame('1.2500', $this->precioDelCcf($producto));
+    }
+
     public function test_no_toca_el_precio_de_otro_cliente_ni_el_de_una_sala(): void
     {
         $otro = Cliente::factory()->contribuyente()->create(['nombre' => 'Otro cliente de prueba']);

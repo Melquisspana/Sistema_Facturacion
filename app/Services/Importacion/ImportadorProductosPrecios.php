@@ -17,6 +17,8 @@ use Illuminate\Support\Carbon;
  * - Guarda el precio del archivo como precio especial del cliente en
  *   producto_precios_cliente (sin duplicar el activo).
  * - Solo importa filas con precio numérico; las demás se ignoran.
+ * - Una fila con «activo» en No (el archivo de «Exportar» trae también los inactivos) se
+ *   ignora: caía sobre el precio vigente y le ponía el precio y la fecha del inactivo.
  * - El precio general del producto solo se fija al CREARLO (no se pisa si ya existe).
  * Idempotente.
  */
@@ -38,6 +40,7 @@ class ImportadorProductosPrecios
         'precio' => 'precio',
         'precio_calleja' => 'precio',
         'costo' => 'precio',
+        'activo' => 'activo',
     ];
 
     public function __construct(private readonly LectorCsv $lector) {}
@@ -61,6 +64,11 @@ class ImportadorProductosPrecios
             $precio = $this->parsearPrecio($registro['precio'] ?? '');
             $etiqueta = $descripcion !== '' ? $descripcion : ($codigo !== '' ? $codigo : '(sin nombre)');
 
+            if (mb_strtolower($registro['activo'] ?? '') === 'no') {
+                $resultado->ignorada($numero, $etiqueta, 'Precio inactivo en el archivo: no se toca el precio vigente.');
+
+                continue;
+            }
             if ($precio === null) {
                 $resultado->ignorada($numero, $etiqueta, 'Precio vacío o no numérico.');
 
