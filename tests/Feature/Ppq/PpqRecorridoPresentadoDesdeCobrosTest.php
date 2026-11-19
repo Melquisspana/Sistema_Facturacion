@@ -229,13 +229,15 @@ class PpqRecorridoPresentadoDesdeCobrosTest extends TestCase
         $this->assertSame(2, DB::table('activity_log')->where('description', 'ppq.item_quitado')
             ->where('subject_id', $lote->id)->where('causer_id', $oficina->id)->count());
 
-        // 6. A NO vuelve solo a «por presentar»: sigue en el quedan presentado de Cobros, y por
-        //    eso todavía no entra en otro PPQ (decisión pendiente de Melqui, ver el informe).
+        // 6. A sale del quedan presentado (que no tenía acuse) y vuelve a «por presentar»; el
+        //    quedan conserva sus renglones. Entra en otro PPQ con su NC
+        //    (detalle en PpqQuitarCcfDelQuedanPresentadoTest).
         $a->refresh();
-        $this->assertSame(EstadoPresentacionCobro::Presentada, $a->presentacion_estado);
-        $this->assertSame($solicitud->id, $a->cobro_solicitud_id);
-        $this->crearPpq($oficina, $a)->assertSessionHasErrors(['documentos' => 'No se creó el PPQ. '.$a->correlativoCorto().': ya se presentó.']);
-        $this->assertSame(1, PpqLote::count());
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $a->presentacion_estado);
+        $this->assertNull($a->cobro_solicitud_id);
+        $this->assertSame(2, $solicitud->items()->count());
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors()->assertSessionHas('status');
+        $this->assertSame(2, PpqLote::count());
 
         // 7. Bandeja e historial siguen abriendo y muestran lo que quedó.
         $this->actingAs($oficina)->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk();

@@ -3,6 +3,7 @@
 namespace App\Services\Cobros;
 
 use App\Enums\Cobros\EstadoPresentacionCobro;
+use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
@@ -20,6 +21,12 @@ use Illuminate\Support\Facades\DB;
  * Si es un CCF que estaba «en PPQ», vuelve a «por presentar» con la regla del borrado del lote
  * ({@see LiberarCcfDeLoteBorrado::motivoParaConservar()}). Antes solo se borraba el renglón y el
  * CCF quedaba «en PPQ» sin estar en ninguno: fuera de la bandeja y sin casilla.
+ *
+ * Si va en un quedan ya presentado desde Cobros y el cliente todavía no acusó recibo, es el
+ * CCF que el cliente no aceptó: sale de ese quedan (sus renglones quedan como constancia de lo
+ * que se presentó ese día) y vuelve a «por presentar», para entrar en otro PPQ. Antes se
+ * quedaba «presentado» colgando del quedan viejo y no entraba en ningún lote. Lo que el cliente
+ * ya recibió queda como está.
  *
  * Quitar una NC no toca su CCF. Quitar un CCF no saca sus NC: se informan en `notas`.
  */
@@ -69,22 +76,35 @@ class QuitarItemPpq
 
                     continue;
                 }
-                // Solo vuelve lo que este lote dejó «en PPQ»; lo presentado queda como está.
-                $motivo = $doc->presentacion_estado === EstadoPresentacionCobro::Preparada
-                    ? $liberador->motivoParaConservar($doc, $ocupadas)
-                    : 'ya figura como presentado';
+                // Vuelve lo que este lote dejó «en PPQ» y lo de un quedan presentado sin acuse;
+                // lo demás presentado queda como está.
+                $quedan = $doc->presentacion_estado === EstadoPresentacionCobro::Presentada
+                    && $doc->solicitud?->estado === EstadoSolicitudCobro::Presentada ? $doc->solicitud : null;
+                $motivo = match (true) {
+                    $doc->presentacion_estado === EstadoPresentacionCobro::Preparada => $liberador->motivoParaConservar($doc, $ocupadas),
+                    $quedan !== null => $liberador->motivoParaConservar($doc, $ocupadas, sueltaDelQuedan: true),
+                    default => 'ya figura como presentado',
+                };
                 if ($motivo !== null) {
                     $resultado['conservados']->push(['documento' => $doc, 'motivo' => $motivo]);
 
                     continue;
                 }
 
-                $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value])->save();
+                $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value]
+                    + ($quedan !== null ? ['cobro_solicitud_id' => null] : []))->save();
                 CobroEvento::firstOrCreate(
                     ['cobro_documento_id' => $doc->id, 'tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => "ppq-{$lote->id}-quitado"],
-                    ['origen' => 'manual', 'fecha' => today()->toDateString(), 'user_id' => $usuario?->id, 'datos' => ['ppq_lote_id' => $lote->id],
-                        'detalle' => "Se quitó del PPQ {$lote->referencia}: vuelve a por presentar."],
+                    ['origen' => 'manual', 'fecha' => today()->toDateString(), 'user_id' => $usuario?->id,
+                        'datos' => ['ppq_lote_id' => $lote->id] + ($quedan !== null ? ['cobro_solicitud_id' => $quedan->id] : []),
+                        'detalle' => "Se quitó del PPQ {$lote->referencia}"
+                            .($quedan !== null ? " y salió del quedan presentado {$quedan->referencia}" : '').': vuelve a por presentar.'],
                 );
+                if ($quedan !== null) {
+                    activity('cobros_solicitud')->performedOn($quedan)->causedBy($usuario)
+                        ->withProperties(['cobro_documento_id' => $doc->id, 'numero_control' => $doc->numero_control, 'ppq_lote_id' => $lote->id])
+                        ->log('un CCF salió del quedan presentado al quitarlo del PPQ');
+                }
                 $resultado['devueltos']->push($doc);
             }
 
