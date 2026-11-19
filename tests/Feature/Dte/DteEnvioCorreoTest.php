@@ -26,6 +26,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\View;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaArchivoEntregaDte;
@@ -142,6 +143,29 @@ class DteEnvioCorreoTest extends TestCase
         $this->assertNull($envio->error);
         $this->assertStringContainsString('PDF', $envio->adjuntos);
         $this->assertStringContainsString('JSON', $envio->adjuntos);
+    }
+
+    public function test_el_pdf_del_correo_no_lleva_el_estado_tecnico_interno(): void
+    {
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        $dte = $this->ccf();
+        $envio = $dte->envios()->create([
+            'destinatario' => 'a@a.com', 'destinatarios' => ['a@a.com'], 'estado' => 'pendiente',
+        ]);
+        $vistas = [];
+        View::composer('facturacion.pdf', function ($vista) use (&$vistas) {
+            $vistas[] = $vista;
+        });
+
+        (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
+
+        $this->assertSame('enviado', $envio->refresh()->estado);
+        $this->assertCount(1, $vistas, 'El correo no adjuntó la representación del documento.');
+        $html = $vistas[0]->render();
+        $this->assertStringContainsString($dte->numero_control, $html);
+        $this->assertStringNotContainsString('Estado técnico (interno):', $html);
+        $this->assertStringNotContainsString('JSON generado:', $html);
     }
 
     public function test_job_con_mailer_log_queda_simulado_no_enviado(): void

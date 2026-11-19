@@ -1049,10 +1049,13 @@ class DteController extends Controller
         return $this->construirPdf($dte)->download($this->nombrePdf($dte));
     }
 
-    /** Construye el PDF (delegado a DtePdfService, reutilizado por el Job de correo). */
+    /**
+     * Construye el PDF (delegado a DtePdfService, reutilizado por el Job de correo). Es la
+     * copia de la oficina: lleva el «Estado técnico (interno)», que el PDF del cliente no.
+     */
     private function construirPdf(Dte $dte): \Barryvdh\DomPDF\PDF
     {
-        return app(\App\Services\Dte\DtePdfService::class)->pdf($dte);
+        return app(\App\Services\Dte\DtePdfService::class)->pdf($dte, interno: true);
     }
 
     /** Emisor a mostrar en el PDF/impresión (empresa real si el enlazado es placeholder). */

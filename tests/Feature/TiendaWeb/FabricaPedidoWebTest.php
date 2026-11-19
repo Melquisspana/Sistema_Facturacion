@@ -141,7 +141,9 @@ class FabricaPedidoWebTest extends TestCase
         $envio = $this->mandar($pedido);
         $html = app(DtePdfService::class)->html($pedido->pedidoWeb->dte()->firstOrFail());
         $this->get(route('fabrica.pedidos.imprimir-web', [$pedido, $envio]))->assertOk()
-            ->assertSee(explode('</body>', $html)[0], false)->assertSee('window.print()', false)->assertSee('Volver a Pedidos');
+            ->assertSee(explode('</body>', $html)[0], false)->assertSee('window.print()', false)->assertSee('Volver a Pedidos')
+            // La factura impresa va en la caja del cliente: sin el estado técnico interno.
+            ->assertDontSee('Estado técnico (interno):')->assertDontSee('JSON generado:');
     }
 
     public function test_imprimir_regalo_sin_comprador_ni_precios_y_texto_escapado(): void
