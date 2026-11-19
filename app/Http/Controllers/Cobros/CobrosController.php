@@ -785,10 +785,12 @@ class CobrosController extends Controller
     /** Registro EXPLÍCITO de que una persona subió el archivo al portal. */
     public function presentarSolicitud(Request $request, CobroSolicitud $solicitud): RedirectResponse
     {
+        // Como la carga de las NC y el «marcar presentado» del PPQ: una presentación futura
+        // todavía no pasó.
         $datos = $request->validate([
-            'presentada_en' => ['nullable', 'date'],
+            'presentada_en' => ['nullable', 'date', 'before_or_equal:today'],
             'nota' => ['nullable', 'string', 'max:255'],
-        ]);
+        ], [], ['presentada_en' => 'fecha de presentación']);
 
         try {
             $this->solicitudes->registrarPresentacion(
@@ -810,8 +812,8 @@ class CobrosController extends Controller
         $datos = $request->validate([
             'referencia_calleja' => ['required', 'string', 'max:40'],
             'fecha_programada_pago' => ['nullable', 'date'],
-            'recibida_en' => ['nullable', 'date'],
-        ], [], ['referencia_calleja' => 'referencia del cliente']);
+            'recibida_en' => ['nullable', 'date', 'before_or_equal:today'],
+        ], [], ['referencia_calleja' => 'referencia del cliente', 'recibida_en' => 'fecha del acuse']);
 
         $this->solicitudes->registrarRecibido(
             $solicitud,
