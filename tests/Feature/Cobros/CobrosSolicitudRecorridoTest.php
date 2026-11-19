@@ -106,10 +106,12 @@ class CobrosSolicitudRecorridoTest extends TestCase
         $this->assertSame(EstadoSolicitudCobro::Generada, $solicitud->estado);
         $this->assertSame(EstadoPresentacionCobro::Preparada, $a->refresh()->presentacion_estado);
 
-        // Los mismos CCF no entran en otra solicitud mientras esta siga vigente.
+        // Los mismos CCF no entran en otra solicitud mientras esta siga vigente. El aviso nombra
+        // el quedan por su referencia (la que se ve en pantalla) y no manda a corregirlo: no hay
+        // pantalla para eso.
         $this->actingAs($oficina)->post(route('cobros.solicitudes.previa', $this->cliente), ['documentos' => [$a->id]])
-            ->assertSessionHasErrors(['documentos' => 'Estos documentos ya están en otra solicitud: '.$a->numero_control
-                ." (solicitud #{$solicitud->id}). Si hay que rehacerla, corrija aquella en vez de armar una segunda con lo mismo."]);
+            ->assertSessionHasErrors(['documentos' => 'Estos CCF ya van en otro quedan: '.$a->correlativoCorto()
+                ." (quedan {$solicitud->referencia}). No se arma otro con lo mismo."]);
         $this->assertSame(1, CobroSolicitud::count());
 
         // Presentar y presentar otra vez.

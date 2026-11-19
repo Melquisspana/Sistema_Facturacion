@@ -656,14 +656,15 @@ class SolicitudCobroService
             fn (CobroDocumento $d) => $d->cobro_solicitud_id !== null && $d->cobro_solicitud_id !== $corrige?->id
         );
 
+        // El quedan va por su referencia, la que se ve en pantalla. No se manda a corregirlo:
+        // no hay pantalla para eso.
         if ($yaEnOtra->isNotEmpty()) {
-            $lista = $yaEnOtra->map(
-                fn (CobroDocumento $d) => $d->numero_control.' (solicitud #'.$d->cobro_solicitud_id.')'
+            $lista = $yaEnOtra->loadMissing('solicitud:id,referencia')->map(
+                fn (CobroDocumento $d) => $d->correlativoCorto().' (quedan '.($d->solicitud?->referencia ?? '#'.$d->cobro_solicitud_id).')'
             )->implode(', ');
 
             throw ValidationException::withMessages([
-                'documentos' => "Estos documentos ya están en otra solicitud: {$lista}. "
-                    .'Si hay que rehacerla, corrija aquella en vez de armar una segunda con lo mismo.',
+                'documentos' => "Estos CCF ya van en otro quedan: {$lista}. No se arma otro con lo mismo.",
             ]);
         }
     }
