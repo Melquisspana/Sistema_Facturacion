@@ -104,13 +104,16 @@ class DtePdfPreliminarTest extends TestCase
         return $dte->refresh();
     }
 
-    /** Renderiza la plantilla del PDF a HTML (rápido, para aserciones de texto). */
-    private function html(Dte $dte): string
+    /**
+     * Renderiza la plantilla del PDF a HTML (rápido, para aserciones de texto). `$interno`
+     * es la copia de la oficina, la única que lleva el «Estado técnico (interno)».
+     */
+    private function html(Dte $dte, bool $interno = false): string
     {
         $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento.empresa', 'puntoVenta', 'dteRelacionado']);
         $emisor = $dte->establecimiento?->empresa;
 
-        return view('facturacion.pdf', compact('dte', 'emisor'))->render();
+        return view('facturacion.pdf', compact('dte', 'emisor', 'interno'))->render();
     }
 
     private function ccfBorrador(): Dte
@@ -227,7 +230,7 @@ class DtePdfPreliminarTest extends TestCase
 
     public function test_firmado_no_aceptado_tambien_es_discreto(): void
     {
-        $html = $this->html($this->ccfFirmado());
+        $html = $this->html($this->ccfFirmado(), interno: true);
 
         // Firmado pero sin aceptar: mismo aviso discreto, sin la barra "FIRMADO LOCALMENTE".
         $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
@@ -273,7 +276,7 @@ class DtePdfPreliminarTest extends TestCase
 
     public function test_seccion_tecnica_refleja_estado_interno(): void
     {
-        $html = $this->html($this->ccfFirmado());
+        $html = $this->html($this->ccfFirmado(), interno: true);
 
         $this->assertStringContainsString('Estado técnico', $html);
         $this->assertStringContainsString('Firmado localmente: <strong>sí</strong>', $html);

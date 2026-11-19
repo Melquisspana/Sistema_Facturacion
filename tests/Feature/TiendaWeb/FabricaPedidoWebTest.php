@@ -141,7 +141,9 @@ class FabricaPedidoWebTest extends TestCase
         $envio = $this->mandar($pedido);
         $html = app(DtePdfService::class)->html($pedido->pedidoWeb->dte()->firstOrFail());
         $this->get(route('fabrica.pedidos.imprimir-web', [$pedido, $envio]))->assertOk()
-            ->assertSee(explode('</body>', $html)[0], false)->assertSee('window.print()', false)->assertSee('Volver a Pedidos');
+            ->assertSee(explode('</body>', $html)[0], false)->assertSee('window.print()', false)->assertSee('Volver a Pedidos')
+            // La factura impresa va en la caja del cliente: sin el estado técnico interno.
+            ->assertDontSee('Estado técnico (interno):')->assertDontSee('JSON generado:');
     }
 
     public function test_imprimir_regalo_sin_comprador_ni_precios_y_texto_escapado(): void
@@ -361,29 +363,68 @@ class FabricaPedidoWebTest extends TestCase
 
     public function test_lista_oficina_estados_filtros_antiguedad_y_privacidad(): void
     {
-        $revision = $this->pedido(['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado'])->pedidoWeb;
+        // Para revisar aunque se haya pagado hace más de 30 días: lo que requiere atención no vence.
+        $revision = $this->pedido(['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado', 'pagado_en' => now()->subDays(40)])->pedidoWeb;
         $viejo = $this->pedido(['estado' => EstadoPedidoWeb::Facturando])->pedidoWeb;
         $viejo->forceFill(['updated_at' => now()->subMinutes(31)])->save();
         $reciente = $this->pedido(['estado' => EstadoPedidoWeb::Facturando])->pedidoWeb;
         $reciente->forceFill(['updated_at' => now()->subMinutes(30)])->save();
-        $importado = $this->pedido(['estado' => EstadoPedidoWeb::Importado])->pedidoWeb;
+        $importado = $this->pedido(['estado' => EstadoPedidoWeb::Importado, 'pagado_en' => now()->subDays(30)])->pedidoWeb;
         $facturado = $this->pedido()->pedidoWeb;
+        $antiguo = $this->pedido(['pagado_en' => now()->subDays(31)])->pedidoWeb;
         $this->oficina();
+        // Arriba lo que requiere atención; debajo los de los últimos 30 días, el más nuevo primero
+        // y sin repetir los de arriba. Antes la lista quedaba vacía cuando todo iba bien.
         $this->get(route('facturacion.pedidos-web.index'))->assertOk()
-            ->assertViewHas('pedidos', function ($lista) use ($revision, $viejo) {
+            ->assertViewHas('atencion', function ($lista) use ($revision, $viejo) {
                 $this->assertEquals([$revision->id, $viejo->id], $lista->pluck('id')->all());
 
                 return true;
             })
-            ->assertDontSee($reciente->codigo)->assertDontSee($importado->codigo)->assertDontSee($facturado->codigo)
+            ->assertViewHas('pedidos', function ($lista) use ($facturado, $reciente, $importado) {
+                $this->assertEquals([$facturado->id, $reciente->id, $importado->id], $lista->pluck('id')->all());
+
+                return true;
+            })
+            ->assertSeeInOrder(['Requieren atención', $revision->codigo, $viejo->codigo, 'Últimos 30 días', $facturado->codigo, $reciente->codigo, $importado->codigo])
+            ->assertDontSee($antiguo->codigo)
             ->assertSee('Motivo inventado')->assertSee('Compradora Inventada')->assertSee('16/11/2026 09:00')
             ->assertSee('$987.65')->assertDontSee('telefono-secreto')->assertDontSee('direccion-secreta');
         foreach (EstadoPedidoWeb::cases() as $estado) {
             $this->get(route('facturacion.pedidos-web.index', ['estado' => $estado->value]))
-                ->assertOk()->assertViewHas('pedidos', fn ($lista) => $lista->count() > 0 && $lista->every(fn ($p) => $p->estado === $estado));
+                ->assertOk()->assertViewHas('atencion', fn ($a) => $a === null)
+                ->assertDontSee('Requieren atención')->assertDontSee('Últimos 30 días')
+                ->assertViewHas('pedidos', fn ($lista) => $lista->count() > 0 && $lista->every(fn ($p) => $p->estado === $estado));
         }
         $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()
-            ->assertViewHas('pedidos', fn ($lista) => $lista->total() === 5);
+            ->assertViewHas('pedidos', fn ($lista) => $lista->total() === 6);
+    }
+
+    public function test_lista_oficina_vacia_dice_claro_que_no_hay_nada(): void
+    {
+        $this->oficina();
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()
+            ->assertSee('Nada requiere atención.')
+            ->assertSee('No entró ningún pedido de la página en los últimos 30 días.')
+            ->assertDontSee('Nada coincide con estos filtros.');
+        $this->get(route('facturacion.pedidos-web.index', ['estado' => 'todos']))->assertOk()
+            ->assertSee('Todavía no entró ningún pedido de la página.')->assertDontSee('Nada coincide con estos filtros.');
+
+        $hoy = $this->pedido()->pedidoWeb; // facturado de hoy
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()
+            ->assertSee('Nada requiere atención.')->assertDontSee('No entró ningún pedido');
+        $this->get(route('facturacion.pedidos-web.index', ['estado' => 'para_revisar']))->assertOk()
+            ->assertSee('Nada coincide con estos filtros.')->assertSee('Limpiar filtros')
+            ->assertDontSee('Nada requiere atención.');
+        // Una página que no existe no dice que no entró ningún pedido.
+        $this->get(route('facturacion.pedidos-web.index', ['page' => 3]))->assertOk()
+            ->assertSee('Ningún otro pedido en los últimos 30 días.')->assertDontSee('No entró ningún pedido');
+
+        // El único pedido de hoy quedó Para revisar: está arriba, y abajo no se contradice.
+        $hoy->update(['estado' => EstadoPedidoWeb::ParaRevisar, 'motivo_revision' => 'Motivo inventado']);
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()
+            ->assertSeeInOrder(['Requieren atención', $hoy->codigo, 'Últimos 30 días', 'Ningún otro pedido en los últimos 30 días.'])
+            ->assertDontSee('No entró ningún pedido')->assertDontSee('Nada requiere atención.');
     }
 
     public function test_reintentar_solo_revision_sin_factura_y_auditoria_sin_datos_personales(): void

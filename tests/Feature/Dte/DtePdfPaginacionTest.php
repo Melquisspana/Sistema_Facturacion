@@ -396,8 +396,11 @@ class DtePdfPaginacionTest extends TestCase
         $esCcfONc = in_array($tipo, [TipoDte::CreditoFiscal, TipoDte::NotaCredito], true);
 
         $etiquetas = $esCcfONc
-            ? ['Subtotal gravado', 'Descuento global', 'Retención IVA 1%', 'Valor en letras']
+            ? ['Subtotal gravado', 'Retención IVA 1%', 'Valor en letras']
             : ['Sumas de ventas', 'Sub-total', 'Monto total de la operación', 'Valor en letras'];
+        // «Descuento global» solo sale cuando hay descuento (sin él ya no se imprime en
+        // cero, ver PdfDelClienteTest); estos documentos no lo tienen.
+        $this->assertSame(0.0, (float) $dte->total_descuento);
         $etiquetas[] = $tipo === TipoDte::FacturaExportacion ? 'Ventas exportación' : 'Ventas gravadas';
         $etiquetas[] = $tipo === TipoDte::NotaCredito ? 'Total a acreditar' : 'Total a pagar';
         foreach ($etiquetas as $etiqueta) {

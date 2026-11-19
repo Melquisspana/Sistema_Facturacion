@@ -19,12 +19,18 @@ use Endroid\QrCode\Writer\PngWriter;
  */
 class DtePdfService
 {
-    /** Objeto PDF listo para stream()/download()/output(). */
-    public function pdf(Dte $dte): \Barryvdh\DomPDF\PDF
+    /**
+     * Objeto PDF listo para stream()/download()/output().
+     *
+     * `$interno` agrega el «Estado técnico (interno)»: solo para la copia de la oficina
+     * (ver, imprimir y descargar desde Facturación). Todo lo que sale hacia afuera —el
+     * correo, Rutas, la fábrica, el paquete de contabilidad— usa el valor por defecto.
+     */
+    public function pdf(Dte $dte, bool $interno = false): \Barryvdh\DomPDF\PDF
     {
         // Subconjunto de fuentes: sin esto Dompdf incrusta las DejaVu completas (~1,5 MB)
         // en CADA PDF. El paquete mensual de contabilidad llegó a 240 MB por eso.
-        return Pdf::loadView('facturacion.pdf', $this->datosVista($dte))
+        return Pdf::loadView('facturacion.pdf', $this->datosVista($dte, $interno))
             ->setPaper('letter')
             ->setOption('enable_font_subsetting', true);
     }
@@ -38,9 +44,9 @@ class DtePdfService
      * distinto de variables, así que podía pasar en verde con un emisor o un receptor que
      * el PDF real nunca habría recibido.
      */
-    public function html(Dte $dte): string
+    public function html(Dte $dte, bool $interno = false): string
     {
-        return view('facturacion.pdf', $this->datosVista($dte))->render();
+        return view('facturacion.pdf', $this->datosVista($dte, $interno))->render();
     }
 
     /**
@@ -49,7 +55,7 @@ class DtePdfService
      *
      * @return array<string, mixed>
      */
-    private function datosVista(Dte $dte): array
+    private function datosVista(Dte $dte, bool $interno): array
     {
         $dte->loadMissing([
             'cliente.departamento', 'cliente.municipio', 'cliente.distrito', 'cliente.actividadEconomica', 'cliente.pais',
@@ -73,6 +79,7 @@ class DtePdfService
             'qrDataUri' => $this->qrOficial($dte), // solo si hay sello (datos oficiales)
             'datosExportacion' => DatosExportacionPresentacion::resolver($dte),
             'datosReceptor' => ReceptorExportacionPresentacion::resolver($dte),
+            'interno' => $interno,
         ];
     }
 

@@ -511,7 +511,8 @@
                 <tr>
                     <td class="ci">{{ $linea->numero_linea }}</td>
                     <td>
-                        {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras. --}}
+                        {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras.
+                             Decisión de Melqui (19/11/2026): el número de barras se queda; en Calleja lo comparan con la orden de compra. --}}
                         @if ($cb !== '')
                             <span class="cod">{{ $cb }}</span>
                         @elseif ($cc !== '')
@@ -593,7 +594,9 @@
                         @endif
                         {{-- Descuentos. El % del cliente se muestra en la etiqueta para que sea claro. --}}
                         @php($pctDesc = rtrim(rtrim(number_format((float) $dte->descuento_porcentaje_aplicado, 2), '0'), '.'))
-                        <tr class="minus"><td class="k">Descuento global @if((float)$dte->descuento_porcentaje_aplicado > 0)({{ $pctDesc }}%)@endif</td><td class="v">-${{ number_format($descGlobal, 2) }}</td></tr>
+                        @if ($descGlobal > 0)
+                            <tr class="minus"><td class="k">Descuento global @if((float)$dte->descuento_porcentaje_aplicado > 0)({{ $pctDesc }}%)@endif</td><td class="v">-${{ number_format($descGlobal, 2) }}</td></tr>
+                        @endif
                         @if ($descItems > 0)
                             <tr class="minus"><td class="k">Descuento por ítem y global</td><td class="v">-${{ number_format($descItemYGlobal, 2) }}</td></tr>
                         @endif
@@ -636,7 +639,10 @@
         </tr>
     </table>
 
-    {{-- ESTADO TÉCNICO (una línea) --}}
+    {{-- ESTADO TÉCNICO (una línea). Solo en la copia de la oficina (Facturación: ver,
+         imprimir y descargar); el PDF del cliente —correo, rutas, fábrica, contabilidad—
+         no lo lleva. --}}
+    @if ($interno ?? false)
     <div class="tech">
         <span class="th">Estado técnico (interno):</span>
         JSON generado: <strong>{{ $jsonGenerado ? 'sí' : 'no' }}</strong> ·
@@ -645,6 +651,7 @@
         Sello de recepción: <strong>{{ $tieneSello ? 'sí' : 'no' }}</strong> ·
         Estado Hacienda: <strong>{{ $estadoHacienda }}</strong>
     </div>
+    @endif
 
     <div class="pie">
         Representación gráfica generada el {{ \App\Support\HoraNegocio::ahora()->format('d/m/Y H:i') }}.
