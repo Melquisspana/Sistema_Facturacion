@@ -4,8 +4,10 @@ namespace App\Models;
 
 use App\Enums\AmbienteHacienda;
 use App\Enums\TipoDte;
+use App\Support\EjercicioControl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -93,5 +95,29 @@ class Correlativo extends Model
     public function puntoVenta(): BelongsTo
     {
         return $this->belongsTo(PuntoVenta::class);
+    }
+
+    /** Documentos que salieron con este correlativo (lo toman al generarse). */
+    public function dtes(): HasMany
+    {
+        return $this->hasMany(Dte::class);
+    }
+
+    /**
+     * El número más alto que ya usó un documento de este correlativo, en el ejercicio en
+     * que va la numeración: desde 2027 vuelve a 1 cada año y lo anterior cuenta como 2026,
+     * igual que al emitir. 0 si todavía no salió ninguno. Bajar `ultimo_numero` por debajo
+     * de este número haría que el siguiente documento repita uno ya usado.
+     */
+    public function mayorNumeroEmitido(): int
+    {
+        $emitidos = fn () => $this->dtes()->whereNotNull('numero_interno');
+        $ejercicio = (int) $emitidos()->max('ejercicio');
+
+        return (int) $emitidos()
+            ->when($ejercicio > EjercicioControl::ANTERIOR_AL_REINICIO, fn ($q) => $q->where('ejercicio', $ejercicio))
+            ->pluck('numero_interno')
+            ->map(fn (string $numero) => preg_match('/(\d{1,15})$/', $numero, $m) ? (int) $m[1] : 0)
+            ->max();
     }
 }

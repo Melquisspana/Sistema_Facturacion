@@ -54,6 +54,12 @@ class CorrelativoController extends Controller
 
     public function destroy(Correlativo $correlativo): RedirectResponse
     {
+        // Borrado definitivo: los documentos quedarían sin correlativo y uno nuevo desde
+        // cero repetiría sus números al emitir.
+        if ($correlativo->dtes()->exists()) {
+            return back()->with('error', 'Este correlativo ya tiene facturas emitidas. Desactivalo en su lugar.');
+        }
+
         $correlativo->delete();
 
         return redirect()
