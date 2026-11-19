@@ -59,6 +59,11 @@ class CorrelativoController extends Controller
         if ($correlativo->dtes()->exists()) {
             return back()->with('error', 'Este correlativo ya tiene facturas emitidas. Desactivalo en su lugar.');
         }
+        // Sin documentos, un número mayor que cero es lo que se numeró fuera del sistema (por
+        // ejemplo, alineado a Conta Portable): solo queda acá, y Hacienda ya tiene esos números.
+        if ($correlativo->ultimo_numero > 0) {
+            return back()->with('error', "Este correlativo ya va en el número {$correlativo->ultimo_numero}: esos números ya se usaron, aunque no estén en el sistema. Desactivalo en su lugar.");
+        }
 
         $correlativo->delete();
 

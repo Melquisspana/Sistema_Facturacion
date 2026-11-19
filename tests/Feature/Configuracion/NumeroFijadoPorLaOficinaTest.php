@@ -145,6 +145,60 @@ class NumeroFijadoPorLaOficinaTest extends TestCase
         $this->assertSame(0, $this->reinicios($caja));
     }
 
+    // ---------------------------------------------------------------------
+    // Números usados fuera del sistema (correlativo sin documentos)
+    // ---------------------------------------------------------------------
+
+    public function test_un_correlativo_que_ya_numero_fuera_del_sistema_no_se_borra(): void
+    {
+        $this->en('2026-11-10 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 500);
+
+        $this->actingAs($this->admin())
+            ->from(route('configuracion.correlativos.index'))
+            ->delete(route('configuracion.correlativos.destroy', $caja))
+            ->assertRedirect(route('configuracion.correlativos.index'))
+            ->assertSessionHas('error', 'Este correlativo ya va en el número 500: esos números ya se usaron, aunque no estén en el sistema. Desactivalo en su lugar.');
+
+        $this->assertDatabaseHas('correlativos', ['id' => $caja->id, 'ultimo_numero' => 500]);
+    }
+
+    /**
+     * La caja se alineó a lo que numeró por fuera (500) y nunca emitió en el sistema. Si se
+     * desactiva, como pide el aviso, y numera el correlativo general, sigue después del 500.
+     */
+    public function test_el_correlativo_general_no_repite_lo_que_la_caja_numero_fuera_del_sistema(): void
+    {
+        $this->en('2026-11-10 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 500);
+        $this->desactivar($caja);
+        $general = $this->crearCorrelativo(null, 0);
+
+        $this->assertSame($this->numero(501), $this->emitir()->numero_control);
+        $this->assertSame(501, $general->refresh()->ultimo_numero);
+
+        $salto = Activity::query()
+            ->where('log_name', 'configuracion')
+            ->where('subject_type', $general->getMorphClass())
+            ->where('subject_id', $general->id)
+            ->where('description', 'like', 'adelantó el correlativo%')
+            ->sole();
+        $this->assertSame(500, $salto->properties['mayor_usado_en_serie']);
+    }
+
+    /** Desde 2027 la numeración vuelve a 1: lo que la caja numeró el año anterior ya no cuenta. */
+    public function test_lo_que_la_caja_numero_otro_anio_no_cuenta_para_el_general(): void
+    {
+        $this->en('2026-11-10 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 500);
+        $this->desactivar($caja);
+
+        $this->en('2027-01-05 08:00:00');
+        $this->crearCorrelativo(null, 0);
+
+        $this->assertSame($this->numero(1), $this->emitir()->numero_control);
+    }
+
     /** Lo que se fijó en 2026 es de 2026: el primer documento de 2027 vuelve a 1. */
     public function test_un_numero_fijado_en_2026_sin_documentos_vuelve_a_uno_en_2027(): void
     {

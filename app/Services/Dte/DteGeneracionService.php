@@ -172,7 +172,7 @@ class DteGeneracionService
             // y punto de venta), aunque lo haya usado otro correlativo: uno sin punto de venta
             // creado desde cero, o el de la caja que vuelve después de que otro numeró por él.
             $base = $correlativo->ultimo_numero;
-            $usado = $this->mayorUsadoEnSerie($dte);
+            $usado = $this->mayorUsadoEnSerie($dte, $correlativo);
             $numero = max($base, $usado) + 1;
 
             // Lo que el motor mueve por su cuenta queda en la auditoría de Configuración con su
@@ -443,13 +443,29 @@ class DteGeneracionService
      * El número más alto ya usado en la serie del documento (mismo prefijo de número interno),
      * borrados incluidos, porque siguen ocupando el número. Con el correlativo a 15 cifras
      * y relleno de ceros, el mayor texto es el mayor número. 0 si la serie está vacía.
+     *
+     * Lo que la caja numeró fuera del sistema (por ejemplo, alineado a Conta Portable) solo
+     * queda en el último número de su correlativo. Si numera otro, como el general, tampoco
+     * repite esos números, mientras sean del mismo ejercicio.
      */
-    private function mayorUsadoEnSerie(Dte $dte): int
+    private function mayorUsadoEnSerie(Dte $dte, Correlativo $correlativo): int
     {
         $prefijo = substr($this->formatearNumeroInterno($dte, 0), 0, -15);
-        $mayor = Dte::withTrashed()->where('numero_interno', 'like', $prefijo.'%')->max('numero_interno');
+        $mayor = (int) substr((string) Dte::withTrashed()->where('numero_interno', 'like', $prefijo.'%')->max('numero_interno'), -15);
 
-        return (int) substr((string) $mayor, -15);
+        if ($dte->punto_venta_id !== null && (int) $correlativo->punto_venta_id !== (int) $dte->punto_venta_id) {
+            $deLaCaja = Correlativo::query()
+                ->where('tipo_dte', $dte->tipo_dte->value)
+                ->where('establecimiento_id', $dte->establecimiento_id)
+                ->where('punto_venta_id', $dte->punto_venta_id)
+                ->where('ambiente', $dte->ambiente->value)
+                ->first();
+            if ($deLaCaja !== null && $this->ejercicioDelUltimoNumero($deLaCaja, (int) $dte->ejercicio) === (int) $dte->ejercicio) {
+                $mayor = max($mayor, $deLaCaja->ultimo_numero);
+            }
+        }
+
+        return $mayor;
     }
 
     /**
