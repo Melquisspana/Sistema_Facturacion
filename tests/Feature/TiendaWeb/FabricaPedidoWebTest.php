@@ -400,6 +400,21 @@ class FabricaPedidoWebTest extends TestCase
             ->assertViewHas('pedidos', fn ($lista) => $lista->total() === 6);
     }
 
+    public function test_lista_oficina_sube_el_pagado_sin_factura_pasada_media_hora(): void
+    {
+        $atascado = $this->pedido(['estado' => EstadoPedidoWeb::Importado])->pedidoWeb;
+        $atascado->forceFill(['updated_at' => now()->subMinutes(31)])->save();
+        $recien = $this->pedido(['estado' => EstadoPedidoWeb::Importado])->pedidoWeb;
+        $recien->forceFill(['updated_at' => now()->subMinutes(29)])->save();
+        $this->oficina();
+
+        $this->get(route('facturacion.pedidos-web.index'))->assertOk()
+            ->assertViewHas('atencion', fn ($lista) => $lista->pluck('id')->all() === [$atascado->id])
+            ->assertViewHas('pedidos', fn ($lista) => $lista->pluck('id')->all() === [$recien->id]);
+        $this->get(route('facturacion.pedidos-web.index', ['estado' => 'importado']))->assertOk()
+            ->assertViewHas('atencion', fn ($a) => $a === null)->assertDontSee('Requieren atención');
+    }
+
     public function test_lista_oficina_vacia_dice_claro_que_no_hay_nada(): void
     {
         $this->oficina();
