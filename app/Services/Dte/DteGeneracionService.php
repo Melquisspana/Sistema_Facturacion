@@ -166,14 +166,9 @@ class DteGeneracionService
                 throw new GeneracionException('La fecha de hoy según el servidor ('.$ahora->format('d/m/Y').') es del ejercicio '.$ejercicio.', pero la numeración de este tipo de documento ya pasó al ejercicio '.$ultimo.'. Revisá la fecha y la hora del servidor antes de generar.');
             }
 
-            if ($ultimo !== null && $ejercicio > $ultimo) {
-                activity()->performedOn($correlativo)
-                    ->withProperties([
-                        'ejercicio_anterior' => (int) $ultimo,
-                        'ejercicio' => $ejercicio,
-                        'ultimo_numero_anterior' => $correlativo->ultimo_numero,
-                    ])
-                    ->log('reinició el correlativo por cambio de ejercicio de '.$ultimo.' a '.$ejercicio);
+            $reinicio = $ultimo !== null && $ejercicio > $ultimo;
+            $anterior = $correlativo->ultimo_numero;
+            if ($reinicio) {
                 $correlativo->ultimo_numero = 0;
             }
 
@@ -184,19 +179,40 @@ class DteGeneracionService
             // Nunca un número que ya usó esta serie (tipo, ambiente, ejercicio, establecimiento
             // y punto de venta), aunque lo haya usado otro correlativo: uno sin punto de venta
             // creado desde cero, o el de la caja que vuelve después de que otro numeró por él.
-            // El salto queda en la auditoría con su motivo: no lo movió nadie a mano.
+            $base = $correlativo->ultimo_numero;
             $usado = $this->mayorUsadoEnSerie($dte);
-            if ($usado > $correlativo->ultimo_numero) {
-                activity()->performedOn($correlativo)
+            $numero = max($base, $usado) + 1;
+
+            // Lo que el motor mueve por su cuenta queda en la auditoría de Configuración con su
+            // motivo, y el guardado no suma un «modificó el correlativo», que es para lo que
+            // alguien cambió a mano. El avance normal, de a uno, sigue anotándose como consumo.
+            $explicado = false;
+            if ($reinicio) {
+                activity('configuracion')->performedOn($correlativo)
                     ->withProperties([
-                        'ultimo_numero_anterior' => $correlativo->ultimo_numero,
-                        'mayor_usado_en_serie' => $usado,
+                        'ejercicio_anterior' => (int) $ultimo,
+                        'ejercicio' => $ejercicio,
+                        'ultimo_numero_anterior' => $anterior,
+                        'ultimo_numero' => $numero,
                     ])
-                    ->log('adelantó el correlativo de '.$correlativo->ultimo_numero.' a '.$usado.': esos números ya los había usado otro correlativo en la misma serie');
+                    ->log('reinició el correlativo por cambio de ejercicio de '.$ultimo.' a '.$ejercicio);
+                $explicado = true;
             }
-            $numero = max($correlativo->ultimo_numero, $usado) + 1;
+            if ($usado > $base) {
+                activity('configuracion')->performedOn($correlativo)
+                    ->withProperties([
+                        'ultimo_numero_anterior' => $base,
+                        'mayor_usado_en_serie' => $usado,
+                        'ultimo_numero' => $numero,
+                    ])
+                    ->log('adelantó el correlativo de '.$base.' a '.$numero.': este documento sale con el '.$numero.' porque hasta el '.$usado.' ya se había usado en esta caja');
+                $explicado = true;
+            }
+
             $correlativo->ultimo_numero = $numero;
-            $correlativo->save();
+            $explicado
+                ? activity()->withoutLogs(fn () => $correlativo->save())
+                : $correlativo->save();
 
             $dte->numero_interno = $this->formatearNumeroInterno($dte, $numero);
 

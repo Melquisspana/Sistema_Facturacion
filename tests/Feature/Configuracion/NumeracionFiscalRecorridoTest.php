@@ -269,15 +269,31 @@ class NumeracionFiscalRecorridoTest extends TestCase
             ->assertSessionHasNoErrors();
         $this->assertSame($this->numero('M001P001', 5), $this->emitir($this->estab, $this->pv)->numero_control);
 
-        // Los dos saltos quedan en la auditoría con su motivo.
-        foreach ([[$general, 0, 3], [$propio, 3, 4]] as [$correlativo, $antes, $usado]) {
+        // Los dos saltos quedan en la auditoría de Configuración con su motivo y con el número
+        // en que queda el correlativo, y no aparecen además como una edición a mano de quien
+        // facturó: el «modificó el correlativo» es solo para lo que alguien cambió.
+        foreach ([[$general, 0, 3, 4], [$propio, 3, 4, 5]] as [$correlativo, $antes, $usado, $queda]) {
             $registro = Activity::query()
+                ->where('log_name', 'configuracion')
                 ->where('subject_type', $correlativo->getMorphClass())
                 ->where('subject_id', $correlativo->id)
                 ->where('description', 'like', 'adelantó el correlativo%')
                 ->sole();
+            $this->assertSame(
+                "adelantó el correlativo de {$antes} a {$queda}: este documento sale con el {$queda} porque hasta el {$usado} ya se había usado en esta caja",
+                $registro->description,
+            );
             $this->assertSame($antes, $registro->properties['ultimo_numero_anterior']);
             $this->assertSame($usado, $registro->properties['mayor_usado_en_serie']);
+            $this->assertSame($queda, $registro->properties['ultimo_numero']);
+
+            $numeroAMano = Activity::query()
+                ->where('subject_type', $correlativo->getMorphClass())
+                ->where('subject_id', $correlativo->id)
+                ->where('description', 'modificó el correlativo')
+                ->get()
+                ->filter(fn (Activity $a) => isset($a->properties['attributes']['ultimo_numero']));
+            $this->assertCount(0, $numeroAMano);
         }
     }
 
