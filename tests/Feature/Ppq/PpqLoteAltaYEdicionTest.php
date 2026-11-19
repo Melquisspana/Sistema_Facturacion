@@ -258,6 +258,32 @@ class PpqLoteAltaYEdicionTest extends TestCase
         $this->assertNotSame('Reabierto', $lote->referencia);
     }
 
+    /**
+     * La ficha esconde «Eliminar» en un lote presentado o pagado, pero el servidor lo borraba
+     * igual con un DELETE hecho a mano: sus CCF presentados volvían a «por presentar» y podían
+     * presentarse otra vez en otro PPQ.
+     */
+    public function test_un_ppq_presentado_o_pagado_no_se_elimina_con_un_delete_hecho_a_mano(): void
+    {
+        $usuario = $this->usuario();
+        [$lote, $doc] = $this->lotePresentado($usuario);
+
+        $this->actingAs($usuario)->from(route('ppq.lotes.show', $lote))->delete(route('ppq.lotes.destroy', $lote))
+            ->assertRedirect(route('ppq.lotes.show', $lote))
+            ->assertSessionHas('error', 'Este PPQ está Presentado y ya no se elimina.');
+
+        $this->assertNotSoftDeleted($lote);
+        $this->assertSame(1, $lote->items()->count());
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->refresh()->presentacion_estado);
+        $this->assertSame(0, $doc->eventos()->where('referencia_linea', "ppq-{$lote->id}-borrado")->count());
+
+        $lote->update(['estado' => EstadoPpq::Pagado]);
+        $this->actingAs($usuario)->from(route('ppq.lotes.show', $lote))->delete(route('ppq.lotes.destroy', $lote))
+            ->assertSessionHas('error', 'Este PPQ está Pagado y ya no se elimina.');
+        $this->assertNotSoftDeleted($lote);
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->refresh()->presentacion_estado);
+    }
+
     public function test_quien_solo_ve_ppq_no_edita_y_no_cambia_nada(): void
     {
         $lote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);

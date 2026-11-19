@@ -409,14 +409,27 @@ class PpqLoteController extends Controller
         return redirect()->route('ppq.lotes.show', $lote)->with('status', $mensaje);
     }
 
+    /**
+     * Solo se elimina lo que la ficha deja eliminar: un lote que se arma. Presentado, pagado u
+     * observado no, aunque llegue el pedido a mano (sus CCF presentados volvían a «por
+     * presentar»). Se revisa con el lote bloqueado, como el «quitar».
+     */
     public function destroy(Request $request, PpqLote $lote, LiberarCcfDeLoteBorrado $liberador): RedirectResponse
     {
         $resultado = DB::transaction(function () use ($lote, $liberador, $request) {
-            $resultado = $liberador->liberar($lote, $request->user());
-            $lote->delete();
+            $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            if (! $actual->esEditable()) {
+                return null;
+            }
+            $resultado = $liberador->liberar($actual, $request->user());
+            $actual->delete();
 
             return $resultado;
         });
+        if ($resultado === null) {
+            return redirect()->route('ppq.lotes.show', $lote)
+                ->with('error', 'Este PPQ está '.$lote->refresh()->estado->label().' y ya no se elimina.');
+        }
         $mensaje = 'Lote PPQ eliminado. '.$resultado['liberados']->count().' CCF volvieron a por presentar.';
         if ($resultado['conservados']->isNotEmpty()) {
             $mensaje .= ' No se tocaron '.$resultado['conservados']->count().': '
