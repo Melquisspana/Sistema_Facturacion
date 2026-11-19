@@ -113,6 +113,24 @@ class AuditoriaAjustes
     }
 
     /**
+     * Se conectó una integración externa: qué cuenta quedó con acceso y quién la autorizó.
+     * Al reconectar, la fila de la cuenta se pisa; esto es lo que queda de la anterior.
+     * Nunca los tokens, como al desconectar.
+     */
+    public function integracionConectada(string $integracion, string $cuenta): void
+    {
+        $this->escribir(
+            'conectó '.$integracion.' ('.$cuenta.')',
+            array_filter([
+                'accion' => 'integracion_conectada',
+                'integracion' => $integracion,
+                'cuenta' => $cuenta,
+                'ip' => $this->ip(),
+            ], static fn ($v) => $v !== null),
+        );
+    }
+
+    /**
      * Se desconectó una integración externa.
      *
      * Queda la CUENTA, que es lo que hace falta para saber qué dejó de funcionar y
