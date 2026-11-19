@@ -19,7 +19,8 @@ use Illuminate\Support\Carbon;
  * - Solo importa filas con precio numérico; las demás se ignoran.
  * - Una fila con «activo» en No (el archivo de «Exportar» trae también los inactivos) se
  *   ignora: caía sobre el precio vigente y le ponía el precio y la fecha del inactivo.
- * - El precio general del producto solo se fija al CREARLO (no se pisa si ya existe).
+ * - El precio general del producto, su tipo, impuesto, inventario y si está activo solo se
+ *   fijan al CREARLO (no se pisan si ya existe).
  * Idempotente.
  */
 class ImportadorProductosPrecios
@@ -90,15 +91,18 @@ class ImportadorProductosPrecios
             $producto->codigo = $codigo !== '' ? $codigo : ($producto->codigo ?? $barra);
             $producto->nombre = $descripcion !== '' ? $descripcion : ($producto->nombre ?? $codigo);
             $producto->codigo_barra = $barra ?: $producto->codigo_barra;
-            $producto->tipo_producto = TipoProducto::Bien->value;
-            $producto->tipo_impuesto = TipoImpuesto::Gravado->value;
             $producto->unidad_medida_id = $producto->unidad_medida_id ?? $unidadId;
-            $producto->maneja_inventario = false;
-            $producto->activo = true;
             if (! empty($registro['empaque'])) {
                 $producto->observaciones = 'Empaque: '.$registro['empaque'];
             }
+            // El archivo es de precios: no dice tipo, impuesto, inventario ni si el producto
+            // está activo. Esos valores van solo al crearlo; a uno que ya existe se le dejan
+            // los suyos (un exento no pasa a gravado, un inactivo no vuelve al catálogo).
             if ($creado) {
+                $producto->tipo_producto = TipoProducto::Bien->value;
+                $producto->tipo_impuesto = TipoImpuesto::Gravado->value;
+                $producto->maneja_inventario = false;
+                $producto->activo = true;
                 $producto->precio_unitario = $precio; // general solo al crear
             }
             $producto->save();
