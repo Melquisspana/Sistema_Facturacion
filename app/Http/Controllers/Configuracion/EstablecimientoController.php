@@ -54,7 +54,7 @@ class EstablecimientoController extends Controller
         // Borrado suave. Con documentos tampoco: su número de control saldría con códigos
         // de relleno al no encontrar el establecimiento.
         if ($establecimiento->puntosVenta()->exists() || $establecimiento->correlativos()->exists() || $establecimiento->tieneDocumentos()) {
-            return back()->with('error', 'No se puede eliminar: tiene puntos de venta, correlativos o facturas. Desactivalo en su lugar.');
+            return back()->with('error', 'No se puede eliminar: tiene puntos de venta, correlativos, facturas o borradores. Desactivalo en su lugar.');
         }
 
         $establecimiento->delete();

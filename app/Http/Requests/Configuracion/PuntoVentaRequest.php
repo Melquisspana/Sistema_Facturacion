@@ -35,8 +35,9 @@ class PuntoVentaRequest extends FormRequest
 
     /**
      * El código va en el número de control de cada documento, y los correlativos buscan
-     * el punto de venta junto con su establecimiento: con documentos no cambia el código,
-     * y con correlativos o documentos no se pasa a otro establecimiento.
+     * el punto de venta junto con su establecimiento: con documentos numerados no cambia el
+     * código, y con correlativos o cualquier documento (borradores incluidos) no se pasa a
+     * otro establecimiento.
      */
     public function withValidator(Validator $validator): void
     {
@@ -46,13 +47,13 @@ class PuntoVentaRequest extends FormRequest
         }
 
         $validator->after(function ($validator) use ($puntoVenta) {
-            if ((string) $this->input('codigo') !== (string) $puntoVenta->codigo && $puntoVenta->tieneDocumentos()) {
+            if ((string) $this->input('codigo') !== (string) $puntoVenta->codigo && $puntoVenta->tieneDocumentos(soloConNumero: true)) {
                 $validator->errors()->add('codigo', 'Este punto de venta ya tiene facturas: el código no se puede cambiar, porque va en el número de control de cada una.');
             }
 
             if ((string) $this->input('establecimiento_id') !== (string) $puntoVenta->establecimiento_id
                 && ($puntoVenta->correlativos()->exists() || $puntoVenta->tieneDocumentos())) {
-                $validator->errors()->add('establecimiento_id', 'Este punto de venta ya tiene correlativos o facturas: no se puede pasar a otro establecimiento.');
+                $validator->errors()->add('establecimiento_id', 'Este punto de venta ya tiene correlativos, facturas o borradores: no se puede pasar a otro establecimiento.');
             }
         });
     }

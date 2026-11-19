@@ -89,12 +89,17 @@ class EstablecimientoRequest extends FormRequest
         });
 
         // El código va en el número de control de cada documento, y anular uno viejo usa
-        // el código de hoy: con documentos no se cambia.
+        // el código de hoy: con documentos numerados no se cambia. Y con cualquier documento,
+        // borradores incluidos, no se pasa a otra empresa: cada uno es del emisor que lo hizo.
         $establecimiento = $this->route('establecimiento');
         if ($establecimiento instanceof Establecimiento) {
             $validator->after(function ($validator) use ($establecimiento) {
-                if ((string) $this->input('codigo') !== (string) $establecimiento->codigo && $establecimiento->tieneDocumentos()) {
+                if ((string) $this->input('codigo') !== (string) $establecimiento->codigo && $establecimiento->tieneDocumentos(soloConNumero: true)) {
                     $validator->errors()->add('codigo', 'Este establecimiento ya tiene facturas: el código no se puede cambiar, porque va en el número de control de cada una.');
+                }
+
+                if ((string) $this->input('empresa_id') !== (string) $establecimiento->empresa_id && $establecimiento->tieneDocumentos()) {
+                    $validator->errors()->add('empresa_id', 'Este establecimiento ya tiene facturas o borradores: no se puede pasar a otra empresa.');
                 }
             });
         }

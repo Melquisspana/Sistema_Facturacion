@@ -22,7 +22,8 @@ class CorrelativoRequest extends FormRequest
 
         return [
             'tipo_dte' => ['required', 'in:'.implode(',', array_column(TipoDte::habilitados(), 'value'))],
-            'establecimiento_id' => ['required', 'exists:establecimientos,id'],
+            // Vigente: uno borrado ya no emite, y su correlativo quedaría colgando.
+            'establecimiento_id' => ['required', Rule::exists('establecimientos', 'id')->whereNull('deleted_at')],
             // Del mismo establecimiento y vigente: la emisión busca el correlativo por los
             // dos, así que uno con el punto de venta de otro no lo encontraría nunca.
             'punto_venta_id' => [
@@ -62,6 +63,7 @@ class CorrelativoRequest extends FormRequest
     {
         return [
             'tipo_dte_combo.unique' => 'Ya existe un correlativo para esa combinación de tipo de DTE, establecimiento, punto de venta y ambiente.',
+            'establecimiento_id.exists' => 'El establecimiento no existe o fue eliminado.',
             'punto_venta_id.exists' => 'El punto de venta tiene que ser del establecimiento elegido y estar vigente.',
         ];
     }

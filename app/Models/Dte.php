@@ -317,6 +317,12 @@ class Dte extends Model
             ->orWhere('tipo_nota_credito', '!=', TipoNotaCredito::ProntoPago->value));
     }
 
+    /** Scope: ya generados o emitidos, con número de control o interno. Un borrador no tiene ninguno. */
+    public function scopeConNumero(Builder $q): Builder
+    {
+        return $q->where(fn (Builder $sub) => $sub->whereNotNull('numero_control')->orWhereNotNull('numero_interno'));
+    }
+
     /** Scope: documentos NO archivados (lo que se ve en la operación diaria). */
     public function scopeNoArchivados(Builder $q): Builder
     {
