@@ -10,6 +10,7 @@ use App\Services\Alertas\Detectores\ContingenciaLotesRechazados;
 use App\Services\Alertas\Detectores\ContingenciaManualSinTerminar;
 use App\Services\Alertas\Detectores\ContingenciaPorVencer;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
+use App\Services\Alertas\Detectores\DatosQueNoCuadran;
 use App\Services\Alertas\Detectores\DocumentosFiscalesFueraDeRegla;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\EventosRecientes;
@@ -84,6 +85,7 @@ class Avisador
             EventosRecientes::tareasProgramadas(),
             app(CobrosFueraDeRegla::class),
             app(DocumentosFiscalesFueraDeRegla::class),
+            app(DatosQueNoCuadran::class),
         ];
     }
 

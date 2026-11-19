@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
-use App\Enums\TipoNotaCredito;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
@@ -14,6 +13,8 @@ use App\Models\ProductoPrecioCliente;
 use App\Models\User;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Sistema\DiagnosticoSistemaService;
+use App\Services\Sistema\IntegridadDatos;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
 
@@ -35,7 +36,7 @@ class SaludSistemaController extends Controller
 {
     private const EMAIL_ADMIN_TEMPORAL = 'admin@dulceslanegrita.test';
 
-    public function index(DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService): View
+    public function index(DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService, IntegridadDatos $integridad): View
     {
         // Acceso solo administrador (permiso sistema.salud; además del middleware de ruta).
         abort_unless(request()->user()?->can('sistema.salud'), 403);
@@ -43,7 +44,7 @@ class SaludSistemaController extends Controller
         $seguridad = $this->seguridad();
         $diagnostico = $diagnosticoService->evaluar();
         $datos = $this->datos();
-        $alertas = $this->alertas();
+        $alertas = $integridad->contar();
         $auditoria = $this->auditoriaReciente();
         // Modo de operación DTE (paralelo/respaldo/principal) + mocks activos. SOLO
         // LECTURA: reutiliza evaluarCandados(), no transmite, no muestra secretos.
@@ -145,63 +146,7 @@ class SaludSistemaController extends Controller
         ];
     }
 
-    /** @return array<int, array{label: string, count: int, estado: string}> */
-    private function alertas(): array
-    {
-        // Productos activos sin precio aplicable (general <=0 y sin especial activo).
-        $conEspecial = ProductoPrecioCliente::where('activo', true)->pluck('producto_id')->unique();
-        $sinPrecio = Producto::where('activo', true)
-            ->where(fn ($q) => $q->whereNull('precio_unitario')->orWhere('precio_unitario', '<=', 0))
-            ->whereNotIn('id', $conEspecial)->count();
-
-        $sinBarra = Producto::where('activo', true)
-            ->where(fn ($q) => $q->whereNull('codigo_barra')->orWhere('codigo_barra', ''))->count();
-
-        $cliDup = Cliente::whereNotNull('num_documento')
-            ->selectRaw('num_documento, count(*) c')->groupBy('num_documento')->havingRaw('count(*) > 1')->get()->count();
-
-        // Salas duplicadas por cliente + nombre normalizado (colapsar espacios).
-        $salasDup = ClienteSucursal::where('activo', true)->get(['cliente_id', 'nombre'])
-            ->groupBy(fn ($s) => $s->cliente_id.'|'.mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $s->nombre))))
-            ->filter(fn ($g) => $g->count() > 1)->count();
-
-        $preciosDup = ProductoPrecioCliente::where('activo', true)
-            ->selectRaw('producto_id, cliente_id, cliente_sucursal_id, count(*) c')
-            ->groupBy('producto_id', 'cliente_id', 'cliente_sucursal_id')->havingRaw('count(*) > 1')->get()->count();
-
-        $ccfSinNumero = Dte::where('tipo_dte', TipoDte::CreditoFiscal->value)
-            ->where('estado', EstadoDte::Generado->value)->whereNull('numero_interno')->count();
-
-        $generadosSinLineas = Dte::where('estado', EstadoDte::Generado->value)->whereDoesntHave('lineas')->count();
-
-        $borradorTotal0 = Dte::where('estado', EstadoDte::Borrador->value)->where('total_pagar', 0)->count();
-
-        $ncAutoRel = Dte::where('tipo_dte', TipoDte::NotaCredito->value)
-            ->whereColumn('dte_relacionado_id', 'id')->count();
-
-        $ncSinTipo = Dte::where('tipo_dte', TipoDte::NotaCredito->value)->whereNull('tipo_nota_credito')->count();
-
-        $ncDevolSinRel = Dte::where('tipo_dte', TipoDte::NotaCredito->value)
-            ->whereIn('tipo_nota_credito', [TipoNotaCredito::DevolucionProducto->value, TipoNotaCredito::FaltanteEntrega->value])
-            ->whereNull('dte_relacionado_id')->count();
-
-        // estado: 'critico' = rompe invariantes; 'advertencia' = a revisar.
-        return [
-            ['label' => 'Productos activos sin precio aplicable', 'count' => $sinPrecio, 'estado' => 'advertencia'],
-            ['label' => 'Productos activos sin código de barra', 'count' => $sinBarra, 'estado' => 'advertencia'],
-            ['label' => 'Clientes duplicados por número de documento', 'count' => $cliDup, 'estado' => 'critico'],
-            ['label' => 'Salas duplicadas (cliente + nombre normalizado)', 'count' => $salasDup, 'estado' => 'advertencia'],
-            ['label' => 'Precios activos duplicados (producto+cliente+sucursal)', 'count' => $preciosDup, 'estado' => 'critico'],
-            ['label' => 'CCF generados sin número interno', 'count' => $ccfSinNumero, 'estado' => 'critico'],
-            ['label' => 'Documentos generados sin líneas', 'count' => $generadosSinLineas, 'estado' => 'critico'],
-            ['label' => 'Documentos borrador con total 0', 'count' => $borradorTotal0, 'estado' => 'advertencia'],
-            ['label' => 'Notas de crédito relacionadas consigo mismas', 'count' => $ncAutoRel, 'estado' => 'critico'],
-            ['label' => 'Notas de crédito sin tipo', 'count' => $ncSinTipo, 'estado' => 'critico'],
-            ['label' => 'NC devolución/faltante sin documento relacionado', 'count' => $ncDevolSinRel, 'estado' => 'critico'],
-        ];
-    }
-
-    /** @return \Illuminate\Support\Collection<int, array<string, mixed>> */
+    /** @return Collection<int, array<string, mixed>> */
     private function auditoriaReciente()
     {
         return Activity::with('causer')->latest()->limit(10)->get()->map(fn (Activity $a) => [
