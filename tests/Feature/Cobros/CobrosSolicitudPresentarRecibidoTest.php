@@ -296,4 +296,36 @@ class CobrosSolicitudPresentarRecibidoTest extends TestCase
         $this->assertSame(EstadoSolicitudCobro::Corregida, $original->refresh()->estado);
         $this->assertNull($original->referencia_calleja);
     }
+
+    /**
+     * Un segundo acuse por correo, del mismo archivo pero con otra referencia: la solicitud
+     * conserva la primera y su fecha de pago, y el correo queda para revisar con las dos
+     * referencias, no como falla que se reintenta en cada lectura del buzón.
+     */
+    public function test_el_acuse_por_correo_con_otra_referencia_queda_para_revisar_y_no_pisa_la_primera(): void
+    {
+        [$solicitud] = $this->solicitud();
+        $solicitud->forceFill(['archivo_nombre' => '000123202609040951.xlsx'])->save();
+        $this->recibido($this->usuario(), $solicitud, ['referencia_calleja' => '31001', 'fecha_programada_pago' => '2026-09-24'])
+            ->assertSessionHas('status');
+        $recibidosAntes = $this->eventos(TipoEventoCobro::Recibido);
+
+        $resumen = app(LectorCorreosCobro::class)->procesar($this->cliente, [[
+            'id' => 'msg-prueba-2', 'threadId' => 'thr-2', 'asunto' => 'RECIBIDO (000123202609040951)',
+            'cuerpo' => "REFERENCIA #39999\nPROGRAMACION DE PAGO: 30/10/2026",
+            'remitente' => 'fiscal@cliente-ejemplo.test', 'fecha' => 'Fri, 04 Sep 2026 09:51:00 -0600',
+        ]]);
+
+        $this->assertSame(0, $resumen['fallidos'], 'No queda como falla que se reintenta en cada lectura.');
+        $this->assertSame(1, $resumen['sin_asociar']);
+        $correo = CobroCorreo::where('gmail_message_id', 'msg-prueba-2')->sole();
+        $this->assertSame('sin_asociar', $correo->estado);
+        $this->assertStringContainsString('31001', (string) $correo->motivo);
+        $this->assertStringContainsString('39999', (string) $correo->motivo);
+        $this->assertSame($solicitud->id, $correo->cobro_solicitud_id);
+        $solicitud->refresh();
+        $this->assertSame('31001', $solicitud->referencia_calleja);
+        $this->assertSame('2026-09-24', $solicitud->fecha_programada_pago->toDateString());
+        $this->assertSame($recibidosAntes, $this->eventos(TipoEventoCobro::Recibido), 'No se crean eventos Recibido nuevos.');
+    }
 }
