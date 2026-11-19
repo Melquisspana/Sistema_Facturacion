@@ -104,13 +104,16 @@ class DtePdfPreliminarTest extends TestCase
         return $dte->refresh();
     }
 
-    /** Renderiza la plantilla del PDF a HTML (rápido, para aserciones de texto). */
-    private function html(Dte $dte): string
+    /**
+     * Renderiza la plantilla del PDF a HTML (rápido, para aserciones de texto). `$interno`
+     * es la copia de la oficina, la única que lleva el «Estado técnico (interno)».
+     */
+    private function html(Dte $dte, bool $interno = false): string
     {
         $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento.empresa', 'puntoVenta', 'dteRelacionado']);
         $emisor = $dte->establecimiento?->empresa;
 
-        return view('facturacion.pdf', compact('dte', 'emisor'))->render();
+        return view('facturacion.pdf', compact('dte', 'emisor', 'interno'))->render();
     }
 
     private function ccfBorrador(): Dte
@@ -169,7 +172,7 @@ class DtePdfPreliminarTest extends TestCase
         $this->assertStringNotContainsString('0000-000000-000-0', $html);
     }
 
-    public function test_tabla_muestra_codigo_de_barras_y_encabezado(): void
+    public function test_tabla_muestra_el_codigo_del_json_y_encabezado(): void
     {
         $producto = Producto::factory()->create([
             'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value,
@@ -186,14 +189,14 @@ class DtePdfPreliminarTest extends TestCase
         $html = $this->html($dte->refresh());
 
         $this->assertStringContainsString('Código', $html);          // encabezado de columna
-        $this->assertStringContainsString('7412201700031', $html);   // código de barras visible
-        // Si hay código de barras, NO se muestra el código interno (solo un código a la vez).
-        $this->assertStringNotContainsString('CAL-777', $html);
+        // El mismo código que va en el JSON, aunque haya barras (solo un código a la vez).
+        $this->assertStringContainsString('CAL-777', $html);
+        $this->assertStringNotContainsString('7412201700031', $html);
     }
 
     public function test_codigo_interno_solo_como_respaldo_sin_barras(): void
     {
-        // Producto sin código de barras: en la tabla se muestra el código interno como respaldo.
+        // Producto sin código de barras: en la tabla se muestra igual el código del JSON.
         $producto = Producto::factory()->create([
             'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value,
             'codigo' => 'INT-555', 'codigo_barra' => null,
@@ -227,7 +230,7 @@ class DtePdfPreliminarTest extends TestCase
 
     public function test_firmado_no_aceptado_tambien_es_discreto(): void
     {
-        $html = $this->html($this->ccfFirmado());
+        $html = $this->html($this->ccfFirmado(), interno: true);
 
         // Firmado pero sin aceptar: mismo aviso discreto, sin la barra "FIRMADO LOCALMENTE".
         $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
@@ -273,7 +276,7 @@ class DtePdfPreliminarTest extends TestCase
 
     public function test_seccion_tecnica_refleja_estado_interno(): void
     {
-        $html = $this->html($this->ccfFirmado());
+        $html = $this->html($this->ccfFirmado(), interno: true);
 
         $this->assertStringContainsString('Estado técnico', $html);
         $this->assertStringContainsString('Firmado localmente: <strong>sí</strong>', $html);

@@ -82,9 +82,10 @@ class DtePdfPaginacionTest extends TestCase
     }
 
     /**
-     * Documento del tipo indicado con $n líneas. Cada producto lleva un código de barras
-     * único cuyos últimos 5 dígitos son el número de línea: es el marcador que permite
-     * saber en qué página del PDF quedó cada línea.
+     * Documento del tipo indicado con $n líneas. Cada producto lleva un código único
+     * cuyos últimos 5 dígitos son el número de línea: es el marcador que permite saber en
+     * qué página del PDF quedó cada línea. Es el código, no las barras, porque la columna
+     * «Código» imprime el mismo código que va en el JSON.
      */
     private function documento(TipoDte $tipo, int $n, ?int $lineaLarga = null): Dte
     {
@@ -128,8 +129,8 @@ class DtePdfPaginacionTest extends TestCase
 
         for ($i = 1; $i <= $n; $i++) {
             $producto = Producto::factory()->create([
-                'codigo' => sprintf('%s-%03d', $slug, $i),
-                'codigo_barra' => sprintf('%s%05d', substr(md5($slug), 0, 8), $i),
+                'codigo' => sprintf('%s%05d', substr(md5($slug), 0, 8), $i),
+                'codigo_barra' => sprintf('%s-%03d', $slug, $i),
                 'nombre' => $i === $lineaLarga ? self::DESC_LARGA : sprintf('PRODUCTO NUMERO %03d', $i),
                 'precio_unitario' => round(3.5 + ($i % 7) * 1.37, 2),
                 'tipo_impuesto' => TipoImpuesto::Gravado->value,
@@ -195,7 +196,7 @@ class DtePdfPaginacionTest extends TestCase
     /**
      * Número de página en que quedó cada línea.
      *
-     * Con productos se usa el código de barras. La NC por monto usa conceptos manuales
+     * Con productos se usa el código de la línea. La NC por monto usa conceptos manuales
      * (sin producto ni código), así que ahí el marcador es el número de línea de la
      * primera columna.
      *
@@ -204,7 +205,7 @@ class DtePdfPaginacionTest extends TestCase
      */
     private function paginaPorLinea(array $porPagina, Dte $dte): array
     {
-        $prefijo = substr((string) $dte->lineas->first()?->codigo_barra, 0, 8);
+        $prefijo = substr((string) $dte->lineas->first()?->codigo, 0, 8);
         $total = $dte->lineas->count();
         $paginas = [];
 
@@ -396,8 +397,11 @@ class DtePdfPaginacionTest extends TestCase
         $esCcfONc = in_array($tipo, [TipoDte::CreditoFiscal, TipoDte::NotaCredito], true);
 
         $etiquetas = $esCcfONc
-            ? ['Subtotal gravado', 'Descuento global', 'Retención IVA 1%', 'Valor en letras']
+            ? ['Subtotal gravado', 'Retención IVA 1%', 'Valor en letras']
             : ['Sumas de ventas', 'Sub-total', 'Monto total de la operación', 'Valor en letras'];
+        // «Descuento global» solo sale cuando hay descuento (sin él ya no se imprime en
+        // cero, ver PdfDelClienteTest); estos documentos no lo tienen.
+        $this->assertSame(0.0, (float) $dte->total_descuento);
         $etiquetas[] = $tipo === TipoDte::FacturaExportacion ? 'Ventas exportación' : 'Ventas gravadas';
         $etiquetas[] = $tipo === TipoDte::NotaCredito ? 'Total a acreditar' : 'Total a pagar';
         foreach ($etiquetas as $etiqueta) {
