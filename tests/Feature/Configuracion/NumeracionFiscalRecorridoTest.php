@@ -20,6 +20,7 @@ use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Activitylog\Models\Activity;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -260,11 +261,24 @@ class NumeracionFiscalRecorridoTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $this->assertSame($this->numero('M001P001', 4), $this->emitir($this->estab, $this->pv)->numero_control);
+        $general = Correlativo::whereNull('punto_venta_id')->firstOrFail();
+        $this->assertSame(4, $general->ultimo_numero);
 
         // La caja vuelve a su correlativo, que se había quedado en el 3.
         $this->actingAs($admin)->put(route('configuracion.correlativos.update', $propio), $this->formCorrelativo($propio, ['activo' => '1']))
             ->assertSessionHasNoErrors();
         $this->assertSame($this->numero('M001P001', 5), $this->emitir($this->estab, $this->pv)->numero_control);
+
+        // Los dos saltos quedan en la auditoría con su motivo.
+        foreach ([[$general, 0, 3], [$propio, 3, 4]] as [$correlativo, $antes, $usado]) {
+            $registro = Activity::query()
+                ->where('subject_type', $correlativo->getMorphClass())
+                ->where('subject_id', $correlativo->id)
+                ->where('description', 'like', 'adelantó el correlativo%')
+                ->sole();
+            $this->assertSame($antes, $registro->properties['ultimo_numero_anterior']);
+            $this->assertSame($usado, $registro->properties['mayor_usado_en_serie']);
+        }
     }
 
     /**

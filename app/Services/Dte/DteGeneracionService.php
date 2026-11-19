@@ -184,7 +184,17 @@ class DteGeneracionService
             // Nunca un número que ya usó esta serie (tipo, ambiente, ejercicio, establecimiento
             // y punto de venta), aunque lo haya usado otro correlativo: uno sin punto de venta
             // creado desde cero, o el de la caja que vuelve después de que otro numeró por él.
-            $numero = max($correlativo->ultimo_numero, $this->mayorUsadoEnSerie($dte)) + 1;
+            // El salto queda en la auditoría con su motivo: no lo movió nadie a mano.
+            $usado = $this->mayorUsadoEnSerie($dte);
+            if ($usado > $correlativo->ultimo_numero) {
+                activity()->performedOn($correlativo)
+                    ->withProperties([
+                        'ultimo_numero_anterior' => $correlativo->ultimo_numero,
+                        'mayor_usado_en_serie' => $usado,
+                    ])
+                    ->log('adelantó el correlativo de '.$correlativo->ultimo_numero.' a '.$usado.': esos números ya los había usado otro correlativo en la misma serie');
+            }
+            $numero = max($correlativo->ultimo_numero, $usado) + 1;
             $correlativo->ultimo_numero = $numero;
             $correlativo->save();
 
