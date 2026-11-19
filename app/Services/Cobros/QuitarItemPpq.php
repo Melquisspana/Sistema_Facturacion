@@ -7,6 +7,7 @@ use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
+use App\Models\Cobros\CobroSolicitud;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
@@ -72,6 +73,14 @@ class QuitarItemPpq
 
             $liberador = app(LiberarCcfDeLoteBorrado::class);
             $ocupadas = app(ElegibilidadPpqSeguimiento::class)->claves($lote->id);
+            // El quedan se bloquea ANTES que sus CCF, en el orden del acuse y de la presentación
+            // ({@see SolicitudCobroService::registrarRecibido()}): solicitud y después documentos.
+            // Y se decide con su estado releído bajo candado. Leído sin candado, un acuse que
+            // entraba por correo a la vez lo dejaba ver «presentado»: el CCF se soltaba y el
+            // acuse igual le dejaba su evento «recibido».
+            $idsQuedan = $liberador->documentosDe($lote, collect([$item]), bloquear: false)
+                ->pluck('cobro_solicitud_id')->filter()->unique()->values();
+            $quedanes = CobroSolicitud::whereKey($idsQuedan)->lockForUpdate()->get()->keyBy('id');
             foreach ($liberador->documentosDe($lote, collect([$item])) as $doc) {
                 if ($doc->presentacion_estado === EstadoPresentacionCobro::SinPresentar) {
                     $resultado['sin_cambio']->push($doc);
@@ -81,8 +90,9 @@ class QuitarItemPpq
                 // Vuelve lo que este lote dejó «en PPQ» y lo de un quedan presentado sin acuse
                 // que salió de este lote: el renglón ya estaba cuando se armó el quedan. Uno
                 // agregado a mano después no lo suelta (el quedan no es de este lote). Lo demás
-                // presentado queda como está.
-                $solicitud = $doc->solicitud;
+                // presentado queda como está. Si el CCF cambió de quedan entre las dos lecturas,
+                // no hay candado sobre el nuevo y queda como está.
+                $solicitud = $doc->cobro_solicitud_id !== null ? $quedanes->get($doc->cobro_solicitud_id) : null;
                 $enQuedanPresentado = $doc->presentacion_estado === EstadoPresentacionCobro::Presentada
                     && $solicitud?->estado === EstadoSolicitudCobro::Presentada;
                 $quedan = $enQuedanPresentado && $item->created_at?->lte($solicitud->created_at) ? $solicitud : null;

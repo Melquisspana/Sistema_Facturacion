@@ -20,7 +20,9 @@ use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\EstadoRealLotePpq;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
@@ -221,6 +223,45 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertSame($quedan->id, $a->cobro_solicitud_id);
         $this->crearPpq($oficina, $a)->assertSessionHasErrors('documentos');
         $this->assertSame(1, PpqLote::count());
+    }
+
+    /**
+     * El acuse que entra por correo bloquea el quedan y después sus CCF. El «quitar» tiene que
+     * bloquear en el mismo orden y decidir con el estado del quedan releído bajo candado: si lo
+     * lee sin candado, puede soltar el CCF mientras el acuse se registra y el CCF queda «por
+     * presentar» con un acuse en su historial. Acá (SQLite) se comprueba el orden de las
+     * lecturas; el FOR UPDATE lo comprueba la CI con MySQL.
+     */
+    public function test_quitar_relee_el_quedan_con_candado_antes_de_tocar_sus_ccf(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->presentarQuedan($oficina, $a);
+        $item = $lote->items()->where('dte_id', $a->dte_id)->sole();
+
+        $consultas = [];
+        DB::listen(function (QueryExecuted $q) use (&$consultas) {
+            $consultas[] = $q->sql;
+        });
+        $this->actingAs($oficina)->from(route('ppq.lotes.show', $lote))
+            ->delete(route('ppq.lotes.items.destroy', [$lote, $item]))->assertSessionHas('status');
+
+        $tabla = fn (string $nombre) => '[`"]'.$nombre.'[`"]';
+        $indice = fn (string $patron) => collect($consultas)->search(fn (string $sql) => preg_match($patron, $sql) === 1);
+        $candadoQuedan = $indice('/^select \* from '.$tabla('cobro_solicitudes').' where /i');
+        $primerCambio = $indice('/^update '.$tabla('cobro_documentos').' /i');
+        $this->assertIsInt($candadoQuedan, 'El quedan no se releyó antes de decidir.');
+        $this->assertIsInt($primerCambio);
+        $lecturaCcf = collect($consultas)->take($primerCambio)
+            ->filter(fn (string $sql) => preg_match('/^select \* from '.$tabla('cobro_documentos').' where /i', $sql) === 1)->keys()->last();
+        $this->assertGreaterThan($candadoQuedan, $lecturaCcf, 'Los CCF se bloquearon antes que el quedan.');
+        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->assertStringContainsStringIgnoringCase('for update', $consultas[$candadoQuedan]);
+            $this->assertStringContainsStringIgnoringCase('for update', $consultas[$lecturaCcf]);
+        }
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $a->refresh()->presentacion_estado);
     }
 
     /**

@@ -95,7 +95,7 @@ class LiberarCcfDeLoteBorrado
                 || EjercicioControl::llave($i->numero_control, $i->ejercicio_control) === EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
 
         return $documentos->load([
-            'solicitud:id,referencia,estado,created_at',
+            'solicitud:id,referencia,estado',
             'eventos' => fn ($q) => $q->where('tipo', TipoEventoCobro::Recibido->value),
         ]);
     }
