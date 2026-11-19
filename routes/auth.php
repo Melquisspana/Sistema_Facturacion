@@ -38,9 +38,15 @@ Route::middleware('auth')->group(function () {
     Route::get('confirm-password', [ConfirmablePasswordController::class, 'show'])
         ->name('password.confirm');
 
-    Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
+    // Límite de intentos por cuenta, como el login: estando adentro tampoco se prueban
+    // contraseñas sin freno. Cada ruta lleva su prefijo para no compartir el contador
+    // con otros `throttle` (sin prefijo, la clave es solo la del usuario).
+    Route::post('confirm-password', [ConfirmablePasswordController::class, 'store'])
+        ->middleware('throttle:6,1,confirmar-clave');
 
-    Route::put('password', [PasswordController::class, 'update'])->name('password.update');
+    Route::put('password', [PasswordController::class, 'update'])
+        ->middleware('throttle:6,1,cambiar-clave')
+        ->name('password.update');
 
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
