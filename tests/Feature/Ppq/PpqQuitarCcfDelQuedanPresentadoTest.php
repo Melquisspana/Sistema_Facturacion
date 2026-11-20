@@ -159,6 +159,7 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
         $lote = PpqLote::sole();
         $this->cargarNcAlPortal($oficina, $lote);
+        $this->travel(1)->seconds(); // el quedan se arma después del lote, como en la oficina
         $quedan = $this->presentarQuedan($oficina, $a, $b);
 
         // Quitar el CCF no aceptado y su NC. El aviso dice de qué quedan salió.
@@ -248,6 +249,7 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $a = $this->ccf();
         $this->crearPpq($oficina, $a)->assertSessionHasNoErrors();
         $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
         $this->presentarQuedan($oficina, $a);
         $item = $lote->items()->where('dte_id', $a->dte_id)->sole();
 
@@ -293,6 +295,30 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
             ->post(route('ppq.lotes.items.store', $lote), ['dte_id' => $x->dte_id, 'sin_albaran' => '1'])
             ->assertSessionMissing('error');
         $this->assertSame(2, $lote->items()->count());
+
+        $this->quitar($oficina, $lote, $x->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "no volvió a por presentar: va en la solicitud {$quedan->referencia}"));
+
+        $x->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $x->presentacion_estado);
+        $this->assertSame($quedan->id, $x->cobro_solicitud_id);
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
+    /**
+     * Las horas se guardan sin fracciones de segundo. Si el renglón y el quedan nacen en el
+     * mismo segundo no se sabe cuál fue primero: ante la duda, el CCF se queda en el quedan.
+     * Antes salía y podía presentarse dos veces.
+     */
+    public function test_si_el_renglon_y_el_quedan_nacen_en_el_mismo_segundo_el_ccf_no_sale_del_quedan(): void
+    {
+        $oficina = $this->usuario();
+        $x = $this->ccf();
+        $this->freezeSecond();
+        $this->crearPpq($oficina, $x)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $quedan = $this->presentarQuedan($oficina, $x);
+        $this->assertTrue($lote->items()->sole()->created_at->eq($quedan->created_at));
 
         $this->quitar($oficina, $lote, $x->dte_id)->assertSessionHas('status',
             fn (string $m) => str_contains($m, "no volvió a por presentar: va en la solicitud {$quedan->referencia}"));

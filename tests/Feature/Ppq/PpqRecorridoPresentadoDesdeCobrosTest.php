@@ -179,6 +179,7 @@ class PpqRecorridoPresentadoDesdeCobrosTest extends TestCase
 
         // 2. NC al portal y quedan presentado desde Cobros.
         $this->cargarNcAlPortal($oficina, $lote);
+        $this->travel(1)->seconds(); // el quedan se arma después del lote, como en la oficina
         $solicitud = $this->presentarQuedan($oficina, $a, $b);
         $this->assertSame(EstadoSolicitudCobro::Presentada, $solicitud->estado);
         $this->assertSame(EstadoPresentacionCobro::Presentada, $a->refresh()->presentacion_estado);

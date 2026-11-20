@@ -91,13 +91,14 @@ class QuitarItemPpq
                 }
                 // Vuelve lo que este lote dejó «en PPQ» y lo de un quedan presentado sin acuse
                 // que salió de este lote: el renglón ya estaba cuando se armó el quedan. Uno
-                // agregado a mano después no lo suelta (el quedan no es de este lote). Lo demás
+                // agregado a mano después no lo suelta (el quedan no es de este lote), ni uno
+                // del mismo segundo: las horas no guardan fracciones y, ante la duda, se queda. Lo demás
                 // presentado queda como está. Si el CCF cambió de quedan entre las dos lecturas,
                 // no hay candado sobre el nuevo y queda como está.
                 $solicitud = $doc->cobro_solicitud_id !== null ? $quedanes->get($doc->cobro_solicitud_id) : null;
                 $enQuedanPresentado = $doc->presentacion_estado === EstadoPresentacionCobro::Presentada
                     && $solicitud?->estado === EstadoSolicitudCobro::Presentada;
-                $quedan = $enQuedanPresentado && $item->created_at?->lte($solicitud->created_at) ? $solicitud : null;
+                $quedan = $enQuedanPresentado && $item->created_at?->lt($solicitud->created_at) ? $solicitud : null;
                 $motivo = match (true) {
                     $doc->presentacion_estado === EstadoPresentacionCobro::Preparada => $liberador->motivoParaConservar($doc, $ocupadas),
                     $quedan !== null => $liberador->motivoParaConservar($doc, $ocupadas, sueltaDelQuedan: true),
