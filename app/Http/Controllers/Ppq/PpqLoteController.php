@@ -24,6 +24,7 @@ use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Services\Cobros\LiberarCcfDeLoteBorrado;
 use App\Services\Cobros\ReporteCasoCalleja;
+use App\Services\Cobros\SoltarCcfDelQuedan;
 use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
@@ -212,6 +213,8 @@ class PpqLoteController extends Controller
             'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
             'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
             'items' => $items,
+            // El aviso de «quitar» dice si el CCF sale también de su quedan presentado.
+            'quedanAlQuitar' => $lote->esEditable() ? app(SoltarCcfDelQuedan::class)->quedanesAlQuitar($lote, $items->getCollection()) : [],
             // Lo que el formato quedan deja fuera porque ya no vale ante Hacienda (#12).
             'fueraDelQuedan' => app(QuedanCallejaExporter::class)->fueraDelArchivo($lote),
         ]);

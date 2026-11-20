@@ -332,7 +332,8 @@
                                                 </form>
                                             @endcan
                                         @elseif ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
-                                            <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm('¿Quitar este documento del PPQ?')">
+                                            {{-- Si el CCF sale también de su quedan presentado, el aviso lo dice: volver a agregarlo al lote no lo une otra vez al quedan. --}}
+                                            <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm(@js('¿Quitar este documento del PPQ?'.(isset($quedanAlQuitar[$item->id]) ? ' También sale del quedan '.$quedanAlQuitar[$item->id].' y vuelve a por presentar. Hacelo solo si '.$nombreCliente.' no lo aceptó. No se puede deshacer.' : '')))">
                                                 @csrf @method('DELETE')
                                                 <button class="inline-flex min-h-11 sm:min-h-0 items-center text-xs text-red-600 hover:underline">quitar</button>
                                             </form>

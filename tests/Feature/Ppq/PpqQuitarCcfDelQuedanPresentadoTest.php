@@ -357,6 +357,32 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
     }
 
     /**
+     * El aviso de «quitar» dice que el CCF también sale del quedan presentado: no se deshace,
+     * porque volver a agregarlo al lote no lo une otra vez al quedan. Antes solo preguntaba
+     * «¿Quitar este documento del PPQ?». Con el acuse del cliente ya no sale, y no lo dice.
+     */
+    public function test_el_aviso_de_quitar_dice_que_el_ccf_tambien_sale_del_quedan_presentado(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $ncA = $this->nc($a);
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->cargarNcAlPortal($oficina, $lote);
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a);
+        $aviso = "sale del quedan {$quedan->referencia} y vuelve a por presentar. Hacelo solo si Cliente de prueba no lo acept";
+
+        $ficha = $this->actingAs($oficina)->get(route('ppq.lotes.show', $lote))->assertOk()->assertSee($aviso, false);
+        $this->assertSame(1, substr_count($ficha->getContent(), $aviso), 'Solo en el CCF, no en su NC.');
+        $this->assertSame([$a->dte_id, $ncA->id], $lote->items()->orderBy('id')->pluck('dte_id')->all(), 'Mostrar el aviso no quita nada.');
+
+        $this->acuse($oficina, $quedan, '41003')->assertSessionHasNoErrors();
+        $this->actingAs($oficina)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSee('Quitar este documento del PPQ', false)->assertDontSee("sale del quedan {$quedan->referencia}", false);
+    }
+
+    /**
      * Las horas se guardan sin fracciones de segundo. Si el renglón y el quedan nacen en el
      * mismo segundo no se sabe cuál fue primero: ante la duda, el CCF se queda en el quedan.
      * Antes salía y podía presentarse dos veces.

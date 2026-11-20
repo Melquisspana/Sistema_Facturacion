@@ -7,6 +7,7 @@ use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroSolicitud;
 use App\Models\PpqItem;
+use App\Models\PpqLote;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
@@ -67,6 +68,35 @@ class SoltarCcfDelQuedan
             EstadoSolicitudCobro::Recibida => "va en {$referencia}, que ya tiene el acuse del cliente",
             default => "va en {$referencia}, que no se armó con este PPQ",
         };
+    }
+
+    /**
+     * Para el aviso de «quitar» en la ficha del lote: de qué quedan saldría el CCF de cada uno
+     * de estos renglones, con la misma regla que el «quitar» ({@see quedanQueSuelta()}). Solo
+     * lee, sin candados.
+     *
+     * @param  Collection<int, PpqItem>  $items
+     * @return array<int, string> id del renglón => referencia del quedan
+     */
+    public function quedanesAlQuitar(PpqLote $lote, Collection $items): array
+    {
+        $ccf = $items->reject(fn (PpqItem $item) => $item->esNc())->values();
+        if ($ccf->isEmpty()) {
+            return [];
+        }
+        $documentos = app(LiberarCcfDeLoteBorrado::class)->documentosDe($lote, $ccf, bloquear: false);
+        $quedanes = CobroSolicitud::whereKey($documentos->pluck('cobro_solicitud_id')->filter()->unique()->values())->get()->keyBy('id');
+        $reporte = app(ReporteCasoCalleja::class);
+        $avisos = [];
+        foreach ($ccf as $item) {
+            $quedan = $documentos->filter(fn (CobroDocumento $doc) => $reporte->mismoDocumento($item, $doc))
+                ->map(fn (CobroDocumento $doc) => $this->quedanQueSuelta($item, $doc, $quedanes))->filter()->first();
+            if ($quedan !== null) {
+                $avisos[$item->id] = $quedan->referencia;
+            }
+        }
+
+        return $avisos;
     }
 
     /** Lo saca del quedan, lo devuelve a «por presentar» y lo anota en la bitácora del quedan. */
