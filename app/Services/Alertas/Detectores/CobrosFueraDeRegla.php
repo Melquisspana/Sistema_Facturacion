@@ -157,6 +157,8 @@ class CobrosFueraDeRegla implements Detector
             ->groupBy(fn (PpqItem $item) => EjercicioControl::llave($item->numero_control, $item->ejercicio_control)
                 ?? ($item->dte_id !== null ? 'dte:'.$item->dte_id : 'item:'.$item->id))
             ->filter(fn (Collection $items) => $items->pluck('ppq_lote_id')->unique()->count() > 1
+                // Solo CCF: la NC que el TXT devolvió va también en el PPQ siguiente (NcPosterioresLotePpq).
+                && ! $items->first()->esNc()
                 && $items->contains(fn (PpqItem $item) => ! $item->estaConciliado()))
             ->map(function (Collection $items) {
                 $lotes = $items->pluck('ppq_lote_id')->unique()->sort()->map(fn ($id) => '#'.$id)->values();

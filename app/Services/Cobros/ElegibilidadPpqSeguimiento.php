@@ -78,7 +78,7 @@ class ElegibilidadPpqSeguimiento
         $items = PpqItem::whereHas('lote')
             ->when($sinLote !== null, fn ($q) => $q->where('ppq_lote_id', '!=', $sinLote))
             ->with('lote:id,observaciones')
-            ->get(['id', 'ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control', 'conciliacion_estado', 'created_at']);
+            ->get(['id', 'ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control', 'tipo_dte', 'conciliacion_estado', 'created_at']);
 
         $devoluciones = CobroEvento::where('tipo', TipoEventoCobro::Nota->value)
             ->where(fn ($q) => $q->where('referencia_linea', 'like', 'caso-%-fuera')->orWhere('referencia_linea', 'like', 'txt-%-fuera'))
