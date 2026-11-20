@@ -214,6 +214,7 @@ class DteGeneracionService
             }
 
             $correlativo->ultimo_numero = $numero;
+            $correlativo->consumoDelMotor = true;
             $explicado
                 ? activity()->withoutLogs(fn () => $correlativo->save())
                 : $correlativo->save();

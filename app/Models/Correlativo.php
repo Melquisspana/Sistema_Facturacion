@@ -21,6 +21,12 @@ class Correlativo extends Model
 
     protected $table = 'correlativos';
 
+    /**
+     * Lo marca el motor de emisión antes de guardar el número que acaba de usar. Solo eso es un
+     * consumo: una edición a mano que sube un número es un cambio a mano, y el motor lo respeta.
+     */
+    public bool $consumoDelMotor = false;
+
     protected $fillable = [
         'tipo_dte',
         'establecimiento_id',
@@ -73,12 +79,14 @@ class Correlativo extends Model
     /**
      * ¿El cambio en curso es el avance normal del motor de emisión (solo `ultimo_numero`,
      * y exactamente +1)? Cualquier otra cosa es una edición que merece leerse distinto.
+     * updated_at no cuenta: con el reloj andando cambia en cada guardado.
      */
     private function esConsumoNormal(): bool
     {
-        $sucios = array_keys($this->getDirty());
+        $sucios = array_values(array_diff(array_keys($this->getDirty()), [$this->getUpdatedAtColumn()]));
 
-        return $sucios === ['ultimo_numero']
+        return $this->consumoDelMotor
+            && $sucios === ['ultimo_numero']
             && (int) $this->ultimo_numero === ((int) $this->getOriginal('ultimo_numero')) + 1;
     }
 
