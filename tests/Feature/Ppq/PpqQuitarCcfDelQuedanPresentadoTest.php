@@ -563,4 +563,33 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('status',
             fn (string $m) => str_contains($m, "salió del lote y del quedan {$quedan->referencia}, y volvió a por presentar."));
     }
+
+    /**
+     * X va en un quedan armado directo en Cobros, sin la presentación registrada, y alguien lo
+     * agregó por error a otro lote. Ese quedan no salió de este lote: quitar X nunca lo suelta,
+     * así que no hay que esperar a registrar la presentación. Antes el «quitar» pedía
+     * registrarla primero y el renglón equivocado no se podía sacar.
+     */
+    public function test_un_ccf_agregado_por_error_despues_de_armar_su_quedan_se_quita_sin_registrar_la_presentacion(): void
+    {
+        $oficina = $this->usuario();
+        $x = $this->ccf();
+        $y = $this->ccf();
+        $quedan = $this->generarQuedan($oficina, $x);
+        $this->crearPpq($oficina, $y)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(5)->minutes();
+        $this->actingAs($oficina)->from(route('ppq.lotes.show', $lote))
+            ->post(route('ppq.lotes.items.store', $lote), ['dte_id' => $x->dte_id, 'sin_albaran' => '1'])
+            ->assertSessionMissing('error');
+
+        $this->quitar($oficina, $lote, $x->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "no volvió a por presentar: va en la solicitud {$quedan->referencia}"));
+
+        $this->assertSame([$y->dte_id], $lote->items()->pluck('dte_id')->all());
+        $x->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $x->presentacion_estado);
+        $this->assertSame($quedan->id, $x->cobro_solicitud_id);
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
 }

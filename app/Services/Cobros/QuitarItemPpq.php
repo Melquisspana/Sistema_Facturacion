@@ -7,7 +7,6 @@ use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
-use App\Models\Cobros\CobroSolicitud;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
@@ -30,8 +29,9 @@ use Illuminate\Support\Facades\DB;
  * agregado a mano después de armar ese quedan se conserva «en la solicitud», porque ese
  * quedan no salió de este lote.
  *
- * Si va en un quedan armado en Cobros que todavía no tiene la presentación registrada, no se
- * quita: el renglón sigue en el lote y se avisa que primero se registre la presentación.
+ * Si va en un quedan armado en Cobros, después de que el renglón entró al lote, que todavía no
+ * tiene la presentación registrada, no se quita: el renglón sigue en el lote y se avisa que
+ * primero se registre la presentación.
  *
  * Quitar una NC no toca su CCF. Quitar un CCF no saca sus NC: se informan en `notas`.
  */
@@ -75,11 +75,12 @@ class QuitarItemPpq
                 $quedanes = $salida->bloquearQuedanes($liberador->documentosDe($lote, collect([$item]), bloquear: false));
                 $documentos = $liberador->documentosDe($lote, collect([$item]));
             }
-            // Un quedan armado en Cobros que todavía no tiene la presentación registrada: si el
-            // renglón saliera, el CCF quedaría en ese quedan y, al registrarla, presentado sin
-            // lote del cual quitarlo. Primero se registra la presentación.
-            $generado = $documentos->map(fn (CobroDocumento $doc) => $quedanes->get($doc->cobro_solicitud_id ?? 0))
-                ->first(fn (?CobroSolicitud $quedan) => $quedan?->estado === EstadoSolicitudCobro::Generada);
+            // Un quedan armado en Cobros, con este renglón ya en el lote, que todavía no tiene la
+            // presentación registrada: si el renglón saliera, el CCF quedaría en ese quedan y, al
+            // registrarla, presentado sin lote del cual quitarlo. Primero se registra la
+            // presentación. Si el renglón llegó después, ese quedan no salió de este lote: el
+            // renglón sale y el CCF sigue en el quedan ({@see SoltarCcfDelQuedan::quedanSinRegistrar()}).
+            $generado = $documentos->map(fn (CobroDocumento $doc) => $salida->quedanSinRegistrar($item, $doc, $quedanes))->filter()->first();
             if ($generado !== null) {
                 $resultado['quedan_generado'] = $generado->referencia;
 
