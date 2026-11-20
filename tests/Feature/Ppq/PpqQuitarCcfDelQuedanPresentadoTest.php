@@ -117,18 +117,29 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
             ->assertSessionHas('status');
     }
 
-    private function presentarQuedan(User $usuario, CobroDocumento ...$docs): CobroSolicitud
+    /** Vista previa y confirmación del quedan en Cobros, sin registrar su presentación. */
+    private function generarQuedan(User $usuario, CobroDocumento ...$docs): CobroSolicitud
     {
         $previa = $this->actingAs($usuario)->post(route('cobros.solicitudes.previa', $this->cliente),
             ['documentos' => array_map(fn ($d) => $d->id, $docs)])->assertOk();
         $this->actingAs($usuario)->post(route('cobros.solicitudes.store', $this->cliente), ['previa' => $previa->viewData('token')])
             ->assertSessionHasNoErrors()->assertSessionHas('status');
-        $solicitud = CobroSolicitud::latest('id')->firstOrFail();
+
+        return CobroSolicitud::latest('id')->firstOrFail();
+    }
+
+    private function registrarPresentacion(User $usuario, CobroSolicitud $solicitud): CobroSolicitud
+    {
         $this->actingAs($usuario)->from(route('cobros.solicitudes.show', $solicitud))
             ->post(route('cobros.solicitudes.presentar', $solicitud), ['presentada_en' => today()->toDateString()])
             ->assertSessionHasNoErrors()->assertSessionHas('status');
 
         return $solicitud->refresh();
+    }
+
+    private function presentarQuedan(User $usuario, CobroDocumento ...$docs): CobroSolicitud
+    {
+        return $this->registrarPresentacion($usuario, $this->generarQuedan($usuario, ...$docs));
     }
 
     private function acuse(User $usuario, CobroSolicitud $solicitud, string $referencia)
@@ -303,6 +314,46 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertSame(EstadoPresentacionCobro::Presentada, $x->presentacion_estado);
         $this->assertSame($quedan->id, $x->cobro_solicitud_id);
         $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
+    /**
+     * El quedan se armó en Cobros y se subió al portal, pero todavía no se registró su
+     * presentación. Quitar el CCF no borra el renglón y dice qué hacer. Antes se borraba igual:
+     * el CCF seguía en el quedan y, al registrar la presentación, quedaba presentado sin
+     * lote del cual quitarlo. Después de registrarla, quitar sí lo suelta.
+     */
+    public function test_con_el_quedan_sin_presentacion_registrada_quitar_no_borra_el_renglon_y_despues_si_suelta_el_ccf(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $observaciones = $lote->observaciones;
+        $this->travel(1)->seconds();
+        $quedan = $this->generarQuedan($oficina, $a, $b);
+        $this->assertSame(EstadoSolicitudCobro::Generada, $quedan->estado);
+        $numeroA = $lote->items()->where('dte_id', $a->dte_id)->sole()->correlativoNumero();
+
+        $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('error',
+            "No se quitó el CCF {$numeroA}: registrá primero la presentación del quedan {$quedan->referencia} y después quitalo.");
+
+        $this->assertSame(2, $lote->items()->count(), 'El renglón sigue en el lote.');
+        $this->assertSame($observaciones, $lote->refresh()->observaciones);
+        $this->assertSame(0, Activity::where('description', 'ppq.item_quitado')->count());
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $a->presentacion_estado);
+        $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+
+        // Registrada la presentación, el mismo «quitar» lo saca del lote y del quedan.
+        $this->registrarPresentacion($oficina, $quedan);
+        $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "salió del lote y del quedan {$quedan->referencia}, y volvió a por presentar."));
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $a->presentacion_estado);
+        $this->assertNull($a->cobro_solicitud_id);
+        $this->assertSame(1, $lote->items()->count());
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $b->refresh()->presentacion_estado);
     }
 
     /**

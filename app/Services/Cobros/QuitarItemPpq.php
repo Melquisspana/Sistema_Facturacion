@@ -24,12 +24,14 @@ use Illuminate\Support\Facades\DB;
  * CCF quedaba «en PPQ» sin estar en ninguno: fuera de la bandeja y sin casilla.
  *
  * Si va en un quedan ya presentado desde Cobros y el cliente todavía no acusó recibo, es el
- * CCF que el cliente no aceptó: sale de ese quedan (sus renglones quedan como constancia de lo
- * que se presentó ese día) y vuelve a «por presentar», para entrar en otro PPQ. Antes se
- * quedaba «presentado» colgando del quedan viejo y no entraba en ningún lote. Lo que el cliente
- * ya recibió queda como está. Solo sale si el renglón ya estaba en este lote cuando se armó ese
- * quedan (no hay otro vínculo entre lote y quedan): uno agregado a mano después se conserva
- * «en la solicitud», porque ese quedan no salió de este lote.
+ * CCF que el cliente no aceptó: sale de ese quedan y vuelve a «por presentar», para entrar en
+ * otro PPQ ({@see SoltarCcfDelQuedan}). Antes se quedaba «presentado» colgando del quedan
+ * viejo y no entraba en ningún lote. Lo que el cliente ya recibió queda como está. Uno
+ * agregado a mano después de armar ese quedan se conserva «en la solicitud», porque ese
+ * quedan no salió de este lote.
+ *
+ * Si va en un quedan armado en Cobros que todavía no tiene la presentación registrada, no se
+ * quita: el renglón sigue en el lote y se avisa que primero se registre la presentación.
  *
  * Quitar una NC no toca su CCF. Quitar un CCF no saca sus NC: se informan en `notas`.
  */
@@ -37,15 +39,16 @@ class QuitarItemPpq
 {
     /**
      * `quedan`: la referencia del quedan del que salió el CCF, para decirlo en el aviso.
+     * `quedan_generado`: la del quedan sin presentación registrada que no dejó quitarlo.
      *
-     * @return array{quitado: bool, no_editable: bool, conservado: ?PpqItem, devueltos: Collection<int, CobroDocumento>, conservados: Collection<int, array{documento: CobroDocumento, motivo: string}>, sin_cambio: Collection<int, CobroDocumento>, notas: Collection<int, PpqItem>, quedan: ?string}
+     * @return array{quitado: bool, no_editable: bool, conservado: ?PpqItem, devueltos: Collection<int, CobroDocumento>, conservados: Collection<int, array{documento: CobroDocumento, motivo: string}>, sin_cambio: Collection<int, CobroDocumento>, notas: Collection<int, PpqItem>, quedan: ?string, quedan_generado: ?string}
      */
     public function quitar(PpqLote $lote, PpqItem $item, ?User $usuario = null): array
     {
         return DB::transaction(function () use ($lote, $item, $usuario) {
             $lote = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
             $resultado = ['quitado' => false, 'no_editable' => false, 'conservado' => null, 'devueltos' => collect(),
-                'conservados' => collect(), 'sin_cambio' => collect(), 'notas' => collect(), 'quedan' => null];
+                'conservados' => collect(), 'sin_cambio' => collect(), 'notas' => collect(), 'quedan' => null, 'quedan_generado' => null];
             // Se revisa con el candado puesto: otro pudo marcarlo presentado mientras este esperaba.
             if (! $lote->esEditable()) {
                 $resultado['no_editable'] = true;
@@ -55,6 +58,31 @@ class QuitarItemPpq
             $items = $lote->items()->with('dte')->lockForUpdate()->get();
             $item = $items->firstWhere('id', $item->id);
             if ($item === null) {
+                return $resultado;
+            }
+
+            // Se decide ANTES de sacar el renglón: si el CCF no puede salir todavía, el renglón
+            // tiene que seguir en el lote para poder quitarlo después. El quedan se bloquea antes
+            // que sus CCF, en el orden del acuse y de la presentación, y se decide con su estado
+            // releído bajo candado ({@see SoltarCcfDelQuedan::bloquearQuedanes()}). Leído sin
+            // candado, un acuse que entraba por correo a la vez lo dejaba ver «presentado»: el
+            // CCF se soltaba y el acuse igual le dejaba su evento «recibido».
+            $liberador = app(LiberarCcfDeLoteBorrado::class);
+            $salida = app(SoltarCcfDelQuedan::class);
+            $documentos = collect();
+            $quedanes = collect();
+            if (! $item->esNc()) {
+                $quedanes = $salida->bloquearQuedanes($liberador->documentosDe($lote, collect([$item]), bloquear: false));
+                $documentos = $liberador->documentosDe($lote, collect([$item]));
+            }
+            // Un quedan armado en Cobros que todavía no tiene la presentación registrada: si el
+            // renglón saliera, el CCF quedaría en ese quedan y, al registrarla, presentado sin
+            // lote del cual quitarlo. Primero se registra la presentación.
+            $generado = $documentos->map(fn (CobroDocumento $doc) => $quedanes->get($doc->cobro_solicitud_id ?? 0))
+                ->first(fn (?CobroSolicitud $quedan) => $quedan?->estado === EstadoSolicitudCobro::Generada);
+            if ($generado !== null) {
+                $resultado['quedan_generado'] = $generado->referencia;
+
                 return $resultado;
             }
 
@@ -73,32 +101,22 @@ class QuitarItemPpq
             $reporte = app(ReporteCasoCalleja::class);
             $resultado['notas'] = $items->filter(fn (PpqItem $nc) => $nc->esNc() && $reporte->ccfDeNota($nc, $items)?->id === $item->id)->values();
 
-            $liberador = app(LiberarCcfDeLoteBorrado::class);
             $ocupadas = app(ElegibilidadPpqSeguimiento::class)->claves($lote->id);
-            // El quedan se bloquea ANTES que sus CCF, en el orden del acuse y de la presentación
-            // ({@see SolicitudCobroService::registrarRecibido()}): solicitud y después documentos.
-            // Y se decide con su estado releído bajo candado. Leído sin candado, un acuse que
-            // entraba por correo a la vez lo dejaba ver «presentado»: el CCF se soltaba y el
-            // acuse igual le dejaba su evento «recibido».
-            $idsQuedan = $liberador->documentosDe($lote, collect([$item]), bloquear: false)
-                ->pluck('cobro_solicitud_id')->filter()->unique()->values();
-            $quedanes = CobroSolicitud::whereKey($idsQuedan)->lockForUpdate()->get()->keyBy('id');
-            foreach ($liberador->documentosDe($lote, collect([$item])) as $doc) {
+            foreach ($documentos as $doc) {
                 if ($doc->presentacion_estado === EstadoPresentacionCobro::SinPresentar) {
                     $resultado['sin_cambio']->push($doc);
 
                     continue;
                 }
                 // Vuelve lo que este lote dejó «en PPQ» y lo de un quedan presentado sin acuse
-                // que salió de este lote: el renglón ya estaba cuando se armó el quedan. Uno
-                // agregado a mano después no lo suelta (el quedan no es de este lote), ni uno
-                // del mismo segundo: las horas no guardan fracciones y, ante la duda, se queda. Lo demás
+                // que salió de este lote ({@see SoltarCcfDelQuedan::quedanQueSuelta()}). Uno
+                // agregado a mano después, o en el mismo segundo, no lo suelta. Lo demás
                 // presentado queda como está. Si el CCF cambió de quedan entre las dos lecturas,
                 // no hay candado sobre el nuevo y queda como está.
                 $solicitud = $doc->cobro_solicitud_id !== null ? $quedanes->get($doc->cobro_solicitud_id) : null;
                 $enQuedanPresentado = $doc->presentacion_estado === EstadoPresentacionCobro::Presentada
                     && $solicitud?->estado === EstadoSolicitudCobro::Presentada;
-                $quedan = $enQuedanPresentado && $item->created_at?->lt($solicitud->created_at) ? $solicitud : null;
+                $quedan = $salida->quedanQueSuelta($item, $doc, $quedanes);
                 $motivo = match (true) {
                     $doc->presentacion_estado === EstadoPresentacionCobro::Preparada => $liberador->motivoParaConservar($doc, $ocupadas),
                     $quedan !== null => $liberador->motivoParaConservar($doc, $ocupadas, sueltaDelQuedan: true),
@@ -112,8 +130,12 @@ class QuitarItemPpq
                     continue;
                 }
 
-                $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value]
-                    + ($quedan !== null ? ['cobro_solicitud_id' => null] : []))->save();
+                if ($quedan !== null) {
+                    $salida->soltar($doc, $quedan, $usuario, 'un CCF salió del quedan presentado al quitarlo del PPQ', ['ppq_lote_id' => $lote->id]);
+                    $resultado['quedan'] = $quedan->referencia;
+                } else {
+                    $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value])->save();
+                }
                 CobroEvento::firstOrCreate(
                     ['cobro_documento_id' => $doc->id, 'tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => "ppq-{$lote->id}-quitado"],
                     ['origen' => 'manual', 'fecha' => today()->toDateString(), 'user_id' => $usuario?->id,
@@ -121,12 +143,6 @@ class QuitarItemPpq
                         'detalle' => "Se quitó del PPQ {$lote->referencia}"
                             .($quedan !== null ? " y salió del quedan presentado {$quedan->referencia}" : '').': vuelve a por presentar.'],
                 );
-                if ($quedan !== null) {
-                    activity('cobros_solicitud')->performedOn($quedan)->causedBy($usuario)
-                        ->withProperties(['cobro_documento_id' => $doc->id, 'numero_control' => $doc->numero_control, 'ppq_lote_id' => $lote->id])
-                        ->log('un CCF salió del quedan presentado al quitarlo del PPQ');
-                    $resultado['quedan'] = $quedan->referencia;
-                }
                 $resultado['devueltos']->push($doc);
             }
 
