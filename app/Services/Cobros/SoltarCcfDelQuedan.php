@@ -95,9 +95,12 @@ class SoltarCcfDelQuedan
         $quedan = $quedanes->get($doc->cobro_solicitud_id);
         $referencia = 'el quedan '.($quedan?->referencia ?? '#'.$doc->cobro_solicitud_id);
 
-        return match ($quedan?->estado) {
-            EstadoSolicitudCobro::Generada => "va en {$referencia}, que todavía no tiene la presentación registrada",
-            EstadoSolicitudCobro::Recibida => "va en {$referencia}, que ya tiene el acuse del cliente",
+        return match (true) {
+            $quedan?->estado === EstadoSolicitudCobro::Generada => "va en {$referencia}, que todavía no tiene la presentación registrada",
+            $quedan?->estado === EstadoSolicitudCobro::Recibida => "va en {$referencia}, que ya tiene el acuse del cliente",
+            // Un pago, aunque sea de menos, o el reporte del caso ya lo dan por recibido
+            // ({@see CobroDocumento::completarCircuitoPorPago()}), aunque el quedan no tenga acuse.
+            $doc->presentacion_estado === EstadoPresentacionCobro::Recibida => "va en {$referencia} y el cliente ya lo recibió",
             default => "va en {$referencia}, que no se armó con este PPQ",
         };
     }

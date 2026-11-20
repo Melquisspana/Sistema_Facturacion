@@ -341,6 +341,29 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
     }
 
+    /**
+     * B iba en un quedan presentado sin acuse y el TXT lo pagó de menos: el pago ya lo da por
+     * recibido. No se devuelve (no podría ir en otro quedan) y el aviso dice el motivo real.
+     * Antes decía que ese quedan «no se armó con este PPQ», que es falso.
+     */
+    public function test_lo_pagado_de_menos_de_un_quedan_sin_acuse_no_se_devuelve_porque_el_cliente_ya_lo_recibio(): void
+    {
+        $e = $this->escenario();
+        $quedan = $this->quedanCon($e['b'], EstadoSolicitudCobro::Presentada);
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+        $itemB = $this->item($e['lote'], $e['b']->dte_id);
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), ['hash' => $hash, 'items' => [$itemB->id]])
+            ->assertSessionHasErrors(['items' => "{$e['b']->numero_control}: no se devuelve, porque va en el quedan {$quedan->referencia} y el cliente ya lo recibió."]);
+
+        $b = $e['b']->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $b->presentacion_estado);
+        $this->assertSame($quedan->id, $b->cobro_solicitud_id);
+        $this->assertFalse($b->eventos()->where('referencia_linea', 'like', 'txt-%-fuera')->exists());
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
     /** Sala, número y tipo de cada fila del archivo de quedan del lote. */
     private function filasQuedan(PpqLote $lote): array
     {
