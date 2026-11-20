@@ -20,7 +20,8 @@ use Illuminate\Support\Facades\DB;
  *
  * IDEMPOTENTE: usa firstOrCreate (guardado por la combinación única de cada tabla),
  * así que correr el comando de nuevo (mismo ambiente o el otro) no duplica nada ni
- * pisa un punto de venta o correlativo que ya exista.
+ * pisa un punto de venta o correlativo que ya exista. Un punto de venta borrado con ese
+ * código se recupera: el código sigue ocupado en la base.
  *
  * SEGURIDAD:
  *  - Por defecto corre en DRY-RUN: solo reporta qué haría falta crear, sin escribir.
@@ -64,14 +65,17 @@ class CrearPuntoVentaP002Command extends Command
             return self::FAILURE;
         }
 
-        $pvExistente = PuntoVenta::where('establecimiento_id', $estab->id)->where('codigo', $codigo)->first();
+        // Con los borrados: el código sigue ocupado en la base, y si se borró por error se recupera.
+        $pvExistente = PuntoVenta::withTrashed()->where('establecimiento_id', $estab->id)->where('codigo', $codigo)->first();
         $ambienteLabel = $ambiente === '00' ? '00 (pruebas)' : '01 (producción)';
 
         $this->line("Punto de venta {$codigo} bajo establecimiento {$estabCodigo} (id {$estab->id}) — ambiente {$ambienteLabel}");
         $this->newLine();
-        $this->dato('Punto de venta', $pvExistente
-            ? "ya existe (id {$pvExistente->id}, activo=".($pvExistente->activo ? 'sí' : 'no').')'
-            : 'se crearía nuevo, activo=sí');
+        $this->dato('Punto de venta', match (true) {
+            $pvExistente === null => 'se crearía nuevo, activo=sí',
+            $pvExistente->trashed() => "está borrado (id {$pvExistente->id}): se recuperaría",
+            default => "ya existe (id {$pvExistente->id}, activo=".($pvExistente->activo ? 'sí' : 'no').')',
+        });
 
         [$existentes, $faltantes] = $this->diagnosticoCorrelativos($estab->id, $pvExistente?->id, $ambiente);
         $this->dato('Correlativos ya existentes ('.$ambiente.')', $existentes ?: 'ninguno');
@@ -90,10 +94,13 @@ class CrearPuntoVentaP002Command extends Command
         $otroAmbienteAntes = $pvExistente ? $this->snapshotAmbiente($estab->id, $pvExistente->id, $otroAmbiente) : 0;
 
         DB::transaction(function () use ($estab, $codigo, $nombre, $ambiente) {
-            $pv = PuntoVenta::firstOrCreate(
+            $pv = PuntoVenta::withTrashed()->firstOrCreate(
                 ['establecimiento_id' => $estab->id, 'codigo' => $codigo],
                 ['nombre' => $nombre, 'activo' => true]
             );
+            if ($pv->trashed()) {
+                $pv->restore();
+            }
 
             foreach (self::TIPOS as $tipo) {
                 Correlativo::firstOrCreate(

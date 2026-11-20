@@ -151,39 +151,77 @@ class DteGeneracionService
             $dte->hora_emision = $ahora->format('H:i:s');
 
             $ejercicio = $ahora->year;
-            $ultimo = Dte::withTrashed()
-                ->where('correlativo_id', $correlativo->id)
-                ->whereNotNull('ejercicio')
-                ->max('ejercicio');
-
-            if ($ultimo === null && $correlativo->ultimo_numero > 0) {
-                // Antes de 2027 no hubo reinicios: los números sin DTE pertenecen a 2026.
-                $ultimo = EjercicioControl::ANTERIOR_AL_REINICIO;
-            }
+            $ultimo = $this->ejercicioDelUltimoNumero($correlativo, $ejercicio);
 
             if ($ultimo !== null && $ejercicio < $ultimo) {
                 // Solo pasa si el reloj del servidor volvió atrás: la fecha es la de hoy.
                 throw new GeneracionException('La fecha de hoy según el servidor ('.$ahora->format('d/m/Y').') es del ejercicio '.$ejercicio.', pero la numeración de este tipo de documento ya pasó al ejercicio '.$ultimo.'. Revisá la fecha y la hora del servidor antes de generar.');
             }
 
-            if ($ultimo !== null && $ejercicio > $ultimo) {
-                activity()->performedOn($correlativo)
-                    ->withProperties([
-                        'ejercicio_anterior' => (int) $ultimo,
-                        'ejercicio' => $ejercicio,
-                        'ultimo_numero_anterior' => $correlativo->ultimo_numero,
-                    ])
-                    ->log('reinició el correlativo por cambio de ejercicio de '.$ultimo.' a '.$ejercicio);
+            $reinicio = $ultimo !== null && $ejercicio > $ultimo;
+            $anterior = $correlativo->ultimo_numero;
+            if ($reinicio) {
                 $correlativo->ultimo_numero = 0;
             }
-
-            $numero = $correlativo->ultimo_numero + 1;
-            $correlativo->ultimo_numero = $numero;
-            $correlativo->save();
 
             // Aún en borrador: el observer permite estos cambios de cabecera.
             $dte->correlativo_id = $correlativo->id;
             $dte->ejercicio = $ejercicio;
+
+            // Nunca un número que ya usó esta serie (tipo, ambiente, ejercicio, establecimiento
+            // y punto de venta), aunque lo haya usado otro correlativo: uno sin punto de venta
+            // creado desde cero, o el de la caja que vuelve después de que otro numeró por él.
+            // El general (sin punto de venta) numera por la serie de la caja que emite: si su
+            // último número lo tomó otra caja, es de la serie de esa caja y acá no cuenta.
+            $base = $correlativo->ultimo_numero;
+            $usado = $this->mayorUsadoEnSerie($dte, $correlativo);
+            // Si la oficina fijó el número a mano después, se respeta aunque coincida con uno de otra caja.
+            $porSerie = $correlativo->punto_venta_id === null
+                && $this->loTomoOtraCaja($correlativo, $dte, $base)
+                && $correlativo->numeroFijadoAManoEl() === null;
+            $numero = ($porSerie ? $usado : max($base, $usado)) + 1;
+
+            // Lo que el motor mueve por su cuenta queda en la auditoría de Configuración con su
+            // motivo, y el guardado no suma un «modificó el correlativo», que es para lo que
+            // alguien cambió a mano. El avance normal, de a uno, sigue anotándose como consumo.
+            $explicado = false;
+            if ($reinicio) {
+                activity('configuracion')->performedOn($correlativo)
+                    ->withProperties([
+                        'ejercicio_anterior' => (int) $ultimo,
+                        'ejercicio' => $ejercicio,
+                        'ultimo_numero_anterior' => $anterior,
+                        'ultimo_numero' => $numero,
+                    ])
+                    ->log('reinició el correlativo por cambio de ejercicio de '.$ultimo.' a '.$ejercicio);
+                $explicado = true;
+            }
+            if ($usado > $base) {
+                activity('configuracion')->performedOn($correlativo)
+                    ->withProperties([
+                        'ultimo_numero_anterior' => $base,
+                        'mayor_usado_en_serie' => $usado,
+                        'ultimo_numero' => $numero,
+                    ])
+                    ->log('adelantó el correlativo de '.$base.' a '.$numero.': este documento sale con el '.$numero.' porque hasta el '.$usado.' ya se había usado en esta caja');
+                $explicado = true;
+            } elseif ($porSerie && $usado < $base) {
+                activity('configuracion')->performedOn($correlativo)
+                    ->withProperties([
+                        'ultimo_numero_anterior' => $base,
+                        'mayor_usado_en_serie' => $usado,
+                        'ultimo_numero' => $numero,
+                    ])
+                    ->log('siguió la serie de esta caja: el correlativo general iba en el '.$base.' por otra caja y este documento sale con el '.$numero);
+                $explicado = true;
+            }
+
+            $correlativo->ultimo_numero = $numero;
+            $correlativo->consumoDelMotor = true;
+            $explicado
+                ? activity()->withoutLogs(fn () => $correlativo->save())
+                : $correlativo->save();
+
             $dte->numero_interno = $this->formatearNumeroInterno($dte, $numero);
 
             // Numeración GLOBAL VISIBLE del sistema: este es su punto irreversible, el
@@ -388,6 +426,95 @@ class DteGeneracionService
         }
 
         return $correlativo;
+    }
+
+    /**
+     * El ejercicio al que pertenece el último número del correlativo. Si lo último que lo movió
+     * fue la oficina (por ejemplo, para seguir lo que se numeró en Conta Portable), es el del
+     * año en que lo fijó, aunque haya documentos de antes. Si no, es el de su último documento,
+     * y sin documentos cuenta como 2026, porque antes de 2027 no hubo reinicios. Lo fijado nunca
+     * pasa del año de hoy; los documentos sí, y entonces frenan la emisión. null si está en cero.
+     *
+     * Lee los documentos con candado compartido: así ve lo último confirmado aunque la foto de
+     * la transacción se haya fijado antes de esperar el candado del correlativo.
+     */
+    private function ejercicioDelUltimoNumero(Correlativo $correlativo, int $hoy): ?int
+    {
+        $deDocumentos = Dte::withTrashed()
+            ->where('correlativo_id', $correlativo->id)
+            ->whereNotNull('ejercicio')
+            ->sharedLock()
+            ->max('ejercicio');
+        $deDocumentos = $deDocumentos === null ? null : (int) $deDocumentos;
+        if ($deDocumentos !== null && $deDocumentos > $hoy) {
+            return $deDocumentos;
+        }
+
+        $fijado = $correlativo->numeroFijadoAManoEl();
+        if ($fijado !== null) {
+            return min(EjercicioControl::de(HoraNegocio::aLocal($fijado)), $hoy);
+        }
+        if ($deDocumentos !== null) {
+            return $deDocumentos;
+        }
+
+        return $correlativo->ultimo_numero > 0 ? EjercicioControl::ANTERIOR_AL_REINICIO : null;
+    }
+
+    /**
+     * El número más alto ya usado en la serie del documento (mismo prefijo de número interno),
+     * borrados incluidos, porque siguen ocupando el número. Con el correlativo a 15 cifras
+     * y relleno de ceros, el mayor texto es el mayor número. 0 si la serie está vacía.
+     *
+     * Lo que la caja numeró fuera del sistema (por ejemplo, alineado a Conta Portable) solo
+     * queda en el último número de su correlativo. Si numera otro, como el general, tampoco
+     * repite esos números, mientras sean del mismo ejercicio.
+     *
+     * Con candado compartido, como {@see ejercicioDelUltimoNumero()}: otro correlativo de la
+     * misma serie bloquea su propia fila, y sin el candado esta lectura podía no ver lo que ya
+     * confirmó.
+     */
+    private function mayorUsadoEnSerie(Dte $dte, Correlativo $correlativo): int
+    {
+        $prefijo = substr($this->formatearNumeroInterno($dte, 0), 0, -15);
+        $mayor = (int) substr((string) Dte::withTrashed()->where('numero_interno', 'like', $prefijo.'%')->sharedLock()->max('numero_interno'), -15);
+
+        if ($dte->punto_venta_id !== null && (int) $correlativo->punto_venta_id !== (int) $dte->punto_venta_id) {
+            $deLaCaja = Correlativo::query()
+                ->where('tipo_dte', $dte->tipo_dte->value)
+                ->where('establecimiento_id', $dte->establecimiento_id)
+                ->where('punto_venta_id', $dte->punto_venta_id)
+                ->where('ambiente', $dte->ambiente->value)
+                ->sharedLock()
+                ->first();
+            if ($deLaCaja !== null && $this->ejercicioDelUltimoNumero($deLaCaja, (int) $dte->ejercicio) === (int) $dte->ejercicio) {
+                $mayor = max($mayor, $deLaCaja->ultimo_numero);
+            }
+        }
+
+        return $mayor;
+    }
+
+    /**
+     * ¿El número `$numero` del correlativo general lo tomó, este ejercicio, un documento de otra
+     * caja y ninguno de la caja que emite? Entonces es de la serie de esa caja. Si no lo tomó
+     * ningún documento, lo fijó la oficina y sí cuenta. Con candado compartido, como las demás
+     * lecturas del motor.
+     */
+    private function loTomoOtraCaja(Correlativo $correlativo, Dte $dte, int $numero): bool
+    {
+        if ($numero <= 0) {
+            return false;
+        }
+
+        $cajas = Dte::withTrashed()
+            ->where('correlativo_id', $correlativo->id)
+            ->where('ejercicio', $dte->ejercicio)
+            ->where('numero_interno', 'like', '%-'.str_pad((string) $numero, 15, '0', STR_PAD_LEFT))
+            ->sharedLock()
+            ->pluck('punto_venta_id');
+
+        return $cajas->isNotEmpty() && ! $cajas->contains($dte->punto_venta_id);
     }
 
     /**

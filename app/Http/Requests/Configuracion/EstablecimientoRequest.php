@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Configuracion;
 
 use App\Enums\TipoEstablecimiento;
+use App\Models\Establecimiento;
 use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -23,9 +24,13 @@ class EstablecimientoRequest extends FormRequest
             'empresa_id' => ['required', 'exists:empresas,id'],
             'codigo' => [
                 'required', 'string', 'max:4',
+                // Como lo acepta Hacienda en el número de control (DTE-03-M001P001-…).
+                'regex:/^[MBSP][0-9]{3}$/',
+                // La base tampoco deja repetir el de uno borrado: al crearlo se recupera ese
+                // ({@see EstablecimientoController::store()}), y al editar otro se avisa abajo.
                 Rule::unique('establecimientos', 'codigo')
                     ->where(fn ($q) => $q->where('empresa_id', $this->empresa_id))
-                    ->whereNull('deleted_at')
+                    ->withoutTrashed()
                     ->ignore($establecimientoId),
             ],
             'nombre' => ['required', 'string', 'max:255'],
@@ -57,6 +62,8 @@ class EstablecimientoRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'codigo.regex' => 'El código tiene que ser M, B, S o P y tres números, como M001: así lo pide Hacienda en el número de control.',
+            'codigo.unique' => 'Ese código ya lo tiene otro establecimiento de esta empresa.',
             'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
             'distrito_id.required' => 'El distrito es obligatorio para el establecimiento del emisor.',
             'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',
@@ -86,6 +93,29 @@ class EstablecimientoRequest extends FormRequest
                 $validator->errors()->add('distrito_id', $problema);
             }
         });
+
+        // El código va en el número de control de cada documento, y anular uno viejo usa
+        // el código de hoy: con documentos numerados no se cambia. Y con cualquier documento,
+        // borradores incluidos, no se pasa a otra empresa: cada uno es del emisor que lo hizo.
+        $establecimiento = $this->route('establecimiento');
+        if ($establecimiento instanceof Establecimiento) {
+            $validator->after(function ($validator) use ($establecimiento) {
+                if (! $validator->errors()->has('codigo') && Establecimiento::onlyTrashed()
+                    ->where('empresa_id', $this->input('empresa_id'))
+                    ->where('codigo', $this->input('codigo'))
+                    ->exists()) {
+                    $validator->errors()->add('codigo', 'Ese código era de un establecimiento que se borró. Para volver a usarlo, creá un establecimiento con ese código: se recupera el que se borró.');
+                }
+
+                if ((string) $this->input('codigo') !== (string) $establecimiento->codigo && $establecimiento->tieneDocumentos(soloConNumero: true)) {
+                    $validator->errors()->add('codigo', 'Este establecimiento ya tiene facturas: el código no se puede cambiar, porque va en el número de control de cada una.');
+                }
+
+                if ((string) $this->input('empresa_id') !== (string) $establecimiento->empresa_id && $establecimiento->tieneDocumentos()) {
+                    $validator->errors()->add('empresa_id', 'Este establecimiento ya tiene facturas o borradores: no se puede pasar a otra empresa.');
+                }
+            });
+        }
     }
 
     protected function prepareForValidation(): void

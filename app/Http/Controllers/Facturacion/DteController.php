@@ -1344,6 +1344,15 @@ class DteController extends Controller
                 $dte->refresh();
             } catch (GeneracionException $e) {
                 return $volver->with('error', 'No se pudo generar el documento: '.$e->getMessage().' No se transmitió nada.');
+            } catch (UniqueConstraintViolationException $e) {
+                // Otro pedido usó ese número entre la lectura y el guardado: la base lo frenó y
+                // la transacción de generar() ya revirtió todo, como en «Generar».
+                Log::error('No se pudo generar el DTE por un conflicto de numeración en BD.', [
+                    'dte_id' => $dte->id,
+                    'exception' => $e->getMessage(),
+                ]);
+
+                return $volver->with('error', 'No se pudo generar el documento: otro documento acaba de tomar ese número. El borrador quedó como estaba y no se transmitió nada: intentá de nuevo.');
             }
         }
 
