@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Alertas;
 
+use App\Enums\EstadoPedidoWeb;
 use App\Facades\Ajustes;
 use App\Mail\AlertaSistemaCorreo;
 use App\Models\PedidoWeb;
@@ -53,6 +54,12 @@ class ProbadorTiendaWebTest extends TestCase
 
     private int $pedidasDeErrores = 0;
 
+    /** @var list<array<string, mixed>> lo que contesta /pedidos-a-revisar */
+    private array $enRevision = [];
+
+    /** @var array<string, list<string>> a qué hora se pidió cada ruta, aunque la página esté caída */
+    private array $pedidas = [];
+
     /** Si se pone, se llama una vez en medio de la próxima pasada (después de leer los pedidos). */
     private ?\Closure $aMitad = null;
 
@@ -83,6 +90,7 @@ class ProbadorTiendaWebTest extends TestCase
     private function contestar(Request $r)
     {
         $ruta = (string) parse_url($r->url(), PHP_URL_PATH);
+        $this->pedidas[basename($ruta)][] = now()->format('H:i');
         if ($this->pagina === 'caida') {
             return Http::failedConnection()($r);
         }
@@ -106,7 +114,7 @@ class ProbadorTiendaWebTest extends TestCase
                 : Http::response(['cobra' => $this->cobra, 'errores' => $this->errores]);
         }
         if (str_ends_with($ruta, '/pedidos-a-revisar')) {
-            return Http::response(['pedidos' => []]);
+            return Http::response(['pedidos' => $this->enRevision]);
         }
 
         return Http::response([], 200);
@@ -236,6 +244,73 @@ class ProbadorTiendaWebTest extends TestCase
 
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::SIN_TRAER));
         $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
+    }
+
+    // ───────────── Tres horas de pasadas: lo que se le pide a la página ─────────────
+
+    /**
+     * Tres horas con la tarea cada minuto, como en el servidor. La limpieza relee tablas
+     * enteras en la página (Cloudflare cobra por fila leída): sale una vez por hora. La
+     * lista de pedidos a revisar, cada 5 minutos; los pedidos pagados y la lista de
+     * errores, en cada pasada.
+     */
+    public function test_tres_horas_de_pasadas_piden_la_limpieza_una_vez_por_hora_y_la_revision_cada_5_minutos(): void
+    {
+        $this->pasan(180); // 10:00 a 12:59
+
+        $this->assertSame(['10:00', '11:00', '12:00'], $this->pedidas['limpieza']);
+        $this->assertCount(36, $this->pedidas['pedidos-a-revisar']);
+        $this->assertSame(['10:00', '10:05', '10:10'], array_slice($this->pedidas['pedidos-a-revisar'], 0, 3));
+        $this->assertCount(180, $this->pedidas['pedidos-pagados']);
+        $this->assertCount(180, $this->pedidas['errores']);
+        $this->assertSame([], $this->correos(self::SIN_TRAER));
+        $this->assertSame([], $this->correos(self::PAGOS));
+        $this->assertSame([], $this->correos(self::OTRAS));
+    }
+
+    /**
+     * Tres horas con la página caída una hora en medio y un pedido pagado mientras tanto.
+     * La limpieza que tocaba con la página caída no se repite cada minuto; los avisos abren
+     * y cierran igual que cuando todo se pedía cada minuto.
+     */
+    public function test_tres_horas_con_la_pagina_caida_una_hora_los_avisos_abren_y_cierran_igual(): void
+    {
+        // La factura deja el pedido con su borrador en la misma pasada, como en el servidor.
+        $this->mock(FacturarPedidoWeb::class, fn ($m) => $m->shouldReceive('pasada')->andReturnUsing(function () {
+            PedidoWeb::where('estado', EstadoPedidoWeb::Importado)->update(['estado' => EstadoPedidoWeb::Facturando]);
+
+            return [];
+        }));
+
+        $this->pasan(40); // 10:00 a 10:39, bien
+        $this->pagina = 'caida';
+        $this->pasan(30); // 10:40 a 11:09
+        $this->pagados[] = $this->datos(1); // alguien paga con la página caída para el sistema
+        $this->pasan(30); // hasta las 11:39
+        $this->assertSame(['falla'], $this->correos(self::SIN_TRAER));
+        $this->assertStringContainsString('Última lectura buena: 19/11 10:39', $this->ultimo(self::SIN_TRAER)->hallazgo->detalle);
+
+        $this->pagina = 'bien';
+        $this->pasan(30); // vuelve a las 11:40
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::SIN_TRAER));
+        $this->assertSame([1], PedidoWeb::pluck('web_id')->all(), 'El pedido pagado entra al volver.');
+
+        // Un pedido queda en revisión en la página y después se resuelve.
+        $this->enRevision = [['id' => 50, 'codigo' => 'LN-REVI-0000-0050', 'estado' => 'para_revisar', 'alerta' => '', 'pasarela' => 'wompi']];
+        $this->pasan(20); // 12:10 a 12:29
+        $this->assertSame(['falla'], $this->correos(self::OTRAS));
+        $this->assertSame('1 pedido quedó en revisión en la página: LN-REVI-0000-0050', $this->ultimo(self::OTRAS)->hallazgo->titulo);
+        $this->enRevision = [];
+        $this->pasan(30); // 12:30 a 12:59
+
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::SIN_TRAER));
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
+        $this->assertSame([], $this->correos(self::PAGOS));
+        // La de las 11:00 no llegó y no se reintenta cada minuto: la siguiente, a la hora.
+        $this->assertSame(['10:00', '11:00', '12:00'], $this->pedidas['limpieza']);
+        // Al volver se pide enseguida y de ahí cada 5 minutos.
+        $despues = array_values(array_filter($this->pedidas['pedidos-a-revisar'], fn (string $h) => $h >= '11:40'));
+        $this->assertSame(array_map(fn (int $m) => Carbon::parse('2026-11-19 11:40')->addMinutes($m)->format('H:i'), range(0, 75, 5)), $despues);
     }
 
     public function test_si_sigue_caida_recuerda_cada_4_horas_y_no_mas(): void
