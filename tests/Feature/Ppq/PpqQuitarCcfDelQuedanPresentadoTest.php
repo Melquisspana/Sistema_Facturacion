@@ -531,4 +531,36 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertSame($quedan->id, $x->cobro_solicitud_id);
         $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
     }
+
+    /**
+     * El quedan se armó en Cobros con los CCF del lote y todavía no tiene la presentación
+     * registrada. Eliminar el lote es sacar todos sus renglones: tampoco se deja, por lo mismo
+     * que el «quitar». Antes se eliminaba, los CCF seguían en el quedan y, al registrar la
+     * presentación, quedaban presentados sin lote del cual quitarlos.
+     */
+    public function test_un_lote_cuyo_quedan_se_armo_en_cobros_sin_presentacion_registrada_no_se_elimina(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->generarQuedan($oficina, $a, $b);
+
+        $this->actingAs($oficina)->get(route('ppq.lotes.show', $lote))->assertOk()->assertDontSee('Eliminar lote');
+        $this->actingAs($oficina)->from(route('ppq.lotes.show', $lote))->delete(route('ppq.lotes.destroy', $lote))
+            ->assertRedirect(route('ppq.lotes.show', $lote))
+            ->assertSessionHas('error', "Este PPQ ya no se elimina: sus CCF van en el quedan {$quedan->referencia}, que se armó en Cobros.");
+
+        $this->assertNotSoftDeleted($lote);
+        $this->assertSame(2, $lote->items()->count());
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $a->refresh()->presentacion_estado);
+        $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+
+        // Registrada la presentación, el CCF que el cliente no aceptó todavía se puede soltar.
+        $this->registrarPresentacion($oficina, $quedan);
+        $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "salió del lote y del quedan {$quedan->referencia}, y volvió a por presentar."));
+    }
 }

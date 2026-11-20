@@ -215,6 +215,8 @@ class PpqLoteController extends Controller
             'items' => $items,
             // El aviso de «quitar» dice si el CCF sale también de su quedan presentado.
             'quedanAlQuitar' => $lote->esEditable() ? app(SoltarCcfDelQuedan::class)->quedanesAlQuitar($lote, $items->getCollection()) : [],
+            // Con sus CCF en un quedan armado en Cobros sin presentación registrada, no se elimina (destroy).
+            'quedanSinRegistrar' => $lote->esEditable() ? app(SoltarCcfDelQuedan::class)->quedanSinRegistrarDelLote($lote, bloquear: false) : null,
             // Lo que el formato quedan deja fuera porque ya no vale ante Hacienda (#12).
             'fueraDelQuedan' => app(QuedanCallejaExporter::class)->fueraDelArchivo($lote),
         ]);
@@ -420,8 +422,9 @@ class PpqLoteController extends Controller
      * Solo se elimina lo que la ficha deja eliminar: un lote que se arma, con la misma regla
      * que «Editar» ({@see PpqLote::seEditaSegun()}). Presentado, pagado u observado no, aunque
      * llegue el pedido a mano (sus CCF presentados volvían a «por presentar»), ni el que se
-     * presentó desde Cobros con la columna todavía en borrador. Se revisa con el lote
-     * bloqueado, como el «quitar».
+     * presentó desde Cobros con la columna todavía en borrador, ni aquel cuyos CCF van en un
+     * quedan armado en Cobros sin la presentación registrada. Se revisa con el lote bloqueado,
+     * como el «quitar».
      */
     public function destroy(Request $request, PpqLote $lote, LiberarCcfDeLoteBorrado $liberador): RedirectResponse
     {
@@ -430,6 +433,11 @@ class PpqLoteController extends Controller
             $real = app(EstadoRealLotePpq::class)->calcular(collect([$actual]))[$actual->id];
             if (! $actual->seEditaSegun($real)) {
                 return 'Este PPQ está '.($actual->esEditable() ? $real['estado']['label'] : $actual->estado->label()).' y ya no se elimina.';
+            }
+            // Sus CCF van en un quedan armado en Cobros sin la presentación registrada: al
+            // registrarla quedarían presentados sin lote del cual quitarlos, como en el «quitar».
+            if (($quedan = app(SoltarCcfDelQuedan::class)->quedanSinRegistrarDelLote($actual)) !== null) {
+                return "Este PPQ ya no se elimina: sus CCF van en el quedan {$quedan->referencia}, que se armó en Cobros.";
             }
             $resultado = $liberador->liberar($actual, $request->user());
             $actual->delete();

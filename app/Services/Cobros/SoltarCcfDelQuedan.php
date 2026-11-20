@@ -51,6 +51,38 @@ class SoltarCcfDelQuedan
     }
 
     /**
+     * El quedan armado en Cobros, todavía sin la presentación registrada, del que este CCF
+     * saldría si ya la tuviera: el renglón estaba en el lote cuando se armó. Mientras tanto el
+     * renglón no sale del lote, para poder soltar el CCF después; si saliera, al registrar la
+     * presentación el CCF quedaría presentado sin lote del cual quitarlo. Null si el renglón
+     * llegó después o en el mismo segundo: ese quedan no salió de este lote y sacar el renglón
+     * no cambia nada de él.
+     */
+    public function quedanSinRegistrar(PpqItem $item, CobroDocumento $doc, Collection $quedanes): ?CobroSolicitud
+    {
+        $quedan = $doc->cobro_solicitud_id !== null ? $quedanes->get($doc->cobro_solicitud_id) : null;
+
+        return $quedan?->estado === EstadoSolicitudCobro::Generada && $item->created_at?->lt($quedan->created_at) ? $quedan : null;
+    }
+
+    /**
+     * El primero de esos quedanes entre los CCF del lote ({@see quedanSinRegistrar()}), para el
+     * borrado del lote y su botón. Con `$bloquear`, los quedanes se releen con candado antes que
+     * cualquier CCF, como en {@see bloquearQuedanes()}.
+     */
+    public function quedanSinRegistrarDelLote(PpqLote $lote, bool $bloquear = true): ?CobroSolicitud
+    {
+        $ccf = $lote->items()->where('tipo_dte', '03')->get();
+        $documentos = app(LiberarCcfDeLoteBorrado::class)->documentosDe($lote, $ccf, bloquear: false);
+        $quedanes = CobroSolicitud::whereKey($documentos->pluck('cobro_solicitud_id')->filter()->unique()->values())
+            ->when($bloquear, fn ($q) => $q->lockForUpdate())->get()->keyBy('id');
+        $reporte = app(ReporteCasoCalleja::class);
+
+        return $ccf->flatMap(fn (PpqItem $item) => $documentos->filter(fn (CobroDocumento $doc) => $reporte->mismoDocumento($item, $doc))
+            ->map(fn (CobroDocumento $doc) => $this->quedanSinRegistrar($item, $doc, $quedanes)))->filter()->first();
+    }
+
+    /**
      * Por qué este CCF no puede volver a «por presentar» al salir del lote: cuelga de un quedan
      * del que no sale, y entonces tampoco entraría en otro. Null si no cuelga de ninguno o si
      * sale de él ({@see quedanQueSuelta()}).

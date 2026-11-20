@@ -422,8 +422,8 @@
                 </div>
             @endif
 
-            {{-- La misma regla que «Editar» y que el servidor: un lote presentado desde Cobros sigue en borrador en su columna y no se elimina. --}}
-            @if ($lote->seEditaSegun($estadoReal) && auth()->user()->can('ppq.gestionar'))
+            {{-- La misma regla que «Editar» y que el servidor: un lote presentado desde Cobros sigue en borrador en su columna y no se elimina, ni el que tiene sus CCF en un quedan armado en Cobros sin la presentación registrada. --}}
+            @if ($lote->seEditaSegun($estadoReal) && $quedanSinRegistrar === null && auth()->user()->can('ppq.gestionar'))
                 <div class="flex justify-end">
                     <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote? Los CCF sin pagar vuelven a por presentar.')">
                         @csrf @method('DELETE')
