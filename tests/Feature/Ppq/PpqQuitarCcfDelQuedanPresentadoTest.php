@@ -22,9 +22,12 @@ use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\EstadoRealLotePpq;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xls;
 use Spatie\Activitylog\Models\Activity;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
@@ -140,6 +143,28 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
     private function presentarQuedan(User $usuario, CobroDocumento ...$docs): CobroSolicitud
     {
         return $this->registrarPresentacion($usuario, $this->generarQuedan($usuario, ...$docs));
+    }
+
+    /** El reporte del caso como lo da el portal: «CASO n» en A1 y una fila por documento registrado. */
+    private function reporteCaso(string $caso, CobroDocumento ...$registrados): UploadedFile
+    {
+        $libro = new Spreadsheet;
+        $hoja = $libro->getActiveSheet();
+        $hoja->setCellValue('A1', "CASO {$caso} \nTitular de Ejemplo (000123)");
+        $hoja->fromArray(['SALA', 'NUMERO ALBARAN', 'TIPO', 'AÑO', 'MES', 'FECHA', 'MONTO', 'CODIGO', 'DTE', 'MONTO DOC', 'ESTADO', 'PLAZO'], null, 'A2');
+        foreach (array_values($registrados) as $i => $doc) {
+            $hoja->fromArray(['0017', '5131', 'AC01', '26', '09', '10/09/2026', '1', 'X', str_replace('-', '', $doc->numero_control), '1', 'REGISTRADO', 'CREDITO'], null, 'A'.($i + 3));
+        }
+        $ruta = tempnam(sys_get_temp_dir(), 'caso').'.xls';
+        (new Xls($libro))->save($ruta);
+
+        return new UploadedFile($ruta, 'caso.xls', null, null, true);
+    }
+
+    private function cargarReporte(User $usuario, PpqLote $lote, string $caso, CobroDocumento ...$registrados)
+    {
+        return $this->actingAs($usuario)->from(route('ppq.lotes.show', $lote))
+            ->post(route('ppq.lotes.reporte-caso', $lote), ['reporte' => $this->reporteCaso($caso, ...$registrados)]);
     }
 
     private function acuse(User $usuario, CobroSolicitud $solicitud, string $referencia)
@@ -354,6 +379,107 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertNull($a->cobro_solicitud_id);
         $this->assertSame(1, $lote->items()->count());
         $this->assertSame(EstadoPresentacionCobro::Presentada, $b->refresh()->presentacion_estado);
+    }
+
+    /**
+     * El quedan se presentó desde Cobros y el reporte del caso no trae A: el cliente no lo
+     * tomó. A sale del lote y también del quedan, vuelve a «por presentar», entra en otro PPQ
+     * y en otro quedan, y el acuse posterior del quedan viejo no lo toca. Antes volvía a «por
+     * presentar» colgado del quedan viejo: Cobros no armaba otro quedan con él y el acuse lo
+     * marcaba recibido.
+     */
+    public function test_el_ccf_que_no_trae_el_reporte_del_caso_sale_del_quedan_presentado_y_entra_en_otro(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a, $b);
+
+        $this->cargarReporte($oficina, $lote, '12040', $b)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, 'vuelven a por presentar: '.$a->correlativoCorto()));
+
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $a->presentacion_estado);
+        $this->assertNull($a->cobro_solicitud_id);
+        $nota = $a->eventos()->where('referencia_linea', 'caso-12040-fuera')->sole();
+        $this->assertStringContainsString("Salió del quedan presentado {$quedan->referencia}", $nota->detalle);
+        $this->assertSame($quedan->id, $nota->datos['cobro_solicitud_id']);
+        $bitacora = Activity::where('log_name', 'cobros_solicitud')->sole();
+        $this->assertTrue($bitacora->subject->is($quedan));
+        $this->assertSame($a->id, $bitacora->properties['cobro_documento_id']);
+        $this->assertSame([$b->dte_id], $lote->items()->pluck('dte_id')->all());
+        $this->assertSame($quedan->id, $b->refresh()->cobro_solicitud_id);
+
+        // A entra en otro PPQ; el acuse del quedan viejo no lo toca; y va en otro quedan.
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors()->assertSessionHas('status');
+        $this->acuse($oficina, $quedan, '41020')->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $a->refresh()->presentacion_estado);
+        $this->assertSame(0, $a->eventos()->where('tipo', TipoEventoCobro::Recibido->value)->count());
+        $otroQuedan = $this->presentarQuedan($oficina, $a);
+        $this->assertSame($otroQuedan->id, $a->refresh()->cobro_solicitud_id);
+    }
+
+    /**
+     * El reporte llega antes de registrar la presentación del quedan: A no sale del lote ni
+     * vuelve a «por presentar» (no podría ir en otro quedan) y el aviso dice por qué.
+     * Registrada la presentación, volver a cargar el mismo reporte sí lo suelta.
+     */
+    public function test_con_el_quedan_sin_presentacion_registrada_el_reporte_no_suelta_el_ccf_hasta_registrarla(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->generarQuedan($oficina, $a, $b);
+
+        $this->cargarReporte($oficina, $lote, '12041', $b)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "No salieron del PPQ: {$a->correlativoCorto()} (va en el quedan {$quedan->referencia}, que todavía no tiene la presentación registrada")
+                && ! str_contains($m, 'vuelven a por presentar'));
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $a->presentacion_estado);
+        $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+        $this->assertSame(0, $a->eventos()->where('referencia_linea', 'caso-12041-fuera')->count());
+        $this->assertEqualsCanonicalizing([$a->dte_id, $b->dte_id], $lote->items()->pluck('dte_id')->all());
+
+        $this->registrarPresentacion($oficina, $quedan);
+        $this->cargarReporte($oficina, $lote, '12041', $b)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, 'vuelven a por presentar: '.$a->correlativoCorto()));
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $a->presentacion_estado);
+        $this->assertNull($a->cobro_solicitud_id);
+        $this->assertSame([$b->dte_id], $lote->items()->pluck('dte_id')->all());
+    }
+
+    /**
+     * Con el acuse del quedan ya registrado, el CCF que el reporte no trae no vuelve a «por
+     * presentar»: no podría ir en otro quedan. Queda en el lote y en el quedan, y el aviso lo
+     * dice. Qué hacer con él queda por decidir.
+     */
+    public function test_si_el_quedan_ya_tiene_el_acuse_el_ccf_que_no_trae_el_reporte_no_queda_por_presentar(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a, $b);
+        $this->acuse($oficina, $quedan, '41021')->assertSessionHasNoErrors();
+
+        $this->cargarReporte($oficina, $lote, '12042', $b)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "{$a->correlativoCorto()} (va en el quedan {$quedan->referencia}, que ya tiene el acuse del cliente)"));
+
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $a->presentacion_estado);
+        $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+        $this->assertSame(0, $a->eventos()->where('referencia_linea', 'caso-12042-fuera')->count());
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+        $this->assertEqualsCanonicalizing([$a->dte_id, $b->dte_id], $lote->items()->pluck('dte_id')->all());
     }
 
     /**

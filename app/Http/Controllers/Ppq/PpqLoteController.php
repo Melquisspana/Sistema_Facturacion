@@ -408,6 +408,10 @@ class PpqLoteController extends Controller
         if ($r['conservados']->isNotEmpty()) {
             $mensaje .= ' Se conservaron '.$r['conservados']->count().' item(s) con historial de conciliación.';
         }
+        if ($r['retenidos'] !== []) {
+            $mensaje .= ' No salieron del PPQ: '.collect($r['retenidos'])
+                ->map(fn ($fila) => $fila['documento']->correlativoCorto().' ('.$fila['motivo'].')')->implode('; ').'.';
+        }
 
         return redirect()->route('ppq.lotes.show', $lote)->with('status', $mensaje);
     }
