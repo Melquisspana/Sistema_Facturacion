@@ -284,6 +284,36 @@ class PpqLoteAltaYEdicionTest extends TestCase
         $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->refresh()->presentacion_estado);
     }
 
+    /**
+     * Presentar el CCF con un quedan de Cobros deja la columna del lote en borrador. La ficha
+     * seguía ofreciendo «Eliminar lote» y el servidor lo borraba, porque solo miraba la
+     * columna: se eliminaba un PPQ presentado. Ahora decide su estado real, como «Editar».
+     */
+    public function test_un_ppq_cuyo_ccf_se_presento_desde_cobros_no_se_elimina_aunque_siga_en_borrador(): void
+    {
+        $usuario = $this->usuario();
+        $doc = $this->ccf();
+        $lote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$doc->id]);
+        $this->actingAs($usuario)->get(route('ppq.lotes.show', $lote))->assertOk()->assertSee('Eliminar lote');
+
+        $solicitudes = app(SolicitudCobroService::class);
+        $quedan = $solicitudes->registrarPresentacion($solicitudes->crear($this->cliente, [$doc->id], $usuario), $usuario);
+        $this->assertSame(EstadoPpq::Borrador, $lote->refresh()->estado, 'La columna del lote no la mueve Cobros.');
+
+        $this->actingAs($usuario)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSee('Presentado')->assertDontSee('Eliminar lote');
+        $this->actingAs($usuario)->from(route('ppq.lotes.show', $lote))->delete(route('ppq.lotes.destroy', $lote))
+            ->assertRedirect(route('ppq.lotes.show', $lote))
+            ->assertSessionHas('error', 'Este PPQ está Presentado y ya no se elimina.');
+
+        $this->assertNotSoftDeleted($lote);
+        $this->assertSame(1, $lote->items()->count());
+        $doc->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $doc->presentacion_estado);
+        $this->assertSame($quedan->id, $doc->cobro_solicitud_id);
+        $this->assertSame(0, $doc->eventos()->where('referencia_linea', "ppq-{$lote->id}-borrado")->count());
+    }
+
     public function test_quien_solo_ve_ppq_no_edita_y_no_cambia_nada(): void
     {
         $lote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);

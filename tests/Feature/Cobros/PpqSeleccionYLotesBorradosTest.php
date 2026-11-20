@@ -18,6 +18,7 @@ use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
+use App\Services\Cobros\LiberarCcfDeLoteBorrado;
 use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\EstadoRealLotePpq;
@@ -263,24 +264,19 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $this->assertSame(1, PpqLote::count());
     }
 
+    /**
+     * Lo que se arma se elimina desde la ficha; un lote con CCF presentados o pagados ya no
+     * ({@see PpqLote::seEditaSegun()}). La regla de qué vuelve es la misma para los dos, y la
+     * usa también el comando de reparación de lotes ya borrados.
+     */
     public function test_borrar_libera_solo_lo_que_estaba_por_ese_lote(): void
     {
         $libre = $this->ccf();
-        $presentadoSinEvidencia = $this->ccf();
-        $pagado = $this->ccf();
-        $registradoPorCalleja = $this->ccf();
         $duplicado = $this->ccf();
         $conSolicitud = $this->ccf();
         $conDiferencia = $this->ccf();
-        $lote = $this->crear([$libre, $presentadoSinEvidencia, $pagado, $registradoPorCalleja, $duplicado, $conSolicitud, $conDiferencia]);
-        $presentadoSinEvidencia->refresh()->forceFill(['presentacion_estado' => 'presentada'])->save();
-        $pagado->refresh()->forceFill(['pago_estado' => 'pagado'])->save();
+        $lote = $this->crear([$libre, $duplicado, $conSolicitud, $conDiferencia]);
         $conDiferencia->refresh()->forceFill(['pago_estado' => 'diferencia'])->save();
-        $registradoPorCalleja->refresh()->forceFill(['presentacion_estado' => 'recibida'])->save();
-        CobroEvento::create([
-            'cobro_documento_id' => $registradoPorCalleja->id, 'tipo' => 'recibido', 'origen' => 'manual',
-            'referencia_linea' => 'caso-12027', 'fecha' => today(), 'datos' => ['caso' => '12027'],
-        ]);
         $solicitud = CobroSolicitud::create([
             'cliente_id' => $this->cliente->id, 'referencia' => 'SOL-FICTICIA',
             'formato' => 'carga_masiva_nc_v1', 'archivo_nombre' => 'ficticio.xlsx',
@@ -291,19 +287,41 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
 
         $user = $this->usuario();
         $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))->assertRedirect(route('ppq.lotes.index'))
-            ->assertSessionHas('status', fn ($mensaje) => str_contains($mensaje, '2 CCF volvieron a por presentar')
-                && str_contains($mensaje, 'No se tocaron 5') && str_contains($mensaje, 'caso 12027')
+            ->assertSessionHas('status', fn ($mensaje) => str_contains($mensaje, '1 CCF volvieron a por presentar')
+                && str_contains($mensaje, 'No se tocaron 3') && str_contains($mensaje, 'pagado o con pago registrado')
                 && str_contains($mensaje, "PPQ #{$otro->id}") && str_contains($mensaje, 'SOL-FICTICIA'));
 
         $this->assertSoftDeleted($lote);
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $libre->refresh()->presentacion_estado);
-        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $presentadoSinEvidencia->refresh()->presentacion_estado);
-        $this->assertSame(EstadoPresentacionCobro::Preparada, $pagado->refresh()->presentacion_estado);
-        $this->assertSame(EstadoPresentacionCobro::Recibida, $registradoPorCalleja->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::Preparada, $duplicado->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::Preparada, $conSolicitud->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::Preparada, $conDiferencia->refresh()->presentacion_estado);
         $this->assertDatabaseHas('cobro_eventos', ['cobro_documento_id' => $libre->id, 'tipo' => 'nota', 'referencia_linea' => "ppq-{$lote->id}-borrado", 'user_id' => $user->id]);
+
+        // Con CCF presentados o pagados, la ficha ya no lo elimina; la regla sigue igual.
+        $presentadoSinEvidencia = $this->ccf();
+        $pagado = $this->ccf();
+        $registradoPorCalleja = $this->ccf();
+        $presentado = $this->crear([$presentadoSinEvidencia, $pagado, $registradoPorCalleja]);
+        $presentadoSinEvidencia->refresh()->forceFill(['presentacion_estado' => 'presentada'])->save();
+        $pagado->refresh()->forceFill(['pago_estado' => 'pagado'])->save();
+        $registradoPorCalleja->refresh()->forceFill(['presentacion_estado' => 'recibida'])->save();
+        CobroEvento::create([
+            'cobro_documento_id' => $registradoPorCalleja->id, 'tipo' => 'recibido', 'origen' => 'manual',
+            'referencia_linea' => 'caso-12027', 'fecha' => today(), 'datos' => ['caso' => '12027'],
+        ]);
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $presentado))->assertRedirect(route('ppq.lotes.show', $presentado))
+            ->assertSessionHas('error');
+        $this->assertNotSoftDeleted($presentado);
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $presentadoSinEvidencia->refresh()->presentacion_estado);
+
+        $resultado = app(LiberarCcfDeLoteBorrado::class)->liberar($presentado, $user);
+        $this->assertSame([$presentadoSinEvidencia->id], $resultado['liberados']->pluck('id')->all());
+        $this->assertCount(2, $resultado['conservados']);
+        $this->assertStringContainsString('caso 12027', $resultado['conservados']->pluck('motivo')->implode('; '));
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $presentadoSinEvidencia->refresh()->presentacion_estado);
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $pagado->refresh()->presentacion_estado);
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $registradoPorCalleja->refresh()->presentacion_estado);
     }
 
     public function test_comando_simula_libera_y_es_idempotente(): void

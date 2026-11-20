@@ -410,25 +410,27 @@ class PpqLoteController extends Controller
     }
 
     /**
-     * Solo se elimina lo que la ficha deja eliminar: un lote que se arma. Presentado, pagado u
-     * observado no, aunque llegue el pedido a mano (sus CCF presentados volvían a «por
-     * presentar»). Se revisa con el lote bloqueado, como el «quitar».
+     * Solo se elimina lo que la ficha deja eliminar: un lote que se arma, con la misma regla
+     * que «Editar» ({@see PpqLote::seEditaSegun()}). Presentado, pagado u observado no, aunque
+     * llegue el pedido a mano (sus CCF presentados volvían a «por presentar»), ni el que se
+     * presentó desde Cobros con la columna todavía en borrador. Se revisa con el lote
+     * bloqueado, como el «quitar».
      */
     public function destroy(Request $request, PpqLote $lote, LiberarCcfDeLoteBorrado $liberador): RedirectResponse
     {
         $resultado = DB::transaction(function () use ($lote, $liberador, $request) {
             $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
-            if (! $actual->esEditable()) {
-                return null;
+            $real = app(EstadoRealLotePpq::class)->calcular(collect([$actual]))[$actual->id];
+            if (! $actual->seEditaSegun($real)) {
+                return 'Este PPQ está '.($actual->esEditable() ? $real['estado']['label'] : $actual->estado->label()).' y ya no se elimina.';
             }
             $resultado = $liberador->liberar($actual, $request->user());
             $actual->delete();
 
             return $resultado;
         });
-        if ($resultado === null) {
-            return redirect()->route('ppq.lotes.show', $lote)
-                ->with('error', 'Este PPQ está '.$lote->refresh()->estado->label().' y ya no se elimina.');
+        if (is_string($resultado)) {
+            return redirect()->route('ppq.lotes.show', $lote)->with('error', $resultado);
         }
         $mensaje = 'Lote PPQ eliminado. '.$resultado['liberados']->count().' CCF volvieron a por presentar.';
         if ($resultado['conservados']->isNotEmpty()) {

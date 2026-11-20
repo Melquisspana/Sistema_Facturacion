@@ -318,6 +318,9 @@ class CobrosTxtNoPagadosTest extends TestCase
     public function test_el_pagado_de_menos_reenviado_vuelve_a_por_presentar_si_se_borra_el_ppq_nuevo(): void
     {
         [$b, $nuevo, $usuario] = $this->pagadoDeMenosEnPpqNuevo();
+        // El lote nuevo se está armando aunque su CCF traiga el pago de menos del lote viejo:
+        // la ficha ofrece eliminarlo, igual que el servidor.
+        $this->actingAs($usuario)->get(route('ppq.lotes.show', $nuevo))->assertOk()->assertSee('Eliminar lote');
 
         $this->actingAs($usuario)->delete(route('ppq.lotes.destroy', $nuevo))
             ->assertSessionHas('status', 'Lote PPQ eliminado. 1 CCF volvieron a por presentar.');

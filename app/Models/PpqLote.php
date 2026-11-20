@@ -142,14 +142,18 @@ class PpqLote extends Model
     }
 
     /**
-     * Referencia, fecha y observaciones se cambian solo mientras el lote se arma. La columna
-     * sola no alcanza: presentar sus CCF desde Cobros la deja en borrador, y el estado real
-     * ya dice presentado. La misma condición la usan update() y el botón «Editar».
+     * Referencia, fecha y observaciones se cambian, y el lote se elimina, solo mientras se
+     * arma: ningún CCF presentado ni pagado. La columna sola no alcanza: presentar sus CCF
+     * desde Cobros la deja en borrador, y el estado real ya dice presentado. La misma condición
+     * la usan update(), destroy() y los botones «Editar» y «Eliminar lote».
      *
-     * @param  array{estado: array{key: string}}  $estadoReal  el de EstadoRealLotePpq para este lote
+     * Se mira lo presentado y lo pagado, no la etiqueta: un lote nuevo con lo pagado de menos
+     * que el TXT devolvió de otro lote figura «Con diferencias» y se sigue armando.
+     *
+     * @param  array{presentados: int, pagados: int}  $estadoReal  el de EstadoRealLotePpq para este lote
      */
     public function seEditaSegun(array $estadoReal): bool
     {
-        return $this->esEditable() && in_array($estadoReal['estado']['key'], ['armado', 'anterior'], true);
+        return $this->esEditable() && $estadoReal['presentados'] === 0 && $estadoReal['pagados'] === 0;
     }
 }
