@@ -364,6 +364,27 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
     }
 
+    /** Doble clic en «Dejar listos»: el segundo envío se rechaza entero y no saca nada más del quedan. */
+    public function test_doble_clic_al_dejar_listo_lo_no_pagado_de_un_quedan_no_lo_saca_dos_veces(): void
+    {
+        $e = $this->escenario();
+        $this->quedanCon($e['c'], EstadoSolicitudCobro::Presentada);
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+        $itemC = $this->item($e['lote'], $e['c']->dte_id);
+        $pedido = ['hash' => $hash, 'items' => [$itemC->id]];
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), $pedido)->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), $pedido)
+            ->assertSessionHasErrors(['items' => "Item #{$itemC->id}: no corresponde a los pendientes de este TXT."]);
+
+        $c = $e['c']->refresh();
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $c->presentacion_estado);
+        $this->assertNull($c->cobro_solicitud_id);
+        $this->assertSame(1, $c->eventos()->where('referencia_linea', 'like', 'txt-%-fuera')->count());
+        $this->assertSame(1, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
     /** Sala, número y tipo de cada fila del archivo de quedan del lote. */
     private function filasQuedan(PpqLote $lote): array
     {

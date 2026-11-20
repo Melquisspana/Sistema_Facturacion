@@ -18,6 +18,7 @@ use App\Models\NcExportacion;
 use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Models\User;
+use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\EstadoRealLotePpq;
 use Illuminate\Database\Events\QueryExecuted;
@@ -591,5 +592,168 @@ class PpqQuitarCcfDelQuedanPresentadoTest extends TestCase
         $this->assertSame(EstadoPresentacionCobro::Preparada, $x->presentacion_estado);
         $this->assertSame($quedan->id, $x->cobro_solicitud_id);
         $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
+    /** Doble clic en «quitar»: el segundo pedido ya no encuentra el renglón y no saca nada más. */
+    public function test_doble_clic_en_quitar_no_saca_dos_veces_el_ccf_del_quedan(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a, $b);
+        $item = $lote->items()->where('dte_id', $a->dte_id)->sole();
+        $quitar = fn () => $this->actingAs($oficina)->from(route('ppq.lotes.show', $lote))
+            ->delete(route('ppq.lotes.items.destroy', [$lote, $item]));
+
+        $quitar()->assertSessionHas('status');
+        $this->assertLessThan(500, $quitar()->status(), 'El segundo pedido no es una falla del servidor.');
+
+        $this->assertSame([$b->dte_id], $lote->items()->pluck('dte_id')->all());
+        $this->assertSame(1, Activity::where('log_name', 'cobros_solicitud')->count());
+        $this->assertSame(1, Activity::where('description', 'ppq.item_quitado')->count());
+        $this->assertSame(1, $a->eventos()->where('referencia_linea', "ppq-{$lote->id}-quitado")->count());
+        $this->assertNull($a->refresh()->cobro_solicitud_id);
+        $this->assertSame($quedan->id, $b->refresh()->cobro_solicitud_id);
+    }
+
+    /**
+     * El acuse entra por correo justo después de que el «quitar» leyó los CCF sin candado y
+     * antes de que bloquee el quedan. Se decide con el quedan releído: ya tiene el acuse, así
+     * que el CCF no se suelta y conserva su evento «recibido». En MySQL el acuse esperaría al
+     * candado; acá se lo mete en ese hueco para ver que se decide con lo releído.
+     */
+    public function test_el_acuse_que_entra_por_correo_mientras_se_quita_deja_el_ccf_en_su_quedan(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a);
+
+        $this->alLeerCcfSinCandado(fn () => app(SolicitudCobroService::class)->registrarRecibido($quedan, '41090'));
+        $this->quitar($oficina, $lote, $a->dte_id)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "no volvió a por presentar: el cliente ya dio el acuse del quedan {$quedan->referencia}."));
+
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $a->presentacion_estado);
+        $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+        $this->assertSame(1, $a->eventos()->where('tipo', TipoEventoCobro::Recibido->value)->count());
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
+    /** Lo mismo al cargar el reporte del caso: el acuse entra antes de que se bloquee el quedan. */
+    public function test_el_acuse_que_entra_por_correo_mientras_se_carga_el_reporte_deja_el_ccf_en_su_quedan(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a, $b);
+
+        $this->alLeerCcfSinCandado(fn () => app(SolicitudCobroService::class)->registrarRecibido($quedan, '41091'));
+        $this->cargarReporte($oficina, $lote, '12060', $b)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "{$a->correlativoCorto()} (va en el quedan {$quedan->referencia}, que ya tiene el acuse del cliente)"));
+
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $a->presentacion_estado);
+        $this->assertSame($quedan->id, $a->cobro_solicitud_id);
+        $this->assertSame(0, $a->eventos()->where('referencia_linea', 'caso-12060-fuera')->count());
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+        $this->assertEqualsCanonicalizing([$a->dte_id, $b->dte_id], $lote->items()->pluck('dte_id')->all());
+    }
+
+    /** Corre `$acuse` una sola vez, enseguida de la primera lectura de CCF sin candado del pedido que sigue. */
+    private function alLeerCcfSinCandado(callable $acuse): void
+    {
+        $hecho = false;
+        DB::listen(function (QueryExecuted $q) use (&$hecho, $acuse) {
+            if ($hecho || preg_match('/^select \* from [`"]cobro_documentos[`"] where /i', $q->sql) !== 1
+                || stripos($q->sql, 'for update') !== false) {
+                return;
+            }
+            $hecho = true;
+            $acuse();
+        });
+    }
+
+    /**
+     * Doble clic al cargar el reporte, cuando A ya salió del quedan viejo, entró en otro PPQ y
+     * va en otro quedan: el segundo reporte no lo toca ni deja otra constancia.
+     */
+    public function test_cargar_dos_veces_el_reporte_no_toca_el_ccf_que_ya_va_en_otro_quedan(): void
+    {
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $b = $this->ccf();
+        $this->crearPpq($oficina, $a, $b)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $quedan = $this->presentarQuedan($oficina, $a, $b);
+        $this->cargarReporte($oficina, $lote, '12061', $b)->assertSessionHas('status');
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors();
+        $this->travel(1)->seconds();
+        $otroQuedan = $this->generarQuedan($oficina, $a);
+
+        $this->cargarReporte($oficina, $lote, '12061', $b)->assertSessionHas('status');
+
+        $a->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $a->presentacion_estado);
+        $this->assertSame($otroQuedan->id, $a->cobro_solicitud_id);
+        $this->assertSame(1, $a->eventos()->where('referencia_linea', 'caso-12061-fuera')->count());
+        $this->assertSame(1, Activity::where('log_name', 'cobros_solicitud')->count());
+        $this->assertSame($quedan->id, $b->refresh()->cobro_solicitud_id);
+    }
+
+    /**
+     * X va en un quedan presentado directo desde Cobros y después se agregó a mano al lote. El
+     * reporte del caso no lo trae: ese quedan no salió de este lote, así que X no sale de él ni
+     * del lote, y el aviso lo dice.
+     */
+    public function test_el_reporte_no_saca_del_quedan_un_ccf_agregado_al_lote_despues_de_presentarlo(): void
+    {
+        $oficina = $this->usuario();
+        $x = $this->ccf();
+        $y = $this->ccf();
+        $quedan = $this->presentarQuedan($oficina, $x);
+        $this->crearPpq($oficina, $y)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(5)->minutes();
+        $this->actingAs($oficina)->from(route('ppq.lotes.show', $lote))
+            ->post(route('ppq.lotes.items.store', $lote), ['dte_id' => $x->dte_id, 'sin_albaran' => '1'])
+            ->assertSessionMissing('error');
+
+        $this->cargarReporte($oficina, $lote, '12062', $y)->assertSessionHas('status',
+            fn (string $m) => str_contains($m, "No salieron del PPQ: {$x->correlativoCorto()} (va en el quedan {$quedan->referencia}, que no se armó con este PPQ)"));
+
+        $x->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $x->presentacion_estado);
+        $this->assertSame($quedan->id, $x->cobro_solicitud_id);
+        $this->assertSame(0, $x->eventos()->where('referencia_linea', 'caso-12062-fuera')->count());
+        $this->assertEqualsCanonicalizing([$x->dte_id, $y->dte_id], $lote->items()->pluck('dte_id')->all());
+    }
+
+    /** El nombre del cliente va dentro del confirm() del «quitar»: comillas o etiquetas no rompen el aviso. */
+    public function test_el_aviso_de_quitar_escapa_el_nombre_del_cliente(): void
+    {
+        $this->cliente->forceFill(['nombre' => 'Sala "Uno" \'Dos\' <script>alert(1)</script>'])->save();
+        $oficina = $this->usuario();
+        $a = $this->ccf();
+        $this->crearPpq($oficina, $a)->assertSessionHasNoErrors();
+        $lote = PpqLote::sole();
+        $this->travel(1)->seconds();
+        $this->presentarQuedan($oficina, $a);
+
+        $html = $this->actingAs($oficina)->get(route('ppq.lotes.show', $lote))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString('<script>alert(1)', $html);
+        // Las comillas y los signos < > van como escapes de JavaScript (barra, u y el código).
+        $u = fn (string $codigo) => chr(92).'u'.$codigo;
+        $this->assertStringContainsString('Hacelo solo si Sala '.$u('0022').'Uno'.$u('0022').' '.$u('0027').'Dos'.$u('0027').' '.$u('003C').'script'.$u('003E'), $html);
     }
 }
