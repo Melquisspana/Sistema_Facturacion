@@ -374,10 +374,11 @@ class ImportarPedidosWeb
      * por fila leída): se pide cada MINUTOS_REVISION. Su «en» solo se escribe con la lista
      * completa, así que una que no llegó se vuelve a pedir en la pasada siguiente. Con un
      * pedido importado sin borrador de factura, en cada pasada: su pago doble la frena.
+     * Una marca que no se puede leer no frena el pedido: se pide y la lista la reemplaza.
      */
     private function revisionAlDia(): bool
     {
-        $en = Cache::get(self::CLAVE_REVISION)['en'] ?? null;
+        $en = rescue(fn () => Cache::get(self::CLAVE_REVISION), null, report: false)['en'] ?? null;
 
         return is_int($en) && $en > now()->subMinutes(self::MINUTOS_REVISION)->getTimestamp()
             && ! PedidoWeb::where('estado', EstadoPedidoWeb::Importado)->exists();

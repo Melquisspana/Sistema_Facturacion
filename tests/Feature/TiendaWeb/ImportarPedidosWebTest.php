@@ -36,6 +36,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -452,12 +453,20 @@ class ImportarPedidosWebTest extends TestCase
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/limpieza') && $r->body() === '');
     }
 
+    /** @return array<string, array{0: string}> */
+    public static function caches(): array
+    {
+        return ['en memoria' => ['array'], 'en la base, como en producción' => ['database']];
+    }
+
     /**
      * La limpieza de la página relee tablas enteras y Cloudflare cobra por fila leída: se
      * pide como mucho una vez por hora, aunque falle. Los pedidos pagados, cada minuto.
      */
-    public function test_la_limpieza_se_pide_como_mucho_una_vez_por_hora_aunque_falle_y_los_pedidos_cada_minuto(): void
+    #[DataProvider('caches')]
+    public function test_la_limpieza_se_pide_como_mucho_una_vez_por_hora_aunque_falle_y_los_pedidos_cada_minuto(string $cache): void
     {
+        Cache::setDefaultDriver($cache);
         Http::fake([
             '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),
             '*/pedidos-pagados*' => Http::response(['pedidos' => []]),
@@ -522,6 +531,41 @@ class ImportarPedidosWebTest extends TestCase
         $this->pasar();
 
         $this->assertSame('pago_doble', PedidoWeb::firstOrFail()->alerta);
+    }
+
+    /**
+     * Si no se puede leer cuándo se pidió la lista de revisión (una fila de la caché dañada),
+     * se pide igual, como antes de pedirla cada 5 minutos: el pago doble frena la factura del
+     * pedido recién importado y la lista nueva reemplaza la marca dañada.
+     */
+    public function test_si_no_se_puede_leer_la_marca_de_la_lista_de_revision_se_pide_igual_y_anota_el_pago_doble(): void
+    {
+        Cache::extend('rota', fn () => Cache::repository(new class extends ArrayStore
+        {
+            public function get($key)
+            {
+                if ($key === ImportarPedidosWeb::CLAVE_REVISION) {
+                    throw new \RuntimeException('Fila dañada inventada');
+                }
+
+                return parent::get($key);
+            }
+        }));
+        config(['cache.stores.rota' => ['driver' => 'rota']]);
+        Cache::setDefaultDriver('rota');
+        Http::fake([
+            '*/pedidos-pagados*' => Http::response(['pedidos' => [$this->datos()]]),
+            '*/pedidos-a-revisar*' => Http::response(['pedidos' => [['id' => 1, 'alerta' => 'pago_doble']]]),
+            '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
+            '*/estado' => Http::response([], 200),
+            '*/limpieza' => Http::response(),
+        ]);
+
+        $this->assertSame(1, $this->pasar()['importados']);
+
+        $web = PedidoWeb::firstOrFail();
+        $this->assertSame(EstadoPedidoWeb::Importado, $web->estado);
+        $this->assertSame('pago_doble', $web->alerta, 'Sin esto la factura sale para un pedido pagado dos veces.');
     }
 
     public function test_pago_doble_tardio_se_anota_sin_cambiar_estado_y_consulta_fallida_no_frena(): void
