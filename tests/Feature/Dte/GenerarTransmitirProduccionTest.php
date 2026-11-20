@@ -10,6 +10,7 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\PreflightEmisionProduccion;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -173,6 +174,30 @@ class GenerarTransmitirProduccionTest extends TestCase
         $this->emitir($ccf)->assertRedirect();
 
         $this->assertSame('aceptado', $ccf->fresh()->estado->value); // generó → firmó → transmitió
+    }
+
+    /**
+     * Si al generar choca con un número que otro pedido acaba de usar, la base lo frena: la
+     * pantalla lo dice con claridad, el documento sigue en borrador y no se transmite nada,
+     * en vez de mostrar un error 500.
+     */
+    public function test_desde_borrador_un_choque_de_numeracion_se_avisa_sin_error_500(): void
+    {
+        $this->preflightVerde();
+        $gen = Mockery::mock(DteGeneracionService::class);
+        $gen->shouldReceive('generar')->once()->andThrow(new UniqueConstraintViolationException(
+            'sqlite', 'update dtes set numero_interno = ?', [], new \PDOException('UNIQUE constraint failed: dtes.numero_interno'),
+        ));
+        $this->app->instance(DteGeneracionService::class, $gen);
+
+        $ccf = $this->ccf('borrador', ['numero_control' => null, 'codigo_generacion' => null, 'json_generado_path' => null]);
+
+        $this->emitir($ccf)
+            ->assertRedirect(route('facturacion.show', $ccf))
+            ->assertSessionHas('error', 'No se pudo generar el documento: otro documento acaba de tomar ese número. El borrador quedó como estaba y no se transmitió nada: intentá de nuevo.');
+
+        $this->assertSame('borrador', $ccf->fresh()->estado->value);
+        $this->assertNull($ccf->fresh()->sello_recepcion);
     }
 
     public function test_desde_borrador_la_orden_con_otra_forma_pide_confirmar_y_confirmada_genera(): void
