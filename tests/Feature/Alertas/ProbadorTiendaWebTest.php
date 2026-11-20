@@ -246,6 +246,25 @@ class ProbadorTiendaWebTest extends TestCase
         $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
     }
 
+    /**
+     * En el servidor la pasada tarda unos segundos: si la lista de revisión se anotó a las
+     * 10:00:50, a las 10:05:00 todavía no tiene 5 minutos y se pide a las 10:06. Si la página
+     * se cae justo a las 10:06, igual llega un solo correo.
+     */
+    public function test_una_pasada_lenta_corre_la_lista_de_revision_un_minuto_y_la_caida_igual_avisa_una_vez(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-19 10:00:50', 'America/El_Salvador'));
+        Artisan::call('tienda:traer-pedidos', ['--aplicar' => true]);
+        $this->travelTo(Carbon::parse('2026-11-19 10:01:00', 'America/El_Salvador'));
+        $this->pasan(5); // 10:01 a 10:05
+        $this->assertSame(['10:00'], $this->pedidas['pedidos-a-revisar'], 'La de las 10:05 todavía no toca.');
+        $this->pagina = 'caida';
+        $this->pasan(30); // 10:06 a 10:35
+
+        $this->assertSame(['falla'], $this->correos(self::SIN_TRAER));
+        $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
+    }
+
     // ───────────── Tres horas de pasadas: lo que se le pide a la página ─────────────
 
     /**
