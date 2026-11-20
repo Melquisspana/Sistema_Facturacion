@@ -126,8 +126,11 @@ class ConfiguracionFiscalValoresTest extends TestCase
         ]);
     }
 
-    /** El código de uno borrado sigue ocupado en la base: avisar en el formulario, no romper. */
-    public function test_el_codigo_de_un_establecimiento_o_punto_de_venta_borrado_se_avisa_sin_romper(): void
+    /**
+     * El código de uno borrado sigue ocupado en la base, y es el que tiene registrado Hacienda.
+     * Al crearlo otra vez no se choca contra la base: se recupera el borrado con los datos nuevos.
+     */
+    public function test_crear_con_el_codigo_de_uno_borrado_lo_recupera_con_los_datos_nuevos(): void
     {
         $admin = $this->admin();
         $cerrado = Establecimiento::create(['empresa_id' => $this->empresa->id, 'codigo' => 'S008', 'nombre' => 'Sucursal cerrada', 'activo' => true]);
@@ -138,13 +141,39 @@ class ConfiguracionFiscalValoresTest extends TestCase
         $this->actingAs($admin)->post(route('configuracion.establecimientos.store'), [
             'empresa_id' => $this->empresa->id, 'codigo' => 'S008', 'nombre' => 'Sucursal nueva',
             ...UbicacionCoherenteFactory::tercia(), 'activo' => '1',
-        ])->assertSessionHasErrors('codigo');
+        ])->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Se recuperó el establecimiento S008, que se había borrado, con los datos nuevos.');
         $this->actingAs($admin)->post(route('configuracion.puntos-venta.store'), [
             'establecimiento_id' => $this->estab->id, 'codigo' => 'P008', 'nombre' => 'Caja nueva', 'activo' => '1',
-        ])->assertSessionHasErrors('codigo');
+        ])->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Se recuperó el punto de venta P008, que se había borrado, con los datos nuevos.');
 
+        $this->assertFalse($cerrado->fresh()->trashed());
+        $this->assertSame('Sucursal nueva', $cerrado->fresh()->nombre);
+        $this->assertFalse($cajaVieja->fresh()->trashed());
+        $this->assertSame('Caja nueva', $cajaVieja->fresh()->nombre);
         $this->assertSame(1, Establecimiento::withTrashed()->where('codigo', 'S008')->count());
         $this->assertSame(1, PuntoVenta::withTrashed()->where('codigo', 'P008')->count());
+    }
+
+    /** Darle a otro el código de uno borrado no rompe: el aviso dice qué hacer. */
+    public function test_darle_a_otro_el_codigo_de_uno_borrado_dice_que_hacer(): void
+    {
+        $admin = $this->admin();
+        $cerrado = Establecimiento::create(['empresa_id' => $this->empresa->id, 'codigo' => 'S008', 'nombre' => 'Sucursal cerrada', 'activo' => true]);
+        $cajaVieja = PuntoVenta::create(['establecimiento_id' => $this->estab->id, 'codigo' => 'P008', 'nombre' => 'Caja vieja', 'activo' => true]);
+        $this->actingAs($admin)->delete(route('configuracion.establecimientos.destroy', $cerrado))->assertSessionHas('status');
+        $this->actingAs($admin)->delete(route('configuracion.puntos-venta.destroy', $cajaVieja))->assertSessionHas('status');
+
+        $this->actingAs($admin)->put(route('configuracion.establecimientos.update', $this->estab), $this->formEstablecimiento($this->estab, ['codigo' => 'S008']))
+            ->assertSessionHasErrors(['codigo' => 'Ese código era de un establecimiento que se borró. Para volver a usarlo, creá un establecimiento con ese código: se recupera el que se borró.']);
+        $this->actingAs($admin)->put(route('configuracion.puntos-venta.update', $this->pv), $this->formPuntoVenta($this->pv, ['codigo' => 'P008']))
+            ->assertSessionHasErrors(['codigo' => 'Ese código era de un punto de venta que se borró. Para volver a usarlo, creá un punto de venta con ese código: se recupera el que se borró.']);
+
+        $this->assertSame('M001', $this->estab->refresh()->codigo);
+        $this->assertSame('P001', $this->pv->refresh()->codigo);
+        $this->assertTrue($cerrado->fresh()->trashed());
+        $this->assertTrue($cajaVieja->fresh()->trashed());
     }
 
     /**

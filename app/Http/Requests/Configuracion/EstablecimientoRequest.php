@@ -26,9 +26,11 @@ class EstablecimientoRequest extends FormRequest
                 'required', 'string', 'max:4',
                 // Como lo acepta Hacienda en el número de control (DTE-03-M001P001-…).
                 'regex:/^[MBSP][0-9]{3}$/',
-                // Con los borrados también: la base no deja repetir el código en la empresa.
+                // La base tampoco deja repetir el de uno borrado: al crearlo se recupera ese
+                // ({@see EstablecimientoController::store()}), y al editar otro se avisa abajo.
                 Rule::unique('establecimientos', 'codigo')
                     ->where(fn ($q) => $q->where('empresa_id', $this->empresa_id))
+                    ->withoutTrashed()
                     ->ignore($establecimientoId),
             ],
             'nombre' => ['required', 'string', 'max:255'],
@@ -61,7 +63,7 @@ class EstablecimientoRequest extends FormRequest
     {
         return [
             'codigo.regex' => 'El código tiene que ser M, B, S o P y tres números, como M001: así lo pide Hacienda en el número de control.',
-            'codigo.unique' => 'Ese código ya lo tiene otro establecimiento de esta empresa, o uno que se borró.',
+            'codigo.unique' => 'Ese código ya lo tiene otro establecimiento de esta empresa.',
             'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
             'distrito_id.required' => 'El distrito es obligatorio para el establecimiento del emisor.',
             'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',
@@ -98,6 +100,13 @@ class EstablecimientoRequest extends FormRequest
         $establecimiento = $this->route('establecimiento');
         if ($establecimiento instanceof Establecimiento) {
             $validator->after(function ($validator) use ($establecimiento) {
+                if (! $validator->errors()->has('codigo') && Establecimiento::onlyTrashed()
+                    ->where('empresa_id', $this->input('empresa_id'))
+                    ->where('codigo', $this->input('codigo'))
+                    ->exists()) {
+                    $validator->errors()->add('codigo', 'Ese código era de un establecimiento que se borró. Para volver a usarlo, creá un establecimiento con ese código: se recupera el que se borró.');
+                }
+
                 if ((string) $this->input('codigo') !== (string) $establecimiento->codigo && $establecimiento->tieneDocumentos(soloConNumero: true)) {
                     $validator->errors()->add('codigo', 'Este establecimiento ya tiene facturas: el código no se puede cambiar, porque va en el número de control de cada una.');
                 }

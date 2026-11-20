@@ -111,6 +111,20 @@ class CrearPuntoVentaP002CommandTest extends TestCase
         $this->assertSame(4, Correlativo::count());
     }
 
+    /** Si P002 se borró por error, el comando lo recupera en vez de chocar contra la base. */
+    public function test_apply_recupera_el_p002_borrado(): void
+    {
+        $estab = $this->emisor();
+        $borrado = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P002', 'nombre' => 'Caja borrada', 'activo' => true]);
+        $borrado->delete();
+
+        $this->artisan('dte:crear-punto-venta-p002', ['--ambiente' => '00', '--apply' => true])->assertExitCode(0);
+
+        $this->assertFalse($borrado->fresh()->trashed());
+        $this->assertSame(1, PuntoVenta::withTrashed()->where('codigo', 'P002')->count());
+        $this->assertSame(4, Correlativo::where('punto_venta_id', $borrado->id)->where('ambiente', '00')->count());
+    }
+
     // --- 5. apply 01 repetido no duplica ---
 
     public function test_apply_ambiente_01_repetido_no_duplica(): void

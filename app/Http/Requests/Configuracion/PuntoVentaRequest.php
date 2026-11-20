@@ -25,9 +25,11 @@ class PuntoVentaRequest extends FormRequest
                 'required', 'string', 'max:4',
                 // Como lo acepta Hacienda en el número de control (DTE-03-M001P001-…).
                 'regex:/^P[0-9]{3}$/',
-                // Con los borrados también: la base no deja repetir el código en el establecimiento.
+                // La base tampoco deja repetir el de uno borrado: al crearlo se recupera ese
+                // ({@see PuntoVentaController::store()}), y al editar otro se avisa abajo.
                 Rule::unique('puntos_venta', 'codigo')
                     ->where(fn ($q) => $q->where('establecimiento_id', $this->establecimiento_id))
+                    ->withoutTrashed()
                     ->ignore($puntoVentaId),
             ],
             'nombre' => ['required', 'string', 'max:255'],
@@ -41,7 +43,7 @@ class PuntoVentaRequest extends FormRequest
         return [
             'establecimiento_id.exists' => 'El establecimiento no existe o fue eliminado.',
             'codigo.regex' => 'El código tiene que ser P y tres números, como P001: así lo pide Hacienda en el número de control.',
-            'codigo.unique' => 'Ese código ya lo tiene otro punto de venta de este establecimiento, o uno que se borró.',
+            'codigo.unique' => 'Ese código ya lo tiene otro punto de venta de este establecimiento.',
         ];
     }
 
@@ -59,6 +61,13 @@ class PuntoVentaRequest extends FormRequest
         }
 
         $validator->after(function ($validator) use ($puntoVenta) {
+            if (! $validator->errors()->has('codigo') && PuntoVenta::onlyTrashed()
+                ->where('establecimiento_id', $this->input('establecimiento_id'))
+                ->where('codigo', $this->input('codigo'))
+                ->exists()) {
+                $validator->errors()->add('codigo', 'Ese código era de un punto de venta que se borró. Para volver a usarlo, creá un punto de venta con ese código: se recupera el que se borró.');
+            }
+
             if ((string) $this->input('codigo') !== (string) $puntoVenta->codigo && $puntoVenta->tieneDocumentos(soloConNumero: true)) {
                 $validator->errors()->add('codigo', 'Este punto de venta ya tiene facturas: el código no se puede cambiar, porque va en el número de control de cada una.');
             }

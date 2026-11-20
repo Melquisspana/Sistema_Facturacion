@@ -10,6 +10,7 @@ use App\Models\Establecimiento;
 use App\Models\Pais;
 use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class EstablecimientoController extends Controller
@@ -28,7 +29,27 @@ class EstablecimientoController extends Controller
 
     public function store(EstablecimientoRequest $request): RedirectResponse
     {
-        Establecimiento::create($request->validated());
+        $datos = $request->validated();
+
+        // El código de uno borrado sigue ocupado en la base y es el que tiene Hacienda: se
+        // recupera ese con los datos nuevos. Para borrarlo no podía tener puntos de venta,
+        // correlativos ni documentos, así que no trae nada colgado.
+        $borrado = Establecimiento::onlyTrashed()
+            ->where('empresa_id', $datos['empresa_id'])
+            ->where('codigo', $datos['codigo'])
+            ->first();
+        if ($borrado !== null) {
+            DB::transaction(function () use ($borrado, $datos) {
+                $borrado->restore();
+                $borrado->update($datos);
+            });
+
+            return redirect()
+                ->route('configuracion.establecimientos.index')
+                ->with('status', "Se recuperó el establecimiento {$borrado->codigo}, que se había borrado, con los datos nuevos.");
+        }
+
+        Establecimiento::create($datos);
 
         return redirect()
             ->route('configuracion.establecimientos.index')
