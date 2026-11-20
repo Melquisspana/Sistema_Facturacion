@@ -60,14 +60,14 @@ class NumeroFijadoPorLaOficinaTest extends TestCase
         return User::factory()->create()->assignRole('administrador');
     }
 
-    private function emitir(): Dte
+    private function emitir(?PuntoVenta $caja = null): Dte
     {
         $borradores = app(DteBorradorService::class);
         $dte = $borradores->crearBorrador([
             'tipo_dte' => TipoDte::CreditoFiscal,
             'cliente_id' => Cliente::factory()->contribuyente()->create(),
             'establecimiento_id' => $this->estab->id,
-            'punto_venta_id' => $this->pv->id,
+            'punto_venta_id' => ($caja ?? $this->pv)->id,
         ]);
         $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
         $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 1);
@@ -76,9 +76,9 @@ class NumeroFijadoPorLaOficinaTest extends TestCase
         return $dte->refresh();
     }
 
-    private function numero(int $n): string
+    private function numero(int $n, string $caja = 'P001'): string
     {
-        return 'DTE-03-M001P001-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT);
+        return 'DTE-03-M001'.$caja.'-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT);
     }
 
     /** Crea el correlativo por la pantalla, como la oficina. */
@@ -92,18 +92,24 @@ class NumeroFijadoPorLaOficinaTest extends TestCase
         return Correlativo::where('punto_venta_id', $puntoVentaId)->firstOrFail();
     }
 
-    private function desactivar(Correlativo $correlativo): void
+    /** Lo edita por la pantalla, como la oficina. */
+    private function editar(Correlativo $correlativo, array $cambios): void
     {
         $correlativo->refresh();
-        $this->actingAs($this->admin())->put(route('configuracion.correlativos.update', $correlativo), [
+        $this->actingAs($this->admin())->put(route('configuracion.correlativos.update', $correlativo), $cambios + [
             'tipo_dte' => $correlativo->tipo_dte->value,
             'establecimiento_id' => $correlativo->establecimiento_id,
             'punto_venta_id' => $correlativo->punto_venta_id,
             'ambiente' => $correlativo->ambiente->value,
             'serie' => $correlativo->serie,
             'ultimo_numero' => $correlativo->ultimo_numero,
-            'activo' => '0',
+            'activo' => $correlativo->activo ? '1' : '0',
         ])->assertSessionHasNoErrors();
+    }
+
+    private function desactivar(Correlativo $correlativo): void
+    {
+        $this->editar($correlativo, ['activo' => '0']);
     }
 
     private function reinicios(Correlativo $correlativo): int
@@ -197,6 +203,131 @@ class NumeroFijadoPorLaOficinaTest extends TestCase
         $this->crearCorrelativo(null, 0);
 
         $this->assertSame($this->numero(1), $this->emitir()->numero_control);
+    }
+
+    // ---------------------------------------------------------------------
+    // Correlativo con documentos del año anterior
+    // ---------------------------------------------------------------------
+
+    /**
+     * La caja numeró en el sistema hasta el 800 de 2026. En enero de 2027 el sistema se cae y
+     * Conta Portable emite del 1 al 30 de 2027. La oficina pone 30: el piso de 2026 no cuenta,
+     * y el primer documento del sistema sale con el 31, no con el 1 que ya usó Conta Portable.
+     */
+    public function test_con_documentos_del_anio_anterior_la_oficina_fija_el_numero_del_anio_nuevo(): void
+    {
+        $this->en('2026-12-20 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 798);
+        $this->emitir();
+        $this->assertSame($this->numero(800), $this->emitir()->numero_control);
+
+        $this->en('2027-01-04 09:00:00');
+        $this->editar($caja, ['ultimo_numero' => '30']);
+
+        $this->assertSame($this->numero(31), $this->emitir()->numero_control);
+        $this->assertSame(31, $caja->refresh()->ultimo_numero);
+        $this->assertSame(0, $this->reinicios($caja), 'El número que la oficina fijó en 2027 ya es de 2027.');
+    }
+
+    /** El piso sigue frenando: no se baja de un número que ya usó un documento de este año. */
+    public function test_en_el_anio_nuevo_no_se_baja_de_lo_ya_emitido_ese_anio(): void
+    {
+        $this->en('2026-12-20 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 798);
+        $this->emitir();
+
+        $this->en('2027-01-04 09:00:00');
+        $this->editar($caja, ['ultimo_numero' => '30']);
+        $this->emitir(); // 31 de 2027
+
+        $caja->refresh();
+        $this->actingAs($this->admin())->put(route('configuracion.correlativos.update', $caja), [
+            'tipo_dte' => '03', 'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id,
+            'ambiente' => '00', 'ultimo_numero' => '20', 'activo' => '1',
+        ])->assertSessionHasErrors(['ultimo_numero' => 'No puede ser menor que 31: ese número ya lo usó un documento emitido con este correlativo.']);
+        $this->assertSame(31, $caja->refresh()->ultimo_numero);
+    }
+
+    /**
+     * Desactivarlo y volver a activarlo en enero de 2027 no cambia el número: sigue siendo el
+     * que se fijó en 2026, y el primer documento de 2027 vuelve a 1, no sale con el 501.
+     */
+    public function test_desactivar_y_reactivar_en_2027_no_hace_seguir_el_numero_de_2026(): void
+    {
+        $this->en('2026-11-10 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 500);
+
+        $this->en('2027-01-05 08:00:00');
+        $this->desactivar($caja);
+        $this->editar($caja, ['activo' => '1', 'serie' => 'A']);
+
+        $this->assertSame($this->numero(1), $this->emitir()->numero_control);
+        $this->assertSame(1, $this->reinicios($caja));
+    }
+
+    /** Lo mismo con el general: la caja que se desactiva en 2027 no le pasa su número de 2026. */
+    public function test_la_caja_desactivada_en_2027_no_le_pasa_al_general_su_numero_de_2026(): void
+    {
+        $this->en('2026-11-10 10:00:00');
+        $caja = $this->crearCorrelativo($this->pv->id, 500);
+
+        $this->en('2027-01-05 08:00:00');
+        $this->desactivar($caja);
+        $this->crearCorrelativo(null, 0);
+
+        $this->assertSame($this->numero(1), $this->emitir()->numero_control);
+    }
+
+    // ---------------------------------------------------------------------
+    // Un correlativo general para varias cajas
+    // ---------------------------------------------------------------------
+
+    /**
+     * Un solo correlativo general (sin punto de venta) para dos cajas: cada caja sigue su
+     * propia serie y empieza el año en 1, sin huecos por lo que numeró la otra.
+     */
+    public function test_un_general_para_dos_cajas_numera_cada_caja_por_su_serie(): void
+    {
+        $this->en('2027-01-04 08:00:00');
+        $p002 = PuntoVenta::create(['establecimiento_id' => $this->estab->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+        $general = $this->crearCorrelativo(null, 0);
+
+        $this->assertSame($this->numero(1), $this->emitir()->numero_control);
+        $this->assertSame($this->numero(1, 'P002'), $this->emitir($p002)->numero_control);
+        $this->assertSame($this->numero(2), $this->emitir()->numero_control);
+        $this->assertSame($this->numero(2, 'P002'), $this->emitir($p002)->numero_control);
+
+        // Lo que el motor mueve no pasa por un cambio a mano en la auditoría.
+        $this->assertSame(0, Activity::query()
+            ->where('subject_type', $general->getMorphClass())
+            ->where('subject_id', $general->id)
+            ->where('description', 'modificó el correlativo')
+            ->count());
+    }
+
+    /** Lo que la oficina le fija al general sí se respeta, en la caja que emite primero. */
+    public function test_el_numero_que_la_oficina_le_fija_al_general_se_respeta(): void
+    {
+        $this->en('2027-01-04 08:00:00');
+        $p002 = PuntoVenta::create(['establecimiento_id' => $this->estab->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+        $this->crearCorrelativo(null, 40);
+
+        $this->assertSame($this->numero(41), $this->emitir()->numero_control);
+        $this->assertSame($this->numero(42), $this->emitir()->numero_control);
+        $this->assertSame($this->numero(1, 'P002'), $this->emitir($p002)->numero_control);
+    }
+
+    /**
+     * Los correlativos de antes de la bitácora no tienen su alta anotada. Un general alineado
+     * entonces, sin documentos, sigue después de su número aunque la bitácora no lo explique.
+     */
+    public function test_un_general_alineado_sin_bitacora_sigue_despues_de_su_numero(): void
+    {
+        $this->en('2026-11-10 10:00:00');
+        $general = $this->crearCorrelativo(null, 0);
+        Correlativo::whereKey($general->id)->update(['ultimo_numero' => 50]);
+
+        $this->assertSame($this->numero(51), $this->emitir()->numero_control);
     }
 
     /** Lo que se fijó en 2026 es de 2026: el primer documento de 2027 vuelve a 1. */

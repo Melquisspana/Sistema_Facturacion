@@ -5,15 +5,19 @@ namespace App\Models;
 use App\Enums\AmbienteHacienda;
 use App\Enums\TipoDte;
 use App\Support\EjercicioControl;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class Correlativo extends Model
 {
     use LogsActivity;
+
+    private const CONSUMO = 'consumió el correlativo';
 
     protected $table = 'correlativos';
 
@@ -60,7 +64,7 @@ class Correlativo extends Model
             ->useLogName('configuracion')
             ->setDescriptionForEvent(fn (string $evento) => match ($evento) {
                 'created' => 'creó el correlativo',
-                'updated' => $this->esConsumoNormal() ? 'consumió el correlativo' : 'modificó el correlativo',
+                'updated' => $this->esConsumoNormal() ? self::CONSUMO : 'modificó el correlativo',
                 'deleted' => 'eliminó el correlativo',
                 default => $evento,
             });
@@ -76,6 +80,36 @@ class Correlativo extends Model
 
         return $sucios === ['ultimo_numero']
             && (int) $this->ultimo_numero === ((int) $this->getOriginal('ultimo_numero')) + 1;
+    }
+
+    /**
+     * Cuándo fijó alguien el último número, si lo último que lo movió fue un cambio a mano (el
+     * alta o una edición, por la pantalla o por un comando) y no el motor de emisión. Sale de
+     * la bitácora 'configuracion', que anota `ultimo_numero` solo cuando cambia; no de
+     * updated_at, que también se mueve al desactivarlo o cambiarle la serie. null si lo último
+     * fue el motor (consumo, reinicio o salto), si no quedó anotado o si está en cero.
+     */
+    public function numeroFijadoAManoEl(): ?CarbonInterface
+    {
+        if ($this->ultimo_numero <= 0) {
+            return null;
+        }
+
+        $ultimo = Activity::query()
+            ->where('log_name', 'configuracion')
+            ->whereMorphedTo('subject', $this)
+            ->where(fn ($q) => $q->whereNotNull('properties->attributes->ultimo_numero')->orWhereNotNull('properties->ultimo_numero'))
+            ->latest('id')
+            ->first();
+
+        $aMano = $ultimo !== null
+            && in_array($ultimo->event, ['created', 'updated'], true)
+            && $ultimo->description !== self::CONSUMO
+            // El número de hoy (leído con el candado) tiene que ser el que se fijó: si no, lo
+            // movió otro después, aunque esta lectura todavía no lo vea.
+            && (int) data_get($ultimo->properties, 'attributes.ultimo_numero') === $this->ultimo_numero;
+
+        return $aMano ? $ultimo->created_at : null;
     }
 
     /**
@@ -104,18 +138,18 @@ class Correlativo extends Model
     }
 
     /**
-     * El número más alto que ya usó un documento de este correlativo, en el ejercicio en
-     * que va la numeración: desde 2027 vuelve a 1 cada año y lo anterior cuenta como 2026,
-     * igual que al emitir. 0 si todavía no salió ninguno. Bajar `ultimo_numero` por debajo
-     * de este número haría que el siguiente documento repita uno ya usado.
+     * El número más alto que ya usó un documento de este correlativo en el ejercicio de hoy:
+     * desde 2027 vuelve a 1 cada año y lo anterior cuenta como 2026, igual que al emitir. 0 si
+     * este año todavía no salió ninguno, porque el siguiente documento empieza el año (por
+     * ejemplo, después de lo que numeró Conta Portable en enero). Bajar `ultimo_numero` por
+     * debajo de este número haría que el siguiente documento repita uno ya usado.
      */
     public function mayorNumeroEmitido(): int
     {
-        $emitidos = fn () => $this->dtes()->whereNotNull('numero_interno');
-        $ejercicio = (int) $emitidos()->max('ejercicio');
+        $hoy = EjercicioControl::hoy();
 
-        return (int) $emitidos()
-            ->when($ejercicio > EjercicioControl::ANTERIOR_AL_REINICIO, fn ($q) => $q->where('ejercicio', $ejercicio))
+        return (int) $this->dtes()->whereNotNull('numero_interno')
+            ->when($hoy > EjercicioControl::ANTERIOR_AL_REINICIO, fn ($q) => $q->where('ejercicio', $hoy))
             ->pluck('numero_interno')
             ->map(fn (string $numero) => preg_match('/(\d{1,15})$/', $numero, $m) ? (int) $m[1] : 0)
             ->max();
