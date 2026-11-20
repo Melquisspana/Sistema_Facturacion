@@ -44,6 +44,14 @@ class ImportarPedidosWeb
     /** {en, n, codigos}: pedidos que la página dejó en revisión y no llegaron al sistema. */
     public const CLAVE_REVISION = 'tienda.revision';
 
+    /** Cada cuánto se pide esa lista ({@see self::revisionAlDia()}). */
+    public const MINUTOS_REVISION = 5;
+
+    /** Cuándo se pidió la última limpieza a la página; vence sola a la hora. */
+    public const CLAVE_LIMPIEZA = 'tienda.limpieza';
+
+    private const MINUTOS_LIMPIEZA = 60;
+
     /** Los únicos tipos que se aceptan de la lista de errores de la página. */
     public const TIPOS_ERROR = ['error_cobro', 'error_interno', 'error_consulta', 'consulta_fallida', 'firma_invalida', 'vencido_sin_confirmar'];
 
@@ -146,11 +154,7 @@ class ImportarPedidosWeb
                 // «facturando» o «facturado» aunque el aviso todavía no haya salido.
                 PedidoWeb::whereNotNull('pedido_sala_id')->whereNull('informado_preparando_en')
                     ->whereNotIn('id', $intentados)->eachById(fn (PedidoWeb $p) => $this->informar($p));
-                try {
-                    $this->http()->withBody('', 'application/json')->post($this->configuracion->url().'/api/sistema/limpieza');
-                } catch (Throwable) {
-                    // La limpieza es de mejor esfuerzo y no invalida lo importado.
-                }
+                $this->pedirLimpieza();
             }
         }
         if ($aplicar) {
@@ -175,6 +179,25 @@ class ImportarPedidosWeb
             'fallo_desde' => $anterior['fallo_desde'] ?? now()->getTimestamp(),
             'invalidos' => $anterior['invalidos'] ?? 0, 'invalidos_ids' => $anterior['invalidos_ids'] ?? [],
         ]);
+    }
+
+    /**
+     * La limpieza de la página vence, vacía y borra releyendo tablas enteras (Cloudflare
+     * cobra por fila leída) y le pregunta a Wompi por los pendientes: como mucho una vez
+     * por hora, salga bien o mal. Sin caché donde anotarla se pide igual, como antes: los
+     * datos personales vencidos de la página no se quedan sin borrar. Es de mejor
+     * esfuerzo y no invalida lo importado.
+     */
+    private function pedirLimpieza(): void
+    {
+        $toca = rescue(fn () => Cache::add(self::CLAVE_LIMPIEZA, now()->getTimestamp(), now()->addMinutes(self::MINUTOS_LIMPIEZA)), true, report: false);
+        if (! $toca) {
+            return;
+        }
+        try {
+            $this->http()->withBody('', 'application/json')->post($this->configuracion->url().'/api/sistema/limpieza');
+        } catch (Throwable) {
+        }
     }
 
     /** Sin caché no hay dónde anotar: la pasada sigue su curso y la excepción no sale. */
@@ -310,6 +333,9 @@ class ImportarPedidosWeb
         $revision = 0;
         $codigos = [];
         try {
+            if ($this->revisionAlDia()) {
+                return;
+            }
             $despues = 0;
             do {
                 $respuesta = $this->http()->get($this->configuracion->url().'/api/sistema/pedidos-a-revisar', ['despues' => $despues]);
@@ -341,6 +367,20 @@ class ImportarPedidosWeb
         } catch (Throwable) {
             // Mejor esfuerzo: se vuelve a consultar en la próxima pasada.
         }
+    }
+
+    /**
+     * La lista de pedidos a revisar recorre la tabla entera de la página (Cloudflare cobra
+     * por fila leída): se pide cada MINUTOS_REVISION. Su «en» solo se escribe con la lista
+     * completa, así que una que no llegó se vuelve a pedir en la pasada siguiente. Con un
+     * pedido importado sin borrador de factura, en cada pasada: su pago doble la frena.
+     */
+    private function revisionAlDia(): bool
+    {
+        $en = Cache::get(self::CLAVE_REVISION)['en'] ?? null;
+
+        return is_int($en) && $en > now()->subMinutes(self::MINUTOS_REVISION)->getTimestamp()
+            && ! PedidoWeb::where('estado', EstadoPedidoWeb::Importado)->exists();
     }
 
     /**

@@ -309,8 +309,8 @@ class TiendaWebTest extends TestCase
         $this->lectura(okHace: 1);
         $this->errores([]);
 
-        // La ruta de revisión dejó de contestar hace 20 minutos: ese pedido pudo resolverse.
-        $this->revision(hace: 20, n: 1, codigos: ['LN-TEST-0000-0009']);
+        // La ruta de revisión dejó de contestar hace 21 minutos: ese pedido pudo resolverse.
+        $this->revision(hace: 21, n: 1, codigos: ['LN-TEST-0000-0009']);
         $h = TiendaWebFallas::otras()->revisar();
         $this->assertSame('No se pudo leer la lista de pedidos en revisión de la página', $h->titulo);
         $this->assertStringContainsString('soporte', $h->queHacer);
@@ -318,19 +318,20 @@ class TiendaWebTest extends TestCase
         $this->assertSinDatosSensibles($h);
 
         // Guardada en cero: un pedido que quede en revisión después no se pierde callado.
-        $this->revision(hace: 20);
+        $this->revision(hace: 21);
         $this->assertSame('No se pudo leer la lista de pedidos en revisión de la página', TiendaWebFallas::otras()->revisar()->titulo);
 
         // Sin la lista, cuenta desde que se vigila, como la de errores.
         Cache::forget(ImportarPedidosWeb::CLAVE_REVISION);
         $this->assertNull(TiendaWebFallas::otras()->revisar(), 'Recién empieza a vigilar: todavía no.');
-        $this->travel(16)->minutes();
+        $this->travel(21)->minutes();
         $this->lectura(okHace: 1);
         $this->errores([]);
         $this->assertSame('No se pudo leer la lista de pedidos en revisión de la página', TiendaWebFallas::otras()->revisar()->titulo);
 
-        $this->revision(hace: 15);
-        $this->assertNull(TiendaWebFallas::otras()->revisar(), 'Con 15 minutos todavía vale.');
+        // Se pide cada 5 minutos: a los 15 de gracia se suman esos 5.
+        $this->revision(hace: 20);
+        $this->assertNull(TiendaWebFallas::otras()->revisar(), 'Con 20 minutos todavía vale.');
     }
 
     public function test_otras_avisa_que_no_pudo_leer_la_lista_de_errores_de_la_pagina(): void

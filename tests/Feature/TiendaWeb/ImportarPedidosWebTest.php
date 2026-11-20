@@ -23,11 +23,13 @@ use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Services\TiendaWeb\ImportarPedidosWeb;
+use Illuminate\Cache\ArrayStore;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -354,7 +356,7 @@ class ImportarPedidosWebTest extends TestCase
         $this->assertSame(101, $this->pasar()['existentes']);
         $this->assertDatabaseCount('pedidos_sala', 101);
         $this->assertSame([0, 100, 0, 100], Http::recorded(fn (Request $r) => $r->method() === 'GET' && str_contains($r->url(), '/pedidos-pagados'))->map(fn ($par) => $par[0]['despues'])->values()->all());
-        $this->assertCount(2, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza')));
+        $this->assertCount(1, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza')), 'Una por hora, no una por pasada.');
     }
 
     public function test_avisa_solo_despues_de_confirmar_la_transaccion_local(): void
@@ -450,6 +452,78 @@ class ImportarPedidosWebTest extends TestCase
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/limpieza') && $r->body() === '');
     }
 
+    /**
+     * La limpieza de la página relee tablas enteras y Cloudflare cobra por fila leída: se
+     * pide como mucho una vez por hora, aunque falle. Los pedidos pagados, cada minuto.
+     */
+    public function test_la_limpieza_se_pide_como_mucho_una_vez_por_hora_aunque_falle_y_los_pedidos_cada_minuto(): void
+    {
+        Http::fake([
+            '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),
+            '*/pedidos-pagados*' => Http::response(['pedidos' => []]),
+            '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
+            '*/limpieza' => Http::response([], 500),
+        ]);
+        $limpiezas = [];
+        foreach ([0, 1, 58, 1, 1] as $minutos) { // 09:00, 09:01, 09:59, 10:00 y 10:01
+            $this->travel($minutos)->minutes();
+            $antes = count(Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza')));
+            $this->pasar();
+            if (count(Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza'))) > $antes) {
+                $limpiezas[] = now()->format('H:i');
+            }
+        }
+
+        $this->assertSame(['09:00', '10:00'], $limpiezas);
+        $this->assertCount(5, Http::recorded(fn (Request $r) => str_contains($r->url(), '/pedidos-pagados')));
+    }
+
+    /** Sin caché donde anotarla, la limpieza se pide igual: los datos personales vencidos de la página no se quedan sin borrar. */
+    public function test_sin_cache_la_limpieza_se_pide_igual_y_la_pasada_no_se_cae(): void
+    {
+        Cache::extend('rota', fn () => Cache::repository(new class extends ArrayStore
+        {
+            public function add($key, $value, $seconds)
+            {
+                throw new \RuntimeException('Caché caída inventada');
+            }
+        }));
+        config(['cache.stores.rota' => ['driver' => 'rota']]);
+        Cache::setDefaultDriver('rota');
+        $this->remoto([$this->datos()]);
+
+        $this->pasar();
+        $this->travel(1)->minutes();
+        $this->pasar();
+
+        $this->assertDatabaseCount('pedidos_sala', 1);
+        $this->assertCount(2, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza')));
+    }
+
+    /**
+     * Con un pedido importado que todavía no tiene factura, su pago doble tiene que llegar a
+     * tiempo de frenarla: la lista de revisión se pide en cada pasada, no cada 5 minutos.
+     */
+    public function test_con_un_pedido_sin_factura_el_pago_doble_se_anota_en_la_pasada_siguiente(): void
+    {
+        $this->remoto([$this->datos()]);
+        $this->pasar(); // 09:00
+        $this->assertSame(EstadoPedidoWeb::Importado, PedidoWeb::firstOrFail()->estado);
+        Http::swap(new Factory);
+        Http::fake([
+            '*/pedidos-pagados*' => Http::response(['pedidos' => []]),
+            '*/pedidos-a-revisar*' => Http::response(['pedidos' => [['id' => 1, 'alerta' => 'pago_doble']]]),
+            '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
+            '*/estado' => Http::response([], 200),
+            '*/limpieza' => Http::response(),
+        ]);
+
+        $this->travel(1)->minutes();
+        $this->pasar();
+
+        $this->assertSame('pago_doble', PedidoWeb::firstOrFail()->alerta);
+    }
+
     public function test_pago_doble_tardio_se_anota_sin_cambiar_estado_y_consulta_fallida_no_frena(): void
     {
         $this->remoto([$this->datos()]);
@@ -464,11 +538,13 @@ class ImportarPedidosWebTest extends TestCase
             ]])->push(['pedidos' => [['id' => 1, 'alerta' => 'pago_doble']]]),
             '*/limpieza' => Http::response(),
         ]);
+        // Ya facturado: la lista se pide cada 5 minutos, y enseguida si la última no llegó.
+        $this->travel(5)->minutes();
         $this->pasar();
         $this->assertSame('', $web->refresh()->alerta);
         $this->pasar();
         $actualizado = $web->refresh()->updated_at;
-        $this->travel(1)->minutes();
+        $this->travel(5)->minutes();
         $this->pasar();
         $this->assertSame('pago_doble', $web->refresh()->alerta);
         $this->assertTrue($actualizado->eq($web->updated_at));

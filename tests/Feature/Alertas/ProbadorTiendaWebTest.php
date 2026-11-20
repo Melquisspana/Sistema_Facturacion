@@ -221,6 +221,23 @@ class ProbadorTiendaWebTest extends TestCase
         $this->assertSame([], $this->correos(self::OTRAS));
     }
 
+    /**
+     * La lista de pedidos a revisar se pide cada 5 minutos: cuando la página se cae puede
+     * tener 4 minutos más que la última lectura buena. Esa diferencia no manda «otras».
+     */
+    public function test_una_caida_4_minutos_despues_de_pedir_la_lista_de_revision_avisa_solo_sin_traer(): void
+    {
+        $this->travel(1)->minutes();
+        $this->pasan(5); // la lista de revisión se pide a las 10:01; la última lectura buena es de las 10:05
+        $this->pagina = 'caida';
+        $this->pasan(20);
+        $this->pagina = 'bien';
+        $this->pasan(10);
+
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::SIN_TRAER));
+        $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
+    }
+
     public function test_si_sigue_caida_recuerda_cada_4_horas_y_no_mas(): void
     {
         $this->pasan(5); // última lectura buena a las 10:04

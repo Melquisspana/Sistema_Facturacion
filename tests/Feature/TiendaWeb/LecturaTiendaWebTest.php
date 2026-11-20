@@ -196,7 +196,7 @@ class LecturaTiendaWebTest extends TestCase
         $this->remoto(['*/pedidos-pagados*' => Http::response([], 401)]);
         $this->assertFalse($this->pasar(false));
 
-        foreach ([ImportarPedidosWeb::CLAVE_LECTURA, ImportarPedidosWeb::CLAVE_ERRORES, ImportarPedidosWeb::CLAVE_REVISION, ImportarPedidosWeb::CLAVE_VIGILANDO] as $clave) {
+        foreach ([ImportarPedidosWeb::CLAVE_LECTURA, ImportarPedidosWeb::CLAVE_ERRORES, ImportarPedidosWeb::CLAVE_REVISION, ImportarPedidosWeb::CLAVE_VIGILANDO, ImportarPedidosWeb::CLAVE_LIMPIEZA] as $clave) {
             $this->assertNull(Cache::get($clave), $clave);
         }
         Http::assertNotSent(fn (Request $r) => str_ends_with($r->url(), '/errores'));
@@ -334,13 +334,37 @@ class LecturaTiendaWebTest extends TestCase
 
     public function test_si_la_lista_de_revision_se_corta_a_mitad_no_se_escribe(): void
     {
-        $antes = ['en' => now()->subMinutes(2)->getTimestamp(), 'n' => 1, 'codigos' => ['LN-REVI-0000-0001']];
+        $antes = ['en' => now()->subMinutes(10)->getTimestamp(), 'n' => 1, 'codigos' => ['LN-REVI-0000-0001']];
         Cache::forever(ImportarPedidosWeb::CLAVE_REVISION, $antes);
         $pagina = array_map(fn (int $id) => ['id' => $id, 'codigo' => 'LN-REVI-0000-0001', 'estado' => 'para_revisar', 'alerta' => '', 'pasarela' => 'wompi'], range(1, 100));
         $this->remoto(['*/pedidos-a-revisar*' => Http::sequence()->push(['pedidos' => $pagina])->push([], 503)]);
 
         $this->assertTrue($this->pasar());
 
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), '/pedidos-a-revisar') && (int) $r['despues'] === 100);
         $this->assertSame($antes, Cache::get(ImportarPedidosWeb::CLAVE_REVISION));
+    }
+
+    /**
+     * La lista de pedidos a revisar recorre la tabla entera de la página (Cloudflare cobra
+     * por fila leída): se pide cada 5 minutos y, si la última no llegó, en la pasada siguiente.
+     */
+    public function test_la_lista_de_revision_se_pide_cada_5_minutos_y_enseguida_si_la_ultima_no_llego(): void
+    {
+        $pedidas = [];
+        $this->remoto(['*/pedidos-a-revisar*' => function () use (&$pedidas) {
+            $pedidas[] = now()->format('H:i');
+
+            return count($pedidas) === 2 ? Http::response([], 503) : Http::response(['pedidos' => []]);
+        }]);
+
+        for ($minuto = 0; $minuto < 12; $minuto++) {
+            $this->assertTrue($this->pasar());
+            $this->travel(1)->minutes();
+        }
+
+        // La de las 15:05 no llegó: se vuelve a pedir a las 15:06 y de ahí cada 5 minutos.
+        $this->assertSame(['15:00', '15:05', '15:06', '15:11'], $pedidas);
+        $this->assertCount(12, Http::recorded(fn (Request $r) => str_contains($r->url(), '/pedidos-pagados')));
     }
 }

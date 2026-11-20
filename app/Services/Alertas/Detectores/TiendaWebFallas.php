@@ -177,10 +177,12 @@ class TiendaWebFallas implements Detector
             ]);
         }
         // Una lista de revisión vieja (la ruta dejó de contestar) no se usa: el pedido pudo
-        // resolverse u otro quedar en revisión. Sin lista, cuenta desde que se vigila.
+        // resolverse u otro quedar en revisión. Sin lista, cuenta desde que se vigila. Se
+        // pide cada MINUTOS_REVISION: con menos margen, una caída de la página avisaría acá
+        // además de en TiendaWebSinRespuesta.
         $revision = Cache::get(ImportarPedidosWeb::CLAVE_REVISION);
         $revision = is_array($revision) ? $revision : [];
-        if (! $this->reciente($revision['en'] ?? $vigilando)) {
+        if (! $this->reciente($revision['en'] ?? $vigilando, ImportarPedidosWeb::MINUTOS_REVISION)) {
             $lineas[] = $this->linea('revision_lista', 1);
         } elseif (($revision['n'] ?? 0) > 0) {
             $codigos = $revision['codigos'] ?? [];
@@ -279,9 +281,10 @@ class TiendaWebFallas implements Detector
         return $fila['ultima'] >= now()->subMinutes((int) config('alertas.ventana_eventos_minutos', 30))->getTimestamp();
     }
 
-    private function reciente(?int $en): bool
+    /** @param  int  $cadencia  cada cuántos minutos se pide eso a la página, además de la gracia */
+    private function reciente(?int $en, int $cadencia = 0): bool
     {
-        return $en !== null && $en >= now()->subMinutes(TiendaWebSinRespuesta::MINUTOS)->getTimestamp();
+        return $en !== null && $en >= now()->subMinutes(TiendaWebSinRespuesta::MINUTOS + $cadencia)->getTimestamp();
     }
 
     /** @return array{en?: int, cobra?: bool, errores?: list<array{tipo: string, detalle: string, cantidad: int, primera: int, ultima: int}>} */
