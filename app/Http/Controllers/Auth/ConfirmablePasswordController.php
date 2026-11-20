@@ -27,7 +27,7 @@ class ConfirmablePasswordController extends Controller
     {
         // Límite de fallos por cuenta, como el login: estando adentro tampoco se prueban
         // contraseñas sin freno. Se cuenta antes de comprobarla; un acierto limpia el contador.
-        $clave = 'confirmar-clave|'.$request->user()->getAuthIdentifier();
+        $clave = LimiteContrasena::clave($request->user());
         LimiteContrasena::contar($clave, 'password');
 
         if (! Auth::guard('web')->validate([

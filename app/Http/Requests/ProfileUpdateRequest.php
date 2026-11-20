@@ -52,7 +52,7 @@ class ProfileUpdateRequest extends FormRequest
 
     /**
      * Cambiar el correo pide la contraseña actual: si no tuviera límite, sería otra puerta
-     * para probar contraseñas con una sesión ajena. Tiene el mismo que confirmarla o
+     * para probar contraseñas con una sesión ajena. Comparte el contador con confirmarla y
      * cambiarla, y el intento se cuenta antes de comprobarla.
      */
     protected function prepareForValidation(): void
@@ -86,6 +86,6 @@ class ProfileUpdateRequest extends FormRequest
 
     private function claveIntentos(): string
     {
-        return 'cambiar-correo|'.$this->user()->getAuthIdentifier();
+        return LimiteContrasena::clave($this->user());
     }
 }

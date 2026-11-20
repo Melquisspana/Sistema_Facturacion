@@ -20,7 +20,7 @@ class PasswordController extends Controller
         // Límite de fallos por cuenta, como el login: estando adentro tampoco se prueban
         // contraseñas sin freno. Se cuenta antes de comprobarla; si la actual estaba bien y
         // el error es de la nueva, el intento se devuelve, y un cambio hecho limpia el contador.
-        $clave = 'cambiar-clave|'.$request->user()->getAuthIdentifier();
+        $clave = LimiteContrasena::clave($request->user());
         LimiteContrasena::contar($clave, 'current_password', 'updatePassword');
 
         try {

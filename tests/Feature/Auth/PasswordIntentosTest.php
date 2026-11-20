@@ -225,6 +225,31 @@ class PasswordIntentosTest extends TestCase
     }
 
     /**
+     * El límite es de la cuenta, no de cada pantalla: 6 fallos al confirmar la contraseña
+     * también frenan cambiarla y cambiar el correo. Si cada pantalla contara aparte, con una
+     * sesión ajena se probarían 18 contraseñas por minuto.
+     */
+    public function test_seis_fallos_en_una_pantalla_frenan_tambien_las_otras_dos(): void
+    {
+        $user = User::factory()->create();
+        $correo = $user->email;
+
+        for ($i = 0; $i < 6; $i++) {
+            $this->confirmar($user, 'probando-'.$i)->assertSessionHasErrors('password');
+        }
+
+        $this->cambiar($user, 'password')->assertSessionHasErrorsIn('updatePassword', 'current_password');
+        $this->assertMatchesRegularExpression('/^Demasiados intentos\./', session('errors')->getBag('updatePassword')->first('current_password'));
+        $this->assertTrue(Hash::check('password', $user->refresh()->password));
+
+        $this->actingAs($user)->from('/profile')
+            ->patch('/profile', ['name' => $user->name, 'email' => 'nuevo@ejemplo.com', 'current_password' => 'password'])
+            ->assertSessionHasErrors('current_password');
+        $this->assertMatchesRegularExpression('/^Demasiados intentos\./', session('errors')->first('current_password'));
+        $this->assertSame($correo, $user->refresh()->email);
+    }
+
+    /**
      * Solo cuenta la contraseña actual equivocada: quien la pone bien y se equivoca en la
      * nueva (muy corta, no coincide la confirmación) no se queda afuera.
      */

@@ -2,12 +2,14 @@
 
 namespace App\Support;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Límite de intentos con la contraseña para quien ya está adentro (confirmarla, cambiarla
- * o cambiar el correo): 6 por minuto y por cuenta, como en el login.
+ * o cambiar el correo): 6 por minuto y por cuenta, como en el login. Las tres pantallas usan
+ * el mismo contador ({@see clave()}): si contara cada una aparte, serían 18.
  *
  * El intento se cuenta ANTES de comprobar la contraseña. Comprobarla tarda (bcrypt): si se
  * contara después, una ráfaga de pedidos simultáneos pasaría entera la revisión antes de que
@@ -19,6 +21,12 @@ final class LimiteContrasena
     public const INTENTOS = 6;
 
     private const SEGUNDOS = 60;
+
+    /** El contador de la cuenta, el mismo para las tres pantallas. */
+    public static function clave(Authenticatable $usuario): string
+    {
+        return 'clave-en-sesion|'.$usuario->getAuthIdentifier();
+    }
 
     /**
      * Cuenta el intento. Si ya pasó el límite, lo rechaza sin comprobar la contraseña, con
