@@ -21,6 +21,10 @@ use Illuminate\Validation\ValidationException;
  * presentar» con un evento `txt-…-fuera`; las NC quedan anotadas en su CCF (`txt-…-nc-…`)
  * para que las tome {@see NcPosterioresLotePpq::sueltasDelCliente()}.
  * Todo o nada: si un item no está en {@see PendientesDelTxt}, no se cambia nada.
+ *
+ * Un CCF que iba en un quedan presentado desde Cobros sin acuse sale también de ese quedan
+ * ({@see SoltarCcfDelQuedan}), para poder ir en otro. Si el quedan no tiene la presentación
+ * registrada o ya tiene el acuse, no podría ir en otro quedan: no se devuelve y se avisa.
  */
 class ReenviarPendientesTxt
 {
@@ -58,6 +62,21 @@ class ReenviarPendientesTxt
                     }
                 }
             }
+            // Los quedanes de Cobros de los CCF se bloquean ANTES que los CCF, en el orden del
+            // acuse y de la presentación, y se decide con lo releído bajo candado.
+            $salida = app(SoltarCcfDelQuedan::class);
+            $entradasCcf = $seleccion->reject(fn ($entrada) => $entrada['grupo'] === 'nc_no_descontadas');
+            $docsCcf = $entradasCcf->pluck('documento')->unique('id')->values();
+            $quedanes = $salida->bloquearQuedanes($docsCcf);
+            if ($docsCcf->isNotEmpty()) {
+                CobroDocumento::whereKey($docsCcf->pluck('id')->all())->orderBy('id')->lockForUpdate()->get();
+                $docsCcf->each->refresh();
+            }
+            foreach ($entradasCcf as $entrada) {
+                if (($motivo = $salida->motivoParaRetener($entrada['item'], $entrada['documento'], $quedanes)) !== null) {
+                    $errores[] = $entrada['item']->numero_control.": no se devuelve, porque {$motivo}.";
+                }
+            }
             if ($errores !== [] || $itemIds === []) {
                 throw ValidationException::withMessages(['items' => $errores ?: ['Marcá al menos un documento.']]);
             }
@@ -71,17 +90,26 @@ class ReenviarPendientesTxt
                     $nc = $entrada['grupo'] === 'nc_no_descontadas';
                     $doc = $nc ? $entrada['ccf'] : $entrada['documento'];
                     $datos = ['ppq_lote_id' => $lote->id, 'hash' => $hash];
+                    $quedan = null;
                     if ($nc) {
                         $datos['nc_dte_id'] = $entrada['item']->dte->id;
                     } else {
                         $datos['faltante'] = $entrada['grupo'] === 'pagados_de_menos';
-                        $doc->update(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value]);
+                        $quedan = $salida->quedanQueSuelta($entrada['item'], $doc, $quedanes);
+                        if ($quedan !== null) {
+                            $salida->soltar($doc, $quedan, $usuario, 'un CCF salió del quedan presentado: el TXT de pagos no lo pagó',
+                                ['ppq_lote_id' => $lote->id, 'hash' => $hash]);
+                            $datos['cobro_solicitud_id'] = $quedan->id;
+                        } else {
+                            $doc->update(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value]);
+                        }
                     }
                     CobroEvento::firstOrCreate(
                         ['cobro_documento_id' => $doc->id, 'tipo' => TipoEventoCobro::Nota->value,
                             'referencia_linea' => 'txt-'.substr($hash, 0, 12).($nc ? '-nc-'.$entrada['item']->dte->id : '-fuera')],
                         ['origen' => 'manual', 'fecha' => today()->toDateString(), 'user_id' => $usuario?->id, 'datos' => $datos,
-                            'detalle' => $nc ? 'Calleja no descontó la NC: va en el siguiente PPQ.' : 'Devuelto para el próximo PPQ por el TXT de pagos.'],
+                            'detalle' => $nc ? 'Calleja no descontó la NC: va en el siguiente PPQ.'
+                                : 'Devuelto para el próximo PPQ por el TXT de pagos.'.($quedan !== null ? " Salió del quedan presentado {$quedan->referencia}." : '')],
                     );
                     $resultado[$nc ? 'nc' : 'ccf']++;
                 }
