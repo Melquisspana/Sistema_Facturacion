@@ -61,7 +61,10 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
 
     private int $pedidasDeErrores = 0;
 
-    /** Si se pone, se llama una vez al empezar la lista de revisión de la próxima pasada. */
+    /**
+     * Si se pone, se llama una vez cuando la próxima pasada pide su primera página de
+     * pedidos pagados: antes de que esa pasada importe o anote nada.
+     */
     private ?\Closure $aMitad = null;
 
     protected function setUp(): void
@@ -90,7 +93,7 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
     private function contestar(Request $r)
     {
         $ruta = (string) parse_url($r->url(), PHP_URL_PATH);
-        if (str_ends_with($ruta, '/pedidos-a-revisar') && $this->aMitad !== null) {
+        if (str_ends_with($ruta, '/pedidos-pagados') && $this->aMitad !== null) {
             [$aMitad, $this->aMitad] = [$this->aMitad, null];
             $aMitad();
         }
@@ -236,6 +239,15 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
         $this->assertSame([], $this->correos(self::SIN_TRAER), 'La importación anda: no es «sin traer».');
         $this->assertSame(1, PedidoWeb::count());
 
+        // La lista guardada vence (dura 24 horas) o se borra con la ruta todavía caída: ya no
+        // queda nada que revisar y aun así no se da por normalizado.
+        Cache::forget(ImportarPedidosWeb::CLAVE_ERRORES);
+        $this->pasan(6);
+        $this->assertSame(['falla'], $this->correos(self::PAGOS), 'Sin ninguna lista no hay un «Ya se normalizó» falso.');
+        $this->assertSame(['falla'], $this->correos(self::OTRAS), 'La lista que falta sigue avisando, sin cerrarse y volver a abrirse.');
+        $this->actingAs($this->administrador())->get(route('dashboard'))->assertOk()
+            ->assertSeeInOrder(['Avisos abiertos (', 'No se pudo abrir el pago: Wompi no aceptó las llaves de la tienda']);
+
         // Vuelve la lista y otro comprador ya consiguió su enlace.
         $this->rutaErrores = null;
         $this->errores = [];
@@ -260,10 +272,33 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
 
     // ───────────── Dos pasadas a la vez ─────────────
 
+    public function test_dos_pasadas_buenas_a_la_vez_importan_el_pedido_una_sola_vez(): void
+    {
+        $this->pagados[] = $this->datos(1);
+        // Mientras la primera espera su página de pedidos, otra lee e importa el mismo pedido.
+        $antesDeLaSegunda = null;
+        $this->aMitad = function () use (&$antesDeLaSegunda) {
+            $antesDeLaSegunda = PedidoWeb::count();
+            app(ImportarPedidosWeb::class)->ejecutar(true);
+        };
+        $this->pasan(1);
+
+        $this->assertSame(0, $antesDeLaSegunda, 'La segunda arrancó antes de que la primera importara.');
+        $this->assertSame(1, PedidoWeb::count(), 'Las dos traen el pedido 1 y entra una sola vez.');
+        $this->assertNull(Cache::get(ImportarPedidosWeb::CLAVE_LECTURA)['fallo']);
+
+        $this->pasan(40);
+        $this->assertSame([], $this->correos(self::SIN_TRAER));
+        $this->assertSame([], $this->correos(self::PAGOS));
+        $this->assertSame([], $this->correos(self::OTRAS));
+        $this->assertSame(1, PedidoWeb::count());
+    }
+
     public function test_una_pasada_que_falla_en_medio_de_otra_buena_no_manda_avisos(): void
     {
         $this->pagados[] = $this->datos(1);
-        // Mientras la primera pide la lista de revisión, arranca otra y la página se corta.
+        // Mientras la primera espera su página de pedidos, arranca otra y la página se corta:
+        // la segunda anota su falla y después la primera guarda su lectura buena.
         $this->aMitad = function () {
             $this->pagina = 'caida';
             try {
@@ -276,32 +311,36 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
 
         $lectura = Cache::get(ImportarPedidosWeb::CLAVE_LECTURA);
         $this->assertSame(now()->subMinute()->getTimestamp(), $lectura['ok'], 'La lectura buena de la primera no se pierde.');
+        $this->assertNull($lectura['fallo'], 'La primera terminó última: la falla de la segunda no queda colgada.');
 
         $this->pasan(40);
         $this->assertSame([], $this->correos(self::SIN_TRAER));
         $this->assertSame([], $this->correos(self::PAGOS));
         $this->assertSame([], $this->correos(self::OTRAS));
-        $this->assertSame(1, PedidoWeb::count(), 'El pedido entra una sola vez.');
+        $this->assertSame(1, PedidoWeb::count());
     }
 
-    public function test_una_pasada_buena_en_medio_de_otra_que_falla_deja_la_lectura_al_dia(): void
+    public function test_una_pasada_buena_en_medio_de_otra_que_falla_conserva_la_lectura_buena(): void
     {
         $this->pasan(1);
         $this->pagina = 'clave';
         $this->pasan(20);
         $this->assertSame(['falla'], $this->correos(self::SIN_TRAER));
 
-        // Se arregla la clave justo mientras una pasada vieja termina su falla: la nueva lee bien.
+        // Se arregla la clave mientras una pasada vieja espera su respuesta: la nueva lee bien
+        // y termina primero; la vieja recibe después su 401 y anota la falla.
         $this->pagados[] = $this->datos(1);
         $this->aMitad = function () {
             $this->pagina = 'bien';
             app(ImportarPedidosWeb::class)->ejecutar(true);
+            $this->pagina = 'clave';
         };
         $this->pasan(1);
         $lectura = Cache::get(ImportarPedidosWeb::CLAVE_LECTURA);
-        $this->assertSame(now()->subMinute()->getTimestamp(), $lectura['ok']);
-        $this->assertNull($lectura['fallo'], 'La falla de la pasada vieja quedó antes que la lectura buena.');
+        $this->assertSame(now()->subMinute()->getTimestamp(), $lectura['ok'], 'La falla que llega después no borra la lectura buena.');
+        $this->assertSame('clave', $lectura['fallo'], 'La última en terminar fue la que falló.');
 
+        $this->pagina = 'bien';
         $this->pasan(10);
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::SIN_TRAER));
         $this->assertSame(1, PedidoWeb::count());
@@ -326,9 +365,10 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
         $this->assertSame('No se pudo abrir el pago: la página no logró llamar a Wompi', $this->ultimo(self::PAGOS)->hallazgo->titulo);
     }
 
-    // ───────────── Caché vaciada justo antes de revisar ─────────────
+    // ───────────── Datos de la tienda perdidos justo antes de revisar ─────────────
 
-    public function test_la_cache_vaciada_justo_antes_de_revisar_no_da_ningun_normalizado_falso(): void
+    /** Un error de cobro y un pedido en revisión, con su correo de falla ya mandado. */
+    private function pagosYOtrasAbiertos(): void
     {
         $this->pasan(2);
         $this->errores = [$this->fila('error_cobro', 'token HTTP 401', 1)];
@@ -336,14 +376,37 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
         $this->pasan(9);
         $this->assertSame(['falla'], $this->correos(self::PAGOS));
         $this->assertSame(['falla'], $this->correos(self::OTRAS));
+    }
 
+    public function test_sin_los_datos_de_la_tienda_los_avisos_abiertos_no_se_dan_por_normalizados(): void
+    {
+        $this->pagosYOtrasAbiertos();
+
+        // Se pierde solo lo que trajo la tienda; los avisos abiertos siguen guardados. Sin
+        // datos recientes, pagos y otras no opinan: si opinaran, no verían nada y cerrarían.
+        foreach ([ImportarPedidosWeb::CLAVE_LECTURA, ImportarPedidosWeb::CLAVE_ERRORES, ImportarPedidosWeb::CLAVE_REVISION] as $clave) {
+            Cache::forget($clave);
+        }
+        Artisan::call('alertas:revisar');
+        $this->pasan(30);
+
+        $this->assertSame(['falla'], $this->correos(self::PAGOS), 'El problema sigue: ni «Ya se normalizó» ni un correo repetido.');
+        $this->assertSame(['falla'], $this->correos(self::OTRAS));
+        $this->assertSame([], $this->correos(self::SIN_TRAER));
+    }
+
+    public function test_con_la_cache_vaciada_entera_el_aviso_se_repite_una_vez_y_no_sale_normalizado(): void
+    {
+        $this->pagosYOtrasAbiertos();
+
+        // Riesgo aceptado en el diseño: se borran también el aviso abierto y el tope del día.
         Cache::flush();
         Artisan::call('alertas:revisar');
         $this->pasan(30);
 
-        foreach ([self::PAGOS, self::OTRAS, self::SIN_TRAER] as $nombre) {
-            $this->assertNotContains('normalizado', $this->correos($nombre), $nombre.': el problema sigue.');
-        }
+        $this->assertSame(['falla', 'falla'], $this->correos(self::PAGOS), 'Sin el aviso guardado, se vuelve a mandar una vez.');
+        $this->assertSame(['falla', 'falla'], $this->correos(self::OTRAS));
+        $this->assertSame([], $this->correos(self::SIN_TRAER));
     }
 
     // ───────────── Tope de 6 correos por día ─────────────
@@ -360,6 +423,8 @@ class ProbadorSegundaVueltaTiendaTest extends TestCase
 
         $this->assertSame(['falla', 'normalizado', 'falla', 'normalizado', 'falla', 'normalizado'], $this->correos(self::SIN_TRAER));
         $this->assertTrue($this->ultimo(self::SIN_TRAER)->ultimoDelDia);
+        // El último es un «Ya se normalizó»: tiene que decir dónde se ve lo que siga hoy.
+        $this->assertStringContainsString('lo ves en el Inicio', $this->ultimo(self::SIN_TRAER)->render());
         $this->assertSame([], $this->correos(self::OTRAS), 'La caída no gasta el tope de las otras.');
     }
 

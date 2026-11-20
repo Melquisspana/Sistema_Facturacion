@@ -58,6 +58,12 @@ class TiendaWebTest extends TestCase
         ], now()->addDay());
     }
 
+    /** @param  list<string>  $codigos */
+    private function revision(int $hace = 0, int $n = 0, array $codigos = []): void
+    {
+        Cache::forever(ImportarPedidosWeb::CLAVE_REVISION, ['en' => now()->subMinutes($hace)->getTimestamp(), 'n' => $n, 'codigos' => $codigos]);
+    }
+
     private function assertSinDatosSensibles(Hallazgo $h): void
     {
         $texto = $h->titulo.$h->detalle.$h->queHacer;
@@ -288,7 +294,7 @@ class TiendaWebTest extends TestCase
     {
         $this->lectura(okHace: 1, invalidos: 4, ids: [41, 57, 60]);
         $this->errores([]);
-        Cache::forever(ImportarPedidosWeb::CLAVE_REVISION, ['en' => now()->getTimestamp(), 'n' => 1, 'codigos' => ['LN-TEST-0000-0009']]);
+        $this->revision(n: 1, codigos: ['LN-TEST-0000-0009']);
 
         $h = TiendaWebFallas::otras()->revisar();
 
@@ -296,6 +302,35 @@ class TiendaWebTest extends TestCase
         $this->assertStringContainsString('1 pedido quedó en revisión en la página: LN-TEST-0000-0009', $h->detalle);
         $this->assertStringContainsString('El cliente ya pagó y el pedido no entra', $h->queHacer);
         $this->assertSame(5, $h->conteo);
+    }
+
+    public function test_otras_no_usa_una_lista_de_revision_vieja_y_avisa_que_no_se_pudo_leer(): void
+    {
+        $this->lectura(okHace: 1);
+        $this->errores([]);
+
+        // La ruta de revisión dejó de contestar hace 20 minutos: ese pedido pudo resolverse.
+        $this->revision(hace: 20, n: 1, codigos: ['LN-TEST-0000-0009']);
+        $h = TiendaWebFallas::otras()->revisar();
+        $this->assertSame('No se pudo leer la lista de pedidos en revisión de la página', $h->titulo);
+        $this->assertStringContainsString('soporte', $h->queHacer);
+        $this->assertSame(1, $h->conteo);
+        $this->assertSinDatosSensibles($h);
+
+        // Guardada en cero: un pedido que quede en revisión después no se pierde callado.
+        $this->revision(hace: 20);
+        $this->assertSame('No se pudo leer la lista de pedidos en revisión de la página', TiendaWebFallas::otras()->revisar()->titulo);
+
+        // Sin la lista, cuenta desde que se vigila, como la de errores.
+        Cache::forget(ImportarPedidosWeb::CLAVE_REVISION);
+        $this->assertNull(TiendaWebFallas::otras()->revisar(), 'Recién empieza a vigilar: todavía no.');
+        $this->travel(16)->minutes();
+        $this->lectura(okHace: 1);
+        $this->errores([]);
+        $this->assertSame('No se pudo leer la lista de pedidos en revisión de la página', TiendaWebFallas::otras()->revisar()->titulo);
+
+        $this->revision(hace: 15);
+        $this->assertNull(TiendaWebFallas::otras()->revisar(), 'Con 15 minutos todavía vale.');
     }
 
     public function test_otras_avisa_que_no_pudo_leer_la_lista_de_errores_de_la_pagina(): void
@@ -307,6 +342,7 @@ class TiendaWebTest extends TestCase
 
         $this->travel(16)->minutes();
         $this->lectura(okHace: 1);
+        $this->revision();
         $h = $detector->revisar();
         $this->assertSame('No se pudo leer la lista de errores de la página', $h->titulo);
         $this->assertStringContainsString('falta subir la página', $h->queHacer);

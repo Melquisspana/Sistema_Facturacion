@@ -36,7 +36,7 @@
             {{ match ($avisosAbiertos['estado']) {
                 'apagado' => 'Los avisos están apagados: Configuración › Módulos › Avisos de fallas.',
                 'sin_correo' => 'Los avisos no tienen a quién escribir: cargá un correo en Configuración › Módulos › Avisos de fallas.',
-                default => 'Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno.',
+                default => 'Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno. Si sigue así en 10 minutos, pasá este aviso a quien te ayuda con el sistema.',
             } }}
         </p>
     @endif

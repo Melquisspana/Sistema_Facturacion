@@ -107,6 +107,14 @@ class ProbadorSegundaVueltaVigilantesTest extends TestCase
         return collect(app(Avisador::class)->abiertos()['avisos'])->keyBy('tipo')->all();
     }
 
+    /** Solo la caja de avisos del Inicio: otras partes del Inicio llevan a Cobros o a Salud del sistema. */
+    private function cajaDeAvisos(string $html): string
+    {
+        $this->assertSame(1, preg_match('/<section aria-labelledby="titulo-avisos".*?<\/section>/s', $html, $caja));
+
+        return $caja[0];
+    }
+
     // ───────────── Cobros ─────────────
 
     private function ccfEnPpq(): array
@@ -151,9 +159,10 @@ class ProbadorSegundaVueltaVigilantesTest extends TestCase
         $this->assertStringNotContainsString('Secreto', $falla->render());
         $this->assertSame([], $this->correos(self::SELLOS), 'Una invalidación con su sello no es «sin sello».');
 
-        $this->actingAs($this->administrador())->get(route('dashboard'))->assertOk()
+        $html = $this->actingAs($this->administrador())->get(route('dashboard'))->assertOk()
             ->assertSeeInOrder(['Avisos abiertos', '1 CCF invalidado sigue en cobro', 'Si no se presentó, quitalo del PPQ', 'Revisar'])
-            ->assertSee(route('cobros.index'));
+            ->getContent();
+        $this->assertStringContainsString('href="'.route('cobros.index').'"', $this->cajaDeAvisos($html));
 
         // La oficina hace lo que dice el aviso: lo quita del PPQ.
         $resultado = app(QuitarItemPpq::class)->quitar(PpqLote::find($lote->id), $lote->items()->first());
@@ -234,9 +243,10 @@ class ProbadorSegundaVueltaVigilantesTest extends TestCase
         $this->assertSame('Clientes duplicados por número de documento: 1.', $this->ultimo(self::DATOS)->hallazgo->detalle);
         $this->actingAs($admin)->get(route('admin.salud-sistema'))->assertOk()
             ->assertSee('Clientes duplicados por número de documento');
-        $this->actingAs($admin)->get(route('dashboard'))->assertOk()
+        $html = $this->actingAs($admin)->get(route('dashboard'))->assertOk()
             ->assertSeeInOrder(['Avisos abiertos', 'Hay datos que no cuadran', 'Clientes duplicados por número de documento: 1.', 'Revisar'])
-            ->assertSee(route('admin.salud-sistema'))->assertDontSee('06141111111111');
+            ->assertDontSee('06141111111111')->getContent();
+        $this->assertStringContainsString('href="'.route('admin.salud-sistema').'"', $this->cajaDeAvisos($html));
 
         $repetidos->last()->forceFill(['num_documento' => '06142222222222'])->save();
         $this->pasan(65);
@@ -265,9 +275,8 @@ class ProbadorSegundaVueltaVigilantesTest extends TestCase
                 '1 documento aceptado no tiene el sello de Hacienda', 'Desde 19/11/2026 10:00'])
             ->getContent();
         // La caja de avisos no nombra al cliente (la actividad reciente del Inicio sí lo muestra, y está bien).
-        $this->assertSame(1, preg_match('/<section aria-labelledby="titulo-avisos".*?<\/section>/s', $html, $caja));
         foreach (['Elena', 'elena@', '70000000', 'CLIENTE SECRETO', '06141111111111'] as $prohibido) {
-            $this->assertStringNotContainsString($prohibido, $caja[0]);
+            $this->assertStringNotContainsString($prohibido, $this->cajaDeAvisos($html));
         }
     }
 
@@ -281,7 +290,7 @@ class ProbadorSegundaVueltaVigilantesTest extends TestCase
 
         Cache::flush();
         $this->actingAs($admin)->get(route('dashboard'))->assertOk()
-            ->assertSee('Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno.')
+            ->assertSee('Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno. Si sigue así en 10 minutos, pasá este aviso a quien te ayuda con el sistema.')
             ->assertDontSee('Avisos abiertos');
 
         $this->pasan(5);

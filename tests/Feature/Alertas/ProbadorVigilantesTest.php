@@ -232,9 +232,12 @@ class ProbadorVigilantesTest extends TestCase
         $this->assertSame('Preparados sin PPQ: 201.', $falla->hallazgo->detalle);
         $this->assertStringNotContainsString('Secreto', $falla->render());
 
-        $this->actingAs($this->administrador())->get(route('dashboard'))->assertOk()
+        $html = $this->actingAs($this->administrador())->get(route('dashboard'))->assertOk()
             ->assertSeeInOrder(['Avisos abiertos', '1 CCF preparado no está en ningún PPQ', 'Preparados sin PPQ: 201.', 'Revisar'])
-            ->assertSee(route('cobros.index'));
+            ->getContent();
+        // Cobros también está en los accesos y en «Por cobrar»: el botón se busca dentro de la caja.
+        $this->assertSame(1, preg_match('/<section aria-labelledby="titulo-avisos".*?<\/section>/s', $html, $caja));
+        $this->assertStringContainsString('href="'.route('cobros.index').'"', $caja[0]);
 
         // Quien ayuda con el sistema lo devuelve a «por presentar».
         app(LiberarCcfDeLoteBorrado::class)->liberar($lote);

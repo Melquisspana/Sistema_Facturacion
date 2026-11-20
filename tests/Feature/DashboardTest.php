@@ -795,11 +795,14 @@ class DashboardTest extends TestCase
             'que_hacer' => 'Liberá espacio.', 'enlace' => 'admin.salud-sistema',
         ]);
 
-        $this->actingAs($this->conSalud())->get(route('dashboard'))->assertOk()
+        $html = $this->actingAs($this->conSalud())->get(route('dashboard'))->assertOk()
             ->assertSeeInOrder(['Avisos abiertos (1)', 'Falla en el sistema: disco', 'Queda poco espacio.', 'Desde',
                 'Liberá espacio.', 'El correo de este aviso todavía no salió.', 'Revisar', 'Se quitan solos cuando se arregla.'])
-            ->assertSee(route('admin.salud-sistema'))
-            ->assertDontSee('Los avisos están apagados');
+            ->assertDontSee('Los avisos están apagados')
+            ->getContent();
+        // Esa dirección también está en «Estado del sistema»: el botón se busca dentro de la caja.
+        $this->assertSame(1, preg_match('/<section aria-labelledby="titulo-avisos".*?<\/section>/s', $html, $caja));
+        $this->assertStringContainsString('href="'.route('admin.salud-sistema').'"', $caja[0]);
     }
 
     public function test_sin_permiso_no_ve_los_avisos_ni_se_leen(): void
@@ -846,7 +849,7 @@ class DashboardTest extends TestCase
 
         config(['alertas.correo' => 'avisos@example.test']);
         $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
-            ->assertSee('Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno.');
+            ->assertSee('Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno. Si sigue así en 10 minutos, pasá este aviso a quien te ayuda con el sistema.');
 
         $this->avisosAndando();
         $this->actingAs($usuario)->get(route('dashboard'))->assertOk()

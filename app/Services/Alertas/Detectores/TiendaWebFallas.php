@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Cache;
  *
  *  - pagos(): la tienda no puede cobrar, un pago que no abrió, uno sin comprobar;
  *  - otras(): errores internos, avisos con firma mala, consultas que fallan, pedidos
- *    pagados que no se pudieron leer o quedaron en revisión, y la lista que no llega.
+ *    pagados que no se pudieron leer o quedaron en revisión, y las listas que no llegan.
  *
  * Si la página no contesta, no opinan: de eso avisa {@see TiendaWebSinRespuesta} y no
  * llegan dos correos por lo mismo. Cada texto sale de {@see self::CATALOGO}: nada del
@@ -52,6 +52,7 @@ class TiendaWebFallas implements Detector
             'El cliente ya pagó y el pedido no entra: pasale esos números a soporte.', 1],
         'revision' => [':n pedidos quedaron en revisión en la página: :codigos',
             'Buscá cada código en el panel de Wompi; si el pago entró, avisá a soporte para cargarlo.', 1],
+        'revision_lista' => ['No se pudo leer la lista de pedidos en revisión de la página', 'Avisá a soporte.', 1],
         'interno_hacer_pedido' => ['La página tuvo un error interno al hacer un pedido', 'Reenviá este correo a soporte.', 1],
         'interno_seguir_pedido' => ['La página tuvo un error interno al seguir un pedido', 'Reenviá este correo a soporte.', 1],
         'interno_aviso_pago' => ['La página tuvo un error interno al recibir un aviso de pago', 'Reenviá este correo a soporte.', 1],
@@ -74,7 +75,7 @@ class TiendaWebFallas implements Detector
     ];
 
     /** Líneas que dicen cómo están las cosas y no cuántas veces pasó algo. */
-    private const ESTADOS = ['no_cobra', 'lista'];
+    private const ESTADOS = ['no_cobra', 'revision_lista', 'lista'];
 
     private const MAX_DETALLE = 4;
 
@@ -164,6 +165,9 @@ class TiendaWebFallas implements Detector
     private function lineasDeOtras(): array
     {
         $lineas = [];
+        // Se fija en la primera revisión, no recién cuando falta una lista: así una que
+        // vence o deja de llegar más tarde no da un «normalizado» falso de 15 minutos.
+        $vigilando = TiendaWebSinRespuesta::vigilando();
         $lectura = TiendaWebSinRespuesta::lectura();
         if (($lectura['invalidos'] ?? 0) > 0) {
             $ids = $lectura['invalidos_ids'] ?? [];
@@ -172,8 +176,13 @@ class TiendaWebFallas implements Detector
                 ':ids' => implode(', ', $ids).($mas > 0 ? ' y '.$mas.' más' : ''),
             ]);
         }
+        // Una lista de revisión vieja (la ruta dejó de contestar) no se usa: el pedido pudo
+        // resolverse u otro quedar en revisión. Sin lista, cuenta desde que se vigila.
         $revision = Cache::get(ImportarPedidosWeb::CLAVE_REVISION);
-        if (is_array($revision) && ($revision['n'] ?? 0) > 0) {
+        $revision = is_array($revision) ? $revision : [];
+        if (! $this->reciente($revision['en'] ?? $vigilando)) {
+            $lineas[] = $this->linea('revision_lista', 1);
+        } elseif (($revision['n'] ?? 0) > 0) {
             $codigos = $revision['codigos'] ?? [];
             $mas = $revision['n'] - count($codigos);
             $lineas[] = $this->linea('revision', $revision['n'], reemplazos: [
@@ -192,8 +201,7 @@ class TiendaWebFallas implements Detector
         }
 
         // Una página vieja sin la ruta, o una que dejó de contestarla: cuenta desde que se vigila.
-        $en = $errores['en'] ?? TiendaWebSinRespuesta::vigilando();
-        if ($en < now()->subMinutes(TiendaWebSinRespuesta::MINUTOS)->getTimestamp()) {
+        if (! $this->reciente($errores['en'] ?? $vigilando)) {
             $lineas[] = $this->linea('lista', 1);
         }
 

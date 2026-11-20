@@ -29,6 +29,6 @@ Si se repite, llega un solo correo con todo junto, y otro cuando se normalice.
 @endif
 @if ($ultimoDelDia)
 
-Este es el último aviso de hoy de este tipo: se llegó al tope diario.
+Este es el último aviso de hoy de este tipo: se llegó al tope diario. Lo que pase hoy después de este correo lo ves en el Inicio.
 @endif
 </x-mail::message>
