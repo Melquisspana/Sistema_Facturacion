@@ -374,7 +374,7 @@ class ImportarPedidosWeb
      * por fila leída): se pide cada MINUTOS_REVISION. Su «en» solo se escribe con la lista
      * completa, así que una que no llegó se vuelve a pedir en la pasada siguiente. Con un
      * pedido importado sin borrador de factura, en cada pasada: su pago doble la frena.
-     * Una marca que no se puede leer no frena el pedido: se pide y la lista la reemplaza.
+     * Si la marca no se puede leer, la lista se pide igual y la nueva la reemplaza.
      */
     private function revisionAlDia(): bool
     {
