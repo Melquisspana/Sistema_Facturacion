@@ -330,14 +330,25 @@ class SolicitudCobroService
      */
     public function registrarPresentacion(CobroSolicitud $solicitud, User $usuario, ?Carbon $cuando = null, ?string $nota = null): CobroSolicitud
     {
-        if ($solicitud->estado === EstadoSolicitudCobro::Corregida) {
-            throw ValidationException::withMessages([
-                'solicitud' => 'Esta solicitud fue corregida por un reenvío posterior: presentar la versión '
-                    .'anterior volvería a mandar lo que ya se reemplazó.',
-            ]);
-        }
-
         return DB::transaction(function () use ($solicitud, $usuario, $cuando, $nota) {
+            // Se relee bajo candado: dos declaraciones a la vez, o una sobre una solicitud que
+            // ya avanzó, no pueden volver los documentos atrás ni pisar quién la presentó.
+            CobroSolicitud::whereKey($solicitud->id)->lockForUpdate()->firstOrFail();
+            $solicitud->refresh();
+
+            $motivo = match ($solicitud->estado) {
+                EstadoSolicitudCobro::Generada => null,
+                EstadoSolicitudCobro::Corregida => 'Esta solicitud fue corregida por un reenvío posterior: presentar la versión '
+                    .'anterior volvería a mandar lo que ya se reemplazó.',
+                EstadoSolicitudCobro::Presentada => 'Esta solicitud ya figura presentada el '
+                    .$solicitud->presentada_en?->format('d/m/Y').': no se declara dos veces.',
+                EstadoSolicitudCobro::Recibida => 'El cliente ya acusó recibo de esta solicitud: declararla presentada '
+                    .'la haría retroceder.',
+            };
+            if ($motivo !== null) {
+                throw ValidationException::withMessages(['solicitud' => $motivo]);
+            }
+
             $this->verificarCompletos($solicitud->documentos()->lockForUpdate()->get());
             $solicitud->forceFill([
                 'estado' => EstadoSolicitudCobro::Presentada->value,
@@ -370,6 +381,8 @@ class SolicitudCobroService
      *
      * Puede llegar de la lectura del correo o teclearse. En los dos casos es EVIDENCIA del
      * cliente, y por eso mueve el estado; el paso del tiempo nunca lo mueve.
+     *
+     * @throws ValidationException si la solicitud fue corregida o ya tiene otra referencia
      */
     public function registrarRecibido(
         CobroSolicitud $solicitud,
@@ -380,6 +393,25 @@ class SolicitudCobroService
         ?string $detalle = null,
     ): CobroSolicitud {
         return DB::transaction(function () use ($solicitud, $referenciaCalleja, $fechaProgramada, $cuando, $usuario, $detalle) {
+            CobroSolicitud::whereKey($solicitud->id)->lockForUpdate()->firstOrFail();
+            $solicitud->refresh();
+
+            // Una solicitud reemplazada no vuelve a figurar como recibida, y la referencia del
+            // cliente no se cambia por otra: es la que después ata el ajuste del archivo de
+            // pagos a este envío.
+            if ($solicitud->estado === EstadoSolicitudCobro::Corregida) {
+                throw ValidationException::withMessages([
+                    'solicitud' => 'Esta solicitud fue corregida por un reenvío posterior: el acuse no se registra en '
+                        .'la versión reemplazada. Revisá si corresponde a la solicitud que la reemplazó.',
+                ]);
+            }
+            if (filled($solicitud->referencia_calleja) && $solicitud->referencia_calleja !== $referenciaCalleja) {
+                throw ValidationException::withMessages([
+                    'referencia_calleja' => "Esta solicitud ya tiene el acuse con la referencia {$solicitud->referencia_calleja}: "
+                        ."no se reemplaza por {$referenciaCalleja}.",
+                ]);
+            }
+
             $solicitud->forceFill([
                 'estado' => EstadoSolicitudCobro::Recibida->value,
                 'referencia_calleja' => $referenciaCalleja,
@@ -624,14 +656,15 @@ class SolicitudCobroService
             fn (CobroDocumento $d) => $d->cobro_solicitud_id !== null && $d->cobro_solicitud_id !== $corrige?->id
         );
 
+        // El quedan va por su referencia, la que se ve en pantalla. No se manda a corregirlo:
+        // no hay pantalla para eso.
         if ($yaEnOtra->isNotEmpty()) {
-            $lista = $yaEnOtra->map(
-                fn (CobroDocumento $d) => $d->numero_control.' (solicitud #'.$d->cobro_solicitud_id.')'
+            $lista = $yaEnOtra->loadMissing('solicitud:id,referencia')->map(
+                fn (CobroDocumento $d) => $d->correlativoCorto().' (quedan '.($d->solicitud?->referencia ?? '#'.$d->cobro_solicitud_id).')'
             )->implode(', ');
 
             throw ValidationException::withMessages([
-                'documentos' => "Estos documentos ya están en otra solicitud: {$lista}. "
-                    .'Si hay que rehacerla, corrija aquella en vez de armar una segunda con lo mismo.',
+                'documentos' => "Estos CCF ya van en otro quedan: {$lista}. No se arma otro con lo mismo.",
             ]);
         }
     }

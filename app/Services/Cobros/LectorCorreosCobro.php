@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
@@ -180,14 +181,24 @@ class LectorCorreosCobro
             return;
         }
 
-        $this->solicitudes->registrarRecibido(
-            $solicitud,
-            $leido['referencia_calleja'],
-            $leido['fecha_programada_pago'] === null ? null : Carbon::parse($leido['fecha_programada_pago']),
-            $correo->fecha_mensaje,
-            null,
-            'Acuse leído del correo: '.($correo->asunto ?? 'sin asunto'),
-        );
+        try {
+            $this->solicitudes->registrarRecibido(
+                $solicitud,
+                $leido['referencia_calleja'],
+                $leido['fecha_programada_pago'] === null ? null : Carbon::parse($leido['fecha_programada_pago']),
+                $correo->fecha_mensaje,
+                null,
+                'Acuse leído del correo: '.($correo->asunto ?? 'sin asunto'),
+            );
+        } catch (ValidationException $e) {
+            // Corregida o con otra referencia: queda para revisar con el motivo, no como una
+            // falla que se reintenta en cada lectura del buzón.
+            $this->sinAsociar($correo, 'No se aplicó el acuse al envío '.$solicitud->referencia.'. '
+                .collect($e->errors())->flatten()->implode(' '));
+            $correo->forceFill(['cobro_solicitud_id' => $solicitud->id])->save();
+
+            return;
+        }
 
         $correo->forceFill([
             'cobro_solicitud_id' => $solicitud->id,

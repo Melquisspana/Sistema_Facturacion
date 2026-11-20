@@ -19,6 +19,7 @@ use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
@@ -233,6 +234,14 @@ class ClienteController extends Controller
     public function destroy(Cliente $cliente): RedirectResponse
     {
         $this->authorize('delete', $cliente);
+
+        $movimientos = $cliente->movimientos();
+        if ($movimientos !== []) {
+            return redirect()
+                ->route('clientes.show', $cliente)
+                ->with('error', 'No se eliminó el cliente «'.$cliente->nombre.'»: tiene '.Arr::join($movimientos, ', ', ' y ')
+                    .' que quedarían sin cliente. Inactivalo para que no se use más.');
+        }
 
         $cliente->delete(); // soft delete
 

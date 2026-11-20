@@ -24,6 +24,7 @@ use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Services\Cobros\LiberarCcfDeLoteBorrado;
 use App\Services\Cobros\ReporteCasoCalleja;
+use App\Services\Cobros\SoltarCcfDelQuedan;
 use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
@@ -212,6 +213,10 @@ class PpqLoteController extends Controller
             'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
             'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
             'items' => $items,
+            // El aviso de «quitar» dice si el CCF sale también de su quedan presentado.
+            'quedanAlQuitar' => $lote->esEditable() ? app(SoltarCcfDelQuedan::class)->quedanesAlQuitar($lote, $items->getCollection()) : [],
+            // Con sus CCF en un quedan armado en Cobros sin presentación registrada, no se elimina (destroy).
+            'quedanSinRegistrar' => $lote->esEditable() ? app(SoltarCcfDelQuedan::class)->quedanSinRegistrarDelLote($lote, bloquear: false) : null,
             // Lo que el formato quedan deja fuera porque ya no vale ante Hacienda (#12).
             'fueraDelQuedan' => app(QuedanCallejaExporter::class)->fueraDelArchivo($lote),
         ]);
@@ -279,8 +284,14 @@ class PpqLoteController extends Controller
         });
     }
 
-    public function edit(PpqLote $lote): View
+    public function edit(PpqLote $lote): View|RedirectResponse
     {
+        // La misma regla que update(): un enlace guardado a «/editar» no abre el formulario
+        // de un lote que ya no se edita.
+        if (($motivo = $this->motivoNoEditable($lote)) !== null) {
+            return redirect()->route('ppq.lotes.show', $lote)->with('error', $motivo);
+        }
+
         return view('ppq.lotes.edit', [
             'lote' => $lote,
             'clientes' => Cliente::orderBy('nombre')->get(['id', 'nombre']),
@@ -288,13 +299,40 @@ class PpqLoteController extends Controller
         ]);
     }
 
+    /**
+     * Referencia, fecha y observaciones de un lote que todavía se arma. Presentado o pagado
+     * ya no se edita, aunque lo haya presentado Cobros y la columna siga en borrador: como
+     * en la ficha, que solo muestra «Editar» mientras se arma.
+     */
     public function update(PpqLoteRequest $request, PpqLote $lote): RedirectResponse
     {
-        $lote->update($request->validated());
+        return DB::transaction(function () use ($request, $lote) {
+            $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            if (($motivo = $this->motivoNoEditable($actual)) !== null) {
+                return redirect()->route('ppq.lotes.show', $lote)->with('error', $motivo);
+            }
 
-        return redirect()
-            ->route('ppq.lotes.show', $lote)
-            ->with('status', 'Lote PPQ actualizado.');
+            $antes = $actual->only(['referencia', 'fecha', 'observaciones']);
+            $actual->update($request->validated());
+            activity()->performedOn($actual)->causedBy($request->user())
+                ->withProperties(['antes' => $antes, 'despues' => $actual->only(['referencia', 'fecha', 'observaciones'])])
+                ->log('ppq.lote_editado');
+
+            return redirect()
+                ->route('ppq.lotes.show', $lote)
+                ->with('status', 'Lote PPQ actualizado.');
+        });
+    }
+
+    /** Por qué el lote ya no se edita ({@see PpqLote::seEditaSegun()}), o null si se edita. */
+    private function motivoNoEditable(PpqLote $lote): ?string
+    {
+        $real = app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id];
+        if ($lote->seEditaSegun($real)) {
+            return null;
+        }
+
+        return 'Este PPQ está '.($lote->esEditable() ? $real['estado']['label'] : $lote->estado->label()).' y ya no se edita.';
     }
 
     /**
@@ -372,18 +410,43 @@ class PpqLoteController extends Controller
         if ($r['conservados']->isNotEmpty()) {
             $mensaje .= ' Se conservaron '.$r['conservados']->count().' item(s) con historial de conciliación.';
         }
+        if ($r['retenidos'] !== []) {
+            $mensaje .= ' No salieron del PPQ: '.collect($r['retenidos'])
+                ->map(fn ($fila) => $fila['documento']->correlativoCorto().' ('.$fila['motivo'].')')->implode('; ').'.';
+        }
 
         return redirect()->route('ppq.lotes.show', $lote)->with('status', $mensaje);
     }
 
+    /**
+     * Solo se elimina lo que la ficha deja eliminar: un lote que se arma, con la misma regla
+     * que «Editar» ({@see PpqLote::seEditaSegun()}). Presentado, pagado u observado no, aunque
+     * llegue el pedido a mano (sus CCF presentados volvían a «por presentar»), ni el que se
+     * presentó desde Cobros con la columna todavía en borrador, ni aquel cuyos CCF van en un
+     * quedan armado en Cobros sin la presentación registrada. Se revisa con el lote bloqueado,
+     * como el «quitar».
+     */
     public function destroy(Request $request, PpqLote $lote, LiberarCcfDeLoteBorrado $liberador): RedirectResponse
     {
         $resultado = DB::transaction(function () use ($lote, $liberador, $request) {
-            $resultado = $liberador->liberar($lote, $request->user());
-            $lote->delete();
+            $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            $real = app(EstadoRealLotePpq::class)->calcular(collect([$actual]))[$actual->id];
+            if (! $actual->seEditaSegun($real)) {
+                return 'Este PPQ está '.($actual->esEditable() ? $real['estado']['label'] : $actual->estado->label()).' y ya no se elimina.';
+            }
+            // Sus CCF van en un quedan armado en Cobros sin la presentación registrada: al
+            // registrarla quedarían presentados sin lote del cual quitarlos, como en el «quitar».
+            if (($quedan = app(SoltarCcfDelQuedan::class)->quedanSinRegistrarDelLote($actual)) !== null) {
+                return "Este PPQ ya no se elimina: sus CCF van en el quedan {$quedan->referencia}, que se armó en Cobros.";
+            }
+            $resultado = $liberador->liberar($actual, $request->user());
+            $actual->delete();
 
             return $resultado;
         });
+        if (is_string($resultado)) {
+            return redirect()->route('ppq.lotes.show', $lote)->with('error', $resultado);
+        }
         $mensaje = 'Lote PPQ eliminado. '.$resultado['liberados']->count().' CCF volvieron a por presentar.';
         if ($resultado['conservados']->isNotEmpty()) {
             $mensaje .= ' No se tocaron '.$resultado['conservados']->count().': '

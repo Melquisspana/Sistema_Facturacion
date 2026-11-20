@@ -2,10 +2,7 @@
 
 namespace App\Http\Requests\Ppq;
 
-use App\Enums\EstadoPpq;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Enum;
 
 class PpqLoteRequest extends FormRequest
 {
@@ -19,12 +16,12 @@ class PpqLoteRequest extends FormRequest
      */
     public function rules(): array
     {
+        // Solo lo que muestra el formulario. El estado lo mueve el sistema (borrador →
+        // presentado → pagado) y el cliente es el del pronto pago: aceptarlos de la petición
+        // dejaba reabrir un lote presentado o pasarlo a otro cliente con un pedido a mano.
         return [
             'referencia' => ['required', 'string', 'max:255'],
             'fecha' => ['required', 'date'],
-            // El estado se pone solo (borrador → presentado → pagado); se acepta si llega.
-            'estado' => ['sometimes', new Enum(EstadoPpq::class)],
-            'cliente_id' => ['nullable', Rule::exists('clientes', 'id')],
             'observaciones' => ['nullable', 'string', 'max:2000'],
         ];
     }

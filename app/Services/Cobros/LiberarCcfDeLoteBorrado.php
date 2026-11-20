@@ -95,7 +95,7 @@ class LiberarCcfDeLoteBorrado
                 || EjercicioControl::llave($i->numero_control, $i->ejercicio_control) === EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
 
         return $documentos->load([
-            'solicitud:id,referencia',
+            'solicitud:id,referencia,estado',
             'eventos' => fn ($q) => $q->where('tipo', TipoEventoCobro::Recibido->value),
         ]);
     }
@@ -105,15 +105,16 @@ class LiberarCcfDeLoteBorrado
      * comparten el borrado del lote y el «quitar» de un renglón ({@see QuitarItemPpq}).
      *
      * @param  Collection<string, int>  $ocupadas  las de {@see ElegibilidadPpqSeguimiento::claves()}, sin este lote
+     * @param  bool  $sueltaDelQuedan  el «quitar» de un CCF que el cliente no aceptó en un quedan presentado: estar en esa solicitud no lo retiene
      */
-    public function motivoParaConservar(CobroDocumento $doc, Collection $ocupadas): ?string
+    public function motivoParaConservar(CobroDocumento $doc, Collection $ocupadas, bool $sueltaDelQuedan = false): ?string
     {
         // Lo pagado de menos que el TXT devolvió para el próximo PPQ sí vuelve, con la misma
         // regla que lo dejó entrar en el lote ({@see ElegibilidadPpqSeguimiento::pagoAdmitePpq()}).
         if (! app(ElegibilidadPpqSeguimiento::class)->pagoAdmitePpq($doc)) {
             return 'pagado o con pago registrado';
         }
-        if ($doc->cobro_solicitud_id !== null) {
+        if ($doc->cobro_solicitud_id !== null && ! $sueltaDelQuedan) {
             return 'va en la solicitud '.($doc->solicitud?->referencia ?? '#'.$doc->cobro_solicitud_id);
         }
         if (($otro = $ocupadas->get(EjercicioControl::llave($doc->numero_control_norm, $doc->ejercicio_control))

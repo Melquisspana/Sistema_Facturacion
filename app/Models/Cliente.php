@@ -124,6 +124,32 @@ class Cliente extends Model
     }
 
     /**
+     * Lo que ya se hizo con este cliente y lo sigue nombrando. Con algo de esto el cliente no
+     * se borra, ni de forma suave: sus CCF, salas, cobros y PPQ quedarían «sin cliente»,
+     * porque esas relaciones no ven los clientes borrados. Se inactiva, como las salas
+     * ({@see ClienteSucursal::movimientos()}).
+     *
+     * @return list<string> lo que tiene, para decirlo en el aviso
+     */
+    public function movimientos(): array
+    {
+        $id = $this->id;
+
+        return collect([
+            'documentos' => fn () => Dte::where('cliente_id', $id)->exists(),
+            'salas' => fn () => $this->sucursales()->exists(),
+            // También los de una sala ya borrada (de antes de que las salas con pedidos no se borraran).
+            'pedidos' => fn () => PedidoSala::whereIn('cliente_sucursal_id',
+                ClienteSucursal::withTrashed()->where('cliente_id', $id)->select('id'))->exists(),
+            'documentos en cobro' => fn () => Cobros\CobroDocumento::where('cliente_id', $id)->exists(),
+            'solicitudes de cobro' => fn () => Cobros\CobroSolicitud::where('cliente_id', $id)->exists(),
+            'PPQ' => fn () => PpqLote::withTrashed()->where('cliente_id', $id)->exists(),
+            // Activos o no, como en las salas.
+            'precios especiales' => fn () => ProductoPrecioCliente::where('cliente_id', $id)->exists(),
+        ])->filter(fn (\Closure $tiene) => $tiene())->keys()->all();
+    }
+
+    /**
      * Perfil de exigencias documentales del cliente (albarán obligatorio en la NC,
      * mapeo de modalidades a códigos propios, formato de exportación). Casi todos los
      * clientes NO tienen perfil: sin fila, el cliente se comporta como siempre.
