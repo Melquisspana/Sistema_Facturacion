@@ -157,6 +157,7 @@ class ImportarPedidosWeb
                 // «facturando» o «facturado» aunque el aviso todavía no haya salido.
                 PedidoWeb::whereNotNull('pedido_sala_id')->whereNull('informado_preparando_en')
                     ->whereNotIn('id', $intentados)->eachById(fn (PedidoWeb $p) => $this->informar($p));
+                $this->pedirConciliacion();
                 $this->pedirLimpieza();
             }
         }
@@ -185,11 +186,26 @@ class ImportarPedidosWeb
     }
 
     /**
+     * La consulta a Wompi de los pedidos pendientes (POST /api/sistema/conciliar): rescata
+     * el pago cuyo aviso se perdió. La página la reparte por edad pensando en una pasada
+     * por minuto y atiende como mucho 10 por vez; dentro de la limpieza de cada hora, unos
+     * pocos pedidos nuevos dejaban sin revisar uno pagado, que a los 7 días se cancelaba
+     * solo. Por eso va en cada pasada. Es de mejor esfuerzo: una página que todavía no
+     * tiene la ruta contesta 404 y sigue consultando solo dentro de la limpieza.
+     */
+    private function pedirConciliacion(): void
+    {
+        try {
+            $this->http()->withBody('', 'application/json')->post($this->configuracion->url().'/api/sistema/conciliar');
+        } catch (Throwable) {
+        }
+    }
+
+    /**
      * La limpieza de la página vence, vacía y borra releyendo tablas enteras (Cloudflare
-     * cobra por fila leída) y le pregunta a Wompi por los pendientes: como mucho una vez
-     * por hora, salga bien o mal. Sin caché donde anotarla se pide igual, como antes: los
-     * datos personales vencidos de la página no se quedan sin borrar. Es de mejor
-     * esfuerzo y no invalida lo importado.
+     * cobra por fila leída): como mucho una vez por hora, salga bien o mal. Sin caché donde
+     * anotarla se pide igual, como antes: los datos personales vencidos de la página no se
+     * quedan sin borrar. Es de mejor esfuerzo y no invalida lo importado.
      */
     private function pedirLimpieza(): void
     {

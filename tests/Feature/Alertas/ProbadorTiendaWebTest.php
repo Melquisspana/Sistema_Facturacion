@@ -274,13 +274,16 @@ class ProbadorTiendaWebTest extends TestCase
      * Tres horas con la tarea cada minuto, como en el servidor. La limpieza relee tablas
      * enteras en la página (Cloudflare cobra por fila leída): sale una vez por hora. La
      * lista de pedidos a revisar y la de errores también releen (la de errores, cada aviso
-     * falso de las últimas 24 horas): cada 5 minutos. Los pedidos pagados, en cada pasada.
+     * falso de las últimas 24 horas): cada 5 minutos. Los pedidos pagados y la consulta a
+     * Wompi de los pendientes (la página la reparte por edad pensando en una por minuto), en
+     * cada pasada.
      */
-    public function test_tres_horas_de_pasadas_piden_la_limpieza_una_vez_por_hora_y_las_listas_cada_5_minutos(): void
+    public function test_tres_horas_de_pasadas_piden_la_limpieza_una_vez_por_hora_las_listas_cada_5_minutos_y_la_consulta_a_wompi_cada_minuto(): void
     {
         $this->pasan(180); // 10:00 a 12:59
 
         $this->assertSame(['10:00', '11:00', '12:00'], $this->pedidas['limpieza']);
+        $this->assertCount(180, $this->pedidas['conciliar'] ?? [], 'La consulta a Wompi no espera a la limpieza de cada hora.');
         $this->assertCount(36, $this->pedidas['pedidos-a-revisar']);
         $this->assertSame(['10:00', '10:05', '10:10'], array_slice($this->pedidas['pedidos-a-revisar'], 0, 3));
         $this->assertCount(180, $this->pedidas['pedidos-pagados']);

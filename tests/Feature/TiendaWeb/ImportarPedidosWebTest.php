@@ -81,6 +81,7 @@ class ImportarPedidosWebTest extends TestCase
             '*/pedidos-pagados*' => Http::response(['pedidos' => $pedidos]),
             '*/estado' => Http::response(['error' => $error, 'actual' => 'entregado'], $estado),
             '*/limpieza' => Http::response([], 200),
+            '*/conciliar' => Http::response(['conciliados_revisados' => 0, 'conciliados_pagados' => 0]),
             '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
         ]);
     }
@@ -510,6 +511,53 @@ class ImportarPedidosWebTest extends TestCase
     }
 
     /**
+     * La página le pregunta a Wompi por los pedidos pendientes (un pago cuyo aviso se perdió)
+     * según su edad y como mucho 10 por vez, pensando en una pasada por minuto: con una por
+     * hora, unos pocos pedidos nuevos lo dejaban sin revisar y a los 7 días se cancelaba solo.
+     * Se pide en cada pasada, aparte de la limpieza, aunque la lectura falle; si la página
+     * todavía no tiene la ruta o no contesta, la importación sigue igual.
+     */
+    public function test_la_consulta_a_wompi_de_los_pendientes_se_pide_en_cada_pasada_aparte_de_la_limpieza(): void
+    {
+        $consultas = [];
+        Http::fake([
+            '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),
+            '*/pedidos-pagados*' => Http::sequence()->push(['pedidos' => [$this->datos()]])->push([], 500)
+                ->push(['pedidos' => [$this->datos(), $this->datos(2)]]),
+            '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
+            '*/estado' => Http::response([], 200),
+            '*/limpieza' => Http::response([], 200),
+            '*/conciliar' => function (Request $r) use (&$consultas) {
+                $consultas[] = $r;
+
+                return match (count($consultas)) {
+                    1 => Http::response(['conciliados_revisados' => 0, 'conciliados_pagados' => 0]),
+                    2 => Http::response(['error' => 'no_existe'], 404),
+                    default => Http::failedConnection()($r),
+                };
+            },
+        ]);
+
+        foreach ([0, 1, 1] as $minutos) { // 09:00, 09:01 (la lectura falla) y 09:02
+            $this->travel($minutos)->minutes();
+            try {
+                $this->pasar();
+            } catch (\RuntimeException) {
+            }
+        }
+
+        $this->assertCount(3, $consultas, 'Una por pasada, también en la que no se pudieron leer los pedidos.');
+        foreach ($consultas as $consulta) {
+            $this->assertSame('POST', $consulta->method());
+            $this->assertSame('https://tienda.example.test/api/sistema/conciliar', $consulta->url());
+            $this->assertSame('', $consulta->body());
+            $this->assertTrue($consulta->hasHeader('Authorization', 'Bearer '.self::SECRETO));
+        }
+        $this->assertCount(1, Http::recorded(fn (Request $r) => str_ends_with($r->url(), '/limpieza')), 'La limpieza sigue una vez por hora.');
+        $this->assertDatabaseCount('pedidos_web', 2);
+    }
+
+    /**
      * Con un pedido importado que todavía no tiene factura, su pago doble tiene que llegar a
      * tiempo de frenarla: la lista de revisión se pide en cada pasada, no cada 5 minutos.
      */
@@ -519,6 +567,7 @@ class ImportarPedidosWebTest extends TestCase
         $this->pasar(); // 09:00
         $this->assertSame(EstadoPedidoWeb::Importado, PedidoWeb::firstOrFail()->estado);
         Http::swap(new Factory);
+        Http::preventStrayRequests();
         Http::fake([
             '*/pedidos-pagados*' => Http::response(['pedidos' => []]),
             '*/pedidos-a-revisar*' => Http::response(['pedidos' => [['id' => 1, 'alerta' => 'pago_doble']]]),
@@ -575,6 +624,7 @@ class ImportarPedidosWebTest extends TestCase
         $web = PedidoWeb::firstOrFail();
         $web->update(['estado' => EstadoPedidoWeb::Facturado]);
         Http::swap(new Factory);
+        Http::preventStrayRequests();
         Http::fake([
             '*/pedidos-pagados*' => Http::response(['pedidos' => []]),
             '*/pedidos-a-revisar*' => Http::sequence()->push([], 503)->push(['pedidos' => [
@@ -602,6 +652,7 @@ class ImportarPedidosWebTest extends TestCase
             $this->remoto([$this->datos($i + 1)], $status);
             if ($status === 409) {
                 Http::swap(new Factory);
+                Http::preventStrayRequests();
                 Http::fake([
                     '*/pedidos-pagados*' => Http::response(['pedidos' => [$this->datos($i + 1)]]),
                     '*/pedidos-a-revisar*' => Http::response(['pedidos' => []]),

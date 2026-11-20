@@ -64,6 +64,7 @@ class LecturaTiendaWebTest extends TestCase
             '*/errores' => Http::response(['cobra' => true, 'errores' => []]),
             '*/estado' => Http::response([], 200),
             '*/limpieza' => Http::response([], 200),
+            '*/conciliar' => Http::response(['conciliados_revisados' => 0, 'conciliados_pagados' => 0]),
         ]);
     }
 
