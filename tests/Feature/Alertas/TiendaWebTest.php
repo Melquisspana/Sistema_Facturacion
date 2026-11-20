@@ -242,8 +242,11 @@ class TiendaWebTest extends TestCase
         $this->assertFalse(TiendaWebFallas::pagos()->aplica(), 'Si la página no contesta, avisa el otro.');
 
         $this->lectura(okHace: 1);
-        $this->errores([], cobra: false, hace: 16);
+        $this->errores([], cobra: false, hace: 21);
         $this->assertFalse(TiendaWebFallas::pagos()->aplica(), 'Con la lista vieja no da un normalizado falso.');
+        // Se pide cada 5 minutos: a los 15 de gracia se suman esos 5.
+        $this->errores([], cobra: false, hace: 20);
+        $this->assertTrue(TiendaWebFallas::pagos()->aplica(), 'Con 20 minutos todavía vale.');
 
         Ajustes::guardarComoSistema('tienda.pedidos.automatica', false);
         $this->errores([], cobra: false);
@@ -341,7 +344,12 @@ class TiendaWebTest extends TestCase
         $this->assertTrue($detector->aplica());
         $this->assertNull($detector->revisar(), 'Recién empieza a vigilar: todavía no.');
 
-        $this->travel(16)->minutes();
+        // Se pide cada 5 minutos: a los 15 de gracia se suman esos 5.
+        $this->travel(20)->minutes();
+        $this->lectura(okHace: 1);
+        $this->revision();
+        $this->assertNull($detector->revisar(), 'Con 20 minutos todavía no.');
+        $this->travel(1)->minutes();
         $this->lectura(okHace: 1);
         $this->revision();
         $h = $detector->revisar();
@@ -349,8 +357,10 @@ class TiendaWebTest extends TestCase
         $this->assertStringContainsString('falta subir la página', $h->queHacer);
         $this->assertSame(1, $h->conteo);
 
-        $this->errores([], hace: 16);
+        $this->errores([], hace: 21);
         $this->assertSame('No se pudo leer la lista de errores de la página', $detector->revisar()->titulo);
+        $this->errores([], hace: 20);
+        $this->assertNull($detector->revisar(), 'Con 20 minutos todavía vale.');
         $this->errores([]);
         $this->assertNull($detector->revisar());
     }

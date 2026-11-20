@@ -273,12 +273,14 @@ class LecturaTiendaWebTest extends TestCase
     #[DataProvider('erroresQueNoSirven')]
     public function test_si_la_lista_de_errores_no_sirve_la_cache_no_cambia_y_la_importacion_sale_bien(array $cuerpo, int $estado): void
     {
-        $antes = ['en' => now()->subMinutes(2)->getTimestamp(), 'cobra' => true, 'errores' => []];
+        // De hace más de 5 minutos: si no, la lista ni se pide.
+        $antes = ['en' => now()->subMinutes(10)->getTimestamp(), 'cobra' => true, 'errores' => []];
         Cache::put(ImportarPedidosWeb::CLAVE_ERRORES, $antes, now()->addDay());
         $this->remoto(['*/pedidos-pagados*' => Http::response(['pedidos' => [$this->datos(1)]]), '*/errores' => Http::response($cuerpo, $estado)]);
 
         $this->assertTrue($this->pasar());
 
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/errores'));
         $this->assertSame($antes, Cache::get(ImportarPedidosWeb::CLAVE_ERRORES));
         $this->assertNull(Cache::get(ImportarPedidosWeb::CLAVE_LECTURA)['fallo'], 'La importación no se marca como caída.');
         $this->assertDatabaseCount('pedidos_web', 1);
@@ -366,5 +368,33 @@ class LecturaTiendaWebTest extends TestCase
         // La de las 15:05 no llegó: se vuelve a pedir a las 15:06 y de ahí cada 5 minutos.
         $this->assertSame(['15:00', '15:05', '15:06', '15:11'], $pedidas);
         $this->assertCount(12, Http::recorded(fn (Request $r) => str_contains($r->url(), '/pedidos-pagados')));
+    }
+
+    /**
+     * La lista de errores relee en la página cada aviso de las últimas 24 horas, también los
+     * falsos que deja guardar el tope de 50 por hora (Cloudflare cobra por fila leída): se
+     * pide cada 5 minutos y, si la última no llegó o no servía, en la pasada siguiente.
+     */
+    public function test_la_lista_de_errores_se_pide_cada_5_minutos_y_enseguida_si_la_ultima_no_llego(): void
+    {
+        $pedidas = [];
+        $this->remoto(['*/errores' => function () use (&$pedidas) {
+            $pedidas[] = now()->format('H:i');
+
+            return match (count($pedidas)) {
+                2 => Http::response([], 503),
+                3 => Http::response(['errores' => []]), // sin «cobra»: no sirve
+                default => Http::response(['cobra' => true, 'errores' => []]),
+            };
+        }]);
+
+        for ($minuto = 0; $minuto < 13; $minuto++) {
+            $this->assertTrue($this->pasar());
+            $this->travel(1)->minutes();
+        }
+
+        // Las de las 15:05 y 15:06 no sirvieron: se pide otra vez a las 15:07 y de ahí cada 5 minutos.
+        $this->assertSame(['15:00', '15:05', '15:06', '15:07', '15:12'], $pedidas);
+        $this->assertCount(13, Http::recorded(fn (Request $r) => str_contains($r->url(), '/pedidos-pagados')));
     }
 }

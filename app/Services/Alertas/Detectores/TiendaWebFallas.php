@@ -113,7 +113,7 @@ class TiendaWebFallas implements Detector
             return false;
         }
 
-        return ! $this->pagos || $this->reciente($this->errores()['en'] ?? null);
+        return ! $this->pagos || $this->reciente($this->errores()['en'] ?? null, ImportarPedidosWeb::MINUTOS_ERRORES);
     }
 
     public function revisar(): ?Hallazgo
@@ -203,7 +203,8 @@ class TiendaWebFallas implements Detector
         }
 
         // Una página vieja sin la ruta, o una que dejó de contestarla: cuenta desde que se vigila.
-        if (! $this->reciente($errores['en'] ?? $vigilando)) {
+        // Se pide cada MINUTOS_ERRORES, con el mismo margen que la lista de revisión.
+        if (! $this->reciente($errores['en'] ?? $vigilando, ImportarPedidosWeb::MINUTOS_ERRORES)) {
             $lineas[] = $this->linea('lista', 1);
         }
 

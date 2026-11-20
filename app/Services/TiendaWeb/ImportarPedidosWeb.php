@@ -38,6 +38,9 @@ class ImportarPedidosWeb
     /** {en, cobra, errores}: lo que contestó GET /api/sistema/errores, ya filtrado. */
     public const CLAVE_ERRORES = 'tienda.errores';
 
+    /** Cada cuánto se pide esa lista ({@see self::erroresAlDia()}). */
+    public const MINUTOS_ERRORES = 5;
+
     /** Desde cuándo se vigila si nunca hubo lectura: da la gracia tras vaciar la caché. */
     public const CLAVE_VIGILANDO = 'tienda.vigilando';
 
@@ -393,6 +396,9 @@ class ImportarPedidosWeb
     private function traerErrores(): void
     {
         try {
+            if ($this->erroresAlDia()) {
+                return;
+            }
             $respuesta = $this->http()->get($this->configuracion->url().'/api/sistema/errores');
             $errores = $respuesta->json('errores');
             $cobra = $respuesta->json('cobra');
@@ -421,6 +427,20 @@ class ImportarPedidosWeb
         } catch (Throwable) {
             // Mejor esfuerzo y sin log: la lista vieja envejece y eso es lo que avisa.
         }
+    }
+
+    /**
+     * La lista de errores relee en la página cada aviso de las últimas 24 horas, también
+     * los falsos que deja guardar su tope por hora (Cloudflare cobra por fila leída): se
+     * pide cada MINUTOS_ERRORES. Su «en» solo se escribe con una respuesta que sirve, así
+     * que una que no llegó se vuelve a pedir en la pasada siguiente; si la marca no se
+     * puede leer, se pide igual.
+     */
+    private function erroresAlDia(): bool
+    {
+        $en = rescue(fn () => Cache::get(self::CLAVE_ERRORES), null, report: false)['en'] ?? null;
+
+        return is_int($en) && $en > now()->subMinutes(self::MINUTOS_ERRORES)->getTimestamp();
     }
 
     /** Una fecha ISO de la página («2026-11-19T20:00:00.000Z») como marca de tiempo. */

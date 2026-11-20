@@ -230,20 +230,22 @@ class ProbadorTiendaWebTest extends TestCase
     }
 
     /**
-     * La lista de pedidos a revisar se pide cada 5 minutos: cuando la página se cae puede
-     * tener 4 minutos más que la última lectura buena. Esa diferencia no manda «otras».
+     * La lista de pedidos a revisar y la de errores se piden cada 5 minutos: cuando la página
+     * se cae pueden tener 4 minutos más que la última lectura buena. Esa diferencia no manda
+     * «otras».
      */
-    public function test_una_caida_4_minutos_despues_de_pedir_la_lista_de_revision_avisa_solo_sin_traer(): void
+    public function test_una_caida_4_minutos_despues_de_pedir_las_listas_avisa_solo_sin_traer(): void
     {
         $this->travel(1)->minutes();
-        $this->pasan(5); // la lista de revisión se pide a las 10:01; la última lectura buena es de las 10:05
+        $this->pasan(5); // las listas se piden a las 10:01; la última lectura buena es de las 10:05
+        $this->assertSame(['10:01'], $this->pedidas['errores']);
         $this->pagina = 'caida';
         $this->pasan(20);
         $this->pagina = 'bien';
         $this->pasan(10);
 
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::SIN_TRAER));
-        $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
+        $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista» de revisión o de errores por la caída.');
     }
 
     /**
@@ -258,11 +260,12 @@ class ProbadorTiendaWebTest extends TestCase
         $this->travelTo(Carbon::parse('2026-11-19 10:01:00', 'America/El_Salvador'));
         $this->pasan(5); // 10:01 a 10:05
         $this->assertSame(['10:00'], $this->pedidas['pedidos-a-revisar'], 'La de las 10:05 todavía no toca.');
+        $this->assertSame(['10:00'], $this->pedidas['errores'], 'La de errores tampoco.');
         $this->pagina = 'caida';
         $this->pasan(30); // 10:06 a 10:35
 
         $this->assertSame(['falla'], $this->correos(self::SIN_TRAER));
-        $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista de pedidos en revisión» por la caída.');
+        $this->assertSame([], $this->correos(self::OTRAS), 'Ni «No se pudo leer la lista» de revisión o de errores por la caída.');
     }
 
     // ───────────── Tres horas de pasadas: lo que se le pide a la página ─────────────
@@ -270,10 +273,10 @@ class ProbadorTiendaWebTest extends TestCase
     /**
      * Tres horas con la tarea cada minuto, como en el servidor. La limpieza relee tablas
      * enteras en la página (Cloudflare cobra por fila leída): sale una vez por hora. La
-     * lista de pedidos a revisar, cada 5 minutos; los pedidos pagados y la lista de
-     * errores, en cada pasada.
+     * lista de pedidos a revisar y la de errores también releen (la de errores, cada aviso
+     * falso de las últimas 24 horas): cada 5 minutos. Los pedidos pagados, en cada pasada.
      */
-    public function test_tres_horas_de_pasadas_piden_la_limpieza_una_vez_por_hora_y_la_revision_cada_5_minutos(): void
+    public function test_tres_horas_de_pasadas_piden_la_limpieza_una_vez_por_hora_y_las_listas_cada_5_minutos(): void
     {
         $this->pasan(180); // 10:00 a 12:59
 
@@ -281,7 +284,8 @@ class ProbadorTiendaWebTest extends TestCase
         $this->assertCount(36, $this->pedidas['pedidos-a-revisar']);
         $this->assertSame(['10:00', '10:05', '10:10'], array_slice($this->pedidas['pedidos-a-revisar'], 0, 3));
         $this->assertCount(180, $this->pedidas['pedidos-pagados']);
-        $this->assertCount(180, $this->pedidas['errores']);
+        $this->assertCount(36, $this->pedidas['errores']);
+        $this->assertSame(['10:00', '10:05', '10:10'], array_slice($this->pedidas['errores'], 0, 3));
         $this->assertSame([], $this->correos(self::SIN_TRAER));
         $this->assertSame([], $this->correos(self::PAGOS));
         $this->assertSame([], $this->correos(self::OTRAS));
