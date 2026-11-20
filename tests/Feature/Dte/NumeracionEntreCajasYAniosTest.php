@@ -309,6 +309,27 @@ class NumeracionEntreCajasYAniosTest extends TestCase
     }
 
     /**
+     * Un general para dos cajas. La caja 2 numeró por fuera el 2 y el 3 de 2027 y la oficina
+     * pone 3 en el general, que es el mismo número que ya tiene la caja 1. La caja que emite
+     * primero después del cambio respeta lo que fijó la oficina.
+     */
+    public function test_el_general_respeta_el_numero_fijado_aunque_coincida_con_otra_caja(): void
+    {
+        $this->en('2027-01-04 08:00:00');
+        $general = $this->crear('03', null);
+        $this->emitir($this->p001);
+        $this->emitir($this->p001);
+        $this->emitir($this->p001);
+        $this->assertSame(1, $this->n($this->emitir($this->p002)));
+
+        $this->editar($general, ['ultimo_numero' => '3']);
+
+        $this->assertSame(4, $this->n($this->emitir($this->p002)));
+        $this->assertSame(4, $this->n($this->emitir($this->p001)));
+        $this->assertSinRepetidos();
+    }
+
+    /**
      * Los cuatro tipos (01, 03, 05 y 11) en las dos cajas, con contingencia de diciembre a enero:
      * cada serie arranca 2027 en 1, sin repetir, y los documentos llevan la contingencia.
      */

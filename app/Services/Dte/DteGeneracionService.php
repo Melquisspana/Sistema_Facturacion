@@ -175,7 +175,10 @@ class DteGeneracionService
             // último número lo tomó otra caja, es de la serie de esa caja y acá no cuenta.
             $base = $correlativo->ultimo_numero;
             $usado = $this->mayorUsadoEnSerie($dte, $correlativo);
-            $porSerie = $correlativo->punto_venta_id === null && $this->loTomoOtraCaja($correlativo, $dte, $base);
+            // Si la oficina fijó el número a mano después, se respeta aunque coincida con uno de otra caja.
+            $porSerie = $correlativo->punto_venta_id === null
+                && $this->loTomoOtraCaja($correlativo, $dte, $base)
+                && $correlativo->numeroFijadoAManoEl() === null;
             $numero = ($porSerie ? $usado : max($base, $usado)) + 1;
 
             // Lo que el motor mueve por su cuenta queda en la auditoría de Configuración con su
