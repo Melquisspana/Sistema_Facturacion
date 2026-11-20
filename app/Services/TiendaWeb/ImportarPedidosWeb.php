@@ -51,6 +51,9 @@ class ImportarPedidosWeb
 
     private const MAX_ERRORES = 20;
 
+    /** Más que esto no cambia el aviso y, sumado entre filas, desbordaría el conteo. */
+    private const MAX_CANTIDAD = 1_000_000;
+
     private const CODIGO = '/^LN-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/D';
 
     public function __construct(private readonly ConfiguracionTiendaWeb $configuracion) {}
@@ -371,7 +374,7 @@ class ImportarPedidosWeb
                     || preg_match('/^[\p{L}\p{N} .:·_\/-]*$/u', $detalle) !== 1) {
                     $detalle = '';
                 }
-                $filas[] = ['tipo' => $fila['tipo'], 'detalle' => $detalle, 'cantidad' => $fila['cantidad'], 'primera' => $primera, 'ultima' => $ultima];
+                $filas[] = ['tipo' => $fila['tipo'], 'detalle' => $detalle, 'cantidad' => min($fila['cantidad'], self::MAX_CANTIDAD), 'primera' => $primera, 'ultima' => $ultima];
             }
             Cache::put(self::CLAVE_ERRORES, ['en' => now()->getTimestamp(), 'cobra' => $cobra, 'errores' => $filas], now()->addDay());
         } catch (Throwable) {
