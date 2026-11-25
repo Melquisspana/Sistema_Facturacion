@@ -532,7 +532,8 @@ class ImportarPedidosWebTest extends TestCase
 
                 return match (count($consultas)) {
                     1 => Http::response(['conciliados_revisados' => 0, 'conciliados_pagados' => 0]),
-                    2 => Http::response(['error' => 'no_existe'], 404),
+                    // Lo que contesta una página sin la ruta (visto con `wrangler pages dev`): 405 y sin cuerpo.
+                    2 => Http::response('', 405),
                     default => Http::failedConnection()($r),
                 };
             },

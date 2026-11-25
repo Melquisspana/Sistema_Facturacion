@@ -191,7 +191,8 @@ class ImportarPedidosWeb
      * por minuto y atiende como mucho 10 por vez; dentro de la limpieza de cada hora, unos
      * pocos pedidos nuevos dejaban sin revisar uno pagado, que a los 7 días se cancelaba
      * solo. Por eso va en cada pasada. Es de mejor esfuerzo: una página que todavía no
-     * tiene la ruta contesta 404 y sigue consultando solo dentro de la limpieza.
+     * tiene la ruta contesta 405 sin cuerpo (Pages no acepta POST en una ruta que no
+     * existe) y sigue consultando solo dentro de la limpieza.
      */
     private function pedirConciliacion(): void
     {
