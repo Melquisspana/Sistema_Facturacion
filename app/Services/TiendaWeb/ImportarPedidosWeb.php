@@ -56,7 +56,7 @@ class ImportarPedidosWeb
     private const MINUTOS_LIMPIEZA = 60;
 
     /** Los únicos tipos que se aceptan de la lista de errores de la página. */
-    public const TIPOS_ERROR = ['error_cobro', 'error_interno', 'error_consulta', 'consulta_fallida', 'firma_invalida', 'vencido_sin_confirmar'];
+    public const TIPOS_ERROR = ['error_cobro', 'error_interno', 'error_consulta', 'consulta_fallida', 'firma_invalida', 'vencido_sin_confirmar', 'rechazo_verificacion'];
 
     private const NOMBRADOS = 3;
 

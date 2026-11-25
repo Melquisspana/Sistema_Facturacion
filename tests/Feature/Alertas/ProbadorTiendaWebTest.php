@@ -408,6 +408,22 @@ class ProbadorTiendaWebTest extends TestCase
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::PAGOS));
     }
 
+    public function test_los_rechazos_de_la_comprobacion_anti_robots_llegan_al_correo_y_se_normalizan_a_la_media_hora(): void
+    {
+        $this->pasan(2);
+        // La página guarda las filas 24 horas: lo que deja de crecer es la última.
+        $this->errores = [$this->fila('rechazo_verificacion', 'turnstile_invalido', 1), $this->fila('rechazo_verificacion', 'turnstile_sin_respuesta', 1)];
+        $this->pasan(5);
+
+        $this->assertSame('La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta', $this->ultimo(self::OTRAS)->hallazgo->titulo);
+        $this->assertSame('La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó', $this->ultimo(self::PAGOS)->hallazgo->titulo);
+        $this->assertSinDatosSensibles($this->ultimo(self::OTRAS));
+        $this->assertSinDatosSensibles($this->ultimo(self::PAGOS));
+
+        $this->pasan(40);
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::OTRAS));
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::PAGOS));
+    }
     // ───────────── Caché vaciada ─────────────
 
     public function test_la_cache_vaciada_a_mitad_de_una_pasada_no_manda_avisos_falsos(): void

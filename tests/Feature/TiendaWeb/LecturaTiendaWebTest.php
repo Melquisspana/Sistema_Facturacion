@@ -216,6 +216,7 @@ class LecturaTiendaWebTest extends TestCase
             $fila(['tipo' => 'consulta_fallida', 'detalle' => '']),
             $fila(['tipo' => 'vencido_sin_confirmar', 'detalle' => '']),
             $fila(['tipo' => 'error_consulta', 'detalle' => 'monto:12.5 $']),
+            $fila(['tipo' => 'rechazo_verificacion', 'detalle' => 'turnstile_invalido']),
             $fila(['tipo' => 'error_cobro', 'detalle' => 'pedido LN-TEST-0000-0001']),
             $fila(['tipo' => 'error_cobro', 'detalle' => 'elena@example.test']),
             $fila(['tipo' => 'error_cobro', 'detalle' => str_repeat('a', 121)]),
@@ -235,11 +236,11 @@ class LecturaTiendaWebTest extends TestCase
         $this->assertSame(now()->getTimestamp(), $guardado['en']);
         $this->assertFalse($guardado['cobra']);
         $this->assertSame(
-            ['token HTTP 401', 'seguir_pedido · TypeError', 'no_cuadra', '', '', '', '', '', '', ''],
+            ['token HTTP 401', 'seguir_pedido · TypeError', 'no_cuadra', '', '', '', 'turnstile_invalido', '', '', '', ''],
             array_column($guardado['errores'], 'detalle'),
         );
         $this->assertSame(
-            ['error_cobro', 'error_interno', 'firma_invalida', 'consulta_fallida', 'vencido_sin_confirmar', 'error_consulta', 'error_cobro', 'error_cobro', 'error_cobro', 'error_cobro'],
+            ['error_cobro', 'error_interno', 'firma_invalida', 'consulta_fallida', 'vencido_sin_confirmar', 'error_consulta', 'rechazo_verificacion', 'error_cobro', 'error_cobro', 'error_cobro', 'error_cobro'],
             array_column($guardado['errores'], 'tipo'),
         );
         $this->assertSame(['tipo' => 'error_cobro', 'detalle' => 'token HTTP 401', 'cantidad' => 2,

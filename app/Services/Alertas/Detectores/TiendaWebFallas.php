@@ -16,8 +16,10 @@ use Illuminate\Support\Facades\Cache;
  * {@see EventosRecientes}, para que lo que impide vender tenga su propio tope diario y
  * una basura que manda cualquiera no se lo gaste:
  *
- *  - pagos(): la tienda no puede cobrar, un pago que no abrió, uno sin comprobar;
- *  - otras(): errores internos, avisos con firma mala, consultas que fallan, pedidos
+ *  - pagos(): la tienda no puede cobrar o la cerró el fusible, un pago que no abrió, la
+ *    comprobación anti-robots que no contesta, un pago sin comprobar;
+ *  - otras(): errores internos, avisos con firma mala, consultas que fallan, rechazos de
+ *    la comprobación anti-robots (los provoca cualquiera que mande un pedido), pedidos
  *    pagados que no se pudieron leer o quedaron en revisión, y las listas que no llegan.
  *
  * Si la página no contesta, no opinan: de eso avisa {@see TiendaWebSinRespuesta} y no
@@ -34,6 +36,9 @@ class TiendaWebFallas implements Detector
         // Pagos
         'no_cobra' => ['La tienda no puede cobrar: los compradores ven “tienda cerrada”',
             'Avisá a soporte: faltan las llaves de Wompi o la dirección del sitio en Cloudflare.', 1],
+        // El fusible de la página: con 30 pedidos sin pagar en la última hora no abre más cobros.
+        'cobro_fusible' => ['Se cerró la tienda un rato porque entraron demasiados pedidos sin pagar: puede ser un robot',
+            'Se vuelve a abrir sola en menos de una hora. Si se repite, avisá a soporte: puede hacer falta prender Turnstile o, si es un día de promoción, subir el tope.', 1],
         'cobro_llaves' => ['No se pudo abrir el pago: Wompi no aceptó las llaves de la tienda',
             'Copiá otra vez el App ID y la API Secret del aplicativo En Vivo en Cloudflare.', 1],
         'cobro_modo' => ['No se pudo abrir el pago: la tienda no está en el modo En Vivo de Wompi',
@@ -43,6 +48,8 @@ class TiendaWebFallas implements Detector
         'cobro_llamada' => ['No se pudo abrir el pago: la página no logró llamar a Wompi', 'Avisá a soporte.', 1],
         'cobro_guardar' => ['No se pudo abrir el pago: no se pudo guardar el enlace', 'Avisá a soporte.', 1],
         'cobro_otra' => ['No se pudo abrir el pago: otra falla', 'Avisá a soporte.', 1],
+        'verificacion_sin_respuesta' => ['La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó',
+            'Es una falla de Cloudflare: esperá unos minutos y probá una compra desde tu celular; si sigue sin dejar pagar, avisá a soporte.', 1],
         'error_consulta' => ['Llegó un pago que no se pudo comprobar con Wompi',
             'Buscalo en el panel de Wompi. El pedido no se pierde: si no se confirma solo, a los 7 días queda en revisión.', 1],
         'vencido_sin_confirmar' => [':n pedidos se cancelaron solos sin que Wompi confirmara si estaban pagados',
@@ -64,6 +71,11 @@ class TiendaWebFallas implements Detector
             'Avisá a soporte: Cloudflare puede estar quitando la firma de los avisos.', 1],
         'consulta_fallida' => ['La consulta de reserva a Wompi falló :n veces',
             'Los pagos se confirman igual cuando llega el aviso de Wompi; si se repite, avisá a soporte.', 3],
+        // Un robot o un comprador de verdad, si una llave de Turnstile está mal puesta: no se distinguen.
+        'verificacion_rechazo' => ['La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta',
+            'Probá una compra desde tu celular: si te rechaza, revisá las dos llaves de Turnstile en Cloudflare; si pasa, eran robots y no hay que hacer nada.', 1],
+        'verificacion_trampa' => ['La tienda rechazó pedidos que llenaron la trampa para robots',
+            'Casi siempre son robots. Probá una compra desde tu celular: si te rechaza, avisá a soporte; si pasa, no hay que hacer nada.', 1],
         'lista' => ['No se pudo leer la lista de errores de la página',
             'Si recién se subió el sistema, falta subir la página; si no, avisá a soporte.', 1],
     ];
@@ -152,6 +164,8 @@ class TiendaWebFallas implements Detector
         foreach ($this->agrupar($errores['errores'] ?? [], fn (array $e) => match ($e['tipo']) {
             'error_cobro' => self::motivoDeCobro($e['detalle']),
             'error_consulta', 'vencido_sin_confirmar' => $this->enVentana($e) ? $e['tipo'] : null,
+            // Que Cloudflare no conteste no lo provoca un robot y frena a todos; los demás rechazos van en otras().
+            'rechazo_verificacion' => $e['detalle'] === 'turnstile_sin_respuesta' && $this->enVentana($e) ? 'verificacion_sin_respuesta' : null,
             default => null,
         }) as $clave => $grupo) {
             // El pago que no abrió sigue abierto hasta que otro comprador consiga su enlace.
@@ -197,6 +211,11 @@ class TiendaWebFallas implements Detector
             'error_interno' => 'interno_'.self::ruta($e['detalle']),
             'firma_invalida' => $e['detalle'] === 'sin_cabecera' ? 'firma_sin_cabecera' : 'firma_no_cuadra',
             'consulta_fallida' => 'consulta_fallida',
+            'rechazo_verificacion' => match ($e['detalle']) {
+                'turnstile_sin_respuesta' => null,
+                'campo_trampa' => 'verificacion_trampa',
+                default => 'verificacion_rechazo',
+            },
             default => null,
         }) as $clave => $grupo) {
             $lineas[] = $this->linea($clave, $grupo['cantidad'], $grupo, ventana: true);
@@ -259,6 +278,7 @@ class TiendaWebFallas implements Detector
     private static function motivoDeCobro(string $detalle): string
     {
         return match (true) {
+            str_contains($detalle, 'demasiados pedidos sin pagar') => 'cobro_fusible',
             preg_match('/\btoken HTTP 4\d\d\b|\bHTTP 40[13]\b/', $detalle) === 1 => 'cobro_llaves',
             str_contains($detalle, 'modo equivocado') => 'cobro_modo',
             preg_match('/\bHTTP 5\d\d\b|sin respuesta/', $detalle) === 1 => 'cobro_wompi',

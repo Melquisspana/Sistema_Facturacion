@@ -217,6 +217,23 @@ class TiendaWebTest extends TestCase
         $this->assertSinDatosSensibles($h);
     }
 
+    public function test_pagos_avisa_que_el_fusible_cerro_la_tienda_un_rato(): void
+    {
+        // La página lo anota como error_cobro, una fila por hora, cuando ya hay 30 pedidos sin pagar en la última hora.
+        $this->lectura(okHace: 1);
+        $this->errores([['error_cobro', 'demasiados pedidos sin pagar', 1, 120]]);
+
+        $h = TiendaWebFallas::pagos()->revisar();
+
+        $this->assertSame('Se cerró la tienda un rato porque entraron demasiados pedidos sin pagar: puede ser un robot', $h->titulo);
+        $this->assertSame('1 vez, la última a las 08:00.', $h->detalle, 'Sigue abierto hasta que alguien consiga su enlace, como los otros cobros.');
+        $this->assertStringContainsString('Se vuelve a abrir sola en menos de una hora', $h->queHacer);
+        $this->assertStringContainsString('Turnstile', $h->queHacer);
+        $this->assertSame(1, $h->conteo);
+        $this->assertNull(TiendaWebFallas::otras()->revisar());
+        $this->assertSinDatosSensibles($h);
+    }
+
     public function test_pagos_solo_cuenta_las_consultas_y_vencidos_de_la_ultima_media_hora(): void
     {
         $this->lectura(okHace: 1);
@@ -251,6 +268,46 @@ class TiendaWebTest extends TestCase
         Ajustes::guardarComoSistema('tienda.pedidos.automatica', false);
         $this->errores([], cobra: false);
         $this->assertFalse(TiendaWebFallas::pagos()->aplica());
+    }
+
+    // ───────────── Comprobación anti-robots ─────────────
+
+    /** @return array<string, array{0: string, 1: bool, 2: string, 3: string}> */
+    public static function rechazosDeVerificacion(): array
+    {
+        return [
+            // Cloudflare no contestó: no deja pagar a nadie, y un robot no lo puede provocar.
+            'Turnstile sin respuesta' => ['turnstile_sin_respuesta', true,
+                'La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó', 'esperá unos minutos y probá una compra'],
+            // Lo provoca cualquiera que mande un pedido sin token: va con las otras, que tienen su propio tope.
+            'Turnstile rechazó' => ['turnstile_invalido', false,
+                'La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta', 'revisá las dos llaves de Turnstile en Cloudflare'],
+            'campo trampa' => ['campo_trampa', false,
+                'La tienda rechazó pedidos que llenaron la trampa para robots', 'si te rechaza, avisá a soporte'],
+            'motivo que el sistema no conoce' => ['otro_motivo', false,
+                'La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta', 'Probá una compra desde tu celular'],
+        ];
+    }
+
+    #[DataProvider('rechazosDeVerificacion')]
+    public function test_los_rechazos_de_la_comprobacion_anti_robots_avisan_en_un_solo_aviso(string $motivo, bool $enPagos, string $titulo, string $queHacer): void
+    {
+        $this->lectura(okHace: 1);
+        // La página anota como mucho uno por motivo cada 15 minutos: la cantidad son esos ratos.
+        $this->errores([['rechazo_verificacion', $motivo, 2, 5]]);
+        [$aviso, $otro] = $enPagos ? [TiendaWebFallas::pagos(), TiendaWebFallas::otras()] : [TiendaWebFallas::otras(), TiendaWebFallas::pagos()];
+
+        $h = $aviso->revisar();
+
+        $this->assertSame($titulo, $h->titulo);
+        $this->assertStringContainsString($queHacer, $h->queHacer);
+        $this->assertSame('2 veces en las últimas 24 horas, la última a las 09:55.', $h->detalle);
+        $this->assertSame(2, $h->conteo);
+        $this->assertNull($otro->revisar(), 'El mismo rechazo no avisa dos veces.');
+        $this->assertSinDatosSensibles($h);
+
+        $this->errores([['rechazo_verificacion', $motivo, 2, 31]]);
+        $this->assertNull($aviso->revisar(), 'Lo de hace más de media hora ya pasó.');
     }
 
     // ───────────── Otras fallas de la tienda web ─────────────
@@ -292,7 +349,6 @@ class TiendaWebTest extends TestCase
 
         $this->assertNull(TiendaWebFallas::otras()->revisar());
     }
-
     public function test_otras_avisa_los_pedidos_pagados_que_no_se_pudieron_leer_y_los_que_quedaron_en_revision(): void
     {
         $this->lectura(okHace: 1, invalidos: 4, ids: [41, 57, 60]);
