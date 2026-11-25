@@ -265,12 +265,7 @@ class PedidosFabrica
             }
 
             $pedido->update(['armando_sigue' => ! empty($datos['sigue'])]);
-            if ($pedido->armando_desde === null) {
-                $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id]);
-                activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
-                    ->withProperties(['estado' => $pedido->estado->value])
-                    ->log('empezó a armar el pedido');
-            }
+            $this->empezarArmado($pedido, $usuario);
             // Una caja lista en la que ya no va nada deja de estar lista: no hay caja que llevarse.
             if ($pedido->estado === EstadoPedidoSala::Listo && ! $this->vaAlgoEnLaCaja($pedido)) {
                 $pedido->update(['estado' => $this->sinListo($pedido)]);
@@ -279,6 +274,18 @@ class PedidosFabrica
                     ->log(self::AUDITORIA_NO_LISTO);
             }
         }, 3);
+    }
+
+    /** Desde el primer guardado el pedido queda «Armando», con quién; eso se audita una vez. */
+    private function empezarArmado(PedidoSala $pedido, User $usuario): void
+    {
+        if ($pedido->armando_desde !== null) {
+            return;
+        }
+        $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id]);
+        activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+            ->withProperties(['estado' => $pedido->estado->value])
+            ->log('empezó a armar el pedido');
     }
 
     /** ¿Va algo en la caja? Lo marcado o, sin marcar, lo que falta. Con las líneas ya cargadas. */
@@ -321,7 +328,12 @@ class PedidosFabrica
     /**
      * «Listo para salir» (24/11/2026): la caja quedó como va a salir, aunque falte algo que no
      * hay (eso sigue como falta, con su motivo opcional). Se quita con otro toque y vuelve a
-     * como estaba. Lo marcado se guarda antes, desde la hoja; acá solo cambia el estado.
+     * como estaba. Lo marcado se guarda antes, desde la hoja. Al marcarlo, además, queda
+     * guardado SIEMPRE lo que hay en la caja (Melqui, 25/11/2026), aunque no hayan tocado
+     * nada: lo que no marcaron va todo, y el pedido queda «Armando», como con «Imprimir para
+     * la caja». Así una corrección posterior de la oficina se compara contra lo que hay en la
+     * caja ({@see PedidosOficina}). Se guarda acá, después de revisar la versión, y no en la
+     * hoja: una hoja vieja no deja anotada una caja que no es. Quitarlo no toca lo marcado.
      * Quién y cuándo, en la auditoría. Mandar sigue siendo «Imprimir y mandar», de uno en uno.
      * Devuelve false si ya estaba así (doble toque).
      *
@@ -348,6 +360,10 @@ class PedidosFabrica
                 if (! $this->vaAlgoEnLaCaja($pedido)) {
                     throw ValidationException::withMessages(['pedido' => self::CAJA_VACIA]);
                 }
+                foreach ($pedido->lineas->filter->tienePendiente()->whereNull('va_borrador') as $linea) {
+                    $linea->update(['va_borrador' => $linea->vaEnLaCaja()]);
+                }
+                $this->empezarArmado($pedido, $usuario);
             }
 
             $anterior = $pedido->estado;

@@ -264,7 +264,11 @@
                      otro toque, «Quitar de listos», sin confirmar). Los dos, como «Dejar para
                      después», primero terminan de guardar lo marcado (salir()). «Imprimir para la
                      caja» guarda la hoja aunque no se haya tocado nada (sucio = true): con el papel
-                     pegado en la caja, el pedido queda «Armando» y el vendedor ya no lo cambia. --}}
+                     pegado en la caja, el pedido queda «Armando» y el vendedor ya no lo cambia.
+                     «Listo para salir» también deja guardado lo que hay en la caja aunque no se
+                     haya tocado nada (25/11/2026), pero lo hace el servidor al marcarlo, después
+                     de revisar la versión (PedidosFabrica::marcarListo): una hoja vieja no anota
+                     una caja que no es. --}}
                 <div class="sticky bottom-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-between">
                     <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                         <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"

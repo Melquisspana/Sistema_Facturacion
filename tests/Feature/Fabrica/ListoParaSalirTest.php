@@ -14,6 +14,7 @@ use App\Models\Ruta;
 use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\PedidosFabrica;
+use App\Services\Rutas\PedidosOficina;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -293,12 +294,16 @@ class ListoParaSalirTest extends TestCase
         $this->listo($pedido, version: $vieja)->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
         $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
         $this->assertSame([], $this->auditoriaListo($pedido));
+        // Tampoco guarda la caja de la hoja vieja: nada queda marcado ni «Armando».
+        $this->assertSame(0, $pedido->lineas()->whereNotNull('va_borrador')->count());
+        $this->assertNull($pedido->armando_desde);
         // Sin la versión, tampoco: la pantalla quedó vieja.
         $this->patch(route('fabrica.pedidos.listo', $pedido), ['listo' => '1'])->assertSessionHasErrors('version');
 
-        // Con la hoja abierta de nuevo (ya dice 20), sí.
+        // Con la hoja abierta de nuevo (ya dice 20), sí, y la caja queda con las 20.
         $this->listo($pedido)->assertSessionHasNoErrors();
         $this->assertSame(EstadoPedidoSala::Listo, $pedido->refresh()->estado);
+        $this->assertSame('20.0000', (string) $pedido->lineas()->value('va_borrador'));
     }
 
     public function test_listo_con_la_hoja_vieja_no_pasa_si_otra_tableta_mando_una_parte(): void
@@ -421,6 +426,61 @@ class ListoParaSalirTest extends TestCase
         $this->listo($web)->assertSessionHasErrors('pedido');
         $this->assertSame(EstadoPedidoSala::Registrado, $web->refresh()->estado);
         $this->assertSame([], $this->auditoriaListo($pedido));
+    }
+
+    /**
+     * Melqui, 25/11/2026: «Listo para salir» guarda SIEMPRE lo que hay en la caja, aunque no
+     * hayan tocado nada en la hoja, como «Imprimir para la caja». Así queda anotado qué va en
+     * la caja y una corrección posterior de la oficina se compara contra eso.
+     */
+    public function test_listo_para_salir_guarda_lo_que_hay_en_la_caja_aunque_no_hayan_tocado_nada(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '5']);
+        $g = $this->linea($pedido, $this->galleta);
+        $c = $this->linea($pedido, $this->canilla);
+
+        // La hoja recién abierta, sin tocar nada: la caja lleva todo lo que falta.
+        $this->listo($pedido)->assertSessionHasNoErrors();
+
+        $pedido->refresh();
+        $this->assertSame(EstadoPedidoSala::Listo, $pedido->estado);
+        $this->assertSame('10.0000', (string) $pedido->lineas()->whereKey($g)->value('va_borrador'));
+        $this->assertSame('5.0000', (string) $pedido->lineas()->whereKey($c)->value('va_borrador'));
+        // Queda «Armando», con quién, como el primer guardado de la hoja (una sola vez).
+        $this->assertNotNull($pedido->armando_desde);
+        $this->assertSame($this->fabrica->id, $pedido->armando_por);
+        $this->assertSame(1, Activity::where('subject_id', $pedido->id)->where('description', 'empezó a armar el pedido')->count());
+
+        // La oficina sube las galletas a 12: la caja deja de estar lista y la hoja compara contra
+        // lo que hay en la caja (10), no contra el pedido nuevo.
+        $oficina = User::factory()->create(['activo' => true])->assignRole('facturacion');
+        app(PedidosOficina::class)->corregir($pedido, [
+            'version' => $this->version($pedido), 'motivo' => 'El vendedor se equivocó.', 'cantidades' => [$g => '12'],
+        ], $oficina);
+        $pedido->refresh();
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->estado);
+        $galleta = $pedido->lineas()->findOrFail($g);
+        $this->assertSame('10.0000', $galleta->vaEnLaCaja());
+        $this->assertSame('2.0000', $galleta->faltaEnLaCaja());
+        $this->get(route('fabrica.pedidos.caja', $pedido))->assertOk()
+            ->assertSeeInOrder(['Galleta de prueba', '10', '2', 'Canilla de prueba', '5']);
+    }
+
+    public function test_listo_para_salir_no_pisa_lo_que_ya_marcaron(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '5']);
+        $g = $this->linea($pedido, $this->galleta);
+        $c = $this->linea($pedido, $this->canilla);
+        // Tocaron solo las canillas (no hay); las galletas, como venían.
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$c => '0'], 'motivos' => [$c => 'No hay canillas']])->assertOk();
+
+        $this->listo($pedido)->assertSessionHasNoErrors();
+
+        $this->assertSame('10.0000', (string) $pedido->lineas()->whereKey($g)->value('va_borrador'));
+        $canilla = $pedido->lineas()->findOrFail($c);
+        $this->assertSame('0.0000', (string) $canilla->va_borrador);
+        $this->assertSame('No hay canillas', $canilla->motivo_borrador);
+        $this->assertSame(1, Activity::where('subject_id', $pedido->id)->where('description', 'empezó a armar el pedido')->count());
     }
 
     public function test_el_vendedor_ya_no_corrige_un_pedido_listo(): void

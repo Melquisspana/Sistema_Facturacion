@@ -30,7 +30,8 @@ Route::middleware(['auth', 'permission:fabrica.pedidos.mandar', 'cache.headers:n
         // Lo marcado en la hoja se guarda solo (fetch), sin mandar nada.
         Route::patch('{pedido}/borrador', [PedidoFabricaController::class, 'borrador'])->name('borrador');
         Route::patch('{pedido}/borrador/borrar', [PedidoFabricaController::class, 'borrarBorrador'])->name('borrador.borrar');
-        // «Listo para salir» y quitarlo: solo el estado; lo marcado se guarda antes desde la hoja.
+        // «Listo para salir» y quitarlo. Lo marcado se guarda antes desde la hoja; al marcarlo, lo
+        // que hay en la caja queda guardado aunque no se haya tocado nada.
         Route::patch('{pedido}/listo', [PedidoFabricaController::class, 'listo'])->name('listo');
         Route::post('{pedido}/envios', [PedidoFabricaController::class, 'mandar'])->name('mandar');
         // La hoja para imprimir de un envío de ese pedido (solo lectura).
