@@ -15,8 +15,9 @@ use Illuminate\Mail\Message;
  *
  * Va incrustado en el mensaje (cid:), nunca pedido por una dirección: el sistema está detrás
  * del acceso de la empresa y los correos no muestran imágenes en data-URI. Sale del mismo
- * archivo que los PDF (`dte.pdf.logo_path`). Si GD no lo puede leer (un SVG, por ejemplo),
- * va el archivo tal cual; sin archivo, el correo sale solo con el nombre.
+ * archivo que los PDF (`dte.pdf.logo_path`). Sin archivo, o si GD no lo puede leer, el correo
+ * sale solo con el nombre: un SVG no se ve en Gmail ni en Outlook de escritorio, y el archivo
+ * tal cual iría sin su círculo blanco y estirado a 56×56.
  */
 final class LogoCorreo
 {
@@ -26,7 +27,7 @@ final class LogoCorreo
     /** El rojo del logo, el acento del correo (themes/documento.css). */
     private const ROJO = [0xC2, 0x3B, 0x26];
 
-    /** Incrusta el logo en el mensaje y devuelve su `cid:`, o null si no hay logo. */
+    /** Incrusta el sello del logo en el mensaje y devuelve su `cid:`, o null si no hay logo que mostrar. */
     public static function incrustar(Message $message): ?string
     {
         $ruta = (string) config('dte.pdf.logo_path', '');
@@ -35,7 +36,7 @@ final class LogoCorreo
         }
         $sello = self::sello((string) file_get_contents($ruta));
 
-        return $sello !== null ? $message->embedData($sello, 'logo.png', 'image/png') : $message->embed($ruta);
+        return $sello !== null ? $message->embedData($sello, 'logo.png', 'image/png') : null;
     }
 
     /** El PNG del sello, o null si GD no puede leer la imagen. */

@@ -4,7 +4,7 @@
      debajo, el nombre del correo en el rojo de la marca. Va con el tema «documento»
      (themes/documento.css). El logo va incrustado en el correo (cid:, App\Support\Correo\LogoCorreo):
      los correos no cargan imágenes en data-URI ni de un servidor interno. Sin $message (vista
-     previa sin mensaje) o sin el archivo, sale solo el nombre. Hoy lo usa solo el resumen
+     previa sin mensaje), sin el archivo o si no se puede pasar a sello, sale solo el nombre. Hoy lo usa solo el resumen
      diario de pedidos. --}}
 @php
     $empresa = \App\Support\NombreEmpresa::actual();

@@ -599,8 +599,11 @@ class CorreoDiarioDiaRealTest extends TestCase
         $this->assertSame([], collect($mensaje->getAttachments())->filter(fn ($a) => $a->getDisposition() === 'inline')->all());
     }
 
-    public function test_un_logo_que_gd_no_lee_va_incrustado_tal_cual(): void
+    public function test_un_logo_que_gd_no_lee_no_va_y_el_correo_sale_con_el_nombre(): void
     {
+        // Un SVG no se ve en Gmail ni en Outlook de escritorio (sale la imagen rota) y, sin GD,
+        // el archivo iría sin su círculo blanco y estirado a 56×56: mejor solo el nombre, como
+        // cuando no hay archivo.
         $svg = sys_get_temp_dir().'/logo-de-prueba-'.Str::random(8).'.svg';
         file_put_contents($svg, '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>');
         config(['dte.pdf.logo_path' => $svg]);
@@ -610,11 +613,11 @@ class CorreoDiarioDiaRealTest extends TestCase
             $this->artisan('pedidos:correo-diario')->expectsOutput('Resumen enviado.')->assertSuccessful();
             $mensaje = $this->mensaje($this->enviados()[0]);
 
-            // Dentro del correo, nunca pedido por una dirección. (El archivo se lee al armar el envío.)
-            $this->assertSame(1, preg_match('/<img src="cid:([^"]+)"[^>]*class="doc-logo"/', (string) $mensaje->getHtmlBody(), $m));
-            $logo = collect($mensaje->getAttachments())->first(fn ($a) => $a->getContentId() === $m[1]);
-            $this->assertSame('inline', $logo?->getDisposition());
-            $this->assertStringContainsString('<svg', $logo->getBody());
+            // (El archivo se lee al armar el envío.)
+            $html = (string) $mensaje->getHtmlBody();
+            $this->assertDoesNotMatchRegularExpression('/<img\b/i', $html);
+            $this->assertStringContainsString('Confitería de prueba', $html);
+            $this->assertSame([], collect($mensaje->getAttachments())->filter(fn ($a) => $a->getDisposition() === 'inline')->all());
         } finally {
             @unlink($svg);
         }
