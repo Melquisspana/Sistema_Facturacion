@@ -330,8 +330,8 @@ class PedidosFabrica
      * hay (eso sigue como falta, con su motivo opcional). Se quita con otro toque y vuelve a
      * como estaba. Lo marcado se guarda antes, desde la hoja. Al marcarlo, además, queda
      * guardado SIEMPRE lo que hay en la caja (Melqui, 25/11/2026), aunque no hayan tocado
-     * nada: lo que no marcaron va todo, y el pedido queda «Armando», como con «Imprimir para
-     * la caja». Así una corrección posterior de la oficina se compara contra lo que hay en la
+     * nada: lo que no marcaron va todo, y el pedido queda «Armando», como con «Imprimir sin
+     * mandar». Así una corrección posterior de la oficina se compara contra lo que hay en la
      * caja ({@see PedidosOficina}). Se guarda acá, después de revisar la versión, y no en la
      * hoja: una hoja vieja no deja anotada una caja que no es. Quitarlo no toca lo marcado.
      * Quién y cuándo, en la auditoría. Mandar sigue siendo «Imprimir y mandar», de uno en uno.

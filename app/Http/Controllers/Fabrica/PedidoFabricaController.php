@@ -82,7 +82,7 @@ class PedidoFabricaController extends Controller
     }
 
     /**
-     * «Imprimir para la caja» (24/11/2026): la «Orden para la caja», sacada de lo marcado,
+     * «Imprimir sin mandar» (24/11/2026): la «Orden para la caja», sacada de lo marcado,
      * para dejarla encima de la caja armada que todavía no sale. Solo lectura (GET): no
      * registra envío, no cambia el estado ni llega a facturación, y se saca las veces que
      * haga falta. La hoja guarda antes de abrirla, aunque no se haya tocado nada: desde ahí el

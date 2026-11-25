@@ -241,7 +241,7 @@
 
                 <p class="mt-3 text-sm" role="status" aria-live="polite" x-text="estado" :class="error ? 'text-red-600' : 'text-gray-500'"></p>
 
-                {{-- En el celular, «Imprimir para la caja» y «Listo para salir» van acá, sin fijar: en
+                {{-- En el celular, «Imprimir sin mandar» y «Listo para salir» van acá, sin fijar: en
                      la barra fija de abajo eran cuatro botones uno arriba del otro y tapaban casi
                      media pantalla. Desde la tableta (sm) van en la barra; son los mismos botones. --}}
                 @php
@@ -249,21 +249,21 @@
                 @endphp
                 <div class="mt-4 flex flex-col gap-3 sm:hidden">
                     <a href="{{ route('fabrica.pedidos.caja', $pedido) }}" @click.prevent="sucio = true; salir($el.href)"
-                       class="inline-flex {{ $secundario }}">Imprimir para la caja</a>
+                       class="inline-flex {{ $secundario }}">Imprimir sin mandar</a>
                     <button type="button" @click="salir(() => $refs.listo.submit())" :disabled="enviando || saliendo"
                             class="inline-flex {{ $secundario }}">
                         {{ $listo ? 'Quitar de listos' : 'Listo para salir' }}
                     </button>
                 </div>
 
-                {{-- «Dejar para después», «Imprimir para la caja» y «Listo para salir» primero e
+                {{-- «Dejar para después», «Imprimir sin mandar» y «Listo para salir» primero e
                      «Imprimir y mandar» después; en el celular, uno arriba del otro y solo
                      «Dejar para después» e «Imprimir y mandar» (los otros dos, arriba). Desde el
-                     24/11/2026: «Imprimir para la caja» abre la orden que va encima de la caja sin
+                     24/11/2026: «Imprimir sin mandar» abre la orden que va encima de la caja sin
                      mandar nada, y «Listo para salir» la pasa al grupo de arriba de la lista (con
                      otro toque, «Quitar de listos», sin confirmar). Los dos, como «Dejar para
-                     después», primero terminan de guardar lo marcado (salir()). «Imprimir para la
-                     caja» guarda la hoja aunque no se haya tocado nada (sucio = true): con el papel
+                     después», primero terminan de guardar lo marcado (salir()). «Imprimir sin
+                     mandar» guarda la hoja aunque no se haya tocado nada (sucio = true): con el papel
                      pegado en la caja, el pedido queda «Armando» y el vendedor ya no lo cambia.
                      «Listo para salir» también deja guardado lo que hay en la caja aunque no se
                      haya tocado nada (25/11/2026), pero lo hace el servidor al marcarlo, después
@@ -274,7 +274,7 @@
                         <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
                         <a href="{{ route('fabrica.pedidos.caja', $pedido) }}" @click.prevent="sucio = true; salir($el.href)"
-                           class="hidden sm:inline-flex {{ $secundario }}">Imprimir para la caja</a>
+                           class="hidden sm:inline-flex {{ $secundario }}">Imprimir sin mandar</a>
                         <button type="button" @click="salir(() => $refs.listo.submit())" :disabled="enviando || saliendo"
                                 class="hidden sm:inline-flex {{ $secundario }}">
                             {{ $listo ? 'Quitar de listos' : 'Listo para salir' }}

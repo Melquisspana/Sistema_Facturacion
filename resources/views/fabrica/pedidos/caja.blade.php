@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Orden para la caja · {{ $pedido->nombreSala() }}</title>
     {{--
-        «Imprimir para la caja» (Melqui, 24/11/2026): el papel que va encima de la caja armada
+        «Imprimir sin mandar» (Melqui, 24/11/2026): el papel que va encima de la caja armada
         que todavía no sale, para que al otro día sepan cuál es cuál y no copien la orden a
         mano. Sale de lo marcado en la hoja (o, sin marcar, de todo lo que falta, como la
         hoja), solo lectura: no registra envío, no cambia el estado ni llega a facturación, y

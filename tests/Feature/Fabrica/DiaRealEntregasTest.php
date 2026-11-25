@@ -109,7 +109,7 @@ class DiaRealEntregasTest extends TestCase
             : ['listo' => '0']);
     }
 
-    /** «Imprimir para la caja»: el texto de la orden, sin espacios de más. */
+    /** «Imprimir sin mandar»: el texto de la orden, sin espacios de más. */
     private function caja(PedidoSala $pedido): string
     {
         return $this->texto($this->actingAs($this->fabrica)->get(route('fabrica.pedidos.caja', $pedido))->assertOk()->getContent());
@@ -193,7 +193,7 @@ class DiaRealEntregasTest extends TestCase
         $this->assertStringContainsString('C01 Canilla de prueba 0 4', $ordenD);
         $this->assertStringContainsString('Q01 Quesadilla de prueba 0 2', $ordenD);
         $this->assertStringContainsString('G01 Galleta de prueba 6 6', $ordenC);
-        // «Imprimir para la caja» no manda nada ni llega a la oficina.
+        // «Imprimir sin mandar» no manda nada ni llega a la oficina.
         $this->assertSame(0, PedidoSalaEnvio::count());
         $this->assertSame(0, PedidoSalaEnvio::query()->porFacturar()->count());
         $this->assertSame(EstadoPedidoSala::Registrado, $cc->refresh()->estado);
@@ -420,7 +420,7 @@ class DiaRealEntregasTest extends TestCase
         $this->assertSame(1, Activity::where('description', PedidosFabrica::AUDITORIA_NO_LISTO)->count());
         $this->listo($pedido)->assertSessionHasNoErrors();
 
-        // «Imprimir para la caja» dos veces: dos papeles iguales y nada guardado.
+        // «Imprimir sin mandar» dos veces: dos papeles iguales y nada guardado.
         $this->assertSame($this->caja($pedido), $this->caja($pedido));
         $this->assertSame(0, PedidoSalaEnvio::count());
 

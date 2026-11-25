@@ -107,7 +107,7 @@ class ListoParaSalirTest extends TestCase
         ]);
     }
 
-    // ══════════════════════════════ 1 y 2. «Imprimir para la caja»: la «Orden para la caja»
+    // ══════════════════════════════ 1 y 2. «Imprimir sin mandar»: la «Orden para la caja»
 
     public function test_la_orden_para_la_caja_sale_de_lo_marcado_y_no_manda_nada(): void
     {
@@ -156,7 +156,7 @@ class ListoParaSalirTest extends TestCase
         $this->assertNull($pedido->lineas()->whereKey($this->linea($pedido, $this->galleta))->value('va_borrador'));
     }
 
-    public function test_la_hoja_tiene_imprimir_para_la_caja_que_guarda_antes_de_salir(): void
+    public function test_la_hoja_tiene_imprimir_sin_mandar_que_guarda_antes_de_salir(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '10']);
 
@@ -166,9 +166,11 @@ class ListoParaSalirTest extends TestCase
         // se haya tocado nada (sucio = true): con el papel pegado en la caja, el pedido queda
         // «Armando» y el vendedor ya no lo cambia.
         $this->assertMatchesRegularExpression(
-            '/Dejar para después<\/a>\s*<a href="'.preg_quote(route('fabrica.pedidos.caja', $pedido), '/').'" @click\.prevent="sucio = true; salir\(\$el\.href\)"\s+class="[^"]*bg-white[^"]*">Imprimir para la caja<\/a>/',
+            '/Dejar para después<\/a>\s*<a href="'.preg_quote(route('fabrica.pedidos.caja', $pedido), '/').'" @click\.prevent="sucio = true; salir\(\$el\.href\)"\s+class="[^"]*bg-white[^"]*">Imprimir sin mandar<\/a>/',
             $html,
         );
+        // Se llama «Imprimir sin mandar» (Melqui, 25/11/2026); el papel sigue siendo la «Orden para la caja».
+        $this->assertDoesNotMatchRegularExpression('/Imprimir\s+para\s+la\s+caja/', $html);
 
         // Ese guardado es la hoja tal como está (todo lo que falta) y desde ahí el vendedor no corrige.
         $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$this->linea($pedido, $this->galleta) => '10']])->assertOk();
@@ -430,7 +432,7 @@ class ListoParaSalirTest extends TestCase
 
     /**
      * Melqui, 25/11/2026: «Listo para salir» guarda SIEMPRE lo que hay en la caja, aunque no
-     * hayan tocado nada en la hoja, como «Imprimir para la caja». Así queda anotado qué va en
+     * hayan tocado nada en la hoja, como «Imprimir sin mandar». Así queda anotado qué va en
      * la caja y una corrección posterior de la oficina se compara contra eso.
      */
     public function test_listo_para_salir_guarda_lo_que_hay_en_la_caja_aunque_no_hayan_tocado_nada(): void
@@ -523,13 +525,13 @@ class ListoParaSalirTest extends TestCase
 
         // Las etiquetas <a>/<button> con su texto (los atributos pueden llevar «=>» de Alpine).
         $botones = function (string $trozo): array {
-            preg_match_all('/<(?:a|button)\b((?:[^>"]|"[^"]*")*)>\s*(Imprimir para la caja|Listo para salir)\s*</', $trozo, $m, PREG_SET_ORDER);
+            preg_match_all('/<(?:a|button)\b((?:[^>"]|"[^"]*")*)>\s*(Imprimir sin mandar|Listo para salir)\s*</', $trozo, $m, PREG_SET_ORDER);
 
             return array_map(fn ($b) => ['texto' => $b[2], 'clases' => preg_match('/class="([^"]*)"/', $b[1], $c) ? $c[1] : ''], $m);
         };
 
         $enLaBarra = $botones($barra);
-        $this->assertSame(['Imprimir para la caja', 'Listo para salir'], array_column($enLaBarra, 'texto'));
+        $this->assertSame(['Imprimir sin mandar', 'Listo para salir'], array_column($enLaBarra, 'texto'));
         foreach ($enLaBarra as $boton) {
             $this->assertStringContainsString('hidden sm:inline-flex', $boton['clases'], $boton['texto'].' no va en la barra fija del celular');
         }
@@ -537,7 +539,7 @@ class ListoParaSalirTest extends TestCase
 
         // En el celular, arriba de la barra y sin fijar.
         $this->assertSame(1, preg_match('/<div class="[^"]*\bsm:hidden\b[^"]*">((?:(?!<\/div>).)*)<\/div>/s', $arriba, $celular));
-        $this->assertSame(['Imprimir para la caja', 'Listo para salir'], array_column($botones($celular[1]), 'texto'));
+        $this->assertSame(['Imprimir sin mandar', 'Listo para salir'], array_column($botones($celular[1]), 'texto'));
         $this->assertStringContainsString('@click.prevent="sucio = true; salir($el.href)"', $celular[1]);
         $this->assertStringContainsString('@click="salir(() => $refs.listo.submit())"', $celular[1]);
     }
