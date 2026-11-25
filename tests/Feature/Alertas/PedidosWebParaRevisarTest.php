@@ -4,6 +4,7 @@ namespace Tests\Feature\Alertas;
 
 use App\Enums\EstadoPedidoWeb;
 use App\Models\PedidoWeb;
+use App\Models\User;
 use App\Services\Alertas\Avisador;
 use App\Services\Alertas\Detectores\PedidosWebParaRevisar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -73,5 +74,35 @@ class PedidosWebParaRevisarTest extends TestCase
         $h = $detector->revisar();
         $this->assertSame(1, $h->conteo);
         $this->assertStringContainsString('LN-TEST-0000-0001', $h->detalle);
+    }
+
+    public function test_un_pedido_pagado_que_sigue_sin_factura_pasada_media_hora_avisa_y_el_boton_abre_la_lista(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-16 09:00', 'America/El_Salvador'));
+        $detector = app(PedidosWebParaRevisar::class);
+        $this->pedido(1, EstadoPedidoWeb::Importado);
+
+        $this->travel(29)->minutes();
+        $this->assertNull($detector->revisar(), 'Recién importado: la factura todavía puede salir.');
+
+        $this->travel(2)->minutes();
+        $h = $detector->revisar();
+        $this->assertSame(1, $h->conteo);
+        $this->assertSame('Pedidos: LN-TEST-0000-0001.', $h->detalle);
+        $this->assertSame('facturacion.pedidos-web.index', $h->enlace);
+    }
+
+    public function test_un_pedido_viejo_al_que_se_le_acaba_de_dar_reintentar_no_avisa(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-16 09:00', 'America/El_Salvador'));
+        $pedido = $this->pedido(1, EstadoPedidoWeb::ParaRevisar);
+        $this->travel(2)->days();
+        $usuario = User::factory()->create(['activo' => true]);
+        $usuario->givePermissionTo(['dte.ver', 'dte.gestionar']);
+
+        $this->actingAs($usuario)->post(route('facturacion.pedidos-web.reintentar', $pedido))->assertRedirect();
+
+        $this->assertSame(EstadoPedidoWeb::Importado, $pedido->refresh()->estado);
+        $this->assertNull(app(PedidosWebParaRevisar::class)->revisar(), 'Reintentar mueve el pedido: no abre un aviso falso.');
     }
 }

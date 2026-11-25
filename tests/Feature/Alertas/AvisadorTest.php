@@ -9,9 +9,14 @@ use App\Services\Alertas\Detectores\EventosRecientes;
 use App\Services\Alertas\Hallazgo;
 use App\Services\Alertas\RegistroEventos;
 use App\Support\Correo\CandadoCorreoReal;
+use App\Support\HoraNegocio;
+use Illuminate\Cache\Events\RetrievingKey;
+use Illuminate\Cache\Events\RetrievingManyKeys;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
@@ -231,6 +236,122 @@ class AvisadorTest extends TestCase
         $sano = $this->detector(new Hallazgo('Otro problema', 'D.', 'Q.'), 'otro');
 
         $this->assertSame(['otro' => 'falla'], $this->avisador()->revisar([$roto, $sano]));
+    }
+
+    public function test_el_estado_guarda_el_texto_del_aviso_y_lo_actualiza_aunque_no_mande_correo(): void
+    {
+        Mail::fake();
+        $detector = $this->detector(new Hallazgo('Algo se rompió', 'Detalle uno.', 'Revisalo.', conteo: 2, enlace: 'admin.salud-sistema'));
+        $this->avisador()->procesar($detector);
+
+        $estado = Cache::get('alertas.abiertas.prueba');
+        $this->assertSame(['Prueba', 'Algo se rompió', 'Detalle uno.', 'Revisalo.', 'admin.salud-sistema'],
+            [$estado['nombre'], $estado['titulo'], $estado['detalle'], $estado['que_hacer'], $estado['enlace']]);
+
+        // Mejoró: no sale correo, pero el Inicio tiene que ver el texto nuevo.
+        $detector->hallazgo = new Hallazgo('Algo se rompió menos', 'Detalle dos.', 'Otra cosa.', conteo: 1);
+        $this->travel(5)->minutes();
+        $this->assertNull($this->avisador()->procesar($detector));
+        $estado = Cache::get('alertas.abiertas.prueba');
+        $this->assertSame(['Algo se rompió menos', 'Detalle dos.', 'Otra cosa.', null],
+            [$estado['titulo'], $estado['detalle'], $estado['que_hacer'], $estado['enlace']]);
+        $this->assertSame(1, $estado['conteo_avisado']);
+    }
+
+    public function test_abiertos_lista_los_avisos_del_mas_viejo_al_mas_nuevo_y_dice_si_el_correo_no_salio(): void
+    {
+        config(['alertas.tope_diario' => 1]);
+        Mail::fake();
+        $this->avisador()->revisar([]);
+        $viejo = $this->detector(new Hallazgo('Viejo', 'D.', 'Q.', desde: now()->subHour(), enlace: 'admin.salud-sistema'), 'salud');
+        $nuevo = $this->detector(new Hallazgo('Nuevo', 'D2.', 'Q2.', desde: now()->subMinutes(5), enlace: 'ruta.que.no.existe'), 'trabajos_fallidos');
+        $this->avisador()->procesar($nuevo);
+        $this->avisador()->procesar($viejo);
+        $tope = $this->detector(new Hallazgo('Sin correo', 'D3.', 'Q3.'), 'dte_rechazados');
+        Cache::put('alertas.envios.dte_rechazados.'.HoraNegocio::fechaHoy(), 1, now()->addDay());
+        $this->avisador()->procesar($tope);
+
+        $abiertos = $this->avisador()->abiertos();
+
+        $this->assertNull($abiertos['estado']);
+        $this->assertSame(['Viejo', 'Nuevo', 'Sin correo'], array_column($abiertos['avisos'], 'titulo'));
+        $this->assertSame([true, true, false], array_column($abiertos['avisos'], 'correo_salio'));
+        $this->assertSame(route('admin.salud-sistema'), $abiertos['avisos'][0]['enlace']);
+        $this->assertNull($abiertos['avisos'][1]['enlace'], 'Una ruta que no existe no da un enlace roto.');
+        $this->assertSame('Prueba', $abiertos['avisos'][0]['nombre']);
+        $this->assertSame(HoraNegocio::aLocal(now()->subHour())->format('d/m/Y H:i'), $abiertos['avisos'][0]['desde']->format('d/m/Y H:i'));
+
+        // Uno que se normaliza sale de la lista; uno que no opina se queda.
+        $nuevo->hallazgo = null;
+        $this->avisador()->procesar($nuevo);
+        $viejo->aplica = false;
+        $viejo->hallazgo = null;
+        $this->avisador()->procesar($viejo);
+        $this->assertSame(['Viejo', 'Sin correo'], array_column($this->avisador()->abiertos()['avisos'], 'titulo'));
+    }
+
+    public function test_el_correo_de_falla_dice_que_el_aviso_tambien_se_ve_en_el_inicio(): void
+    {
+        Mail::fake();
+        $detector = $this->detector(new Hallazgo('Algo se rompió', 'D.', 'Q.'));
+        $this->avisador()->procesar($detector);
+        $detector->hallazgo = null;
+        $this->avisador()->procesar($detector);
+
+        Mail::assertSent(AlertaSistemaCorreo::class, fn (AlertaSistemaCorreo $m) => $m->accion === 'falla'
+            && str_contains($m->render(), 'este aviso también se ve en el Inicio'));
+        Mail::assertSent(AlertaSistemaCorreo::class, fn (AlertaSistemaCorreo $m) => $m->accion === 'normalizado'
+            && ! str_contains($m->render(), 'se ve en el Inicio'));
+    }
+
+    public function test_abiertos_usa_el_nombre_para_un_estado_viejo_sin_titulo(): void
+    {
+        $this->avisador()->revisar([]);
+        Cache::forever('alertas.abiertas.salud', ['desde' => now()->getTimestamp(), 'avisada' => true, 'conteo_avisado' => 1, 'ultimo_intento' => null]);
+
+        $aviso = $this->avisador()->abiertos()['avisos'][0];
+
+        $this->assertSame('Salud del sistema', $aviso['titulo']);
+        $this->assertSame('', $aviso['detalle']);
+        $this->assertNull($aviso['enlace']);
+    }
+
+    public function test_abiertos_dice_si_los_avisos_estan_apagados_sin_correo_o_atrasados(): void
+    {
+        Cache::forever('alertas.abiertas.salud', ['desde' => now()->getTimestamp(), 'avisada' => true, 'conteo_avisado' => 1, 'ultimo_intento' => null, 'titulo' => 'Abierto']);
+
+        config(['alertas.enabled' => false]);
+        $this->assertSame(['estado' => 'apagado', 'revisado_en' => null, 'avisos' => []], $this->avisador()->abiertos());
+
+        config(['alertas.enabled' => true, 'alertas.correo' => '']);
+        $this->assertSame('sin_correo', $this->avisador()->abiertos()['estado']);
+        $this->assertSame([], $this->avisador()->abiertos()['avisos']);
+
+        config(['alertas.correo' => 'avisos@example.test']);
+        $this->assertSame('atrasado', $this->avisador()->abiertos()['estado'], 'Nunca se revisó.');
+        $this->avisador()->revisar([]);
+        $this->assertNull($this->avisador()->abiertos()['estado']);
+        $this->travel(16)->minutes();
+        $abiertos = $this->avisador()->abiertos();
+        $this->assertSame('atrasado', $abiertos['estado']);
+        $this->assertSame(['Abierto'], array_column($abiertos['avisos'], 'titulo'), 'Atrasados se muestran igual.');
+    }
+
+    public function test_abiertos_lee_la_cache_de_los_avisos_una_sola_vez(): void
+    {
+        $sueltas = 0;
+        $juntas = 0;
+        Event::listen(RetrievingKey::class, function (RetrievingKey $e) use (&$sueltas) {
+            $sueltas += str_starts_with($e->key, 'alertas.') ? 1 : 0;
+        });
+        Event::listen(RetrievingManyKeys::class, function () use (&$juntas) {
+            $juntas++;
+        });
+
+        $this->avisador()->abiertos();
+
+        $this->assertSame(1, $juntas);
+        $this->assertSame(0, $sueltas);
     }
 
     private function avisador(): Avisador

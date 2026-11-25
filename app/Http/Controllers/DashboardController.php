@@ -7,6 +7,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Models\Exportacion;
+use App\Services\Alertas\Avisador;
 use App\Services\Cobros\BandejaCobros;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Rutas\AvisoRutas;
@@ -110,7 +111,22 @@ class DashboardController extends Controller
             'porEntregar' => $usuario->canAny(['rutas.ver', 'rutas.entregas.registrar'])
                 ? $this->tarjeta('por_entregar', 'Por entregar', fn () => $this->porEntregar())
                 : null,
+            // Los avisos que siguen abiertos, con el permiso de Salud del sistema (hoy, solo el
+            // Administrador). Sin permiso no se leen.
+            'avisosAbiertos' => $usuario->can('sistema.salud') ? $this->avisosAbiertos() : null,
         ]);
+    }
+
+    /** Si la caché falla, el Inicio carga igual sin la caja; la falla queda en el registro. */
+    private function avisosAbiertos(): ?array
+    {
+        try {
+            return app(Avisador::class)->abiertos();
+        } catch (Throwable $e) {
+            Log::warning('Inicio: no se pudieron leer los avisos abiertos', ['error' => $e::class]);
+
+            return null;
+        }
     }
 
     /**

@@ -5,10 +5,13 @@ namespace App\Services\Alertas;
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Facades\Ajustes;
 use App\Mail\AlertaSistemaCorreo;
+use App\Services\Alertas\Detectores\CobrosFueraDeRegla;
 use App\Services\Alertas\Detectores\ContingenciaLotesRechazados;
 use App\Services\Alertas\Detectores\ContingenciaManualSinTerminar;
 use App\Services\Alertas\Detectores\ContingenciaPorVencer;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
+use App\Services\Alertas\Detectores\DatosQueNoCuadran;
+use App\Services\Alertas\Detectores\DocumentosFiscalesFueraDeRegla;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\EventosRecientes;
 use App\Services\Alertas\Detectores\FirmadoSinTransmitir;
@@ -18,6 +21,8 @@ use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
 use App\Services\Alertas\Detectores\PedidosWebParaRevisar;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\SaludDelSistema;
+use App\Services\Alertas\Detectores\TiendaWebFallas;
+use App\Services\Alertas\Detectores\TiendaWebSinRespuesta;
 use App\Services\Alertas\Detectores\TrabajosFallidos;
 use App\Support\Correo\CandadoCorreoReal;
 use App\Support\HoraNegocio;
@@ -64,6 +69,10 @@ class Avisador
             app(TrabajosFallidos::class),
             app(DteRechazados::class),
             app(PedidosWebParaRevisar::class),
+            app(TiendaWebSinRespuesta::class),
+            TiendaWebFallas::pagos(),
+            TiendaWebFallas::otras(),
+            TiendaWebFallas::robots(),
             app(ContingenciaVencida::class),
             app(ContingenciaPorVencer::class),
             app(ContingenciaManualSinTerminar::class),
@@ -75,6 +84,9 @@ class Avisador
             app(PaqueteMensualPendiente::class),
             EventosRecientes::errores500(),
             EventosRecientes::tareasProgramadas(),
+            app(CobrosFueraDeRegla::class),
+            app(DocumentosFiscalesFueraDeRegla::class),
+            app(DatosQueNoCuadran::class),
         ];
     }
 
@@ -155,7 +167,7 @@ class Avisador
         } else {
             // Si mejoró, se baja la marca: lo que vuelva a subir desde acá es nuevo.
             $estado['conteo_avisado'] = min($estado['conteo_avisado'], $hallazgo->conteo);
-            Cache::forever($clave, $estado);
+            Cache::forever($clave, $this->conTexto($estado, $detector, $hallazgo));
 
             return null;
         }
@@ -167,9 +179,78 @@ class Avisador
             $estado['avisada'] = true;
             $estado['conteo_avisado'] = $hallazgo->conteo;
         }
-        Cache::forever($clave, $estado);
+        Cache::forever($clave, $this->conTexto($estado, $detector, $hallazgo));
 
         return $salio ? $accion : null;
+    }
+
+    /**
+     * El texto del aviso viaja con su estado para que el Inicio lo muestre al día, aunque
+     * el correo no haya salido por el tope. Son los mismos textos del correo.
+     */
+    private function conTexto(array $estado, Detector $detector, Hallazgo $hallazgo): array
+    {
+        return array_merge($estado, [
+            'nombre' => $detector->nombre(), 'titulo' => $hallazgo->titulo, 'detalle' => $hallazgo->detalle,
+            'que_hacer' => $hallazgo->queHacer, 'enlace' => $hallazgo->enlace,
+        ]);
+    }
+
+    /**
+     * Los avisos abiertos, para el Inicio. Lee todos los estados en una sola consulta
+     * (en producción, un whereIn sobre la tabla `cache`) y no revisa nada: lo que muestra
+     * es lo que dejó la última pasada de `alertas:revisar`.
+     *
+     *  - estado null: los avisos andan;
+     *  - 'apagado' o 'sin_correo': `alertas:revisar` no revisa nada, así que no hay avisos;
+     *  - 'atrasado': la última revisión es vieja (o no hubo); los avisos se muestran igual.
+     *
+     * @return array{estado: ?string, revisado_en: ?int, avisos: list<array{tipo: string, nombre: string, titulo: string, detalle: string, que_hacer: string, desde: Carbon, enlace: ?string, correo_salio: bool}>}
+     */
+    public function abiertos(): array
+    {
+        if (! Ajustes::bool('alertas.enabled')) {
+            return ['estado' => 'apagado', 'revisado_en' => null, 'avisos' => []];
+        }
+        if ($this->destinatarios() === []) {
+            return ['estado' => 'sin_correo', 'revisado_en' => null, 'avisos' => []];
+        }
+
+        $detectores = [];
+        foreach ($this->detectores() as $detector) {
+            $detectores['alertas.abiertas.'.$detector->tipo()] = $detector;
+        }
+        $valores = Cache::many([...array_keys($detectores), self::CLAVE_ULTIMA_REVISION]);
+
+        $avisos = [];
+        foreach ($detectores as $clave => $detector) {
+            $estado = $valores[$clave] ?? null;
+            if (! is_array($estado) || ! isset($estado['desde'])) {
+                continue;
+            }
+            $enlace = $estado['enlace'] ?? null;
+            $avisos[] = [
+                'tipo' => $detector->tipo(),
+                'nombre' => $estado['nombre'] ?? $detector->nombre(),
+                'titulo' => $estado['titulo'] ?? $detector->nombre(),
+                'detalle' => $estado['detalle'] ?? '',
+                'que_hacer' => $estado['que_hacer'] ?? '',
+                'desde' => HoraNegocio::aLocal(Carbon::createFromTimestamp($estado['desde'])),
+                'enlace' => is_string($enlace) && Route::has($enlace) ? route($enlace) : null,
+                // false: el correo no salió, por el tope o porque el SMTP cayó.
+                'correo_salio' => (bool) ($estado['avisada'] ?? false),
+            ];
+        }
+        usort($avisos, fn (array $a, array $b) => $a['desde'] <=> $b['desde']);
+
+        $revisadoEn = $valores[self::CLAVE_ULTIMA_REVISION] ?? null;
+        $limite = now()->subMinutes((int) config('alertas.salud.avisos_sin_correr_minutos', 15))->getTimestamp();
+
+        return [
+            'estado' => $revisadoEn === null || $revisadoEn < $limite ? 'atrasado' : null,
+            'revisado_en' => $revisadoEn,
+            'avisos' => $avisos,
+        ];
     }
 
     private function pasoElReaviso(array $estado): bool

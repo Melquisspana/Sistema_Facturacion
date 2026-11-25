@@ -43,20 +43,42 @@ class ElegibilidadPpqSeguimiento
 
     /**
      * Identidades ocupadas en un lote VIGENTE: número normalizado o «dte:{id}» => id del lote.
-     *
-     * No cuentan los lotes borrados (borrado blando: sus items quedan) ni los CCF que Calleja
-     * no tomó en un caso («va en el siguiente PPQ»): esos tienen un evento `caso-…-fuera`
-     * posterior al item y perteneciente a ese mismo lote. Si después se vuelven a meter
-     * en otro lote, el item nuevo es posterior al evento y vuelve a bloquear.
+     * Salen de {@see itemsVigentes()}.
      *
      * @return Collection<string, int> clave normalizada => id del lote
      */
     public function claves(?int $sinLote = null): Collection
     {
+        $claves = collect();
+        foreach ($this->itemsVigentes($sinLote) as $item) {
+            $clave = EjercicioControl::llave($item->numero_control, $item->ejercicio_control);
+            if ($clave !== null) {
+                $claves->put($clave, (int) $item->ppq_lote_id);
+            }
+            if ($item->dte_id !== null) {
+                $claves->put('dte:'.$item->dte_id, (int) $item->ppq_lote_id);
+            }
+        }
+
+        return $claves;
+    }
+
+    /**
+     * Los renglones de los lotes VIGENTES: la única regla de qué es un lote vivo.
+     *
+     * No cuentan los lotes borrados (borrado blando: sus items quedan) ni los CCF que Calleja
+     * no tomó en un caso («va en el siguiente PPQ»): esos tienen un evento `caso-…-fuera`
+     * (o `txt-…-fuera`) posterior al item y perteneciente a ese mismo lote. Si después se
+     * vuelven a meter en otro lote, el item nuevo es posterior al evento y vuelve a bloquear.
+     *
+     * @return Collection<int, PpqItem>
+     */
+    public function itemsVigentes(?int $sinLote = null): Collection
+    {
         $items = PpqItem::whereHas('lote')
             ->when($sinLote !== null, fn ($q) => $q->where('ppq_lote_id', '!=', $sinLote))
             ->with('lote:id,observaciones')
-            ->get(['ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control', 'created_at']);
+            ->get(['id', 'ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control', 'tipo_dte', 'conciliacion_estado', 'created_at']);
 
         $devoluciones = CobroEvento::where('tipo', TipoEventoCobro::Nota->value)
             ->where(fn ($q) => $q->where('referencia_linea', 'like', 'caso-%-fuera')->orWhere('referencia_linea', 'like', 'txt-%-fuera'))
@@ -65,12 +87,12 @@ class ElegibilidadPpqSeguimiento
         $porDte = $devoluciones->filter(fn ($evento) => $evento->documento?->dte_id !== null)
             ->groupBy(fn ($evento) => $evento->documento->dte_id);
 
-        $claves = collect();
-        foreach ($items as $item) {
+        return $items->reject(function (PpqItem $item) use ($porControl, $porDte) {
             $clave = EjercicioControl::llave($item->numero_control, $item->ejercicio_control);
             $eventos = ($clave !== null ? $porControl->get($clave, collect()) : collect())
                 ->merge($item->dte_id !== null ? $porDte->get($item->dte_id, collect()) : collect())->unique('id');
-            $liberado = $eventos->contains(function ($evento) use ($item) {
+
+            return $eventos->contains(function ($evento) use ($item) {
                 if ($item->created_at === null || $evento->created_at === null || $evento->created_at->lt($item->created_at)) {
                     return false;
                 }
@@ -82,18 +104,7 @@ class ElegibilidadPpqSeguimiento
                 return $caso !== null && preg_match('/\bCaso\s+'.preg_quote((string) $caso, '/').'\b(?!\d)/i',
                     (string) $item->lote?->observaciones) === 1;
             });
-            if ($liberado) {
-                continue;
-            }
-            if ($clave !== null) {
-                $claves->put($clave, (int) $item->ppq_lote_id);
-            }
-            if ($item->dte_id !== null) {
-                $claves->put('dte:'.$item->dte_id, (int) $item->ppq_lote_id);
-            }
-        }
-
-        return $claves;
+        })->values();
     }
 
     /**

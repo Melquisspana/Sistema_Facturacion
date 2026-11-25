@@ -13,6 +13,9 @@ interface Detector
     /**
      * false = ahora no opina (módulo apagado, fuera de horario). El aviso abierto
      * queda como está: ni se repite ni se da por normalizado.
+     *
+     * Si no puede ver su dato (viejo, ausente o módulo apagado), devuelve false; nunca
+     * null desde revisar(). Un null cierra el aviso y manda un «Ya se normalizó» falso.
      */
     public function aplica(): bool;
 

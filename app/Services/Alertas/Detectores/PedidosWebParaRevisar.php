@@ -2,7 +2,6 @@
 
 namespace App\Services\Alertas\Detectores;
 
-use App\Enums\EstadoPedidoWeb;
 use App\Models\PedidoWeb;
 use App\Services\Alertas\Detector;
 use App\Services\Alertas\Hallazgo;
@@ -10,9 +9,11 @@ use Illuminate\Support\Carbon;
 
 /**
  * Pedidos de la tienda web que no se facturaron solos (ADR 0011): no cumplieron un
- * candado, Hacienda rechazó la factura o la factura lleva más de media hora sin salir
- * (sigue «facturando»). El aviso nombra solo los códigos de pedido: ni
- * el cliente, ni montos, ni el motivo, que queda guardado en el pedido.
+ * candado, Hacienda rechazó la factura, la factura lleva más de media hora sin salir
+ * (sigue «facturando») o el pedido pagado lleva más de media hora sin factura. Es la
+ * misma regla de «Requieren atención» ({@see PedidoWeb::scopeRequiereAtencion()}), así
+ * el botón lleva a una lista donde el pedido aparece arriba. El aviso nombra solo los
+ * códigos de pedido: ni el cliente, ni montos, ni el motivo, que queda guardado en el pedido.
  */
 class PedidosWebParaRevisar implements Detector
 {
@@ -34,15 +35,11 @@ class PedidosWebParaRevisar implements Detector
     }
 
     /** Una factura que sigue «facturando» pasado este tiempo está trabada (sin correlativo, firmador caído…). */
-    public const MINUTOS_TRABADO = 30;
+    public const MINUTOS_TRABADO = PedidoWeb::MINUTOS_TRABADO;
 
     public function revisar(): ?Hallazgo
     {
-        $pendientes = PedidoWeb::query()->where(fn ($q) => $q
-            ->where('estado', EstadoPedidoWeb::ParaRevisar)
-            ->orWhere('alerta', '<>', '')->orWhereNotNull('motivo_revision')
-            ->orWhere(fn ($q) => $q->where('estado', EstadoPedidoWeb::Facturando)
-                ->where('updated_at', '<', now()->subMinutes(self::MINUTOS_TRABADO))));
+        $pendientes = PedidoWeb::query()->requiereAtencion();
         $n = (clone $pendientes)->count();
 
         if ($n === 0) {
@@ -53,10 +50,11 @@ class PedidosWebParaRevisar implements Detector
 
         return new Hallazgo(
             titulo: $n === 1 ? '1 pedido web requiere atención' : $n.' pedidos web requieren atención',
-            detalle: 'Para revisar: '.$codigos.($n > self::NOMBRADOS ? ' y '.($n - self::NOMBRADOS).' más.' : '.'),
+            detalle: 'Pedidos: '.$codigos.($n > self::NOMBRADOS ? ' y '.($n - self::NOMBRADOS).' más.' : '.'),
             queHacer: 'Revisá el motivo y las alertas de cada uno en la lista de pedidos web.',
             conteo: $n,
             desde: Carbon::parse($pendientes->min('updated_at')),
+            enlace: 'facturacion.pedidos-web.index',
         );
     }
 }

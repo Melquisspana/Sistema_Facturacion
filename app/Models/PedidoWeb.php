@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\EstadoDte;
 use App\Enums\EstadoPedidoWeb;
 use App\Enums\TipoDte;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -44,6 +45,28 @@ class PedidoWeb extends Model
             'cajitas_detalle' => 'array',
             'lineas' => 'array',
         ];
+    }
+
+    /** Una factura que sigue «facturando», o un pedido pagado sin factura, pasado este tiempo está trabado. */
+    public const MINUTOS_TRABADO = 30;
+
+    /**
+     * Lo que la oficina tiene que mirar: «Requieren atención» en la lista y el aviso de
+     * pedidos web. Para revisar, alertas, avisos rechazados, la factura que sigue
+     * «facturando» y el pedido importado que no se facturó. Por updated_at: si la factura
+     * falla se revierte sin tocar el pedido, y Reintentar sí lo mueve, así un pedido viejo
+     * recién reintentado no cuenta como trabado.
+     *
+     * @param  Builder<PedidoWeb>  $q
+     */
+    public function scopeRequiereAtencion(Builder $q): Builder
+    {
+        $trabado = now()->subMinutes(self::MINUTOS_TRABADO);
+
+        return $q->where(fn (Builder $q) => $q->where('estado', EstadoPedidoWeb::ParaRevisar)
+            ->orWhere('alerta', '<>', '')->orWhereNotNull('motivo_revision')
+            ->orWhere(fn (Builder $q) => $q->whereIn('estado', [EstadoPedidoWeb::Facturando, EstadoPedidoWeb::Importado])
+                ->where('updated_at', '<', $trabado)));
     }
 
     public function pedidoSala(): BelongsTo

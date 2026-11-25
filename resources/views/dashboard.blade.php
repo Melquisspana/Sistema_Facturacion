@@ -71,6 +71,8 @@
                 </div>
             @endif
 
+            @include('dashboard.avisos-abiertos')
+
             {{-- El mes es la cifra principal; hoy y los DTE son secundarios. --}}
             @if ($veFacturacion)
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
