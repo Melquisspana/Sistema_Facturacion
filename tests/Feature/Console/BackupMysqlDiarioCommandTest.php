@@ -6,6 +6,7 @@ use App\Facades\Ajustes;
 use App\Models\RespaldoEjecucion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
@@ -180,6 +181,62 @@ class BackupMysqlDiarioCommandTest extends TestCase
 
             return true;
         });
+    }
+
+    /**
+     * Doble clic en «Generar respaldo ahora», o el botón mientras corre la tarea de las
+     * 02:00: la segunda corrida no vuelca nada ni toca la carpeta. Queda anotada como
+     * fallida con el motivo real.
+     */
+    public function test_si_ya_hay_un_respaldo_en_curso_no_corre_otro(): void
+    {
+        Process::fake(['*' => Process::result(output: $this->dumpValido(), exitCode: 0)]);
+        $enCurso = Cache::lock('backup:mysql-diario', 600);
+        $this->assertTrue($enCurso->get());
+
+        $this->artisan('backup:mysql-diario', ['--origen' => 'manual'])->assertExitCode(1);
+
+        Process::assertNothingRan();
+        $r = RespaldoEjecucion::query()->sole();
+        $this->assertFalse($r->exitoso);
+        $this->assertSame('manual', $r->origen);
+        $this->assertSame('Ya hay un respaldo en curso; esperá a que termine.', $r->mensaje);
+        $this->assertNull($r->archivo_ruta);
+        $this->assertSame([], Storage::disk('backups')->allFiles());
+
+        $enCurso->release();
+    }
+
+    /**
+     * El candado se suelta al terminar, salga bien o mal: la corrida siguiente funciona.
+     * Y dos corridas en el mismo segundo dejan cada una su archivo, sin pisarse.
+     */
+    public function test_suelta_el_candado_al_terminar_y_cada_corrida_deja_su_archivo(): void
+    {
+        $this->freezeSecond();
+        config(['backup_diario.reintentos' => 0]);
+        Process::fake(['*' => Process::sequence()
+            ->push(Process::result(output: '', errorOutput: 'mysqldump: error de prueba', exitCode: 2))
+            ->push(Process::result(output: $this->dumpValido(), exitCode: 0))
+            ->push(Process::result(output: $this->dumpValido(), exitCode: 0)),
+        ]);
+
+        $this->artisan('backup:mysql-diario')->assertExitCode(1);
+        $this->artisan('backup:mysql-diario', ['--origen' => 'manual'])->assertExitCode(0);
+        $this->artisan('backup:mysql-diario', ['--origen' => 'manual'])->assertExitCode(0);
+
+        $exitosos = RespaldoEjecucion::query()->where('exitoso', true)->pluck('archivo_ruta');
+        $this->assertCount(2, $exitosos);
+        $this->assertCount(2, $exitosos->unique());
+        $this->assertCount(2, Storage::disk('backups')->allFiles());
+        foreach ($exitosos as $ruta) {
+            Storage::disk('backups')->assertExists($ruta);
+            $this->assertMatchesRegularExpression('/^auto-\d{4}-\d{2}-\d{2}_\d{6}_[a-z0-9]{6}\.sql$/', $ruta);
+        }
+
+        $libre = Cache::lock('backup:mysql-diario', 600);
+        $this->assertTrue($libre->get(), 'El candado debió quedar libre.');
+        $libre->release();
     }
 
     public function test_retencion_borra_solo_auto_sql_viejos_y_respeta_manuales_y_recientes(): void

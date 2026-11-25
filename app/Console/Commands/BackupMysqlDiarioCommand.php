@@ -6,9 +6,11 @@ use App\Ajustes\Ajustes;
 use App\Models\RespaldoEjecucion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -35,13 +37,46 @@ class BackupMysqlDiarioCommand extends Command
 
     protected $description = 'Backup diario de MySQL verificado (mysqldump + SHA-256 + registro en BD). No reemplaza a spatie/laravel-backup.';
 
+    /**
+     * Candado de «una corrida a la vez». `withoutOverlapping()` solo cubre la tarea
+     * programada; el botón «Generar respaldo ahora» llama al comando directo.
+     */
+    private const CANDADO = 'backup:mysql-diario';
+
+    /** Más que el peor caso: 3 intentos de 300 s cada uno, más las esperas. */
+    private const CANDADO_SEGUNDOS = 1200;
+
     public function handle(): int
     {
         $origen = $this->option('origen') === 'manual' ? 'manual' : 'automatico';
         $iniciadoEn = Carbon::now(config('app.timezone'));
 
+        // Doble clic, o el botón mientras corre la tarea de las 02:00: si dos corridas
+        // vuelcan a la vez, una puede borrar el archivo que la otra está escribiendo y
+        // quedarse sin ningún respaldo. La segunda no hace nada y lo deja anotado.
+        $candado = Cache::lock(self::CANDADO, self::CANDADO_SEGUNDOS);
+
+        if (! $candado->get()) {
+            $mensaje = 'Ya hay un respaldo en curso; esperá a que termine.';
+            $this->registrar($iniciadoEn, false, null, null, null, $mensaje, $origen);
+            $this->error($mensaje);
+
+            return self::FAILURE;
+        }
+
+        try {
+            return $this->respaldar($origen, $iniciadoEn);
+        } finally {
+            $candado->release();
+        }
+    }
+
+    private function respaldar(string $origen, Carbon $iniciadoEn): int
+    {
         $prefijo = (string) config('backup_diario.prefijo_automatico', 'auto-');
-        $nombre = $prefijo.$iniciadoEn->format('Y-m-d_His').'.sql';
+        // Sufijo al azar: dos corridas en el mismo segundo nunca comparten archivo. La
+        // retención solo mira el prefijo y el `.sql`, así que no le afecta.
+        $nombre = $prefijo.$iniciadoEn->format('Y-m-d_His').'_'.Str::lower(Str::random(6)).'.sql';
 
         $this->line('Iniciando backup de BD ('.$origen.')...');
 
