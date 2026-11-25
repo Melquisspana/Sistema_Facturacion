@@ -231,6 +231,12 @@ class ListaEmpaqueController extends Controller
             return $this->error($lista, 'No se puede eliminar: esta lista ya tiene factura(s) de exportación vinculada(s). Quitá primero el vínculo si corresponde, o conservá ambos documentos.');
         }
 
+        // La ficha no ofrece «Eliminar» para una archivada: quedó fuera del flujo y la
+        // bitácora no guarda sus líneas, así que borrada no se podría recuperar.
+        if ($lista->archivada) {
+            return $this->error($lista, 'No se puede eliminar una lista archivada: quedó fuera del flujo de trabajo y se conserva como histórico. Si hay que retomarla, duplicala.');
+        }
+
         $lista->delete();
 
         return redirect()
