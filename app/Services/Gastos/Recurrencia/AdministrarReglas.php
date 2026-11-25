@@ -305,12 +305,7 @@ final class AdministrarReglas
      */
     public function proximosPeriodos(Regla $regla, CarbonImmutable $hoy, int $cuantos = 6): array
     {
-        $ventana = match ($regla->frecuencia) {
-            'semanal' => $hoy->addWeeks($cuantos),
-            'quincenal' => $hoy->addMonths((int) ceil($cuantos / 2)),
-            'anual' => $hoy->addYears($cuantos),
-            default => $hoy->addMonths($cuantos),
-        };
+        $ventana = $this->hastaDondeLlegaLoQueViene($regla, $hoy, $cuantos);
 
         $hasta = $regla->vigente_hasta !== null
             ? min($ventana, CarbonImmutable::parse($regla->vigente_hasta->toDateString()))
@@ -371,10 +366,23 @@ final class AdministrarReglas
         });
     }
 
+    private function hastaDondeLlegaLoQueViene(Regla $regla, CarbonImmutable $hoy, int $cuantos = 6): CarbonImmutable
+    {
+        return match ($regla->frecuencia) {
+            'semanal' => $hoy->addWeeks($cuantos),
+            'quincenal' => $hoy->addMonths((int) ceil($cuantos / 2)),
+            'anual' => $hoy->addYears($cuantos),
+            default => $hoy->addMonths($cuantos),
+        };
+    }
+
     private function venceDelPeriodo(Regla $regla, string $periodo): ?CarbonImmutable
     {
         $hoy = CarbonImmutable::now();
-        $rango = $this->calendario->periodos($regla->calendario(), $hoy->subYear(), $hoy->addYears(2));
+        // Por lo menos hasta donde llega «Lo que viene»: lo que la pantalla ofrece
+        // saltar se tiene que poder saltar. En una regla anual son seis años.
+        $hasta = max($hoy->addYears(2), $this->hastaDondeLlegaLoQueViene($regla, $hoy));
+        $rango = $this->calendario->periodos($regla->calendario(), $hoy->subYear(), $hasta);
 
         foreach ($rango as $candidato) {
             if ($candidato['periodo'] === $periodo) {

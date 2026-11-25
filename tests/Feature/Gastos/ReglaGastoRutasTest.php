@@ -449,6 +449,27 @@ class ReglaGastoRutasTest extends TestCase
         $this->assertSame(0, Ocurrencia::count());
     }
 
+    /**
+     * Una regla anual muestra seis años en «Lo que viene», cada uno con su «Saltar». El
+     * último también se tiene que poder saltar: daba «Ese período no le toca a esta regla».
+     */
+    public function test_en_una_regla_anual_se_salta_el_ultimo_anio_que_ofrece_lo_que_viene(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-11-25');
+        $regla = $this->crear($u, ['nombre' => 'Permiso de prueba', 'frecuencia' => 'anual', 'mes' => 3, 'dia_mes' => 15]);
+
+        $ultimo = collect($this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk()->viewData('proximos'))->last();
+        $this->assertSame('2032', $ultimo['periodo']);
+
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2032', 'motivo' => 'Ese año el permiso ya no se renueva.'])
+            ->assertSessionHasNoErrors()->assertRedirect();
+
+        $omitida = Ocurrencia::where('regla_id', $regla->id)->sole();
+        $this->assertSame(['2032', 'omitida', '2032-03-15'], [$omitida->periodo, $omitida->estado, $omitida->vence->format('Y-m-d')]);
+        $this->assertNull($omitida->gasto_id);
+    }
+
     // ─────────────────────────── gastos.avisos.leer-todos ───────────────────────────
 
     private function aviso(User $u, Gasto $gasto, ?string $leido = null): Aviso
