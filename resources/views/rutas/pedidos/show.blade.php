@@ -41,7 +41,7 @@
                     {{-- Barra de acciones de la ficha (x-secondary-button es solo <button>). La hoja,
                          solo si salió algo o ya se cerró: pendiente o anulado no dice nada. --}}
                     <div class="flex flex-wrap gap-2">
-                        @if ($pedido->estado->tieneHoja())
+                        @if ($pedido->tieneHoja())
                             <a href="{{ route('rutas.pedidos.hoja', $pedido) }}" target="_blank" rel="noopener"
                                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
                         @endif

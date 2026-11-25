@@ -113,7 +113,8 @@
     $variosEnvios = $envios->count() > 1;
     $estado = $pedido->estado;
     $cerrado = $estado->cerrado();
-    $parcial = $estado === \App\Enums\EstadoPedidoSala::Parcial;
+    // «Listo en fábrica» (24/11/2026) que es el resto de un envío cuenta como mandado en parte.
+    $parcial = $pedido->enParte();
     // Sin consultas: los envíos ya traen su CCF.
     $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);
     $conCcf = $facturacion['facturados']->isNotEmpty() || $facturacion['borrador'] !== null;
@@ -146,7 +147,7 @@
 
     @if ($estado === \App\Enums\EstadoPedidoSala::Anulado)
         <p class="st rojo" role="alert"><strong>Este pedido está anulado: no se factura.</strong></p>
-    @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado)
+    @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado || ($estado === \App\Enums\EstadoPedidoSala::Listo && ! $parcial))
         <p class="st" role="alert"><strong>Todavía no se despachó nada de este pedido.</strong></p>
     @endif
 

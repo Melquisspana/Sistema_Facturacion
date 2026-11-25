@@ -39,7 +39,7 @@
     </div>
 @endforeach
 @php
-    $detalles = collect($contenido['salas'])->filter(fn ($d) => count($d['deshecho']) + count($d['falto']) + count($d['no_se_trae']) + count($d['motivos_cierre'] ?? []) + count($d['por_mandar']) > 0);
+    $detalles = collect($contenido['salas'])->filter(fn ($d) => count($d['deshecho']) + count($d['falto']) + count($d['no_se_trae']) + count($d['motivos_cierre'] ?? []) + count($d['por_mandar']) + count($d['armados'] ?? []) > 0);
 @endphp
 @if ($detalles->isNotEmpty())
 <div class="{{ count($hojas) > 0 ? 'pagina-nueva' : '' }}">
@@ -67,6 +67,13 @@
     @foreach ($datos['motivos_cierre'] ?? [] as $motivo)
         <p>Por qué no se mandó: {{ $motivo }}</p>
     @endforeach
+    {{-- Las cajas listas para salir (24/11/2026), con el N.º que lleva su orden encima. --}}
+    @if (count($datos['armados'] ?? []) > 0)
+        <h3>Armados, esperando salir</h3>
+        @foreach ($datos['armados'] as $pedido)
+            <p>Pedido N.º {{ $pedido['numero'] }} del {{ $pedido['fecha'] }}: {{ collect($pedido['productos'])->map(fn ($p) => $p['nombre'].' '.$p['cantidad'])->implode(', ') }}</p>
+        @endforeach
+    @endif
     @if (count($datos['por_mandar']) > 0)
         <h3>Sigue por mandar</h3>
         @foreach ($datos['por_mandar'] as $pedido)

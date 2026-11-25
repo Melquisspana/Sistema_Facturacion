@@ -24,6 +24,8 @@ use Throwable;
  * El correo de las 18:00: cuerpo corto por sala y vendedor; hojas de despacho y detalle
  * de lo deshecho, faltantes y pendientes en el PDF de fábrica (16/11/2026).
  * Si no salió nada, sale igual con «Hoy no salió ningún pedido» y el resumen de pendientes.
+ * Las cajas listas para salir van aparte, en «Armados, esperando salir» (24/11/2026), y no
+ * se repiten en lo que sigue por mandar.
  *
  * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
  * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,
@@ -174,14 +176,14 @@ class ResumenDiarioPedidos
      * Lo que pasó entre `$desde` y `$hasta` (en la hora de la base, app.timezone), agrupado
      * por sala y ordenado por su nombre.
      *
-     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, deshecho: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, motivos_cierre: list<string>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>}>}
+     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, deshecho: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, motivos_cierre: list<string>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>, armados: list<array{numero: int, fecha: string, productos: list<array{nombre: string, cantidad: string}>}>}>}
      */
     public function contenido(Carbon $desde, Carbon $hasta): array
     {
         $salas = [];
         $sala = function (PedidoSala $pedido) use (&$salas): string {
             $nombre = $pedido->nombreSala().($pedido->origen === OrigenPedidoSala::Web ? ' (web)' : '');
-            $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'motivos_cierre' => [], 'por_mandar' => []];
+            $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'motivos_cierre' => [], 'por_mandar' => [], 'armados' => []];
 
             return $nombre;
         };
@@ -261,6 +263,19 @@ class ResumenDiarioPedidos
         }
 
         foreach ($this->fabrica->porMandar()->with('pedidoWeb')->get() as $pedido) {
+            // La caja lista para salir: el N.º que lleva su orden y lo que va en ella.
+            if ($pedido->estado === EstadoPedidoSala::Listo) {
+                $salas[$sala($pedido)]['armados'][] = [
+                    'numero' => $pedido->id,
+                    'fecha' => $pedido->fecha->format('d/m/Y'),
+                    'productos' => $pedido->lineas->filter(fn ($l) => bccomp($l->vaEnLaCaja(), '0', 4) === 1)->map(fn ($l) => [
+                        'nombre' => (string) $l->producto?->nombre,
+                        'cantidad' => PedidoSalaLinea::legible($l->vaEnLaCaja()),
+                    ])->values()->all(),
+                ];
+
+                continue;
+            }
             $salas[$sala($pedido)]['por_mandar'][] = [
                 'fecha' => $pedido->fecha->format('d/m/Y'),
                 'atraso' => (int) $pedido->fecha->copy()->startOfDay()->diffInDays($hoy),

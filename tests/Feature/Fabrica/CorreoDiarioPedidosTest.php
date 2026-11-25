@@ -319,6 +319,38 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Sigue por mandar.*Pedido del 08\/11\/2026 \(1 día de atraso\): Galleta de prueba 5/s', $html);
     }
 
+    public function test_las_cajas_listas_salen_en_armados_esperando_salir_y_no_en_lo_que_sigue_por_mandar(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $listo = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '24', $this->canilla->id => '6'], '2026-11-08');
+        $this->pedido($this->sala('Abarrotes Inventados'), [$this->canilla->id => '2.5'], '2026-11-07');
+        $fabrica = app(PedidosFabrica::class);
+        // La caja va con 20 galletas y sin canillas (no hay).
+        $fabrica->guardarBorrador($listo, ['cantidades' => [
+            $listo->lineas()->where('producto_id', $this->galleta->id)->value('id') => '20',
+            $listo->lineas()->where('producto_id', $this->canilla->id)->value('id') => '0',
+        ]], $this->fabrica);
+        $fabrica->marcarListo($listo, true, $this->fabrica);
+
+        $sala = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now())['salas']['Súper Ficticio Centro'];
+        $this->assertSame([], $sala['por_mandar']);
+        $this->assertSame([['numero' => $listo->id, 'fecha' => '08/11/2026', 'productos' => [['nombre' => 'Galleta de prueba', 'cantidad' => '20']]]], $sala['armados']);
+
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        $correo = $this->enviado();
+        $html = preg_replace('/\s+/u', ' ', $correo->render());
+        $this->assertMatchesRegularExpression('/Armados, esperando salir.*Súper Ficticio Centro: pedido N\.º '.$listo->id.'/s', $html);
+        // «Por mandar» cuenta solo lo que todavía no está armado.
+        $this->assertStringContainsString('Por mandar: 1 pedido (el más viejo, de hace 2 días)', $html);
+
+        $pdf = preg_replace('/\s+/u', ' ', $this->detalle($correo));
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Armados, esperando salir.*Pedido N\.º '.$listo->id.' del 08\/11\/2026: Galleta de prueba 20/s', $pdf);
+        $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 07\/11\/2026/s', $pdf);
+        $this->assertSame(1, substr_count($pdf, 'Sigue por mandar'));
+    }
+
     public function test_lo_que_falta_y_va_en_otro_envio_sale_con_lo_que_sigue_por_mandar(): void
     {
         $pedido = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '12'], '2026-11-09');

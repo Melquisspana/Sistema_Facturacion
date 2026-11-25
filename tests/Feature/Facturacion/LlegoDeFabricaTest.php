@@ -279,6 +279,16 @@ class LlegoDeFabricaTest extends TestCase
         $this->assertSame(1, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
     }
 
+    public function test_el_resto_listo_en_fabrica_lo_dice_y_sigue_yendo_en_otro_envio(): void
+    {
+        $listo = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '10'], estado: EstadoPedidoSala::Listo);
+        $this->envio($listo, [$this->galleta->id => '6']);
+
+        $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSeeInOrder(['Sala de prueba Norte', 'Listo en fábrica', 'Galleta de prueba', '10', '6', 'Va en otro envío', '4']);
+        $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
+    }
+
     public function test_la_oc_del_pedido_de_otra_sala_o_ya_facturada_no_sale_lista(): void
     {
         $otraSala = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '1'], '2611 0232 0017265');

@@ -18,7 +18,8 @@
      PedidosSala::cuantosMasDeLaTienda). --}}
 @php
     $cerrado = $pedido->estado->cerrado();
-    $parcial = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+    // El resto «Listo en fábrica» (24/11/2026) también va en otro envío.
+    $parcial = $pedido->enParte();
     $porFacturar = $facturacion['por_facturar'];
     $delDia = $sinFacturar ? $porFacturar : $pedido->envios->filter(fn ($e) => $e->fecha->format('Y-m-d') === $fecha);
     $otrosDias = $delDia->count() !== $pedido->envios->count();
