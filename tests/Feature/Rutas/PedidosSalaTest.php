@@ -547,6 +547,10 @@ class PedidosSalaTest extends TestCase
         $otro->update(['estado' => EstadoPedidoSala::Registrado, 'armando_desde' => now(), 'armando_por' => $this->oficina->id]);
         $this->put(route('rutas.sacar-pedido.update', $otro), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
         $this->assertSame(EstadoPedidoSala::Registrado, $otro->refresh()->estado);
+        // Listo para salir (24/11/2026), aunque no hayan tocado lo marcado: el mismo aviso.
+        $otro->update(['estado' => EstadoPedidoSala::Listo, 'armando_desde' => null, 'armando_por' => null]);
+        $this->patch(route('rutas.sacar-pedido.anular', $otro))->assertSessionHasErrors(['lineas' => $error]);
+        $this->assertSame(EstadoPedidoSala::Listo, $otro->refresh()->estado);
     }
 
     public function test_un_pedido_que_la_fabrica_marco_sigue_contando_como_sacado(): void

@@ -3,6 +3,9 @@
      nombre y se abre el pedido (12/11/2026). Pantalla táctil de fábrica
      (docs/GUIA_PANTALLAS.md, «Pantalla táctil»): letra text-2xl, todo el recuadro se toca.
 
+     En «Listos para salir» (24/11/2026) es la misma tarjeta, sin «Armando»; el resto de un
+     envío anterior sigue diciendo «Mandado en parte».
+
      Variables: $pedido (con lo de PedidosFabrica::relaciones()), $atrasado (bool), $hoy (Y-m-d). --}}
 @php
     $cuantos = $pedido->lineas->filter->tienePendiente()->count();
@@ -16,11 +19,11 @@
             @if ($pedido->origen === \App\Enums\OrigenPedidoSala::Web)
                 @include('fabrica.pedidos._web-badges')
             @endif
-            @if ($pedido->armando_desde)
+            @if ($pedido->armando_desde && $pedido->estado !== \App\Enums\EstadoPedidoSala::Listo)
                 <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
             @endif
-            @if ($pedido->estado === \App\Enums\EstadoPedidoSala::Parcial)
-                <x-rutas.estado-badge :estado="$pedido->estado" />
+            @if ($pedido->enParte())
+                <x-rutas.estado-badge :estado="\App\Enums\EstadoPedidoSala::Parcial" />
             @endif
         </span>
     </span>

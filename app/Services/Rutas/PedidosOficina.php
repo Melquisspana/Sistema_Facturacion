@@ -252,8 +252,10 @@ class PedidosOficina
                 'motivo_no_enviado' => bccomp($pendiente, '0', 4) === 1 ? $linea->motivo_no_enviado : null,
             ]);
         }
+        // El resto listo para salir sigue listo mientras falte algo (24/11/2026).
         if ($pedido->envios->whereNull('anulado_en')->isNotEmpty()) {
-            $pedido->update(['estado' => $pedido->faltaAlgo() ? EstadoPedidoSala::Parcial : EstadoPedidoSala::Enviado]);
+            $pedido->update(['estado' => ! $pedido->faltaAlgo() ? EstadoPedidoSala::Enviado
+                : ($pedido->estado === EstadoPedidoSala::Listo ? EstadoPedidoSala::Listo : EstadoPedidoSala::Parcial)]);
         }
 
         return $quitadas;

@@ -293,6 +293,21 @@ class OficinaCorrigePedidosTest extends TestCase
         $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
     }
 
+    public function test_corregir_el_resto_listo_para_salir_lo_deja_listo(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->pan->id => '6']);
+        $this->mandar($pedido, [$this->galleta->id => '4']);
+        app(PedidosFabrica::class)->marcarListo($pedido, true, $this->fabrica);
+
+        // Cambiar lo que falta no le quita «Listo para salir»; la caja sigue lista.
+        $this->corregir($pedido, [$this->galleta->id => '10', $this->pan->id => '6'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Listo, $pedido->refresh()->estado);
+
+        // Si ya no falta nada, queda mandado.
+        $this->corregir($pedido, [$this->galleta->id => '4', $this->pan->id => '0'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+    }
+
     public function test_al_dejar_solo_lo_mandado_el_pedido_queda_mandado(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '12']);

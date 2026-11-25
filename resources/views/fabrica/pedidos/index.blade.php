@@ -14,7 +14,11 @@
      librerías: Alpine, que ya está.
 
      A pantalla completa (12/11/2026): sin el menú del sistema. La lista es solo de nombres;
-     al tocar uno se abre el pedido (show), donde se marca qué va y se manda. --}}
+     al tocar uno se abre el pedido (show), donde se marca qué va y se manda.
+
+     «Listos para salir» (24/11/2026): arriba, las cajas que quedaron como van a salir, con
+     la misma tarjeta y sin colores llamativos; cada tarde ven de un vistazo cuáles se lleva
+     la persona que se regresa. Debajo, lo demás («Armando» y pendientes) por día, como antes. --}}
 <x-app-layout :pantalla-completa="true">
     @php($hoy = \App\Support\HoraNegocio::fechaHoy())
 
@@ -51,10 +55,15 @@
             @if (session('deshacer'))
                 @php($deshacer = session('deshacer'))
                 <form method="POST" @submit="enviando = true"
-                      action="{{ $deshacer['tipo'] === 'envio'
-                          ? route('fabrica.pedidos.anular-envio', [$deshacer['pedido'], $deshacer['envio']])
-                          : route('fabrica.pedidos.reabrir', $deshacer['pedido']) }}">
+                      action="{{ match ($deshacer['tipo']) {
+                          'envio' => route('fabrica.pedidos.anular-envio', [$deshacer['pedido'], $deshacer['envio']]),
+                          'listo' => route('fabrica.pedidos.listo', $deshacer['pedido']),
+                          default => route('fabrica.pedidos.reabrir', $deshacer['pedido']),
+                      } }}">
                     @csrf @method('PATCH')
+                    @if ($deshacer['tipo'] === 'listo')
+                        <input type="hidden" name="listo" value="0">
+                    @endif
                     <button :disabled="enviando"
                             class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">Deshacer</button>
                 </form>
@@ -70,17 +79,18 @@
             </nav>
 
             @if ($ver === 'por-mandar')
-                @if ($atrasados->isEmpty() && $deHoy->isEmpty())
+                @if ($listos->isEmpty() && $atrasados->isEmpty() && $deHoy->isEmpty())
                     <div class="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-lg text-gray-500">No hay pedidos por mandar.</div>
                 @endif
 
-                @foreach (['De días anteriores' => [$atrasados, true], 'De hoy' => [$deHoy, false]] as $titulo => [$lista, $atrasado])
+                {{-- En «Listos para salir» se mezclan días: el de otro día dice de cuándo es (null). --}}
+                @foreach (['Listos para salir' => [$listos, null], 'De días anteriores' => [$atrasados, true], 'De hoy' => [$deHoy, false]] as $titulo => [$lista, $atrasado])
                     @if ($lista->isNotEmpty())
                         <section aria-label="{{ $titulo }}" class="space-y-3">
                             <h2 class="text-lg font-semibold text-gray-800">{{ $titulo }}</h2>
                             <ul class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                                 @foreach ($lista as $pedido)
-                                    <li>@include('fabrica.pedidos._tarjeta', ['pedido' => $pedido, 'atrasado' => $atrasado, 'hoy' => $hoy])</li>
+                                    <li>@include('fabrica.pedidos._tarjeta', ['pedido' => $pedido, 'atrasado' => $atrasado ?? $pedido->fecha->toDateString() < $hoy, 'hoy' => $hoy])</li>
                                 @endforeach
                             </ul>
                         </section>

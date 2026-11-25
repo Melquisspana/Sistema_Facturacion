@@ -40,6 +40,7 @@
         // muestra lo fresco. La clave y la versión salen SIEMPRE de los datos frescos: con
         // la versión vieja de old() cada «Mandar» volvía a dar «cambió».
         $usarOld = session()->hasOldInput() && ! $errors->has('pedido');
+        $listo = $pedido->estado === \App\Enums\EstadoPedidoSala::Listo;
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -146,7 +147,13 @@
             <x-rutas.avisos />
 
             <section aria-labelledby="titulo-pedido" class="rounded-lg border border-gray-200 bg-white px-4 py-2">
-                <h1 id="titulo-pedido" class="text-xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
+                <div class="flex flex-wrap items-center gap-2">
+                    <h1 id="titulo-pedido" class="text-xl font-bold text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
+                    {{-- Sin colores llamativos (Melqui, 17/11/2026): gris, como el resto de la hoja. --}}
+                    @if ($listo)
+                        <span class="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">Listo para salir</span>
+                    @endif
+                </div>
                 <dl class="mt-1 flex flex-wrap gap-x-3 gap-y-2 text-base">
                     @if ($pedido->direccionSala())
                         <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Dirección:</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
@@ -231,20 +238,39 @@
 
                 <p class="mt-3 text-sm" role="status" aria-live="polite" x-text="estado" :class="error ? 'text-red-600' : 'text-gray-500'"></p>
 
-                {{-- «Dejar para después» primero e «Imprimir y mandar» después; en el celular, uno arriba del otro. --}}
+                {{-- «Dejar para después», «Imprimir para la caja» y «Listo para salir» primero e
+                     «Imprimir y mandar» después; en el celular, uno arriba del otro. Desde el
+                     24/11/2026: «Imprimir para la caja» abre la orden que va encima de la caja sin
+                     mandar nada, y «Listo para salir» la pasa al grupo de arriba de la lista (con
+                     otro toque, «Quitar de listos», sin confirmar). Los dos, como «Dejar para
+                     después», primero terminan de guardar lo marcado (salir()). --}}
                 <div class="sticky bottom-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-between">
-                    <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
-                       class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
+                           class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
+                        <a href="{{ route('fabrica.pedidos.caja', $pedido) }}" @click.prevent="salir($el.href)"
+                           class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Imprimir para la caja</a>
+                        <button type="button" @click="salir(() => $refs.listo.submit())" :disabled="enviando || saliendo"
+                                class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
+                            {{ $listo ? 'Quitar de listos' : 'Listo para salir' }}
+                        </button>
+                    </div>
                     <button :disabled="enviando || saliendo"
                             class="inline-flex min-h-12 items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">Imprimir y mandar</button>
                 </div>
+            </form>
+
+            {{-- Lo manda el botón «Listo para salir» / «Quitar de listos» de la barra, cuando ya se guardó lo marcado. --}}
+            <form method="POST" action="{{ route('fabrica.pedidos.listo', $pedido) }}" x-ref="listo" class="hidden">
+                @csrf @method('PATCH')
+                <input type="hidden" name="listo" value="{{ $listo ? '0' : '1' }}">
             </form>
 
             {{-- «No mandar nada de este pedido» (o lo que falta): rojo de peligro y aparte, debajo
                  de la barra de «Dejar para después» e «Imprimir y mandar». Abre un diálogo que
                  pide el motivo; en la lista sale el aviso con «Deshacer», como antes. --}}
             @php
-                $parcial = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+                $parcial = $pedido->enParte();
                 $opciones = ['No hay producto', 'El cliente canceló', 'Pedido repetido'];
                 $motivoViejo = (string) old('motivo', '');
             @endphp
