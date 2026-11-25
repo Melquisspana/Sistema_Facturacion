@@ -12,10 +12,12 @@ use App\Services\Rutas\PedidosFabrica;
  *
  *  - registrado («Pendiente»): falta mandarlo; sin envíos vigentes.
  *  - parcial («Mandado en parte»): salió algo y lo que falta va en otro envío.
- *  - listo («Listo en fábrica», 24/11/2026): la caja quedó como va a salir, aunque falte algo
- *    que no hay; espera el próximo viaje. Lo marcan a mano en la PC de pedidos y se quita con
- *    otro toque: vuelve a pendiente o a mandado en parte según sus envíos. Quién y cuándo, en
- *    la auditoría. Puede ser el resto de un envío anterior ({@see PedidoSala::enParte()}).
+ *  - listo («Listo para salir», 24/11/2026; igual en la fábrica y en la oficina desde el
+ *    25/11/2026): la caja quedó como va a salir, aunque falte algo que no hay; espera el
+ *    próximo viaje. Lo marcan a mano en la PC de pedidos, que guarda ahí lo que hay en la caja,
+ *    y se quita con otro toque: vuelve a pendiente o a mandado en parte según sus envíos.
+ *    Quién y cuándo, en la auditoría. Puede ser el resto de un envío anterior
+ *    ({@see PedidoSala::enParte()}).
  *  - enviado («Mandado»): cerrado; salió todo, o salió una parte y lo que falta ya no va.
  *  - no_se_trae: cerrado sin envíos vigentes.
  *  - anulado: solo lo anula el vendedor.
@@ -36,7 +38,7 @@ enum EstadoPedidoSala: string
         return match ($this) {
             self::Registrado => 'Pendiente',
             self::Parcial => 'Mandado en parte',
-            self::Listo => 'Listo en fábrica',
+            self::Listo => 'Listo para salir',
             self::Enviado => 'Mandado',
             self::NoSeTrae => 'No se trae',
             self::Anulado => 'Anulado',

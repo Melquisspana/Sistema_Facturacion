@@ -173,25 +173,25 @@ class HojaPedidoTest extends TestCase
         $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
     }
 
-    public function test_la_caja_lista_en_fabrica_se_distingue_en_la_hoja_y_en_el_detalle(): void
+    public function test_la_caja_lista_para_salir_se_distingue_en_la_hoja_y_en_el_detalle(): void
     {
         // Lista sin haber salido nada: lo dice, sin hoja que imprimir desde la ficha.
         $this->pedido->update(['estado' => EstadoPedidoSala::Listo]);
         $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
-            ->assertSee('Listo en fábrica')->assertSee('Todavía no se despachó nada de este pedido.')
+            ->assertSee('Listo para salir')->assertDontSee('Listo en fábrica')->assertSee('Todavía no se despachó nada de este pedido.')
             ->assertDontSee('Va en otro envío');
         $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
-            ->assertSee('Listo en fábrica')->assertDontSee('Imprimir hoja');
+            ->assertSee('Listo para salir')->assertDontSee('Listo en fábrica')->assertDontSee('Imprimir hoja');
 
         // El resto de un envío que ya salió, listo: como mandado en parte, con su hoja.
         $this->envio([$this->galleta->id => '6', $this->canilla->id => '4', $this->pan->id => '2']);
         $respuesta = $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
-            ->assertSee('Listo en fábrica')->assertDontSee('Todavía no se despachó nada')
+            ->assertSee('Listo para salir')->assertDontSee('Todavía no se despachó nada')
             ->assertSeeInOrder(['G01', 'Galleta de prueba', '10', '6', 'Va en otro envío', '4'])
             ->assertDontSee('F: faltó');
         $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
         $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
-            ->assertSee('Listo en fábrica')->assertSee('Imprimir hoja');
+            ->assertSee('Listo para salir')->assertDontSee('Listo en fábrica')->assertSee('Imprimir hoja');
     }
 
     public function test_vuelve_al_dia_que_se_estaba_mirando_y_cada_envio_dice_su_dia(): void

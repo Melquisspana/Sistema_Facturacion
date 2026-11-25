@@ -253,7 +253,7 @@ class DiaRealEntregasTest extends TestCase
             $this->assertSame([], $salas['Súper Ficticio '.$letra]['armados'], $letra);
         }
         $pdf = $this->texto(app(PdfFabricaDiario::class)->html($contenido));
-        $this->assertMatchesRegularExpression('/Súper Ficticio C.*Armados, esperando salir.*Pedido N\.º '.$cc->id.' del 23\/11\/2026: Galleta de prueba 12/s', $pdf);
+        $this->assertMatchesRegularExpression('/Súper Ficticio C.*Listos para salir.*Pedido N\.º '.$cc->id.' del 23\/11\/2026: Galleta de prueba 12/s', $pdf);
 
         // ═══ MARTES. Carlos vuelve a pedir para D: la sala queda con dos pedidos abiertos.
         $d2 = $this->sacar($this->carlos, 'D', '2026-11-24 08:00', [$c => '3']);

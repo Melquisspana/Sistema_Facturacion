@@ -1,8 +1,8 @@
 {{-- Cierre breve del día (Melqui, 16/11/2026: «que sea conciso»): lo vendido, una línea por
      vendedor, una línea por sala de lo que salió y una de lo pendiente. Los productos, motivos
      y hojas de despacho van en el PDF «Salió de la fábrica». Los ceros no se dicen.
-     «Armados, esperando salir» (24/11/2026): una línea por sala con las cajas listas, con el
-     N.º de su orden; no cuentan en «Por mandar».
+     «Listos para salir» (24/11/2026; con ese nombre, el de la fábrica, desde el 25/11/2026):
+     una línea por sala con las cajas listas, con el N.º de su orden; no cuentan en «Por mandar».
      Lo escrito por alguien se escapa también para Markdown mediante $literal. --}}
 @php
     $dinero = fn ($n) => ($n < 0 ? '−' : '').'$'.number_format(abs($n), 2);
@@ -95,7 +95,7 @@ No se pudo calcular el día de {{ $literal($nombre) }}.
     $armados = collect($contenido['salas'])->filter(fn ($d) => count($d['armados'] ?? []) > 0);
 @endphp
 @if ($armados->isNotEmpty())
-## Armados, esperando salir
+## Listos para salir
 
 @foreach ($armados as $sala => $datos)
 - {{ $literal(str_replace(' (web)', '', $sala)) }}: {{ count($datos['armados']) === 1 ? 'pedido' : 'pedidos' }} N.º {{ collect($datos['armados'])->pluck('numero')->join(', ', ' y ') }}

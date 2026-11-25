@@ -69,7 +69,7 @@
     @endforeach
     {{-- Las cajas listas para salir (24/11/2026), con el N.º que lleva su orden encima. --}}
     @if (count($datos['armados'] ?? []) > 0)
-        <h3>Armados, esperando salir</h3>
+        <h3>Listos para salir</h3>
         @foreach ($datos['armados'] as $pedido)
             <p>Pedido N.º {{ $pedido['numero'] }} del {{ $pedido['fecha'] }}: {{ collect($pedido['productos'])->map(fn ($p) => $p['nombre'].' '.$p['cantidad'])->implode(', ') }}</p>
         @endforeach

@@ -24,8 +24,8 @@ use Throwable;
  * El correo de las 18:00: cuerpo corto por sala y vendedor; hojas de despacho y detalle
  * de lo deshecho, faltantes y pendientes en el PDF de fábrica (16/11/2026).
  * Si no salió nada, sale igual con «Hoy no salió ningún pedido» y el resumen de pendientes.
- * Las cajas listas para salir van aparte, en «Armados, esperando salir» (24/11/2026), y no
- * se repiten en lo que sigue por mandar.
+ * Las cajas listas para salir van aparte, en «Listos para salir» (24/11/2026; el nombre de la
+ * fábrica desde el 25/11/2026), y no se repiten en lo que sigue por mandar.
  *
  * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
  * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,

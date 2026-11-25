@@ -113,7 +113,7 @@
     $variosEnvios = $envios->count() > 1;
     $estado = $pedido->estado;
     $cerrado = $estado->cerrado();
-    // «Listo en fábrica» (24/11/2026) que es el resto de un envío cuenta como mandado en parte.
+    // «Listo para salir» (24/11/2026) que es el resto de un envío cuenta como mandado en parte.
     $parcial = $pedido->enParte();
     // Sin consultas: los envíos ya traen su CCF.
     $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);

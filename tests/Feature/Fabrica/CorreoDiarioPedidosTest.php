@@ -319,7 +319,7 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Sigue por mandar.*Pedido del 08\/11\/2026 \(1 día de atraso\): Galleta de prueba 5/s', $html);
     }
 
-    public function test_las_cajas_listas_salen_en_armados_esperando_salir_y_no_en_lo_que_sigue_por_mandar(): void
+    public function test_las_cajas_listas_salen_en_listos_para_salir_y_no_en_lo_que_sigue_por_mandar(): void
     {
         Mail::fake();
         $this->correoReal();
@@ -341,12 +341,15 @@ class CorreoDiarioPedidosTest extends TestCase
 
         $correo = $this->enviado();
         $html = preg_replace('/\s+/u', ' ', $correo->render());
-        $this->assertMatchesRegularExpression('/Armados, esperando salir.*Súper Ficticio Centro: pedido N\.º '.$listo->id.'/s', $html);
+        // Se llama como en la fábrica y en la oficina: «Listos para salir» (25/11/2026).
+        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio Centro: pedido N\.º '.$listo->id.'/s', $html);
+        $this->assertStringNotContainsString('Armados', $html);
         // «Por mandar» cuenta solo lo que todavía no está armado.
         $this->assertStringContainsString('Por mandar: 1 pedido (el más viejo, de hace 2 días)', $html);
 
         $pdf = preg_replace('/\s+/u', ' ', $this->detalle($correo));
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Armados, esperando salir.*Pedido N\.º '.$listo->id.' del 08\/11\/2026: Galleta de prueba 20/s', $pdf);
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Listos para salir.*Pedido N\.º '.$listo->id.' del 08\/11\/2026: Galleta de prueba 20/s', $pdf);
+        $this->assertStringNotContainsString('Armados', $pdf);
         $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 07\/11\/2026/s', $pdf);
         $this->assertSame(1, substr_count($pdf, 'Sigue por mandar'));
     }
