@@ -18,6 +18,7 @@ use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\PdfFabricaDiario;
 use App\Services\Rutas\PedidosFabrica;
+use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Console\Scheduling\Event;
@@ -246,6 +247,31 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertStringContainsString('Tienda Inventada Norte N.º '.$listo->id.' 08/11/2026 Galleta de prueba 5', $pdf);
         $this->assertStringContainsString('Abarrotes Inventados N.º '.$armando->id.' 06/11/2026 Canilla de prueba 2', $pdf);
         $this->assertStringContainsString('Bodega Inventada Sur N.º '.$nuevo->id.' 09/11/2026 Galleta de prueba 1', $pdf);
+    }
+
+    public function test_un_pedido_que_el_vendedor_anulo_no_sale_en_llego_ni_en_el_correo_ni_en_el_pdf(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $this->travelTo('2026-11-09 09:00:00');
+        $vigente = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5']);
+        $anulado = $this->pedido($this->sala('Kiosco Inventado'), [$this->galleta->id => '3']);
+        $this->travelTo('2026-11-09 10:00:00');
+        app(PedidosSala::class)->anular($anulado, $this->persona->user);
+        $this->assertSame(EstadoPedidoSala::Anulado, $anulado->fresh()->estado);
+
+        $this->travelTo('2026-11-09 18:00:00');
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+        $correo = $this->enviado();
+
+        $texto = $this->texto($correo);
+        $pdf = (string) preg_replace('/\s+/u', ' ', $this->detalle($correo));
+        foreach (['correo' => $texto, 'PDF' => $pdf] as $donde => $leido) {
+            $llego = $this->parte($leido, 'Llegó de los vendedores');
+            $this->assertStringContainsString('N.º '.$vigente->id, $llego, $donde);
+            $this->assertStringNotContainsString('Kiosco Inventado', $llego, $donde);
+            $this->assertStringNotContainsString('N.º '.$anulado->id, $leido, $donde);
+        }
     }
 
     public function test_si_no_hubo_nada_cada_parte_lo_dice_en_una_frase_corta(): void
