@@ -85,8 +85,8 @@ class PedidoFabricaController extends Controller
      * «Imprimir para la caja» (24/11/2026): la «Orden para la caja», sacada de lo marcado,
      * para dejarla encima de la caja armada que todavía no sale. Solo lectura (GET): no
      * registra envío, no cambia el estado ni llega a facturación, y se saca las veces que
-     * haga falta. La hoja guarda lo marcado antes de abrirla (salir()). El pedido web tiene
-     * su propio papel.
+     * haga falta. La hoja guarda antes de abrirla, aunque no se haya tocado nada: desde ahí el
+     * pedido queda «Armando» y el vendedor ya no lo cambia. El pedido web tiene su propio papel.
      */
     public function caja(PedidoSala $pedido): View|RedirectResponse
     {

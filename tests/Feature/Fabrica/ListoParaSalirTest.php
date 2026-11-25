@@ -158,11 +158,19 @@ class ListoParaSalirTest extends TestCase
 
         $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
 
-        // Blanco, junto a «Dejar para después», y espera que se guarde lo marcado (salir()).
+        // Blanco, junto a «Dejar para después». Guarda la hoja SIEMPRE antes de salir, aunque no
+        // se haya tocado nada (sucio = true): con el papel pegado en la caja, el pedido queda
+        // «Armando» y el vendedor ya no lo cambia.
         $this->assertMatchesRegularExpression(
-            '/Dejar para después<\/a>\s*<a href="'.preg_quote(route('fabrica.pedidos.caja', $pedido), '/').'" @click\.prevent="salir\(\$el\.href\)"\s+class="[^"]*bg-white[^"]*">Imprimir para la caja<\/a>/',
+            '/Dejar para después<\/a>\s*<a href="'.preg_quote(route('fabrica.pedidos.caja', $pedido), '/').'" @click\.prevent="sucio = true; salir\(\$el\.href\)"\s+class="[^"]*bg-white[^"]*">Imprimir para la caja<\/a>/',
             $html,
         );
+
+        // Ese guardado es la hoja tal como está (todo lo que falta) y desde ahí el vendedor no corrige.
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$this->linea($pedido, $this->galleta) => '10']])->assertOk();
+        $this->assertTrue($pedido->refresh()->fabricaEmpezo());
+        $this->assertFalse($this->vendedor->can('corregir', $pedido));
+        $this->get(route('fabrica.pedidos.caja', $pedido))->assertOk()->assertSeeInOrder(['Galleta de prueba', '10', '0']);
     }
 
     public function test_la_orden_para_la_caja_es_solo_de_pedidos_por_mandar_y_de_quien_arma(): void

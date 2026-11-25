@@ -246,12 +246,14 @@
                      24/11/2026: «Imprimir para la caja» abre la orden que va encima de la caja sin
                      mandar nada, y «Listo para salir» la pasa al grupo de arriba de la lista (con
                      otro toque, «Quitar de listos», sin confirmar). Los dos, como «Dejar para
-                     después», primero terminan de guardar lo marcado (salir()). --}}
+                     después», primero terminan de guardar lo marcado (salir()). «Imprimir para la
+                     caja» guarda la hoja aunque no se haya tocado nada (sucio = true): con el papel
+                     pegado en la caja, el pedido queda «Armando» y el vendedor ya no lo cambia. --}}
                 <div class="sticky bottom-0 mt-4 flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-between">
                     <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                         <a href="{{ route('fabrica.pedidos.index') }}" @click.prevent="salir($el.href)"
                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Dejar para después</a>
-                        <a href="{{ route('fabrica.pedidos.caja', $pedido) }}" @click.prevent="salir($el.href)"
+                        <a href="{{ route('fabrica.pedidos.caja', $pedido) }}" @click.prevent="sucio = true; salir($el.href)"
                            class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Imprimir para la caja</a>
                         <button type="button" @click="salir(() => $refs.listo.submit())" :disabled="enviando || saliendo"
                                 class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
