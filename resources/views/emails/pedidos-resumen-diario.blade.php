@@ -148,13 +148,15 @@ Hoy ningún vendedor marcó entregas.
 No se pudo calcular el día de {{ $literal($nombre) }}.
 
 @endforeach
+{{-- El PDF de los pedidos con su nombre, igual en el aviso y en la nota: un día con entregas
+     llegan también los PDF de cada vendedor, y hay que saber cuál abrir. --}}
 @if ($contenido['fabrica_pdf_fallo'] ?? false)
-**No se pudo adjuntar el PDF de la fábrica.**
+**No se pudo adjuntar el PDF «Pedidos del {{ $contenido['fecha'] }}».**
 
 @endif
 <x-slot:subcopy>
 @if ($contenido['salas'] !== [] && ! ($contenido['fabrica_pdf_fallo'] ?? false))
-El detalle de cada pedido, con sus productos, va en el PDF adjunto.
+El detalle de cada pedido, con sus productos, va en el PDF adjunto «Pedidos del {{ $contenido['fecha'] }}».
 
 @endif
 Este resumen llega cada día a {{ $hora }}. Los correos que lo reciben se cambian en **Configuración › Rutas**.

@@ -386,7 +386,7 @@ class CorreoDiarioDiaRealTest extends TestCase
             'Sin empezar', 'Abarrotes Inventados**: N.º '.$abarrotes->id.', del 06/11',
             'Súper Ficticio Centro**: el resto del N.º '.$enParte->id.', de hoy',
             'Hoy no se facturó nada.',
-            'El detalle de cada pedido, con sus productos, va en el PDF adjunto.',
+            'El detalle de cada pedido, con sus productos, va en el PDF adjunto «Pedidos del 09/11/2026».',
         ], 'texto plano');
         // Se lee limpio: sin etiquetas, sin enlaces y sin las barras con que el HTML escapa el markdown.
         $this->assertDoesNotMatchRegularExpression('/<[a-z\/][^>]*>/i', $plano);

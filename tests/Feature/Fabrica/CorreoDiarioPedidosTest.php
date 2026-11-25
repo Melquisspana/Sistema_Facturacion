@@ -234,7 +234,8 @@ class CorreoDiarioPedidosTest extends TestCase
         foreach (['Por mandar:', 'Faltaron cosas', 'Sigue por mandar'] as $viejo) {
             $this->assertStringNotContainsString($viejo, $texto);
         }
-        $this->assertStringContainsString('El detalle de cada pedido, con sus productos, va en el PDF adjunto.', $texto);
+        // Dice cuál de los PDF adjuntos es: un día con entregas llega también el de cada vendedor.
+        $this->assertStringContainsString('El detalle de cada pedido, con sus productos, va en el PDF adjunto «Pedidos del 09/11/2026».', $texto);
 
         // El PDF, con las mismas tres partes y después la hoja de cada envío.
         $pdf = preg_replace('/\s+/u', ' ', $this->detalle($correo));
@@ -318,7 +319,9 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
         $correo = $this->enviado();
         $this->assertSame([], $correo->pdf);
-        $this->assertStringContainsString('No se pudo adjuntar el PDF de la fábrica', $correo->render());
+        // Con el mismo nombre que la nota del final, y esa nota no promete un PDF que no fue.
+        $this->assertStringContainsString('No se pudo adjuntar el PDF «Pedidos del 09/11/2026».', $this->texto($correo));
+        $this->assertStringNotContainsString('va en el PDF adjunto', $this->texto($correo));
         Exceptions::assertReported(fn (\RuntimeException $e) => str_contains($e->getMessage(), 'No se pudo adjuntar el PDF de la fábrica')
             && ! str_contains($e->getMessage(), 'datos privados'));
     }
