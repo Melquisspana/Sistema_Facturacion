@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * PRESENTACIÓN del catálogo de EXPORTACIÓN: un {@see ExportacionProductoBase}
@@ -16,10 +18,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * `nombre_es` / `nombre_en` son copia de los del base: se guardan acá porque la
  * lista, el Excel y la factura los leen de la presentación.
+ *
+ * Auditoría: altas, cambios (precio base, pesos, archivar) y bajas quedan con quién
+ * lo hizo y el valor anterior, también las que crea la importación del Excel.
  */
 class ExportacionProducto extends Model
 {
     use HasFactory;
+    use LogsActivity;
 
     protected $table = 'exportacion_productos';
 
@@ -53,6 +59,21 @@ class ExportacionProducto extends Model
             'peso_bruto_caja_lb' => 'decimal:2',
             'activo' => 'boolean',
         ];
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('producto_exportacion')
+            ->setDescriptionForEvent(fn (string $evento) => match ($evento) {
+                'created' => 'creó una presentación de exportación',
+                'updated' => 'actualizó una presentación de exportación',
+                'deleted' => 'eliminó una presentación de exportación',
+                default => $evento,
+            });
     }
 
     public function base(): BelongsTo

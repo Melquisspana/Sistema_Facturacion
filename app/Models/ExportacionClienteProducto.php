@@ -5,14 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Asignación producto→cliente de exportación con su precio específico.
  * Único por (cliente, producto): el mismo producto no se duplica en el cliente.
+ *
+ * Auditoría: cada alta, cambio o baja de precio queda con quién lo hizo y el valor
+ * anterior, igual que los precios especiales nacionales ({@see ProductoPrecioCliente}).
+ * También los que cambia una lista de empaque al finalizarse.
  */
 class ExportacionClienteProducto extends Model
 {
     use HasFactory;
+    use LogsActivity;
 
     protected $table = 'exportacion_cliente_productos';
 
@@ -32,6 +39,21 @@ class ExportacionClienteProducto extends Model
             'precio_fijado_en' => 'date',
             'activo' => 'boolean',
         ];
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->useLogName('precio_exportacion')
+            ->setDescriptionForEvent(fn (string $evento) => match ($evento) {
+                'created' => 'creó un precio de exportación',
+                'updated' => 'actualizó un precio de exportación',
+                'deleted' => 'eliminó un precio de exportación',
+                default => $evento,
+            });
     }
 
     public function cliente(): BelongsTo
