@@ -264,7 +264,10 @@ class ListaEmpaqueController extends Controller
             ->with('status', 'Lista de empaque eliminada.');
     }
 
-    /** Copia con los mismos productos (snapshot tal cual) y fecha de hoy, en borrador. */
+    /**
+     * Copia con los mismos productos (snapshot tal cual, también el precio) y fecha de
+     * hoy, en borrador. Avisa qué líneas no llevan el precio actual del cliente.
+     */
     public function duplicar(Exportacion $lista): RedirectResponse
     {
         $this->autorizarGestion();
@@ -313,7 +316,47 @@ class ListaEmpaqueController extends Controller
 
         return redirect()
             ->route('facturacion.listas.show', $copia)
-            ->with('status', "Lista duplicada desde la #{$lista->id}. Revisá la fecha y volvé a facturarla.");
+            ->with('status', "Lista duplicada desde la #{$lista->id}. Revisá la fecha y volvé a facturarla.")
+            ->with('aviso_precios', $this->avisoPreciosDeLaCopia($lista, $copia));
+    }
+
+    /**
+     * La copia conserva los precios de la lista vieja. Si el cliente tiene hoy otro precio
+     * para alguna línea, se avisa antes de facturar: al finalizar la copia, el precio de
+     * la lista pasaría a ser el del cliente aunque el actual se haya puesto después.
+     */
+    private function avisoPreciosDeLaCopia(Exportacion $original, Exportacion $copia): ?string
+    {
+        $cliente = $copia->exportacion_cliente_id !== null
+            ? ExportacionCliente::with('productos')->find($copia->exportacion_cliente_id)
+            : null;
+
+        if ($cliente === null) {
+            return null;
+        }
+
+        $dinero = fn (float $valor) => '$'.number_format($valor, 2);
+        $distintas = $copia->items()->whereNotNull('exportacion_producto_id')->orderBy('id')->get()
+            ->map(function (ExportacionItem $item) use ($cliente, $dinero) {
+                $actual = $cliente->precioPara((int) $item->exportacion_producto_id);
+                $precio = round((float) $item->precio_caja, 2);
+
+                return $actual !== null && round($actual, 2) !== $precio
+                    ? trim($item->nombre_es.' '.$item->unidades_por_caja.' u').' '.$dinero($precio).' (actual '.$dinero($actual).')'
+                    : null;
+            })
+            ->filter()
+            ->values();
+
+        if ($distintas->isEmpty()) {
+            return null;
+        }
+
+        $resto = $distintas->count() > 6 ? ' y '.($distintas->count() - 6).' más' : '';
+
+        return "Ojo: estas líneas llevan el precio de la lista #{$original->id} y no el precio actual del cliente: "
+            .$distintas->take(6)->implode('; ').$resto
+            .'. Al finalizar, el precio de la lista pasa a ser el del cliente. Corregilo en Editar antes de facturar.';
     }
 
     // ------------------------------------------------------------------ facturas

@@ -10,9 +10,12 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
+use App\Models\ExportacionClienteProducto;
 use App\Models\ExportacionItem;
+use App\Models\ExportacionProducto;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Services\Exportaciones\CatalogoExportacion;
 use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -224,6 +227,96 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
         $copia = Exportacion::query()->whereKeyNot([$original->id, $sinConfigurar->id])->sole();
         $this->assertSame('00000000002', $copia->fda_reg_number);
         $this->assertSame('00000000001', $original->fresh()->fda_reg_number);
+    }
+
+    private function presentacion(string $nombre = 'Producto de prueba'): ExportacionProducto
+    {
+        return app(CatalogoExportacion::class)->crearProducto(
+            ['nombre_es' => $nombre, 'nombre_en' => 'Test product', 'categoria' => null],
+            ['unidad' => 'Bolsa de prueba', 'unidades_por_caja' => 144, 'gramos_por_unidad' => 85, 'peso_neto_caja_kg' => 13, 'precio_caja' => 136.80],
+        )->presentaciones()->sole();
+    }
+
+    /**
+     * Lista del 01/10, ya finalizada, con líneas del catálogo.
+     *
+     * @param  list<array{0: ExportacionProducto, 1: float}>  $lineas  presentación y precio por caja
+     */
+    private function listaDelCatalogo(ExportacionCliente $perfil, array $lineas): Exportacion
+    {
+        $lista = Exportacion::create([
+            'exportacion_cliente_id' => $perfil->id, 'cliente_nombre' => 'Cliente de prueba',
+            'exportador_nombre' => 'Exportador de prueba', 'fecha' => '2026-10-01',
+            'estado' => Exportacion::ESTADO_FINALIZADA, 'finalizada_en' => '2026-10-01 10:00',
+        ]);
+        foreach ($lineas as [$producto, $precio]) {
+            $lista->items()->create(['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 10, 'precio_caja' => $precio] + $producto->datosSnapshot());
+        }
+
+        return $lista->fresh();
+    }
+
+    /** @return list<float> */
+    private function precios(Exportacion $lista): array
+    {
+        return $lista->items()->orderBy('id')->pluck('precio_caja')->map(fn ($precio) => (float) $precio)->all();
+    }
+
+    /**
+     * La copia lleva los precios de la lista vieja. Si esta mañana se subió a mano el
+     * precio del cliente, la copia lo avisa antes de facturar, porque al finalizarla el
+     * precio de la lista pasaría a ser el del cliente. La copia no cambia de precio: si
+     * debería tomar el actual lo decide Melqui.
+     */
+    public function test_la_copia_avisa_las_lineas_que_no_llevan_el_precio_actual_del_cliente(): void
+    {
+        $usuario = $this->usuario();
+        $perfil = $this->perfil();
+        $producto = $this->presentacion();
+        $otro = $this->presentacion('Otro producto de prueba');
+        foreach ([[$producto, 136.80], [$otro, 99.50]] as [$presentacion, $precio]) {
+            ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $presentacion->id, 'precio_caja' => $precio, 'precio_fijado_en' => '2026-10-01', 'activo' => true]);
+        }
+        $original = $this->listaDelCatalogo($perfil, [[$producto, 136.80], [$otro, 99.50]]);
+
+        // A la mañana, la oficina sube a mano el precio del cliente desde Productos.
+        $this->actingAs($usuario)->put(route('productos.exportacion.clientes', $producto), [
+            'clientes' => [$perfil->id => ['activo' => '1', 'precio' => '150']],
+        ])->assertSessionHasNoErrors();
+
+        $respuesta = $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original));
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $respuesta->assertRedirect(route('facturacion.listas.show', $copia))
+            ->assertSessionHas('status', "Lista duplicada desde la #{$original->id}. Revisá la fecha y volvé a facturarla.")
+            ->assertSessionHas('aviso_precios');
+        $aviso = (string) session('aviso_precios');
+        $this->assertStringContainsString("la lista #{$original->id}", $aviso);
+        $this->assertStringContainsString('Producto de prueba 144 u $136.80 (actual $150.00)', $aviso);
+        $this->assertStringNotContainsString('Otro producto de prueba', $aviso);
+        $this->assertStringContainsString('Corregilo en Editar antes de facturar', $aviso);
+
+        $this->assertEquals([136.80, 99.50], $this->precios($copia));
+        $this->assertEquals(150.00, (float) ExportacionClienteProducto::query()->where('exportacion_producto_id', $producto->id)->value('precio_caja'));
+    }
+
+    /** Sin diferencias no hay aviso: mismo precio, sin precio del cliente o con su precio apagado. */
+    public function test_la_copia_no_avisa_si_las_lineas_llevan_el_precio_actual_o_el_cliente_no_tiene_uno(): void
+    {
+        $perfil = $this->perfil();
+        $igual = $this->presentacion();
+        $sinPrecio = $this->presentacion('Producto sin precio de prueba');
+        $apagado = $this->presentacion('Producto apagado de prueba');
+        ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $igual->id, 'precio_caja' => 140.00, 'activo' => true]);
+        ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $apagado->id, 'precio_caja' => 175.00, 'activo' => false]);
+        $original = $this->listaDelCatalogo($perfil, [[$igual, 140.00], [$sinPrecio, 120.00], [$apagado, 160.00]]);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionMissing('aviso_precios');
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals([140.00, 120.00, 160.00], $this->precios($copia));
     }
 
     /**
