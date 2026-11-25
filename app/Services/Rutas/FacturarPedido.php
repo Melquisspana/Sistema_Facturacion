@@ -63,6 +63,12 @@ class FacturarPedido
     /** La sala del pedido se borró de Clientes después de sacarlo: sin sala no hay a quién facturar. */
     public const SALA_BORRADA = 'La sala de este pedido ya no está en Clientes (la borraron). Sin sala no se factura: pedile a quien maneja Clientes que la revise.';
 
+    /**
+     * La OC del correo con otro pedido abierto en la sala sin OC propia: puede ser de ese otro
+     * (24/11/2026). No va directo ni viene puesta: se elige en el formulario, viendo su detalle.
+     */
+    public const OC_DE_OTRO_PEDIDO = 'La sala tiene otro pedido sin OC: revisá de cuál es esta OC.';
+
     /** Bitácora de {@see pasarAlCcfQueCorrige()}. */
     public const PASO_AL_QUE_CORRIGE = 'el CCF que corrige se quedó con lo que llegó del pedido';
 
@@ -95,9 +101,10 @@ class FacturarPedido
             : collect();
         $oc ??= $facturados->pluck('dte.numero_orden_compra')->first(fn ($n) => filled($n));
         // Sin la del vendedor ni una parte facturada, la única que llegó por correo para la sala
-        // viene puesta (24/11/2026); con varias, se elige en el formulario.
+        // viene puesta (24/11/2026); con varias, o con otro pedido de la sala sin OC (puede ser
+        // de ese), se elige en el formulario.
         $delCorreo = $oc === null && $facturados->isEmpty() ? array_column(OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [], 'numero') : [];
-        $oc ??= count($delCorreo) === 1 ? $delCorreo[0] : null;
+        $oc ??= count($delCorreo) === 1 && ! self::otroSinOc($pedido, self::sinOcPorSala($pedido->cliente_sucursal_id)) ? $delCorreo[0] : null;
 
         return $this->armar($pedido, $envios) + [
             'envios' => $envios,
@@ -333,9 +340,11 @@ class FacturarPedido
      * @param  array{por_facturar: Collection<int, PedidoSalaEnvio>, borrador: ?Dte, facturados: Collection<int, Dte>}  $estado  {@see estado()}
      * @param  list<array{numero: string}>  $delCorreo  las OC del correo de su sala sin CCF ({@see OrdenCompraRecibida::pendientesPorSucursal()})
      * @param  ?Dte  $ccfDeLaOc  el CCF que ya lleva la OC del pedido ({@see OrdenCompraRecibida::ccfPorNumero()})
+     * @param  bool  $otroSinOc  la sala tiene otro pedido abierto sin OC propia ({@see otroSinOc()}): la del correo
+     *                           puede ser de ese, así que se revisa (no queda lista ni va directo)
      * @return array{propuestas: list<string>, titulo: string, aviso: ?string, lista: bool}
      */
-    public static function oc(PedidoSala $pedido, array $estado, array $delCorreo, ?Dte $ccfDeLaOc): array
+    public static function oc(PedidoSala $pedido, array $estado, array $delCorreo, ?Dte $ccfDeLaOc, bool $otroSinOc): array
     {
         $delPedido = filled($pedido->numero_orden_compra);
         $enSuCcf = ! $delPedido && ($estado['por_facturar']->isEmpty() || $estado['borrador'] !== null);
@@ -354,9 +363,11 @@ class FacturarPedido
                 ->pluck('numero_orden_compra')->filter(fn ($n) => filled($n))->unique()->values()->all(),
             default => array_column($delCorreo, 'numero'),
         };
+        $delCorreoDudosa = ! $delPedido && ! $enSuCcf && ! $resto && $propuestas !== [] && $otroSinOc;
         $aviso = match (true) {
             $ccfDeLaOc !== null && ! $esElPropio, $resto && $propuestas !== [] => 'Esa OC ya tiene un CCF.',
             $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
+            $delCorreoDudosa => self::OC_DE_OTRO_PEDIDO,
             default => null,
         };
 
@@ -372,6 +383,39 @@ class FacturarPedido
             // Ya en su CCF: la OC quedó resuelta ahí (crearBorrador exige la que pide la sala).
             'lista' => $aviso === null && ($enSuCcf || $propuestas !== [] || ! ReglaOrdenCompra::requerida($pedido->sala?->cliente, $pedido->sala)),
         ];
+    }
+
+    /**
+     * Por sala, los pedidos que todavía pueden llevar una OC del correo: de sala, vigentes, sin
+     * la OC del vendedor, sin ningún CCF (tampoco en borrador) y por mandar o con algo por
+     * facturar. Una sola consulta para todas las salas (o solo para una).
+     *
+     * @return array<int, list<int>> [cliente_sucursal_id => ids de pedido]
+     */
+    public static function sinOcPorSala(?int $salaId = null): array
+    {
+        return PedidoSala::query()
+            ->where('origen', OrigenPedidoSala::Sala->value)
+            ->vigentes()
+            ->when($salaId !== null, fn ($q) => $q->where('cliente_sucursal_id', $salaId))
+            ->where(fn ($q) => $q->whereNull('numero_orden_compra')->orWhere('numero_orden_compra', ''))
+            ->where(fn ($q) => $q->porMandar()->orWhereHas('envios', fn ($e) => $e->porFacturar()))
+            ->whereDoesntHave('envios', fn ($e) => $e->vigentes()->whereHas('dte', fn ($d) => $d->cuentaComoFacturado()))
+            ->get(['id', 'cliente_sucursal_id'])
+            ->groupBy('cliente_sucursal_id')
+            ->map(fn ($pedidos) => $pedidos->pluck('id')->all())
+            ->all();
+    }
+
+    /**
+     * ¿La sala del pedido tiene OTRO pedido que puede llevar la OC del correo? Entonces esa OC
+     * puede ser del otro.
+     *
+     * @param  array<int, list<int>>  $sinOcPorSala  {@see sinOcPorSala()}
+     */
+    public static function otroSinOc(PedidoSala $pedido, array $sinOcPorSala): bool
+    {
+        return collect($sinOcPorSala[$pedido->cliente_sucursal_id] ?? [])->contains(fn (int $id) => $id !== $pedido->id);
     }
 
     /**

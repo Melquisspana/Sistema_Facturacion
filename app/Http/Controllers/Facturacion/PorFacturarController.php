@@ -97,6 +97,8 @@ class PorFacturarController extends Controller
         // Una sola consulta para todos, no una por fila. Las OC del correo ya vienen por sala
         // y sin CCF; la que anotó el vendedor se revisa en FacturarPedido::oc().
         $ocCorreo = OrdenCompraRecibida::pendientesPorSucursal();
+        // Con otro pedido de la sala sin OC, la del correo puede ser de ese: se revisa.
+        $sinOc = FacturarPedido::sinOcPorSala();
         $conCcf = OrdenCompraRecibida::ccfPorNumero($todos
             ->map(fn (PedidoSala $p) => OrdenCompra::normalizar($p->numero_orden_compra))->all());
         $emisorSolo = FacturarPedido::emisorSolo();
@@ -106,7 +108,7 @@ class PorFacturarController extends Controller
         foreach ($todos as $pedido) {
             $estado = $facturacion[$pedido->id] = FacturarPedido::estado($pedido);
             $oc[$pedido->id] = FacturarPedido::oc($pedido, $estado, $ocCorreo[$pedido->cliente_sucursal_id] ?? [],
-                $conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)] ?? null);
+                $conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)] ?? null, FacturarPedido::otroSinOc($pedido, $sinOc));
             // Una sola OC clara: «Facturar» va directo al borrador (24/11/2026).
             $oc[$pedido->id]['directo'] = FacturarPedido::vaDirecto($pedido, $estado, $oc[$pedido->id], $emisorSolo);
             $grupoDe[$pedido->id] = match (true) {

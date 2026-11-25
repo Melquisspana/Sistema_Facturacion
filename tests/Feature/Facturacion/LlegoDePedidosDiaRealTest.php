@@ -18,6 +18,7 @@ use App\Models\PuntoVenta;
 use App\Models\Ruta;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Rutas\FacturarPedido;
 use App\Services\Rutas\PedidosFabrica;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -315,6 +316,50 @@ class LlegoDePedidosDiaRealTest extends TestCase
         $this->assertSame('Esa OC ya tiene un CCF.', $oc['aviso']);
         $this->actingAs($this->oficina)->get(route('facturacion.create-ccf', ['pedido' => $r->id]))->assertOk()
             ->assertViewHas('propuesta', fn ($p) => $p['oc'] === '26119107000071' && $p['oc_con_ccf']?->is(Dte::sole()));
+    }
+
+    /**
+     * Dos pedidos de la misma sala sin OC del vendedor y una sola OC en el correo: no se sabe de
+     * cuál es. Ninguno va directo y el formulario no la trae puesta: se elige viendo su detalle.
+     * Con un solo pedido abierto en la sala, la del correo vuelve a ir directo.
+     */
+    public function test_con_dos_pedidos_abiertos_en_la_sala_la_unica_oc_del_correo_no_va_directo(): void
+    {
+        $g = $this->galleta->id;
+        $sala = $this->sala('D', '9108', $this->cerca, true);
+        // Lunes: sale A y su OC todavía no llega.
+        $a = $this->pedido($sala, [$g => '6']);
+        $this->travelTo('2026-11-23 15:00');
+        $this->mandar($a, [$g => '6']);
+        // Martes: el vendedor saca B para la misma sala y llega por correo una OC, la de B.
+        $this->travelTo('2026-11-24 08:00');
+        $b = $this->pedido($sala, [$g => '4']);
+        $this->ocDelCorreo($sala, '26119108000082');
+
+        $lista = $this->lista();
+        $this->assertSame('formulario', $this->facturar($lista->getContent(), $a));
+        $this->assertSame([$a->id], $this->grupos($lista)['esperando_oc']);
+        $oc = $lista->viewData('oc')[$a->id];
+        $this->assertSame(['26119108000082'], $oc['propuestas']);
+        $this->assertSame(FacturarPedido::OC_DE_OTRO_PEDIDO, $oc['aviso']);
+        $lista->assertSee('Revisar OC')->assertSee(FacturarPedido::OC_DE_OTRO_PEDIDO);
+        // El formulario no la trae puesta: sale como botón, con su detalle, para elegirla.
+        $this->actingAs($this->oficina)->get(route('facturacion.create-ccf', ['pedido' => $a->id]))->assertOk()
+            ->assertViewHas('propuesta', fn ($p) => $p['oc'] === null);
+
+        // La persona trae los dos y solo llegó una OC: ninguno va directo.
+        $this->travelTo('2026-11-24 15:00');
+        $this->mandar($b, [$g => '4']);
+        $html = $this->lista()->getContent();
+        $this->assertSame('formulario', $this->facturar($html, $a));
+        $this->assertSame('formulario', $this->facturar($html, $b));
+
+        // A se factura con su OC (escrita en el formulario): B queda solo y su OC va directo.
+        $this->actingAs($this->oficina)->post(route('facturacion.pedidos.facturar', $a), ['numero_orden_compra' => '26119108000081'])
+            ->assertSessionHasNoErrors();
+        $lista = $this->lista();
+        $this->assertSame('26119108000082', $this->facturar($lista->getContent(), $b));
+        $this->assertNull($lista->viewData('oc')[$b->id]['aviso']);
     }
 
     public function test_la_cuenta_de_pedidos_y_el_vendedor_no_ven_llego_de_pedidos_ni_facturan(): void

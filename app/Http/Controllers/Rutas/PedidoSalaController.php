@@ -101,7 +101,8 @@ class PedidoSalaController extends Controller
         $estado = FacturarPedido::estado($pedido);
         $numero = OrdenCompra::normalizar($pedido->numero_orden_compra);
         $oc = FacturarPedido::oc($pedido, $estado, OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [],
-            OrdenCompraRecibida::ccfPorNumero([$numero])[$numero] ?? null);
+            OrdenCompraRecibida::ccfPorNumero([$numero])[$numero] ?? null,
+            FacturarPedido::otroSinOc($pedido, FacturarPedido::sinOcPorSala($pedido->cliente_sucursal_id)));
 
         return $oc + ['directo' => FacturarPedido::vaDirecto($pedido, $estado, $oc, FacturarPedido::emisorSolo())];
     }
