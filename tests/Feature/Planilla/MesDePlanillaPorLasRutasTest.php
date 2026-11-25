@@ -236,7 +236,7 @@ class MesDePlanillaPorLasRutasTest extends TestCase
         $this->assertSame($this->conDescuentos->nombre, $sueldo->beneficiario);
 
         $this->assertFalse(
-            app(RegistrarAnticipo::class)->pagosCandidatos($this->conDescuentos)->contains('id', $sueldo->id),
+            app(RegistrarAnticipo::class)->pagosCandidatos($this->oficina, $this->conDescuentos)->contains('id', $sueldo->id),
             'La pantalla no lo ofrece como el pago de un anticipo.',
         );
 
@@ -262,7 +262,7 @@ class MesDePlanillaPorLasRutasTest extends TestCase
         $cuota = $gasto->cuotas()->create(['numero' => 1, 'importe' => '50.00', 'vence' => '2026-10-05']);
         $adelanto = app(RegistrarPago::class)->registrar($this->oficina,
             $this->datosPago(['importe' => '50.00', 'fecha' => '2026-10-05']), [['cuota_id' => $cuota->id, 'importe' => '50.00']]);
-        $this->assertTrue(app(RegistrarAnticipo::class)->pagosCandidatos($this->conDescuentos)->contains('id', $adelanto->id));
+        $this->assertTrue(app(RegistrarAnticipo::class)->pagosCandidatos($this->oficina, $this->conDescuentos)->contains('id', $adelanto->id));
 
         $this->actingAs($this->oficina)->post(route('planilla.anticipos.store', $this->conDescuentos), [
             'clave' => (string) Str::uuid(), 'fecha' => '2026-10-05', 'importe' => '500.00', 'moneda' => 'USD', 'pago_id' => $adelanto->id,

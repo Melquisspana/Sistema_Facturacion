@@ -6,6 +6,7 @@ use App\Models\Gastos\Pago;
 use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
+use App\Services\Gastos\AccesoGastos;
 use App\Services\Gastos\Dinero;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
@@ -36,6 +37,8 @@ use Illuminate\Validation\ValidationException;
  */
 final class RegistrarAnticipo
 {
+    public function __construct(private AccesoGastos $acceso) {}
+
     /** @param  array<string, mixed>  $datos */
     public function registrar(User $usuario, PlanillaEmpleado $empleado, array $datos): PlanillaAnticipo
     {
@@ -66,6 +69,15 @@ final class RegistrarAnticipo
 
             if (filled($datos['pago_id'] ?? null)) {
                 $pago = Pago::whereKey($datos['pago_id'])->lockForUpdate()->firstOrFail();
+
+                // Primero, si quien registra alcanza ese pago entero (un gasto personal
+                // exige `gastos.personales`). Antes que cualquier otro aviso: esos dicen
+                // si está revertido, a quién no se le hizo o cuánto salió.
+                if (! $this->acceso->pagoCompleto($usuario, $pago)) {
+                    throw ValidationException::withMessages([
+                        'pago_id' => 'Ese pago no está entre los que podés enlazar.',
+                    ]);
+                }
 
                 if ($pago->revertido_at !== null) {
                     throw ValidationException::withMessages([
@@ -135,14 +147,15 @@ final class RegistrarAnticipo
     /**
      * Pagos de Gastos que podrían ser el anticipo de esta persona: los que se le
      * hicieron a ella, siguen vigentes, no son de una planilla y todavía no están
-     * registrados como anticipo.
+     * registrados como anticipo. Y solo los que `$usuario` alcanza enteros: un pago
+     * personal no le llega a quien no tiene `gastos.personales`.
      *
      * La identidad es el NOMBRE, porque es lo que `gastos_pagos` guarda. No se fuerza
      * el enlace: si no aparece, el anticipo se registra igual sin pago.
      *
      * @return Collection<int, Pago>
      */
-    public function pagosCandidatos(PlanillaEmpleado $empleado): Collection
+    public function pagosCandidatos(User $usuario, PlanillaEmpleado $empleado): Collection
     {
         $yaUsados = PlanillaAnticipo::whereNotNull('pago_id')->pluck('pago_id');
 
@@ -156,7 +169,7 @@ final class RegistrarAnticipo
             // La consulta compara según la base: en MySQL «jose lopez» encuentra a
             // «José López». Se deja solo lo que registrar() acepta, para que la pantalla
             // no ofrezca un pago que al guardar se rechaza.
-            ->filter(fn (Pago $pago) => $this->esPagoDe($pago, $empleado))
+            ->filter(fn (Pago $pago) => $this->esPagoDe($pago, $empleado) && $this->acceso->pagoCompleto($usuario, $pago))
             ->values();
     }
 

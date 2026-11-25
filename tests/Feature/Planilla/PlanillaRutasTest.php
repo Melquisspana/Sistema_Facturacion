@@ -373,6 +373,43 @@ class PlanillaRutasTest extends TestCase
         $this->assertSame(0, PlanillaAnticipo::count());
     }
 
+    /**
+     * Quien registra anticipos sin alcanzar lo personal de Gastos no recibe en la página
+     * los pagos personales hechos a la persona, ni la ruta se los acepta: el aviso del
+     * importe le diría cuánto salió. De los pagos que sí se ofrecen, al navegador llega
+     * solo lo que muestra la lista, no la nota, la huella ni quién lo registró.
+     */
+    public function test_sin_alcance_personal_no_se_ofrece_ni_se_acepta_un_pago_personal(): void
+    {
+        $oficina = $this->gestor();
+        $dueno = $this->usuario([
+            PermisoSistema::PlanillaVer, PermisoSistema::PlanillaSalarios, PermisoSistema::PlanillaGestionar,
+            PermisoSistema::GastosVer, PermisoSistema::GastosPagosRegistrar, PermisoSistema::GastosPersonales,
+        ]);
+        $empleado = $this->empleado($oficina, 'Empleado de prueba');
+        $personal = $this->pagoA($dueno, 'Empleado de prueba', 'personal', 'Nota personal de prueba');
+        $empresa = $this->pagoA($oficina, 'Empleado de prueba', 'empresarial', 'Nota de la empresa de prueba');
+
+        $this->actingAs($oficina)->get(route('planilla.anticipos'))->assertOk()
+            ->assertViewHas('candidatosPorEmpleado', fn ($c) => collect($c[$empleado->id])->pluck('id')->all() === [$empresa->id])
+            ->assertDontSee('Nota personal de prueba')
+            ->assertDontSee('Nota de la empresa de prueba')
+            ->assertDontSee('huella_peticion');
+
+        $this->actingAs($oficina)->post(route('planilla.anticipos.store', $empleado), $this->datosAnticipo([
+            'pago_id' => $personal->id, 'importe' => '500.00',
+        ]))->assertSessionHasErrors(['pago_id' => 'Ese pago no está entre los que podés enlazar.'])
+            ->assertSessionDoesntHaveErrors('importe');
+        $this->assertSame(0, PlanillaAnticipo::count());
+
+        // Quien sí alcanza lo personal lo ve y lo enlaza.
+        $this->actingAs($dueno)->get(route('planilla.anticipos'))->assertOk()
+            ->assertViewHas('candidatosPorEmpleado', fn ($c) => collect($c[$empleado->id])->pluck('id')->sort()->values()->all() === [$personal->id, $empresa->id]);
+        $this->actingAs($dueno)->post(route('planilla.anticipos.store', $empleado), $this->datosAnticipo(['pago_id' => $personal->id]))
+            ->assertSessionHasNoErrors();
+        $this->assertSame($personal->id, (int) PlanillaAnticipo::sole()->pago_id);
+    }
+
     /** Un pago de Gastos, ya registrado, a `$beneficiario`. */
     private function pagoA(User $u, string $beneficiario, string $ambito = 'empresarial', string $nota = 'Pago de prueba en caja.'): Pago
     {
