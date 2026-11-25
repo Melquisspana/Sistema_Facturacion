@@ -329,7 +329,10 @@ class ReglaGastoRutasTest extends TestCase
         $this->assertSame(0, Ocurrencia::where('regla_id', $regla->id)->where('periodo', '2026-04')->count());
     }
 
-    /** La tarea programada sigue la misma regla, en la simulación y al aplicar. */
+    /**
+     * La tarea programada sigue la misma regla, en la simulación y al aplicar. La
+     * simulación avisa lo mismo que después avisa la corrida de verdad.
+     */
     public function test_la_tarea_programada_tampoco_crea_lo_que_vencio_en_la_pausa(): void
     {
         $u = $this->operador();
@@ -342,6 +345,7 @@ class ReglaGastoRutasTest extends TestCase
 
         $this->artisan('gastos:generar-recurrentes --hoy=2026-05-05')
             ->expectsOutputToContain('crearía 2 — 2026-03 (vence 2026-03-05), 2026-05 (vence 2026-05-05)')
+            ->expectsOutputToContain('vencieron en pausa, SIN generar — 2026-04')
             ->assertSuccessful();
         $this->assertSame(0, Ocurrencia::count());
 

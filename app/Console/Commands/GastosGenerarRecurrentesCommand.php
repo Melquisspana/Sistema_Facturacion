@@ -100,10 +100,7 @@ class GastosGenerarRecurrentesCommand extends Command
             }
 
             $this->avisarFueraDeVentana($regla, $resultado['fuera_de_ventana']);
-
-            if ($resultado['en_pausa'] !== []) {
-                $this->warn('#'.$regla->id.' '.$regla->nombre.': vencieron en pausa, SIN generar — '.implode(', ', $resultado['en_pausa']));
-            }
+            $this->avisarEnPausa($regla, $resultado['en_pausa']);
         }
 
         $this->newLine();
@@ -138,9 +135,16 @@ class GastosGenerarRecurrentesCommand extends Command
 
         $resueltos = $regla->ocurrencias()->pluck('periodo')->all();
         $nuevos = [];
+        $enPausa = [];
 
         foreach ($calendario->periodos($regla->calendario(), $desde, $hasta) as $periodo) {
-            if (! in_array($periodo['periodo'], $resueltos, true) && ! $vencioEnPausa($periodo['vence'])) {
+            if (in_array($periodo['periodo'], $resueltos, true)) {
+                continue;
+            }
+
+            if ($vencioEnPausa($periodo['vence'])) {
+                $enPausa[] = $periodo['periodo'];
+            } else {
                 $nuevos[] = $periodo['periodo'].' (vence '.$periodo['vence']->toDateString().')';
             }
         }
@@ -159,8 +163,22 @@ class GastosGenerarRecurrentesCommand extends Command
         }
 
         $this->avisarFueraDeVentana($regla, $fuera);
+        $this->avisarEnPausa($regla, $enPausa);
 
         return [count($nuevos), count($fuera)];
+    }
+
+    /**
+     * Lo que venció en una pausa ya terminada. Sale igual en la simulación y al aplicar:
+     * la revisión previa no puede mostrar menos que la corrida de verdad.
+     *
+     * @param  array<int, string>  $periodos
+     */
+    private function avisarEnPausa(Regla $regla, array $periodos): void
+    {
+        if ($periodos !== []) {
+            $this->warn('#'.$regla->id.' '.$regla->nombre.': vencieron en pausa, SIN generar — '.implode(', ', $periodos));
+        }
     }
 
     /** @param  array<int, string>  $periodos */
