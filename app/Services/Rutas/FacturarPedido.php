@@ -397,7 +397,7 @@ class FacturarPedido
         return PedidoSala::query()
             ->where('origen', OrigenPedidoSala::Sala->value)
             ->vigentes()
-            ->when($salaId !== null, fn ($q) => $q->where('cliente_sucursal_id', $salaId))
+            ->when($salaId !== null, fn ($q) => $q->where('cliente_sucursal_id', $salaId), fn ($q) => $q->whereNotNull('cliente_sucursal_id'))
             ->where(fn ($q) => $q->whereNull('numero_orden_compra')->orWhere('numero_orden_compra', ''))
             ->where(fn ($q) => $q->porMandar()->orWhereHas('envios', fn ($e) => $e->porFacturar()))
             ->whereDoesntHave('envios', fn ($e) => $e->vigentes()->whereHas('dte', fn ($d) => $d->cuentaComoFacturado()))
