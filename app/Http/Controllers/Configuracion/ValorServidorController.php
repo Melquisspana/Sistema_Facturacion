@@ -36,6 +36,8 @@ class ValorServidorController extends Controller
 
         $volver = $this->volver($request);
 
+        // Atajo para no pedir confirmación de algo que no hay que quitar. La decisión
+        // final la toma quitarOverride(), que comprueba el permiso y borra en la base.
         if ($ajustes->fuente($clave) !== FuenteAjuste::BaseDeDatos) {
             return redirect()->to($volver)->with('status', "«{$definicion->etiqueta}» ya usa el valor del servidor.");
         }
@@ -59,9 +61,12 @@ class ValorServidorController extends Controller
             ]);
         }
 
-        $ajustes->quitarOverride($clave);
+        // false: otro pedido lo quitó primero (doble clic, dos pestañas).
+        $quitado = $ajustes->quitarOverride($clave);
 
-        return redirect()->to($volver)->with('status', "«{$definicion->etiqueta}» vuelve a usar el valor del servidor.");
+        return redirect()->to($volver)->with('status', $quitado
+            ? "«{$definicion->etiqueta}» vuelve a usar el valor del servidor."
+            : "«{$definicion->etiqueta}» ya usa el valor del servidor.");
     }
 
     /**

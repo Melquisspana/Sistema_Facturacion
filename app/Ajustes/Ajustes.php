@@ -355,8 +355,15 @@ class Ajustes
         });
     }
 
-    /** Quita el override para que el ajuste vuelva a resolverse por su fallback. */
-    public function quitarOverride(string $clave): void
+    /**
+     * Quita el override para que el ajuste vuelva a resolverse por su fallback.
+     *
+     * Devuelve false si no había nada guardado que quitar (doble clic, dos pestañas):
+     * en ese caso no se audita nada. Lo decide el borrado en la base, no una lectura
+     * previa, así que dos pedidos a la vez dejan una sola línea. El permiso y la
+     * editabilidad se comprueban antes, haya o no algo que quitar.
+     */
+    public function quitarOverride(string $clave): bool
     {
         $definicion = $this->catalogo->definicion($clave);
 
@@ -368,16 +375,22 @@ class Ajustes
 
         $antes = $this->resolverParaPantalla($clave);
 
-        match ($definicion->persistencia) {
-            Persistencia::Nueva => $this->repositorio->eliminar($clave),
+        $quitado = match ($definicion->persistencia) {
+            Persistencia::Nueva => $this->repositorio->eliminar($clave) > 0,
             Persistencia::Legacy => $this->legacy->eliminar((string) $definicion->claveLegacy),
-            Persistencia::Ninguna => null,
+            Persistencia::Ninguna => false,
         };
+
+        if (! $quitado) {
+            return false;
+        }
 
         $despues = $this->resolverParaPantalla($clave);
 
         // La auditoría decide si los valores se registran (nunca los de un secreto).
         $this->auditoria->overrideQuitado($definicion, $antes->fuente, $despues->fuente, $antes->valor, $despues->valor);
+
+        return true;
     }
 
     /**

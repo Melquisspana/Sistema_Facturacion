@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Configuracion;
 
+use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\Definicion\FuenteAjuste;
 use App\Facades\Ajustes;
 use App\Models\User;
@@ -79,6 +80,24 @@ class SecretosIntegracionesRutasTest extends TestCase
             ->values();
     }
 
+    /**
+     * Aviso que ve quien quita el secreto. La tienda no tiene secreto en el archivo del
+     * servidor: queda sin configurar, y el aviso lo dice en los dos envíos. Los demás
+     * vuelven al del archivo.
+     */
+    private function avisoEsperado(string $clave, bool $primerEnvio): string
+    {
+        $etiqueta = app(CatalogoAjustes::class)->definicion($clave)->etiqueta;
+
+        if ($clave === 'tienda.secreto') {
+            return $etiqueta.': no tiene ningún valor, ni guardado ni en el archivo del servidor. Queda sin configurar hasta que cargues uno nuevo.';
+        }
+
+        return $primerEnvio
+            ? $etiqueta.': se quitó el valor guardado en la aplicación y vuelve a usarse el del archivo de configuración.'
+            : $etiqueta.': ya usa el valor del archivo de configuración.';
+    }
+
     private function assertSinSecretosEnLaAuditoria(): void
     {
         $volcado = json_encode(Activity::query()->get(['description', 'properties'])->toArray(), JSON_UNESCAPED_UNICODE);
@@ -99,7 +118,7 @@ class SecretosIntegracionesRutasTest extends TestCase
             ->delete(route($ruta), ['confirmacion' => '1', 'clave' => 'mail.smtp.password'])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route($volver))
-            ->assertSessionHas('status');
+            ->assertSessionHas('status', $this->avisoEsperado($clave, primerEnvio: true));
 
         $this->assertDatabaseMissing('ajustes_sistema', ['clave' => $clave]);
         $this->assertNotSame(FuenteAjuste::BaseDeDatos, Ajustes::fuente($clave));
@@ -155,11 +174,13 @@ class SecretosIntegracionesRutasTest extends TestCase
         $admin = $this->admin();
         $this->guardarTodos($admin);
 
-        $this->actingAs($admin)->delete(route($ruta), ['confirmacion' => '1'])->assertRedirect(route($volver));
+        $this->actingAs($admin)->delete(route($ruta), ['confirmacion' => '1'])
+            ->assertRedirect(route($volver))
+            ->assertSessionHas('status', $this->avisoEsperado($clave, primerEnvio: true));
         $this->actingAs($admin)->delete(route($ruta), ['confirmacion' => '1'])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route($volver))
-            ->assertSessionHas('status');
+            ->assertSessionHas('status', $this->avisoEsperado($clave, primerEnvio: false));
 
         $this->assertCount(1, $this->quitados($clave));
         $this->assertDatabaseCount('ajustes_sistema', count(self::GUARDADOS) - 1);

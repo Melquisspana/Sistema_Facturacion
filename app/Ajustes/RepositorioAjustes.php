@@ -121,14 +121,20 @@ class RepositorioAjustes
         $this->invalidar();
     }
 
-    /** Quita el override para que el ajuste vuelva a resolverse por su fallback. */
-    public function eliminar(string $clave): void
+    /**
+     * Quita el override para que el ajuste vuelva a resolverse por su fallback.
+     * Devuelve las filas borradas: el DELETE es atómico en la base, así que de dos
+     * pedidos a la vez solo uno ve 1.
+     */
+    public function eliminar(string $clave): int
     {
         $this->exigirTabla();
 
-        AjusteSistema::query()->where('clave', $clave)->delete();
+        $borradas = AjusteSistema::query()->where('clave', $clave)->delete();
 
         $this->invalidar();
+
+        return $borradas;
     }
 
     /**

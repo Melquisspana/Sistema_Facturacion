@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Ajustes;
 
+use App\Ajustes\Definicion\FuenteAjuste;
 use App\Facades\Ajustes;
+use App\Models\AjusteSistema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
@@ -88,6 +90,48 @@ class AuditoriaAjustesTest extends TestCase
         $this->assertSame('override_quitado', $actividad->getExtraProperty('accion'));
         $this->assertSame('base_de_datos', $actividad->getExtraProperty('fuente_antes'));
         $this->assertSame('configuracion', $actividad->getExtraProperty('fuente_despues'));
+    }
+
+    /** Líneas «quitó el valor guardado» de una clave. */
+    private function quitados(string $clave): int
+    {
+        return Activity::query()->where('log_name', 'ajustes')->get()
+            ->filter(fn (Activity $a) => $a->getExtraProperty('clave') === $clave && $a->getExtraProperty('accion') === 'override_quitado')
+            ->count();
+    }
+
+    /**
+     * Dos pedidos casi juntos (doble clic, dos pestañas): el segundo ya no tiene nada que
+     * quitar. Lo decide el borrado en la base, no una lectura previa, así que no deja otra
+     * línea en la auditoría.
+     */
+    public function test_quitar_dos_veces_el_mismo_override_deja_una_sola_linea(): void
+    {
+        config(['backup_diario.dias_retencion' => 30]);
+        $this->actingAs($this->admin());
+        Ajustes::guardar('respaldos.dias_retencion', 60);
+
+        $this->assertTrue(Ajustes::quitarOverride('respaldos.dias_retencion'));
+        $this->assertFalse(Ajustes::quitarOverride('respaldos.dias_retencion'));
+
+        $this->assertSame(1, $this->quitados('respaldos.dias_retencion'));
+    }
+
+    /**
+     * La carrera, simulada: otro pedido borró la fila justo después de que este la viera
+     * guardada (la lectura sigue diciendo «base de datos»). No hay nada que registrar.
+     */
+    public function test_si_otro_pedido_ya_borro_la_fila_no_registra_nada(): void
+    {
+        config(['backup_diario.dias_retencion' => 30]);
+        $this->actingAs($this->admin());
+        Ajustes::guardar('respaldos.dias_retencion', 60);
+        $this->assertSame(FuenteAjuste::BaseDeDatos, Ajustes::fuente('respaldos.dias_retencion'));
+
+        AjusteSistema::query()->where('clave', 'respaldos.dias_retencion')->delete();
+
+        $this->assertFalse(Ajustes::quitarOverride('respaldos.dias_retencion'));
+        $this->assertSame(0, $this->quitados('respaldos.dias_retencion'));
     }
 
     public function test_los_booleanos_se_registran_de_forma_legible(): void

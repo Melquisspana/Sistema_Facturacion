@@ -3,6 +3,7 @@
 namespace App\Ajustes\Adaptadores;
 
 use App\Models\Configuracion;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Puente hacia la tabla `configuraciones` existente.
@@ -54,9 +55,24 @@ class AdaptadorConfiguraciones
         Configuracion::set($clave, $texto);
     }
 
-    /** Quitar el override en la tabla anterior = dejar la clave sin valor. */
-    public function eliminar(string $clave): void
+    /**
+     * Quitar el override en la tabla anterior = dejar la clave sin valor. Devuelve si
+     * había uno. La fila se bloquea mientras tanto (en MySQL; en SQLite el bloqueo no
+     * hace nada), para que de dos pedidos a la vez solo uno diga que quitó algo. Sigue
+     * pasando por `Configuracion::set`, que deja su propia auditoría.
+     */
+    public function eliminar(string $clave): bool
     {
-        Configuracion::set($clave, null);
+        return DB::transaction(function () use ($clave) {
+            $valor = Configuracion::query()->where('clave', $clave)->lockForUpdate()->value('valor');
+
+            if ($valor === null || $valor === '') {
+                return false;
+            }
+
+            Configuracion::set($clave, null);
+
+            return true;
+        });
     }
 }
