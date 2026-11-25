@@ -2,6 +2,7 @@
 
 namespace App\Services\Exportaciones;
 
+use App\Http\Requests\Exportaciones\PresentacionExportacionRequest;
 use App\Models\ExportacionProducto;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
@@ -69,7 +70,7 @@ class ImportadorCatalogoExportacion
 
         $num = fn (string $col): float => round((float) $hoja->getCell($col.$fila)->getCalculatedValue(), 2);
 
-        ExportacionProducto::create([
+        $datos = [
             'nombre_es' => $nombreEs,
             'nombre_en' => $nombreEn,
             'unidad' => trim((string) $hoja->getCell('D'.$fila)->getValue()) ?: null,
@@ -82,9 +83,33 @@ class ImportadorCatalogoExportacion
             'peso_neto_caja_lb' => $num('Q'),
             'peso_bruto_caja_lb' => $num('R'),
             'activo' => true,
-        ]);
+        ];
+
+        $this->exigirDatosPosibles($datos);
+
+        ExportacionProducto::create($datos);
 
         $resumen['creados']++;
+    }
+
+    /**
+     * Las mismas reglas que el formulario de una presentación
+     * ({@see PresentacionExportacionRequest}): una caja sin unidades, sin peso o con
+     * precio negativo terminaría en una lista de empaque y en su factura. La fila se
+     * informa como error y no se crea.
+     */
+    private function exigirDatosPosibles(array $datos): void
+    {
+        $problemas = array_filter([
+            $datos['unidades_por_caja'] < 1 ? 'las unidades por caja tienen que ser al menos 1' : null,
+            $datos['gramos_por_unidad'] <= 0 ? 'los gramos por unidad tienen que ser más que 0' : null,
+            $datos['peso_neto_caja_kg'] <= 0 ? 'el peso neto por caja tiene que ser más que 0' : null,
+            $datos['precio_caja'] < 0 ? 'el precio por caja no puede ser negativo' : null,
+        ]);
+
+        if ($problemas !== []) {
+            throw new RuntimeException("«{$datos['nombre_es']}» no se importó: ".implode(', ', $problemas).'.');
+        }
     }
 
     /**
