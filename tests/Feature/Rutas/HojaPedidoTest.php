@@ -204,9 +204,11 @@ class HojaPedidoTest extends TestCase
             ->assertDontSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false)
             ->assertSeeInOrder(['Envío 1 · 08/11/2026', 'Envío 2 · 09/11/2026', 'Envío 1<br>08/11', 'Envío 2<br>09/11', 'G01'], false);
 
-        // Sin fecha, la del último envío; una fecha mal escrita no se usa.
+        // Sin fecha, a todo lo pendiente, que es como abre la lista (24/11/2026); una fecha mal
+        // escrita no se usa.
         $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
-            ->assertSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false);
+            ->assertSee('href="'.route('facturacion.llego-de-fabrica').'"', false)
+            ->assertDontSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false);
         $this->get(route('rutas.pedidos.hoja', [$this->pedido, 'fecha' => '8/11/2026']))
             ->assertSessionHasErrors('fecha');
     }

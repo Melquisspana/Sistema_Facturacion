@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Enums\OrigenPedidoSala;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\OrdenCompraRequeridaException;
+use App\Exceptions\Dte\PuntoVentaPredeterminadoInvalidoException;
 use App\Models\Dte;
 use App\Models\DteLinea;
 use App\Models\OrdenCompraRecibida;
@@ -17,7 +18,10 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\PrecioProductoResolver;
 use App\Support\Dte\CondicionOperacion;
+use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\Dte\ResuelveEmisorUnico;
 use App\Support\OrdenCompra;
+use App\Support\Sala;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -84,6 +88,10 @@ class FacturarPedido
     {
         $envios = $pedido->envios()->porFacturar()->orderBy('numero')->with('lineas.linea.producto')->get();
         $oc = filled($pedido->numero_orden_compra) ? $pedido->numero_orden_compra : null;
+        // Sin la del vendedor, la única que llegó por correo para la sala viene puesta (24/11/2026);
+        // con varias, se elige en el formulario.
+        $delCorreo = $oc === null ? array_column(OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [], 'numero') : [];
+        $oc ??= count($delCorreo) === 1 ? $delCorreo[0] : null;
 
         return $this->armar($pedido, $envios) + [
             'envios' => $envios,
@@ -306,6 +314,82 @@ class FacturarPedido
             'borrador' => $dtes->first(fn (Dte $d) => $d->estado === EstadoDte::Borrador),
             'facturados' => $dtes->reject(fn (Dte $d) => $d->estado === EstadoDte::Borrador)->values(),
         ];
+    }
+
+    /**
+     * La OC de un pedido para «Llegó de pedidos», sin consultas. Primero la que anotó el
+     * vendedor; si no hay y ya está en su CCF (o lo que llegó va en su borrador), la de sus
+     * CCF; si no, las del correo de su sala. Avisa si la del pedido es de otra sala o ya
+     * tiene un CCF de otro pedido (un CCF rechazado no cuenta: hay que volver a facturar).
+     * `lista`: sin aviso y con OC, o la sala no la pide, o ya quedó resuelta en su CCF.
+     *
+     * @param  array{por_facturar: Collection<int, PedidoSalaEnvio>, borrador: ?Dte, facturados: Collection<int, Dte>}  $estado  {@see estado()}
+     * @param  list<array{numero: string}>  $delCorreo  las OC del correo de su sala sin CCF ({@see OrdenCompraRecibida::pendientesPorSucursal()})
+     * @param  ?Dte  $ccfDeLaOc  el CCF que ya lleva la OC del pedido ({@see OrdenCompraRecibida::ccfPorNumero()})
+     * @return array{propuestas: list<string>, titulo: string, aviso: ?string, lista: bool}
+     */
+    public static function oc(PedidoSala $pedido, array $estado, array $delCorreo, ?Dte $ccfDeLaOc): array
+    {
+        $delPedido = filled($pedido->numero_orden_compra);
+        $enSuCcf = ! $delPedido && ($estado['por_facturar']->isEmpty() || $estado['borrador'] !== null);
+        $deOtraSala = $delPedido ? ReglaOrdenCompra::salaDistinta($pedido->numero_orden_compra, $pedido->sala) : null;
+        $ccfDeLaOc = $delPedido ? $ccfDeLaOc : null;
+        // El CCF de la OC es el de este mismo pedido y no queda nada por facturar: no es aviso.
+        $esElPropio = $ccfDeLaOc !== null && $estado['por_facturar']->isEmpty()
+            && $pedido->envios->contains('dte_id', $ccfDeLaOc->id);
+        $aviso = match (true) {
+            $ccfDeLaOc !== null && ! $esElPropio => 'Esa OC ya tiene un CCF.',
+            $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
+            default => null,
+        };
+        $propuestas = match (true) {
+            $delPedido => [$pedido->numero_orden_compra],
+            $enSuCcf => collect([$estado['borrador']])->filter()->merge($estado['facturados'])
+                ->pluck('numero_orden_compra')->filter(fn ($n) => filled($n))->unique()->values()->all(),
+            default => array_column($delCorreo, 'numero'),
+        };
+
+        return [
+            'propuestas' => $propuestas,
+            'titulo' => match (true) {
+                $propuestas === [] => 'Orden de compra',
+                $delPedido => 'OC del pedido',
+                $enSuCcf => 'OC del CCF',
+                default => 'OC del correo',
+            },
+            'aviso' => $aviso,
+            // Ya en su CCF: la OC quedó resuelta ahí (crearBorrador exige la que pide la sala).
+            'lista' => $aviso === null && ($enSuCcf || $propuestas !== [] || ! ReglaOrdenCompra::requerida($pedido->sala?->cliente, $pedido->sala)),
+        ];
+    }
+
+    /**
+     * ¿«Facturar» va directo al borrador, sin el formulario? (Melqui, 24/11/2026). Sí cuando
+     * hay algo por facturar sin borrador abierto, la sala existe, la OC está lista y es una
+     * sola (la del pedido o la única del correo; ninguna si la sala no la pide) y el emisor se
+     * elige solo. Si no, el formulario: falta la OC, hay varias para elegir o hay que elegir
+     * el emisor. Lo que mande la fila se vuelve a revisar entero en {@see crear()}.
+     *
+     * @param  array{por_facturar: Collection<int, PedidoSalaEnvio>, borrador: ?Dte, facturados: Collection<int, Dte>}  $estado  {@see estado()}
+     * @param  array{propuestas: list<string>, lista: bool}  $oc  {@see oc()}
+     */
+    public static function vaDirecto(PedidoSala $pedido, array $estado, array $oc, bool $emisorSolo): bool
+    {
+        return $emisorSolo && $pedido->estaVigente() && ! $pedido->esTiendaNueva() && $pedido->sala !== null
+            && $estado['por_facturar']->isNotEmpty() && $estado['borrador'] === null
+            && $oc['lista'] && count($oc['propuestas']) <= 1;
+    }
+
+    /** ¿El emisor (establecimiento y punto de venta) se elige solo, como en el formulario del CCF? */
+    public static function emisorSolo(): bool
+    {
+        try {
+            $emisor = ResuelveEmisorUnico::resolver(null, null);
+        } catch (PuntoVentaPredeterminadoInvalidoException) {
+            return false;
+        }
+
+        return filled($emisor['establecimiento_id']) && filled($emisor['punto_venta_id']);
     }
 
     /**

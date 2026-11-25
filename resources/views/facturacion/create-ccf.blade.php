@@ -28,9 +28,10 @@
     </x-slot>
 
     <div class="py-8">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+        {{-- Con margen también en el celular (24/11/2026): sin px quedaba pegado a los bordes. --}}
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <x-modo-dte-aviso :modo="$modoDte ?? null" />
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="bg-white shadow rounded-lg p-4 sm:p-6">
 
                 @if ($errors->any())
                     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">

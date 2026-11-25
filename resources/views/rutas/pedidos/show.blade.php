@@ -2,11 +2,14 @@
      detalles»): estado y datos arriba, la OC (que suele llegar después por EDI y se agrega
      acá), los productos y lo que mandó la fábrica, con cómo va la facturación de cada envío.
 
-     Variables: $pedido (con envios.dte) y $regresa [producto_id => llego, facturado,
-     regresa] (FacturarPedido::regresa): la columna «Regresa» sale solo si ya se facturó algo.
-     «Facturar» (solo quien factura) abre el formulario del CCF con lo que sigue sin facturar;
-     con un borrador abierto no sale y se dice por qué: lo nuevo va en ese mismo CCF. El enlace
-     lleva `desde=pedido` para que «Cancelar» vuelva a esta ficha. «Corregir» y «Anular» (13/11/2026)
+     Variables: $pedido (con envios.dte), $regresa [producto_id => llego, facturado,
+     regresa] (FacturarPedido::regresa): la columna «Regresa» sale solo si ya se facturó algo;
+     y $oc (FacturarPedido::oc más `directo`; null para quien no factura).
+     «Facturar» (solo quien factura) lleva lo que sigue sin facturar: con una sola OC clara,
+     directo al borrador; si no, al formulario del CCF (facturacion.por-facturar._facturar, la
+     misma regla que «Llegó de pedidos», 24/11/2026). Con un borrador abierto no sale y se dice
+     por qué: lo nuevo va en ese mismo CCF. Lleva `desde=pedido` para que «Cancelar» vuelva a
+     esta ficha. «Corregir» y «Anular» (13/11/2026)
      solo para quien puede (`corregirEnOficina`) y mientras no se haya facturado. --}}
 <x-app-layout>
     <x-slot name="header">
@@ -53,8 +56,11 @@
                             @endcan
                         @elseif ($puedeFacturar)
                             @can('create', App\Models\Dte::class)
-                                <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']) }}"
-                                   class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
+                                @include('facturacion.por-facturar._facturar', [
+                                    'oc' => $oc,
+                                    'formulario' => route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']),
+                                    'desde' => 'pedido',
+                                ])
                             @endcan
                         @endif
                         @can('corregirEnOficina', $pedido)

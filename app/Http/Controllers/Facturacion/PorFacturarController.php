@@ -2,61 +2,86 @@
 
 namespace App\Http\Controllers\Facturacion;
 
+use App\Enums\EstadoDte;
+use App\Enums\EstadoPedidoSala;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
 use App\Services\Rutas\FacturarPedido;
 use App\Services\Rutas\PedidosSala;
-use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\HoraNegocio;
 use App\Support\OrdenCompra;
-use App\Support\Sala;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 /**
- * Facturación › «Llegó de la fábrica»: una tarjeta por pedido (= por sala) con un envío
- * VIGENTE de la fábrica en el día elegido (hoy, si no se elige) o, con `sin_facturar=1`,
- * con algo por facturar de cualquier día. Lo que pidió el vendedor, lo que llegó, la «F» en
- * lo que faltó, la insignia de la OC, la hoja para imprimir y cómo va la facturación.
+ * Facturación › «Llegó de pedidos» (Melqui, 24/11/2026): una fila por pedido (= por sala)
+ * con su estado, la OC y «Facturar»; los productos se ven al tocar la fila. Abre con TODO lo
+ * que falta facturar, sin importar el día, en grupos ({@see self::GRUPOS}): lo que se puede
+ * facturar ya, lo que espera la OC, lo que espera el resto (salió una parte y ya se facturó:
+ * sin «Facturar», para que el resto no salga en otro CCF con la misma OC sin que nadie lo
+ * note) y lo facturado hoy, cerrado al final. Con `fecha`, lo que salió de pedidos ese día,
+ * en los mismos grupos. Pastillas por zona (`ruta`, como en Rutas › «Por entregar»), solo
+ * para mirar.
  *
  * Variables para la vista, además de las de siempre:
- *  - `sinFacturar` (bool): el filtro «Sin facturar» está puesto.
- *  - `facturacion[pedido_id]` ({@see FacturarPedido::estado()}): `por_facturar` (envíos;
- *    si hay, botón «Facturar»), `borrador` (?Dte: «Borrador abierto», al editor) y
- *    `facturados` (Dte: «Facturado en CCF n.º …», a la ficha). Sin consultas por tarjeta.
- *  - `otrosDiasSinFacturar` (int): pedidos con algo por facturar que no salen en el día
- *    elegido; si es mayor que 0, aviso arriba con enlace al filtro. 0 con el filtro puesto.
+ *  - `pedidos` (Collection): los de la zona elegida, o todos.
+ *  - `grupos`: [clave, titulo, pedidos] en el orden de la pantalla.
+ *  - `zonas`: [clave, nombre, cuantos]; `ruta` (?string): la elegida; `filtroInvalido`.
+ *  - `facturacion[pedido_id]` ({@see FacturarPedido::estado()}) y `oc[pedido_id]`
+ *    ({@see FacturarPedido::oc()}, más `directo`: «Facturar» va directo al borrador,
+ *    {@see FacturarPedido::vaDirecto()}). Sin consultas por fila.
+ *  - `otrosDiasSinFacturar` (int): con `fecha`, los pedidos con algo por facturar que no
+ *    salieron ese día; sin `fecha`, 0 (ya se ve todo).
  *
  * La fábrica nunca factura: lo hace la oficina con la OC. Pide `dte.ver`: la fábrica y quien
  * no ve Facturación reciben 403. Facturar pide además `dte.gestionar` (FacturarPedidoController).
  */
 class PorFacturarController extends Controller
 {
+    /** Los grupos, en el orden de la pantalla. */
+    private const GRUPOS = [
+        'para_facturar' => 'Para facturar (OC lista)',
+        'esperando_oc' => 'Esperando OC',
+        'esperando_resto' => 'Esperando el resto',
+        'facturados' => 'Ya facturados',
+    ];
+
+    private const SIN_ZONA = 'sin';
+
     public function index(Request $request): View
     {
         Gate::authorize('viewAny', Dte::class);
         $filtro = $request->validate([
             'fecha' => ['nullable', 'date_format:Y-m-d'],
-            'sin_facturar' => ['nullable', 'boolean'],
+            'ruta' => ['nullable', 'string', 'max:20'],
         ], [
             'fecha.date_format' => 'Elegí un día válido.',
-            'sin_facturar.boolean' => 'Elegí un filtro válido.',
         ]);
-        $fecha = $filtro['fecha'] ?? HoraNegocio::fechaHoy();
-        $sinFacturar = (bool) ($filtro['sin_facturar'] ?? false);
+        $fecha = $filtro['fecha'] ?? null;
+        $hoy = HoraNegocio::fechaHoy();
 
         $enviosDelDia = fn (Builder $e) => $e->whereNull('anulado_en')->whereDate('fecha', $fecha);
         $porFacturar = fn (Builder $e) => $e->porFacturar();
 
-        $pedidos = PedidoSala::query()
+        $todos = PedidoSala::query()
             ->where('origen', 'sala')
             ->vigentes()
-            // «Sin facturar»: lo que llegó cualquier día y todavía no tiene un CCF que cuente.
-            ->whereHas('envios', $sinFacturar ? $porFacturar : $enviosDelDia)
+            ->when(
+                $fecha !== null,
+                fn (Builder $q) => $q->whereHas('envios', $enviosDelDia),
+                fn (Builder $q) => $q->where(fn (Builder $w) => $w
+                    ->whereHas('envios', $porFacturar)
+                    // Con su borrador abierto (falta emitirlo) o con su CCF de hoy.
+                    ->orWhereHas('envios', fn (Builder $e) => $e->whereNull('anulado_en')->whereHas('dte', fn (Builder $d) => $d->cuentaComoFacturado()
+                        ->where(fn (Builder $d) => $d->where('estado', EstadoDte::Borrador->value)->orWhereDate('fecha_emision', $hoy))))
+                    // Ya salió una parte y espera el resto.
+                    ->orWhere(fn (Builder $p) => $p->whereIn('estado', [EstadoPedidoSala::Parcial->value, EstadoPedidoSala::Listo->value])
+                        ->whereHas('envios', fn (Builder $e) => $e->whereNull('anulado_en')))),
+            )
             ->with([
                 'sala:id,cliente_id,nombre,codigo,requiere_orden_compra', 'sala.cliente:id,requiere_orden_compra',
                 'ruta:id,nombre', 'salida:id,ruta_id', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre',
@@ -64,68 +89,64 @@ class PorFacturarController extends Controller
                 // Todos los vigentes, para que cuadren con el total (que suma todos); con sus
                 // líneas, para separar lo que llegó el día elegido de lo de otros días.
                 'envios' => fn ($q) => $q->whereNull('anulado_en')->orderBy('numero'), 'envios.lineas',
-                // El CCF de cada envío (también los borrados), para el estado de la tarjeta.
+                // El CCF de cada envío (también los borrados), para el estado de la fila.
                 'envios.dte',
             ])
-            ->orderBy('id')
-            ->paginate(25)
-            ->withQueryString();
+            ->get();
 
-        // Una sola consulta por página, no una por tarjeta. Las OC del correo ya vienen por
-        // sala y sin CCF; la que anotó el vendedor se revisa acá: de otra sala o ya usada (un
-        // CCF rechazado no cuenta: no factura nada y hay que volver a facturar).
+        // Una sola consulta para todos, no una por fila. Las OC del correo ya vienen por sala
+        // y sin CCF; la que anotó el vendedor se revisa en FacturarPedido::oc().
         $ocCorreo = OrdenCompraRecibida::pendientesPorSucursal();
-        $conCcf = OrdenCompraRecibida::ccfPorNumero($pedidos->getCollection()
+        $conCcf = OrdenCompraRecibida::ccfPorNumero($todos
             ->map(fn (PedidoSala $p) => OrdenCompra::normalizar($p->numero_orden_compra))->all());
+        $emisorSolo = FacturarPedido::emisorSolo();
         $oc = [];
         $facturacion = [];
-        foreach ($pedidos as $pedido) {
+        $grupoDe = [];
+        foreach ($todos as $pedido) {
             $estado = $facturacion[$pedido->id] = FacturarPedido::estado($pedido);
-            $delPedido = filled($pedido->numero_orden_compra);
-            // Sin nada nuevo que facturar aparte (todo está en un CCF, o lo que llegó va en su
-            // borrador), la OC que vale es la de sus CCF, no las del correo.
-            $enSuCcf = ! $delPedido && ($estado['por_facturar']->isEmpty() || $estado['borrador'] !== null);
-            $deOtraSala = $delPedido ? ReglaOrdenCompra::salaDistinta($pedido->numero_orden_compra, $pedido->sala) : null;
-            $ccfDeLaOc = $delPedido ? ($conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)] ?? null) : null;
-            // El CCF de la OC es el de este mismo pedido y no queda nada por facturar: no es aviso.
-            $esElPropio = $ccfDeLaOc !== null && $estado['por_facturar']->isEmpty()
-                && $pedido->envios->contains('dte_id', $ccfDeLaOc->id);
-            $aviso = match (true) {
-                $ccfDeLaOc !== null && ! $esElPropio => 'Esa OC ya tiene un CCF.',
-                $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
-                default => null,
+            $oc[$pedido->id] = FacturarPedido::oc($pedido, $estado, $ocCorreo[$pedido->cliente_sucursal_id] ?? [],
+                $conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)] ?? null);
+            // Una sola OC clara: «Facturar» va directo al borrador (24/11/2026).
+            $oc[$pedido->id]['directo'] = FacturarPedido::vaDirecto($pedido, $estado, $oc[$pedido->id], $emisorSolo);
+            $grupoDe[$pedido->id] = match (true) {
+                $estado['por_facturar']->isNotEmpty() || $estado['borrador'] !== null => $oc[$pedido->id]['lista'] ? 'para_facturar' : 'esperando_oc',
+                $pedido->enParte() => 'esperando_resto',
+                default => 'facturados',
             };
-            $propuestas = match (true) {
-                $delPedido => [$pedido->numero_orden_compra],
-                $enSuCcf => collect([$estado['borrador']])->filter()->merge($estado['facturados'])
-                    ->pluck('numero_orden_compra')->filter(fn ($n) => filled($n))->unique()->values()->all(),
-                default => array_column($ocCorreo[$pedido->cliente_sucursal_id] ?? [], 'numero'),
-            };
-            $oc[$pedido->id] = [
-                'propuestas' => $propuestas,
-                'titulo' => match (true) {
-                    $propuestas === [] => 'Orden de compra',
-                    $delPedido => 'OC del pedido',
-                    $enSuCcf => 'OC del CCF',
-                    default => 'OC del correo',
-                },
-                'aviso' => $aviso,
-                // Ya en su CCF: la OC quedó resuelta ahí (crearBorrador exige la que pide la sala).
-                'lista' => $aviso === null && ($enSuCcf || $propuestas !== [] || ! ReglaOrdenCompra::requerida($pedido->sala?->cliente, $pedido->sala)),
-            ];
         }
+
+        // Por zona: la del pedido (la tienda nueva, la de su viaje), como dice cada fila.
+        $zonaDe = fn (PedidoSala $p) => (string) ($p->ruta_id ?? ($p->esTiendaNueva() ? $p->salida?->ruta_id : null) ?? self::SIN_ZONA);
+        $zonas = $todos->groupBy($zonaDe)
+            ->map(fn ($lista, $clave) => ['clave' => (string) $clave, 'nombre' => $lista->first()->zonaNombre(), 'cuantos' => $lista->count()])
+            ->sortBy(fn (array $z) => [$z['clave'] === self::SIN_ZONA ? 1 : 0, mb_strtolower($z['nombre'])])
+            ->values();
+        // La zona es solo para mirar (?ruta=): no guarda nada.
+        $ruta = (string) ($filtro['ruta'] ?? '');
+        $ruta = $zonas->contains('clave', $ruta) ? $ruta : null;
+        $pedidos = $todos
+            ->filter(fn (PedidoSala $p) => $ruta === null || $zonaDe($p) === $ruta)
+            ->sortBy(fn (PedidoSala $p) => [$zonaDe($p) === self::SIN_ZONA ? 1 : 0, mb_strtolower($p->zonaNombre()), $p->fecha->format('Y-m-d'), $p->id])
+            ->values();
 
         return view('facturacion.por-facturar.index', [
             'pedidos' => $pedidos,
+            'grupos' => collect(self::GRUPOS)->map(fn (string $titulo, string $clave) => [
+                'clave' => $clave,
+                'titulo' => $clave === 'facturados' && $fecha === null ? 'Ya facturados hoy' : $titulo,
+                'pedidos' => $pedidos->filter(fn (PedidoSala $p) => $grupoDe[$p->id] === $clave)->values(),
+            ])->values(),
+            'zonas' => $zonas,
+            'ruta' => $ruta,
+            'filtroInvalido' => filled($filtro['ruta'] ?? null) && $ruta === null,
             'oc' => $oc,
             'fecha' => $fecha,
-            'esHoy' => $fecha === HoraNegocio::fechaHoy(),
-            'sinFacturar' => $sinFacturar,
             'facturacion' => $facturacion,
             // Cuántos pedidos más hay de cada tienda nueva con el mismo nombre (13/11/2026).
-            'mismaTienda' => PedidosSala::cuantosMasDeLaTienda($pedidos->getCollection()),
-            // Pedidos sin facturar que no salen en el día elegido: para el aviso de arriba.
-            'otrosDiasSinFacturar' => $sinFacturar ? 0 : PedidoSala::query()->vigentes()
+            'mismaTienda' => PedidosSala::cuantosMasDeLaTienda($pedidos),
+            // Con un día elegido: los pedidos sin facturar que no salieron ese día.
+            'otrosDiasSinFacturar' => $fecha === null ? 0 : PedidoSala::query()->vigentes()
                 ->where('origen', 'sala')
                 ->whereHas('envios', $porFacturar)
                 ->whereDoesntHave('envios', $enviosDelDia)

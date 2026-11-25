@@ -27,7 +27,7 @@
         Variables: $pedido con sala, ruta, sacadoPor, lineas.producto,
         lineas.envioLineasVigentes y envios (solo los vigentes) con sus lineas y su dte; $regresa
         [producto_id => llego, facturado, regresa] (vacío si no hay nada facturado); $volverAl
-        (Y-m-d o null), el día al que vuelve «Llegó de la fábrica».
+        (Y-m-d o null), el día al que vuelve «Llegó de pedidos» (null: a todo lo pendiente).
     --}}
     <style>
         <x-documento.estilos acento="ocre" />
@@ -126,7 +126,7 @@
 
 <div class="no-print">
     @can('viewAny', App\Models\Dte::class)
-        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de pedidos»</a>
+        <a href="{{ route('facturacion.llego-de-fabrica', array_filter(['fecha' => $volverAl])) }}">Volver a «Llegó de pedidos»</a>
     @endcan
     @if ($volverPorEntregar ?? false)
         <a href="{{ route('rutas.por-entregar.index') }}">Volver a «Por entregar»</a>
