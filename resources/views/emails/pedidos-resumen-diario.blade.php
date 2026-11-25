@@ -35,9 +35,10 @@
             $partes[] = isset($d['cajitas'])
                 ? $plural((int) $d['cajitas'], 'cajita', 'cajitas')
                 : (count($pedidos) === 1 ? 'pedido' : 'pedidos').' N.º '.collect($pedidos)->join(', ', ' y ')
-                    // Cada producto de cada pedido, una vez: si salió en dos envíos (de mañana una parte
-                    // y de tarde el resto), sigue siendo el mismo producto, como en «Llegó».
-                    .', '.$productos(collect($d['salio'])->flatMap(fn ($e) => array_map(fn ($p) => $e['pedido'].'|'.$p['nombre'], $e['productos']))->unique()->count());
+                    // Cada línea del pedido, una vez: si salió en dos envíos (de mañana una parte y de
+                    // tarde el resto), sigue siendo el mismo producto, como en «Llegó». Por la línea y
+                    // no por el nombre: dos presentaciones pueden llamarse igual.
+                    .', '.$productos(collect($d['salio'])->flatMap(fn ($e) => array_column($e['productos'], 'linea'))->unique()->count());
         }
         foreach ($d['cerrados'] as $c) {
             if ($c['nada']) {

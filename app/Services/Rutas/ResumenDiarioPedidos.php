@@ -186,8 +186,8 @@ class ResumenDiarioPedidos
      *
      * @return array{fecha: string, salio_algo: bool, envios_ids: list<int>, salas: array<string, array{
      *     llego: list<array{numero: int, vendedor: ?string, productos: list<array{nombre: string, cantidad: string}>}>,
-     *     salio: list<array{numero: int, pedido: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>,
-     *     deshecho: list<array{numero: int, pedido: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>,
+     *     salio: list<array{numero: int, pedido: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
+     *     deshecho: list<array{numero: int, pedido: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
      *     cerrados: list<array{numero: int, nada: bool, motivo: ?string, productos: list<array{nombre: string, cantidad: string, motivo: ?string}>}>,
      *     listos: list<array{numero: int, fecha: string, atraso: int, resto: bool, productos: list<array{nombre: string, cantidad: string}>}>,
      *     por_mandar: list<array{numero: int, fecha: string, atraso: int, resto: bool, armando: bool, productos: list<array{nombre: string, cantidad: string}>}>,
@@ -213,9 +213,12 @@ class ResumenDiarioPedidos
                 'numero' => $envio->numero,
                 'pedido' => $envio->pedido_sala_id,
                 'hora' => $local->format($local->isSameDay($hoy) ? 'H:i' : 'd/m H:i'),
+                // `linea`: la línea del pedido, para contar cada producto una vez aunque salga en
+                // dos envíos. No el nombre: dos presentaciones pueden llamarse igual.
                 'productos' => $envio->lineas->map(fn ($l) => [
                     'nombre' => (string) $l->linea?->producto?->nombre,
                     'cantidad' => PedidoSalaLinea::legible((string) $l->cantidad),
+                    'linea' => $l->pedido_sala_linea_id,
                 ])->values()->all(),
             ];
         };
