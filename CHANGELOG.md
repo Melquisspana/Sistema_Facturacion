@@ -8,6 +8,25 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.24] - 2026-11-24
+
+Barrido de botones sin prueba, tandas 1 y 2: cobros, PPQ, precios, salas y clientes (#418), y numeración fiscal y contraseñas (#417). Sin migraciones ni cambios de permisos.
+
+### Corregido
+
+- Facturación: el siguiente documento ya no repite un número usado en su caja, aunque lo haya usado otro correlativo. En 2027 se respeta el número que la oficina fija a mano, y «Generar y transmitir» avisa con claridad si otro documento tomó el mismo número, en vez de dar error (#417).
+- Configuración:
+  - un correlativo con facturas no se borra, no baja de su último número y no cambia de tipo, establecimiento, punto de venta ni ambiente (#417);
+  - un establecimiento o punto de venta con facturas no cambia de código ni se borra ni se mueve, y los códigos tienen el formato que acepta Hacienda (#417).
+- Acceso: confirmar la contraseña, cambiarla y cambiar el correo comparten un límite de 6 intentos fallidos por minuto, con aviso en el formulario (#417).
+- PPQ:
+  - un lote ya no toma estado ni cliente del formulario;
+  - un lote presentado, pagado u observado ya no se edita ni se elimina (#418);
+  - quitar un CCF que Calleja no aceptó de un quedan presentado sin acuse lo devuelve a «por presentar» y puede entrar en otro lote. El reporte del caso y el TXT siguen la misma regla (#418).
+- Cobros: presentar dos veces o un acuse con otra referencia ya no hacen retroceder ni pisan una solicitud, y no se aceptan fechas futuras (#418).
+- Precios e importaciones: nunca quedan dos precios especiales activos, y reimportar el archivo exportado ya no cambia precios ni el inventario, el estado, el tipo o el impuesto de un producto (#418).
+- Clientes: una sala o un cliente con documentos, pedidos, cobros, PPQ o precios especiales no se elimina, y la ficha dice por qué (#418).
+
 ## [2026.11.19.2] - 2026-11-19
 
 Facturación: detalles de la primera Factura de la página (#416). Sin migraciones ni cambios de permisos.
