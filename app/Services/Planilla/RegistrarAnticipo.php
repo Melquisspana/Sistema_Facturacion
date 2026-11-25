@@ -77,7 +77,7 @@ final class RegistrarAnticipo
                 // ({@see pagosCandidatos()}): si no, se le descontaría del sueldo dinero
                 // que se le entregó a otro. El aviso no dice a quién se le pagó: puede ser
                 // un gasto que quien registra el anticipo no tiene por qué ver.
-                if ($pago->beneficiario !== $empleado->nombre) {
+                if (! $this->esPagoDe($pago, $empleado)) {
                     throw ValidationException::withMessages([
                         'pago_id' => 'Ese pago no se le hizo a '.$empleado->nombre.': no puede ser su anticipo.',
                     ]);
@@ -152,7 +152,18 @@ final class RegistrarAnticipo
             ->whereNotIn('id', $this->pagosDePlanilla())
             ->orderByDesc('fecha')
             ->limit(25)
-            ->get();
+            ->get()
+            // La consulta compara según la base: en MySQL «jose lopez» encuentra a
+            // «José López». Se deja solo lo que registrar() acepta, para que la pantalla
+            // no ofrezca un pago que al guardar se rechaza.
+            ->filter(fn (Pago $pago) => $this->esPagoDe($pago, $empleado))
+            ->values();
+    }
+
+    /** El nombre exacto, sin fusionar por parecido, como al registrar un pago en Gastos. */
+    private function esPagoDe(Pago $pago, PlanillaEmpleado $empleado): bool
+    {
+        return $pago->beneficiario === $empleado->nombre;
     }
 
     /**

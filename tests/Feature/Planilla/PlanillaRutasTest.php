@@ -343,20 +343,50 @@ class PlanillaRutasTest extends TestCase
     {
         $u = $this->gestor();
         $empleado = $this->empleado($u, 'Empleado de prueba');
-        $gasto = Gasto::create([
-            'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('0', 64),
-            'beneficiario' => 'Proveedor de prueba', 'concepto' => 'Compra de prueba', 'categoria' => 'Compras',
-            'ambito' => 'empresarial', 'naturaleza' => 'operativo', 'moneda' => 'USD', 'importe' => '60.00',
-            'documentacion' => 'pendiente', 'responsable_id' => $u->id, 'registrado_por' => $u->id,
-        ]);
-        $cuota = $gasto->cuotas()->create(['numero' => 1, 'importe' => '60.00', 'vence' => '2026-09-02']);
-        $pagoAjeno = app(RegistrarPago::class)->registrar($u, $this->datosPago($u, ['importe' => '60.00', 'fecha' => '2026-09-02']),
-            [['cuota_id' => $cuota->id, 'importe' => '60.00']]);
+        $pagoAjeno = $this->pagoA($u, 'Proveedor de prueba');
 
         $this->actingAs($u)->post(route('planilla.anticipos.store', $empleado), $this->datosAnticipo(['pago_id' => $pagoAjeno->id]))
             ->assertSessionHasErrors(['pago_id' => 'Ese pago no se le hizo a Empleado de prueba: no puede ser su anticipo.']);
 
         $this->assertSame(0, PlanillaAnticipo::count());
+    }
+
+    /**
+     * La pantalla ofrece solo lo que la ruta acepta. Un pago con el nombre escrito a mano
+     * de otra forma («empleado de prueba») no pasa el control de la ruta, así que tampoco
+     * se ofrece. En MySQL la lista lo traía (no distingue mayúsculas ni tildes) y al
+     * guardar salía «Ese pago no se le hizo a…»; SQLite compara exacto, así que acá esta
+     * prueba solo se pone roja en la CI con MySQL.
+     */
+    public function test_la_pantalla_no_ofrece_un_pago_que_la_ruta_rechaza_por_el_nombre(): void
+    {
+        $u = $this->gestor();
+        $empleado = $this->empleado($u, 'Empleado de prueba');
+        $suyo = $this->pagoA($u, 'Empleado de prueba');
+        $aMano = $this->pagoA($u, 'empleado de prueba');
+
+        $this->actingAs($u)->get(route('planilla.anticipos'))->assertOk()
+            ->assertViewHas('candidatosPorEmpleado', fn ($c) => collect($c[$empleado->id])->pluck('id')->all() === [$suyo->id]);
+
+        $this->actingAs($u)->post(route('planilla.anticipos.store', $empleado), $this->datosAnticipo(['pago_id' => $aMano->id]))
+            ->assertSessionHasErrors('pago_id');
+        $this->assertSame(0, PlanillaAnticipo::count());
+    }
+
+    /** Un pago de Gastos, ya registrado, a `$beneficiario`. */
+    private function pagoA(User $u, string $beneficiario, string $ambito = 'empresarial', string $nota = 'Pago de prueba en caja.'): Pago
+    {
+        $gasto = Gasto::create([
+            'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('0', 64),
+            'beneficiario' => $beneficiario, 'concepto' => 'Compra de prueba', 'categoria' => 'Compras',
+            'ambito' => $ambito, 'naturaleza' => 'operativo', 'moneda' => 'USD', 'importe' => '60.00',
+            'documentacion' => 'pendiente', 'responsable_id' => $u->id, 'registrado_por' => $u->id,
+        ]);
+        $cuota = $gasto->cuotas()->create(['numero' => 1, 'importe' => '60.00', 'vence' => '2026-09-02']);
+
+        return app(RegistrarPago::class)->registrar($u, $this->datosPago($u, [
+            'importe' => '60.00', 'fecha' => '2026-09-02', 'sin_comprobante' => $nota,
+        ]), [['cuota_id' => $cuota->id, 'importe' => '60.00']]);
     }
 
     // ─────────────────────── planilla.pagar.tercero ───────────────────────
