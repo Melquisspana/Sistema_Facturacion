@@ -6,6 +6,11 @@
      ceros no se dicen; si una parte no tuvo nada, lo dice en una frase. Lo escrito por alguien
      (sala, producto, motivo, vendedor) se escapa también para Markdown mediante $literal. --}}
 @php
+    // La versión de texto no pasa por markdown: ahí lo escrito va tal cual, sin las barras
+    // que lo protegen en el HTML («Súper 2-B», no «Súper 2\-B»). Va antes que todo lo que lo usa.
+    if (($message ?? null) instanceof \Illuminate\Mail\TextMessage) {
+        $literal = fn (?string $texto) => trim((string) preg_replace('/\s+/u', ' ', (string) $texto));
+    }
     $dinero = fn ($n) => ($n < 0 ? '−' : '').'$'.number_format(abs($n), 2);
     $plural = fn (int $n, string $uno, string $varios) => $n === 1 ? '1 '.$uno : $n.' '.$varios;
     $facturas = fn (int $n) => $plural($n, 'factura', 'facturas');
