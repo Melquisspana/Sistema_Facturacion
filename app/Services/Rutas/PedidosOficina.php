@@ -77,6 +77,7 @@ class PedidosOficina
             }
             $pedido = $this->bloquear($pedido, $usuario, $datos['version']);
             $antes = $this->foto($pedido);
+            $estadoAntes = $pedido->estado;
 
             if ($salaNueva !== null && $salaNueva->id !== $pedido->cliente_sucursal_id) {
                 $this->exigirSalaParaPedido($pedido, $salaNueva, $sinPedidos);
@@ -93,7 +94,8 @@ class PedidosOficina
             }
 
             activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
-                ->withProperties(['motivo' => trim($datos['motivo']), 'antes' => $antes, 'despues' => $despues])
+                ->withProperties(['motivo' => trim($datos['motivo']), 'antes' => $antes, 'despues' => $despues]
+                    + ($estadoAntes !== $pedido->estado ? ['estado_anterior' => $estadoAntes->value, 'estado_nuevo' => $pedido->estado->value] : []))
                 ->log(self::AUDITORIA_CORRIGE);
 
             return $pedido;
@@ -191,7 +193,8 @@ class PedidosOficina
      * ya mandado: 0 solo en lo que no salió nada (el producto anotado de más, 13/11/2026), y
      * no todo el pedido en 0 (eso es «Anular»). Lo marcado por la PC de pedidos que ya no
      * entra baja a lo que falta, y el estado sigue la regla de {@see PedidosFabrica}: sin nada
-     * por mandar, queda mandado. Devuelve lo quitado, para el después de la auditoría.
+     * por mandar, queda mandado; listo para salir, deja de estarlo (la caja ya no coincide).
+     * Devuelve lo quitado, para el después de la auditoría.
      *
      * @param  array<int|string, string>  $cantidades
      * @return list<array{producto_id: int, producto: ?string, cantidad: string}>
@@ -252,10 +255,16 @@ class PedidosOficina
                 'motivo_no_enviado' => bccomp($pendiente, '0', 4) === 1 ? $linea->motivo_no_enviado : null,
             ]);
         }
-        // El resto listo para salir sigue listo mientras falte algo (24/11/2026).
-        if ($pedido->envios->whereNull('anulado_en')->isNotEmpty()) {
-            $pedido->update(['estado' => ! $pedido->faltaAlgo() ? EstadoPedidoSala::Enviado
-                : ($pedido->estado === EstadoPedidoSala::Listo ? EstadoPedidoSala::Listo : EstadoPedidoSala::Parcial)]);
+        // Una caja «Listo para salir» con otras cantidades ya no coincide con el pedido: deja de
+        // estar lista y la fábrica la revisa de nuevo (24/11/2026). Pendiente sin envíos; con
+        // envíos, en parte, o mandado si ya no falta nada.
+        $conEnvios = $pedido->envios->whereNull('anulado_en')->isNotEmpty();
+        if ($conEnvios || $pedido->estado === EstadoPedidoSala::Listo) {
+            $pedido->update(['estado' => match (true) {
+                ! $conEnvios => EstadoPedidoSala::Registrado,
+                $pedido->faltaAlgo() => EstadoPedidoSala::Parcial,
+                default => EstadoPedidoSala::Enviado,
+            }]);
         }
 
         return $quitadas;
