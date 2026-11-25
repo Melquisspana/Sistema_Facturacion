@@ -95,4 +95,18 @@ class Establecimiento extends Model
     {
         return $this->hasMany(Correlativo::class);
     }
+
+    /**
+     * ¿Ya hay documentos de este establecimiento, propios o de sus correlativos? Para borrarlo
+     * o cambiarlo de empresa cuenta cualquiera, borradores incluidos. Para el código, solo los
+     * que ya tienen número (`$soloConNumero`): el código va en ese número y un borrador aún no lo lleva.
+     */
+    public function tieneDocumentos(bool $soloConNumero = false): bool
+    {
+        return Dte::query()
+            ->where(fn ($q) => $q->where('establecimiento_id', $this->id)
+                ->orWhereIn('correlativo_id', $this->correlativos()->select('id')))
+            ->when($soloConNumero, fn ($q) => $q->conNumero())
+            ->exists();
+    }
 }

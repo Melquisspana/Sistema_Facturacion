@@ -38,6 +38,8 @@ Route::middleware('auth')->group(function () {
     Route::get('confirm-password', [ConfirmablePasswordController::class, 'show'])
         ->name('password.confirm');
 
+    // Las dos tienen límite de intentos fallidos por cuenta, como el login: lo llevan sus
+    // controladores para avisar dentro del formulario y no frenar a quien acierta.
     Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
 
     Route::put('password', [PasswordController::class, 'update'])->name('password.update');

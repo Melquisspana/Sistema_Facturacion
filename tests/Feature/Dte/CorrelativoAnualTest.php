@@ -131,6 +131,8 @@ class CorrelativoAnualTest extends TestCase
 
     public function test_serie_sin_dtes_con_numeros_previos_se_reinicia_en_2027_y_se_audita(): void
     {
+        // El número se fija en 2026: sin documentos, es del año en que se guardó.
+        $this->en('2026-12-30 10:00:00');
         $this->correlativo->update(['ultimo_numero' => 22]);
         $this->en('2027-01-01 08:00:00');
 

@@ -120,4 +120,53 @@ class CorrelativoAnualMysqlTest extends TestCase
         $this->assertSame('000000000000002', substr((string) $b->numero_control, -15));
         $this->assertSame(2, $correlativo->refresh()->ultimo_numero);
     }
+
+    /**
+     * MySQL fija la foto de la transacción en la primera lectura común, que pasa antes de
+     * esperar el candado del correlativo. Si mientras tanto otro pedido confirma el primer
+     * documento del año, el que esperaba tiene que verlo igual: con la foto vieja creía que
+     * la numeración seguía en 2026, reiniciaba otra vez y volvía a sacar el 1.
+     *
+     * Para no depender de dos procesos, la conexión principal fija su foto ANTES de que la
+     * otra conexión genere y confirme, y recién después genera: es el mismo estado en que
+     * queda quien esperó el candado.
+     */
+    public function test_quien_espero_el_candado_ve_el_primer_documento_del_anio_que_confirmo_otro(): void
+    {
+        $emisor = $this->crearEmisorDte();
+        $correlativo = Correlativo::create([
+            'tipo_dte' => '03', 'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id, 'ambiente' => '00',
+            'ultimo_numero' => 0, 'activo' => true,
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-12-31 23:59:00', HoraNegocio::zona()));
+        app(DteGeneracionService::class)->generar($this->borradorCcf($emisor));
+
+        Carbon::setTestNow(Carbon::parse('2027-01-04 08:00:00', HoraNegocio::zona()));
+        $docA = $this->borradorCcf($emisor);
+        $docB = $this->borradorCcf($emisor);
+
+        config(['database.connections.mysql_concurrente' => config('database.connections.mysql')]);
+        $principal = DB::getDefaultConnection();
+
+        // 1. La principal abre su transacción y fija la foto con una lectura común.
+        DB::beginTransaction();
+        $docB = Dte::query()->findOrFail($docB->id);
+
+        // 2. Otra conexión genera y confirma el primer documento de 2027.
+        DB::setDefaultConnection('mysql_concurrente');
+        app(DteGeneracionService::class)->generar(Dte::query()->findOrFail($docA->id));
+        DB::setDefaultConnection($principal);
+
+        // 3. La principal genera con su foto vieja: tiene que sacar el 2, no repetir el 1.
+        app(DteGeneracionService::class)->generar($docB);
+        DB::commit();
+
+        $a = Dte::query()->findOrFail($docA->id);
+        $b = Dte::query()->findOrFail($docB->id);
+        $this->assertSame('000000000000001', substr((string) $a->numero_control, -15));
+        $this->assertSame('000000000000002', substr((string) $b->numero_control, -15));
+        $this->assertSame(2, $correlativo->refresh()->ultimo_numero);
+    }
 }

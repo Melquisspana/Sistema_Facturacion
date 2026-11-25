@@ -133,9 +133,16 @@ class AuditoriaConfiguracionTest extends TestCase
             'ambiente' => '01', 'serie' => null, 'ultimo_numero' => 100, 'activo' => true,
         ]);
 
-        // +1 = el motor de emisión consumiendo un número.
+        // +1 del motor de emisión, que marca el consumo, aunque el reloj haya avanzado.
+        $this->travel(5)->minutes();
+        $corr->consumoDelMotor = true;
         $corr->update(['ultimo_numero' => 101]);
         $this->assertSame('consumió el correlativo', $this->ultima(Correlativo::class)->description);
+
+        // El mismo +1 hecho a mano no es un consumo.
+        $corr = $corr->fresh();
+        $corr->update(['ultimo_numero' => 102]);
+        $this->assertSame('modificó el correlativo', $this->ultima(Correlativo::class)->description);
 
         // Cualquier otro salto es una edición manual, y se lee distinto en la auditoría.
         $corr->update(['ultimo_numero' => 200]);
