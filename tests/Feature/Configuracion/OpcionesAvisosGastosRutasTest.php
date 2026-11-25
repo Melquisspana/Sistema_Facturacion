@@ -130,6 +130,32 @@ class OpcionesAvisosGastosRutasTest extends TestCase
         $this->assertDatabaseHas('ajustes_sistema', ['clave' => 'alertas.lector.horario.1', 'valor' => '07:00-16:00']);
     }
 
+    /**
+     * Un horario que abre y cierra dentro de la MISMA hora es válido. Antes se comparaba
+     * la apertura entera («08:00») con solo la hora del cierre («08») y se rechazaba.
+     */
+    public function test_avisos_acepta_un_horario_del_lector_dentro_de_la_misma_hora(): void
+    {
+        config(['asistencia.enabled' => true]);
+        $admin = $this->admin();
+
+        $this->actingAs($admin)->put(route('configuracion.opciones.avisos.update'), [
+            $this->campo('alertas.lector.horario.6') => '08:00-08:45',
+        ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('configuracion.opciones.avisos'));
+
+        $this->assertDatabaseHas('ajustes_sistema', ['clave' => 'alertas.lector.horario.6', 'valor' => '08:00-08:45']);
+
+        // Abrir y cerrar a la misma hora, o cerrar antes, sigue sin valer.
+        foreach (['08:45-08:45', '08:45-08:00'] as $malo) {
+            $this->actingAs($admin)->from(route('configuracion.opciones.avisos'))
+                ->put(route('configuracion.opciones.avisos.update'), [$this->campo('alertas.lector.horario.7') => $malo])
+                ->assertSessionHasErrors($this->campo('alertas.lector.horario.7'));
+        }
+        $this->assertDatabaseMissing('ajustes_sistema', ['clave' => 'alertas.lector.horario.7']);
+    }
+
     public function test_avisos_guardar_dos_veces_lo_mismo_no_escribe_ni_audita_otra_vez(): void
     {
         $admin = $this->admin();
