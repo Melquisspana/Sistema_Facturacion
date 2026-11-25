@@ -7,6 +7,7 @@ use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -82,6 +83,12 @@ final class RegistrarAnticipo
                     ]);
                 }
 
+                if ($this->pagosDePlanilla()->where('a.pago_id', $pago->id)->exists()) {
+                    throw ValidationException::withMessages([
+                        'pago_id' => 'Ese pago es de una planilla, lo que se le pagó por su trabajo: no puede ser un anticipo.',
+                    ]);
+                }
+
                 if (PlanillaAnticipo::where('pago_id', $pago->id)->exists()) {
                     throw ValidationException::withMessages([
                         'pago_id' => 'Ese pago ya está registrado como anticipo. Un mismo pago no puede recuperarse dos veces.',
@@ -119,7 +126,8 @@ final class RegistrarAnticipo
 
     /**
      * Pagos de Gastos que podrían ser el anticipo de esta persona: los que se le
-     * hicieron a ella, siguen vigentes y todavía no están registrados como anticipo.
+     * hicieron a ella, siguen vigentes, no son de una planilla y todavía no están
+     * registrados como anticipo.
      *
      * La identidad es el NOMBRE, porque es lo que `gastos_pagos` guarda. No se fuerza
      * el enlace: si no aparece, el anticipo se registra igual sin pago.
@@ -133,8 +141,22 @@ final class RegistrarAnticipo
         return Pago::where('beneficiario', $empleado->nombre)
             ->whereNull('revertido_at')
             ->whereNotIn('id', $yaUsados)
+            ->whereNotIn('id', $this->pagosDePlanilla())
             ->orderByDesc('fecha')
             ->limit(25)
             ->get();
+    }
+
+    /**
+     * Pagos que saldan lo que una planilla le debía a una persona (su quincena, sus
+     * vacaciones…): son lo que cobró por trabajar, no un adelanto. Como anticipo, la
+     * planilla siguiente le descontaría lo que ya se había ganado.
+     */
+    private function pagosDePlanilla(): Builder
+    {
+        return DB::table('gastos_pago_aplicaciones as a')
+            ->join('gastos_cuotas as c', 'c.id', '=', 'a.cuota_id')
+            ->join('planilla_detalles as d', 'd.gasto_id', '=', 'c.gasto_id')
+            ->select('a.pago_id');
     }
 }
