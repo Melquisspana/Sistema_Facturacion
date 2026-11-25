@@ -444,6 +444,49 @@ class ListoParaSalirTest extends TestCase
             ->assertSee('Quitar de listos')->assertSee('name="listo" value="0"', false);
     }
 
+    /**
+     * En el celular, la barra fija de abajo apilaba cuatro botones y tapaba casi media pantalla.
+     * Ahí lleva solo «Dejar para después» e «Imprimir y mandar», como antes; los dos nuevos van
+     * arriba de la barra, sin fijar, con la misma acción. Desde la tableta (sm), en la barra.
+     */
+    public function test_en_el_celular_la_barra_fija_de_la_hoja_lleva_solo_dos_botones(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
+        $inicio = strpos($html, '<div class="sticky bottom-0');
+        $this->assertNotFalse($inicio);
+        $barra = substr($html, $inicio, strpos($html, '</form>', $inicio) - $inicio);
+        $arriba = substr($html, 0, $inicio);
+
+        // Las etiquetas <a>/<button> con su texto (los atributos pueden llevar «=>» de Alpine).
+        $botones = function (string $trozo): array {
+            preg_match_all('/<(?:a|button)\b((?:[^>"]|"[^"]*")*)>\s*(Imprimir para la caja|Listo para salir)\s*</', $trozo, $m, PREG_SET_ORDER);
+
+            return array_map(fn ($b) => ['texto' => $b[2], 'clases' => preg_match('/class="([^"]*)"/', $b[1], $c) ? $c[1] : ''], $m);
+        };
+
+        $enLaBarra = $botones($barra);
+        $this->assertSame(['Imprimir para la caja', 'Listo para salir'], array_column($enLaBarra, 'texto'));
+        foreach ($enLaBarra as $boton) {
+            $this->assertStringContainsString('hidden sm:inline-flex', $boton['clases'], $boton['texto'].' no va en la barra fija del celular');
+        }
+        $this->assertStringNotContainsString('hidden', implode(' ', $this->clasesDe($barra, 'Dejar para después')));
+
+        // En el celular, arriba de la barra y sin fijar.
+        $this->assertSame(1, preg_match('/<div class="[^"]*\bsm:hidden\b[^"]*">((?:(?!<\/div>).)*)<\/div>/s', $arriba, $celular));
+        $this->assertSame(['Imprimir para la caja', 'Listo para salir'], array_column($botones($celular[1]), 'texto'));
+        $this->assertStringContainsString('@click.prevent="sucio = true; salir($el.href)"', $celular[1]);
+        $this->assertStringContainsString('@click="salir(() => $refs.listo.submit())"', $celular[1]);
+    }
+
+    /** @return list<string> las clases de la etiqueta con ese texto */
+    private function clasesDe(string $html, string $texto): array
+    {
+        $this->assertSame(1, preg_match('/<(?:a|button)\b((?:[^>"]|"[^"]*")*)>\s*'.preg_quote($texto, '/').'\s*</', $html, $m), 'Falta «'.$texto.'».');
+
+        return preg_match('/class="([^"]*)"/', $m[1], $c) ? explode(' ', $c[1]) : [];
+    }
+
     // ══════════════════════════════ 4. la lista: «Listos para salir» arriba
 
     /** Lo que hay dentro de la sección con ese título (aria-label). */
