@@ -92,11 +92,14 @@
                 @foreach ($grupos as $grupo)
                     @continue ($grupo['pedidos']->isEmpty())
                     @if ($grupo['clave'] === 'facturados')
-                        {{-- Lo ya facturado va cerrado al final: se abre si hace falta. --}}
-                        <details class="mt-6">
+                        {{-- Lo ya facturado va cerrado al final: se abre si hace falta. Con el título en
+                             flex el navegador no dibuja el triangulito: «Ver» / «Ocultar», como en las
+                             filas, dice que se abre (sin group-open:, que no se usa en la app). --}}
+                        <details class="mt-6" x-data="{ abierto: false }" @toggle="abierto = $el.open">
                             <summary class="flex min-h-11 cursor-pointer items-center gap-2">
                                 <h2 class="{{ $titulo }}">{{ $grupo['titulo'] }}</h2>
                                 <span class="text-sm text-gray-500">· {{ $grupo['pedidos']->count() }}</span>
+                                <span class="text-sm text-indigo-600 underline" x-text="abierto ? 'Ocultar' : 'Ver'">Ver</span>
                             </summary>
                             <ul class="mt-3 space-y-3">
                                 @foreach ($grupo['pedidos'] as $pedido)

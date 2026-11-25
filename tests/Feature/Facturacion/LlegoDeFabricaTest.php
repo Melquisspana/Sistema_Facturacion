@@ -644,8 +644,12 @@ class LlegoDeFabricaTest extends TestCase
         $this->assertMatchesRegularExpression($this->facturar($lista), $respuesta->getContent());
         $this->assertDoesNotMatchRegularExpression($this->facturar($resto), $respuesta->getContent());
         $this->assertDoesNotMatchRegularExpression($this->facturar($hoy), $respuesta->getContent());
-        // Lo facturado va cerrado al final: se abre si hace falta.
-        $this->assertMatchesRegularExpression('/<details(?![^>]*\sopen)[^>]*>\s*<summary[^>]*>\s*<h2[^>]*>\s*Ya facturados hoy/', $respuesta->getContent());
+        // Lo facturado va cerrado al final: se abre si hace falta. Con el título en flex no sale
+        // el triangulito, así que lleva una pista que se ve: «Ver» (o «Ocultar»), como las filas.
+        $this->assertMatchesRegularExpression(
+            '/<details(?![^>]*\sopen)[^>]*>\s*<summary[^>]*>\s*<h2[^>]*>\s*Ya facturados hoy\s*<\/h2>(?:(?!<\/summary>).)*<span class="[^"]*text-indigo-600 underline"[^>]*x-text="abierto \? \'Ocultar\' : \'Ver\'"[^>]*>Ver<\/span>\s*<\/summary>/s',
+            $respuesta->getContent(),
+        );
     }
 
     /** Una fila por sala: los productos (Pidió, Llegó, Falta) se abren al tocarla. */
