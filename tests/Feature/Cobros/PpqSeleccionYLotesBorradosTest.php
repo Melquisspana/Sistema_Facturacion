@@ -169,6 +169,40 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $this->assertSame(1, Activity::where('description', 'ppq.lote_eliminado')->count());
     }
 
+    /** Doble clic en «Eliminar»: una sola baja en la auditoría, y el segundo no rompe nada. */
+    public function test_borrar_el_ppq_con_doble_clic_deja_una_sola_baja(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $user = $this->usuario();
+
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))->assertRedirect(route('ppq.lotes.index'));
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))->assertNotFound();
+
+        $this->assertSame(1, Activity::where('description', 'ppq.lote_eliminado')->count());
+        $this->assertSame([$doc->numero_control], Activity::where('description', 'ppq.lote_eliminado')->sole()->properties['volvieron_a_por_presentar']);
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->refresh()->presentacion_estado);
+        // Y la auditoría se abre con la baja adentro.
+        $this->actingAs($user)->get(route('auditoria.index'))->assertOk()->assertSee('ppq.lote_eliminado');
+    }
+
+    /** Quien solo consulta PPQ (Contabilidad, Jefatura) no lo borra: 403, el lote sigue y no queda una baja. */
+    public function test_sin_permiso_de_gestionar_ppq_no_se_borra_ni_queda_baja(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $estado = $doc->refresh()->presentacion_estado;
+
+        foreach ([RolSistema::Contabilidad, RolSistema::Jefatura] as $rol) {
+            $this->actingAs(User::factory()->create()->assignRole($rol->value))
+                ->delete(route('ppq.lotes.destroy', $lote))->assertForbidden();
+        }
+
+        $this->assertNotNull(PpqLote::find($lote->id));
+        $this->assertSame($estado, $doc->refresh()->presentacion_estado);
+        $this->assertSame(0, Activity::where('description', 'ppq.lote_eliminado')->count());
+    }
+
     public function test_un_lote_borrado_ya_no_bloquea_aunque_queden_sus_items(): void
     {
         $doc = $this->ccf();
