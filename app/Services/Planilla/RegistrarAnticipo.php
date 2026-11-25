@@ -74,10 +74,11 @@ final class RegistrarAnticipo
 
                 // Solo un pago a esta persona, como los que ofrece la pantalla
                 // ({@see pagosCandidatos()}): si no, se le descontaría del sueldo dinero
-                // que se le entregó a otro.
+                // que se le entregó a otro. El aviso no dice a quién se le pagó: puede ser
+                // un gasto que quien registra el anticipo no tiene por qué ver.
                 if ($pago->beneficiario !== $empleado->nombre) {
                     throw ValidationException::withMessages([
-                        'pago_id' => 'Ese pago se le hizo a '.$pago->beneficiario.', no a '.$empleado->nombre.': no puede ser su anticipo.',
+                        'pago_id' => 'Ese pago no se le hizo a '.$empleado->nombre.': no puede ser su anticipo.',
                     ]);
                 }
 

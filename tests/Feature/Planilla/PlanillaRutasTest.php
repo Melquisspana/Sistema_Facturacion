@@ -354,7 +354,7 @@ class PlanillaRutasTest extends TestCase
             [['cuota_id' => $cuota->id, 'importe' => '60.00']]);
 
         $this->actingAs($u)->post(route('planilla.anticipos.store', $empleado), $this->datosAnticipo(['pago_id' => $pagoAjeno->id]))
-            ->assertSessionHasErrors('pago_id');
+            ->assertSessionHasErrors(['pago_id' => 'Ese pago no se le hizo a Empleado de prueba: no puede ser su anticipo.']);
 
         $this->assertSame(0, PlanillaAnticipo::count());
     }
