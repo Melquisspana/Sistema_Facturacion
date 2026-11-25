@@ -103,15 +103,22 @@ class MesDePlanillaPorLasRutasTest extends TestCase
         $planilla = Planilla::latest('id')->firstOrFail();
         $this->assertSame('borrador', $planilla->estado, 'Con un anticipo por descontar, la planilla espera a que alguien lo elija.');
 
-        $this->actingAs($this->oficina)->put(route('planilla.guardar', $planilla), ['lineas' => [
+        $this->actingAs($this->oficina)->put(route('planilla.guardar', $planilla), $this->lineasConAnticipo($anticipo))
+            ->assertSessionHasNoErrors()->assertRedirect(route('planilla.impresos', $planilla));
+
+        return $planilla->fresh();
+    }
+
+    /** @return array{lineas: list<array<string, mixed>>} lo que manda «Preparar» con el anticipo elegido */
+    private function lineasConAnticipo(PlanillaAnticipo $anticipo): array
+    {
+        return ['lineas' => [
             ['planilla_empleado_id' => $this->conDescuentos->id, 'salario' => '204.40', 'conceptos' => [
                 ['tipo' => 'descuento', 'concepto' => 'Anticipo', 'importe' => '50.00',
                     'destino' => 'anticipo', 'planilla_anticipo_id' => $anticipo->id],
             ]],
             ['planilla_empleado_id' => $this->sinDescuentos->id, 'salario' => '204.40'],
-        ]])->assertSessionHasNoErrors()->assertRedirect(route('planilla.impresos', $planilla));
-
-        return $planilla->fresh();
+        ]];
     }
 
     private function detalleDe(Planilla $planilla, PlanillaEmpleado $empleado): PlanillaDetalle
@@ -152,6 +159,10 @@ class MesDePlanillaPorLasRutasTest extends TestCase
         $this->assertSame('confirmada', $primera->estado);
         $this->assertSame(0, $anticipo->fresh()->pendiente());
         $this->assertSame(['AFP' => 1482, $nombre => 13345, 'ISSS' => 613, $otra => 20440], $this->pendientes($primera));
+        // Doble clic en «Generar» desde Preparar: la confirmada ya no se toca.
+        $this->actingAs($this->oficina)->put(route('planilla.guardar', $primera), $this->lineasConAnticipo($anticipo))->assertSessionHasErrors();
+        $this->assertSame(['AFP' => 1482, $nombre => 13345, 'ISSS' => 613, $otra => 20440], $this->pendientes($primera));
+        $this->assertSame(4, Gasto::count());
 
         // El lote, con doble clic: cada persona cobra una sola vez lo suyo.
         $lote = $this->datosPago(['detalles' => PlanillaDetalle::where('planilla_id', $primera->id)->pluck('id')->all()]);
