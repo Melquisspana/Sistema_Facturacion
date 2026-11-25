@@ -12,6 +12,9 @@ use App\Support\WorkerHeartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -230,12 +233,18 @@ class SistemaTest extends TestCase
 
     public function test_respaldar_devuelve_a_la_pantalla_con_un_mensaje(): void
     {
+        // Sin mysqldump real ni la carpeta real de respaldos: en una máquina con MySQL
+        // volcaba la base de verdad y corría la limpieza de respaldos viejos.
+        // El recorrido completo está en SistemaRespaldarRutaTest.
+        Process::fake(['*' => Process::result(output: '', exitCode: 2)]);
+        Storage::fake('backups');
+        Sleep::fake();
+
         $respuesta = $this->actingAs($this->admin())->post(route('configuracion.sistema.respaldar'));
 
         $respuesta->assertRedirect(route('configuracion.sistema'));
 
-        // Éxito o error según pueda o no volcar la base esta máquina; lo que no
-        // puede pasar es que la acción termine sin decir nada.
+        // Lo que no puede pasar es que la acción termine sin decir nada.
         $this->assertTrue(
             session()->has('status') || session()->has('error'),
             'La acción debe informar su desenlace.',
