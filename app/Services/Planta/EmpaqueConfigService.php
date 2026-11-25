@@ -73,17 +73,7 @@ class EmpaqueConfigService
      */
     public function marcarPredeterminada(PlantaEmpaqueConfig $config): PlantaEmpaqueConfig
     {
-        return DB::transaction(function () use ($config) {
-            if (! $config->activo) {
-                throw ValidationException::withMessages([
-                    'es_predeterminada' => 'Una configuración inactiva no puede ser la predeterminada.',
-                ]);
-            }
-
-            $config->es_predeterminada = true;
-
-            return $this->guardar($config, true);
-        });
+        return DB::transaction(fn () => $this->guardar($config, true));
     }
 
     /**
@@ -172,9 +162,21 @@ class EmpaqueConfigService
     /**
      * Persiste dentro de la transacción abierta, resolviendo antes la
      * predeterminada anterior si hace falta.
+     *
+     * Una inactiva no ocupa el lugar de predeterminada. Se mira cómo queda la FILA
+     * (ya con fill()), no lo que trajo la petición: así vale para crear, actualizar y
+     * marcarPredeterminada aunque falte la clave `activo`. Se comprueba antes de
+     * bloquear o tocar a las hermanas. En una nueva sin `activo` manda el valor por
+     * defecto de la columna (activa).
      */
     private function guardar(PlantaEmpaqueConfig $config, bool $predeterminada): PlantaEmpaqueConfig
     {
+        if ($predeterminada && $config->activo === false) {
+            throw ValidationException::withMessages([
+                'es_predeterminada' => 'Una configuración inactiva no puede ser la predeterminada.',
+            ]);
+        }
+
         $config->es_predeterminada = $predeterminada;
 
         if ($predeterminada) {
@@ -241,14 +243,7 @@ class EmpaqueConfigService
     private function validar(array $datos, ?PlantaEmpaqueConfig $config): void
     {
         $this->validarMercado($datos);
-
-        // La misma regla que marcarPredeterminada(): una inactiva no ocupa ese lugar.
-        if (($datos['es_predeterminada'] ?? false) && ! ($datos['activo'] ?? true)) {
-            throw ValidationException::withMessages([
-                'es_predeterminada' => 'Una configuración inactiva no puede ser la predeterminada.',
-            ]);
-        }
-
+        // «Inactiva no puede ser predeterminada» se comprueba en guardar(), sobre la fila.
         $this->validarPresentacion($datos, $config);
         $this->validarInsumos($datos, $config);
         $this->validarVigencia($datos);
