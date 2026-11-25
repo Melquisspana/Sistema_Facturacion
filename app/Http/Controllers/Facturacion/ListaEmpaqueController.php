@@ -171,6 +171,16 @@ class ListaEmpaqueController extends Controller
         $datos = $request->validated();
         $avisos = [];
 
+        // Una línea con id tiene que ser de ESTA lista. Con la de otra se borraban todas
+        // las suyas, la ajena no se tocaba y la lista quedaba sin productos.
+        $ajenas = collect($datos['items'])->pluck('id')->filter()->map(fn ($id) => (int) $id)
+            ->diff($lista->items()->pluck('id')->map(fn ($id) => (int) $id));
+        if ($ajenas->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'Una de las líneas no es de esta lista. Recargá la página y volvé a guardar.',
+            ]);
+        }
+
         DB::transaction(function () use ($lista, $datos, &$avisos) {
             $lista->update(collect($datos)->except('items')->all());
 
