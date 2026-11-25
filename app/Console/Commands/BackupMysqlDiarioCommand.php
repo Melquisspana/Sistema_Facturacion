@@ -91,13 +91,22 @@ class BackupMysqlDiarioCommand extends Command
         }
 
         $salida = $resultado->output();
-        Storage::disk('backups')->put($nombre, $salida);
+        // `put` da false si el disco no pudo guardarlo (lleno, sin permiso) y puede dejar
+        // un pedazo: la marca se busca en la salida, así que sin esta comprobación un
+        // archivo cortado quedaría registrado como respaldo bueno.
+        $guardado = Storage::disk('backups')->put($nombre, $salida);
 
-        $tamano = (int) Storage::disk('backups')->size($nombre);
+        $tamano = $guardado ? (int) Storage::disk('backups')->size($nombre) : 0;
         $marcaOk = $this->terminaEnDumpCompleted($salida);
 
-        if ($tamano <= 0 || ! $marcaOk) {
-            $motivo = $tamano <= 0 ? 'el archivo generado está vacío' : 'no se encontró la marca "Dump completed" al final de la salida';
+        $motivo = match (true) {
+            ! $guardado || $tamano !== strlen($salida) => 'el archivo no quedó entero en la carpeta de respaldos (¿disco lleno?)',
+            $tamano <= 0 => 'el archivo generado está vacío',
+            ! $marcaOk => 'no se encontró la marca "Dump completed" al final de la salida',
+            default => null,
+        };
+
+        if ($motivo !== null) {
             Storage::disk('backups')->delete($nombre); // nunca dejar un dump parcial/corrupto en backups/
             $this->registrar($iniciadoEn, false, null, null, null, 'Backup inválido: '.$motivo.'.', $origen);
             $this->error('Falló la verificación del backup: '.$motivo.'. Se eliminó el archivo parcial.');

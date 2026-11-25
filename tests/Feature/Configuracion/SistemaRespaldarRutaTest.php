@@ -4,6 +4,7 @@ namespace Tests\Feature\Configuracion;
 
 use App\Models\RespaldoEjecucion;
 use App\Models\User;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
@@ -93,6 +94,39 @@ class SistemaRespaldarRutaTest extends TestCase
         $this->assertFalse($respaldo->exitoso);
         $this->assertSame('manual', $respaldo->origen);
         $this->assertNull($respaldo->archivo_ruta);
+        $this->assertSame([], Storage::disk('backups')->allFiles());
+    }
+
+    /**
+     * El disco se llena a mitad de camino: guarda un pedazo y avisa que no pudo. Ese
+     * respaldo no puede figurar como «generado y verificado»: queda registrado como
+     * fallido y el pedazo no se queda en la carpeta.
+     */
+    public function test_si_el_disco_no_guarda_el_respaldo_entero_queda_como_fallido_y_sin_pedazos(): void
+    {
+        Process::fake(['*' => Process::result(output: $this->dumpValido())]);
+        $falso = Storage::disk('backups');
+        Storage::set('backups', new class($falso->getDriver(), $falso->getAdapter(), $falso->getConfig()) extends FilesystemAdapter
+        {
+            public function put($path, $contents, $options = [])
+            {
+                parent::put($path, substr((string) $contents, 0, 12), $options);
+
+                return false;
+            }
+        });
+
+        $this->actingAs($this->admin())
+            ->post(route('configuracion.sistema.respaldar'))
+            ->assertRedirect(route('configuracion.sistema'))
+            ->assertSessionHas('error', 'El respaldo terminó con código 1. Revisá el registro del servidor.');
+
+        $respaldo = RespaldoEjecucion::query()->sole();
+        $this->assertFalse($respaldo->exitoso);
+        $this->assertSame('manual', $respaldo->origen);
+        $this->assertNull($respaldo->archivo_ruta);
+        $this->assertNull($respaldo->sha256);
+        $this->assertStringContainsString('no quedó entero', $respaldo->mensaje);
         $this->assertSame([], Storage::disk('backups')->allFiles());
     }
 
