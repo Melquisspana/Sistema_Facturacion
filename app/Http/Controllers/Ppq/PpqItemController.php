@@ -398,6 +398,9 @@ class PpqItemController extends Controller
             return back()->with('error', 'El lote está en estado '.$lote->refresh()->estado->label().' y no admite cambios.');
         }
         $documento = ($item->esNc() ? 'la NC ' : 'el CCF ').$item->correlativoNumero();
+        if ($r['quedan_generado'] !== null) {
+            return back()->with('error', "No se quitó {$documento}: registrá primero la presentación del quedan {$r['quedan_generado']} y después quitalo.");
+        }
         if (! $r['quitado']) {
             return back()->with('error', match (true) {
                 $r['conservado']?->estaConciliado() === true => "No se quitó {$documento}: ya tiene un cobro registrado.",
@@ -411,7 +414,7 @@ class PpqItemController extends Controller
         if ($item->esNc()) {
             $mensaje .= '.';
         } elseif ($r['devueltos']->isNotEmpty()) {
-            $mensaje .= ' y volvió a por presentar.';
+            $mensaje .= $r['quedan'] !== null ? " y del quedan {$r['quedan']}, y volvió a por presentar." : ' y volvió a por presentar.';
         } elseif (($fila = $r['conservados']->first()) !== null) {
             $mensaje .= ', pero no volvió a por presentar: '.$fila['motivo'].'.';
         } elseif ($r['sin_cambio']->isNotEmpty()) {

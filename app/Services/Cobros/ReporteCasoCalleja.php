@@ -31,7 +31,11 @@ use Throwable;
  *    En las observaciones del lote queda la lista de lo que salió. Lo que ya se había
  *    presentado en un lote anterior no se toca;
  *  · las NC de los CCF que quedan se quedan con ellos, salvo que el reporte liste NC y esa
- *    no venga: Calleja la rechazó, sale y va en el siguiente PPQ (03/11/2026).
+ *    no venga: Calleja la rechazó, sale y va en el siguiente PPQ (03/11/2026);
+ *  · un CCF devuelto que iba en un quedan presentado desde Cobros sin acuse sale también de
+ *    ese quedan ({@see SoltarCcfDelQuedan}), para poder ir en otro. Si el quedan no tiene la
+ *    presentación registrada o ya tiene el acuse, no podría ir en otro: no sale del lote ni
+ *    vuelve a «por presentar», y queda en `retenidos` con el motivo.
  *
  * Volver a cargar el mismo reporte no cambia nada, y corrige un lote cargado antes de que
  * los devueltos salieran (decisión del usuario, 13/10/2026).
@@ -72,7 +76,7 @@ class ReporteCasoCalleja
 
     /**
      * @param  array{caso: string, documentos: array<string, string>}  $reporte
-     * @return array{caso: string, recibidos: int, no_en_seguimiento: array<int, string>, devueltos: array<int, CobroDocumento>, items_quitados: Collection, conservados: Collection}
+     * @return array{caso: string, recibidos: int, no_en_seguimiento: array<int, string>, devueltos: array<int, CobroDocumento>, items_quitados: Collection, conservados: Collection, retenidos: array<int, array{documento: CobroDocumento, motivo: string}>}
      */
     public function aplicar(Cliente $cliente, array $reporte, ?User $usuario = null, ?PpqLote $lote = null): array
     {
@@ -83,12 +87,21 @@ class ReporteCasoCalleja
         $porClave = CobroDocumento::deCliente($cliente->id)->get()
             ->keyBy(fn (CobroDocumento $d) => EjercicioControl::llave($d->numero_control, $d->ejercicio_control));
 
-        $resultado = ['caso' => $caso, 'recibidos' => 0, 'no_en_seguimiento' => [], 'devueltos' => [], 'items_quitados' => collect(), 'conservados' => collect()];
+        $resultado = ['caso' => $caso, 'recibidos' => 0, 'no_en_seguimiento' => [], 'devueltos' => [], 'items_quitados' => collect(), 'conservados' => collect(), 'retenidos' => []];
 
         DB::transaction(function () use ($registrados, $traeNc, $porClave, $caso, $usuario, $lote, &$resultado) {
             $lote ??= ($id = $this->loteDelCaso($registrados, $porClave->values())) !== null ? PpqLote::find($id) : null;
             $lote = $lote ? PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail() : null;
             $items = $lote ? $lote->items()->with('dte')->get() : collect();
+            // Los quedanes de Cobros de sus CCF se bloquean ANTES que los CCF, en el orden del
+            // acuse y de la presentación, y se decide con lo releído bajo candado.
+            $salida = app(SoltarCcfDelQuedan::class);
+            $docsCcf = $items->where('tipo_dte', '03')->map(fn ($i) => $this->documentoDelItem($i, $porClave->values()))->filter()->unique('id')->values();
+            $quedanes = $salida->bloquearQuedanes($docsCcf);
+            if ($docsCcf->isNotEmpty()) {
+                CobroDocumento::whereKey($docsCcf->pluck('id')->all())->orderBy('id')->lockForUpdate()->get();
+                $docsCcf->each->refresh();
+            }
             // El reporte solo trae números; el lote aporta el ejercicio. Sin lote,
             // únicamente una coincidencia en el seguimiento permite resolverlo.
             $resueltos = [];
@@ -118,6 +131,17 @@ class ReporteCasoCalleja
                 return $doc && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $ambiguos, true) && ! in_array(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control), $registrados, true)
                     && ! $anteriores->contains(fn ($anterior) => $this->mismoDocumento($anterior, $doc))
                     && $doc->pago_estado === EstadoPagoCobro::Pendiente;
+            });
+            // El que no puede salir de su quedan tampoco sale del lote: queda como está y se
+            // avisa. Sus NC se quedan con él.
+            $devueltos = $devueltos->reject(function ($item) use ($porClave, $salida, $quedanes, &$resultado) {
+                $doc = $this->documentoDelItem($item, $porClave->values());
+                $motivo = $salida->motivoParaRetener($item, $doc, $quedanes);
+                if ($motivo !== null) {
+                    $resultado['retenidos'][] = ['documento' => $doc, 'motivo' => $motivo];
+                }
+
+                return $motivo !== null;
             });
             foreach ($items->where('tipo_dte', '05') as $item) {
                 $ccf = $this->ccfDeNota($item, $items);
@@ -172,11 +196,20 @@ Caso {$caso} de Calleja."),
                 if ($otros->has(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control)) || ($doc->dte_id && $otros->has('dte:'.$doc->dte_id))) {
                     continue;
                 }
-                $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value])->save();
+                $item = $devueltos->first(fn ($i) => $i->tipo_dte === '03' && $this->mismoDocumento($i, $doc));
+                $quedan = $item ? $salida->quedanQueSuelta($item, $doc, $quedanes) : null;
+                if ($quedan !== null) {
+                    $salida->soltar($doc, $quedan, $usuario, "un CCF salió del quedan presentado: el cliente no lo tomó en el caso {$caso}",
+                        ['ppq_lote_id' => $lote->id, 'caso' => $caso]);
+                } else {
+                    $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value])->save();
+                }
                 CobroEvento::firstOrCreate(
                     ['cobro_documento_id' => $doc->id, 'tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => 'caso-'.$caso.'-fuera'],
                     ['origen' => 'manual', 'fecha' => today()->toDateString(), 'user_id' => $usuario?->id,
-                        'detalle' => "Calleja no lo tomó en el caso {$caso}: va en el siguiente PPQ.", 'datos' => ['caso' => $caso, 'ppq_lote_id' => $lote->id]],
+                        'detalle' => "Calleja no lo tomó en el caso {$caso}: va en el siguiente PPQ."
+                            .($quedan !== null ? " Salió del quedan presentado {$quedan->referencia}." : ''),
+                        'datos' => ['caso' => $caso, 'ppq_lote_id' => $lote->id] + ($quedan !== null ? ['cobro_solicitud_id' => $quedan->id] : [])],
                 );
                 $resultado['devueltos'][] = $doc;
             }

@@ -25,7 +25,7 @@
                         Generar formato quedan
                     </a>
                 @endif
-                @if ($lote->esEditable())
+                @if ($lote->seEditaSegun($estadoReal))
                     @can('ppq.gestionar')
                         <a href="{{ route('ppq.lotes.edit', $lote) }}" class="inline-flex min-h-11 sm:min-h-0 items-center rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
                     @endcan
@@ -332,7 +332,8 @@
                                                 </form>
                                             @endcan
                                         @elseif ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
-                                            <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm('¿Quitar este documento del PPQ?')">
+                                            {{-- Si el CCF sale también de su quedan presentado, el aviso lo dice: volver a agregarlo al lote no lo une otra vez al quedan. --}}
+                                            <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm(@js('¿Quitar este documento del PPQ?'.(isset($quedanAlQuitar[$item->id]) ? ' También sale del quedan '.$quedanAlQuitar[$item->id].' y vuelve a por presentar. Hacelo solo si '.$nombreCliente.' no lo aceptó. No se puede deshacer.' : '')))">
                                                 @csrf @method('DELETE')
                                                 <button class="inline-flex min-h-11 sm:min-h-0 items-center text-xs text-red-600 hover:underline">quitar</button>
                                             </form>
@@ -421,7 +422,8 @@
                 </div>
             @endif
 
-            @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
+            {{-- La misma regla que «Editar» y que el servidor: un lote presentado desde Cobros sigue en borrador en su columna y no se elimina, ni el que tiene sus CCF en un quedan armado en Cobros sin la presentación registrada. --}}
+            @if ($lote->seEditaSegun($estadoReal) && $quedanSinRegistrar === null && auth()->user()->can('ppq.gestionar'))
                 <div class="flex justify-end">
                     <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote? Los CCF sin pagar vuelven a por presentar.')">
                         @csrf @method('DELETE')

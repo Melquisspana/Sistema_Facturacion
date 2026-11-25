@@ -4,6 +4,7 @@ namespace Tests\Feature\Cobros;
 
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
+use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\EstadoPpq;
@@ -13,12 +14,14 @@ use App\Enums\TipoNotaCredito;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Cobros\CobroSolicitud;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\QuedanCallejaExporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -269,6 +272,119 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertNotContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
     }
 
+    /** Un quedan de Cobros con este CCF, armado después del lote y en el estado pedido. */
+    private function quedanCon(CobroDocumento $doc, EstadoSolicitudCobro $estado): CobroSolicitud
+    {
+        $this->travel(1)->seconds();
+        $quedan = CobroSolicitud::create(['cliente_id' => $this->cliente->id, 'referencia' => 'SOL-PRUEBA-'.$estado->value,
+            'formato' => 'carga_masiva_nc_v1', 'archivo_nombre' => 'ficticio.xlsx']);
+        $quedan->forceFill(['estado' => $estado->value])->save();
+        $doc->refresh()->forceFill(['cobro_solicitud_id' => $quedan->id, 'presentacion_estado' => $estado->presentacionDeDocumentos()->value])->save();
+
+        return $quedan->refresh();
+    }
+
+    /**
+     * C iba en un quedan presentado desde Cobros, todavía sin acuse, y el TXT no lo pagó: al
+     * dejarlo listo para el próximo PPQ sale también de ese quedan, con constancia en su
+     * historial y en la bitácora del quedan, y el acuse posterior del quedan viejo no lo toca.
+     * Antes volvía a «por presentar» colgado del quedan viejo y Cobros no armaba otro con él.
+     */
+    public function test_lo_no_pagado_de_un_quedan_presentado_sin_acuse_sale_tambien_del_quedan(): void
+    {
+        $e = $this->escenario();
+        $quedan = $this->quedanCon($e['c'], EstadoSolicitudCobro::Presentada);
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente),
+            ['hash' => $hash, 'items' => [$this->item($e['lote'], $e['c']->dte_id)->id]])
+            ->assertSessionHasNoErrors()->assertSessionHas('status');
+
+        $c = $e['c']->refresh();
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $c->presentacion_estado);
+        $this->assertNull($c->cobro_solicitud_id);
+        $nota = $c->eventos()->where('referencia_linea', 'like', 'txt-%-fuera')->sole();
+        $this->assertStringContainsString("Salió del quedan presentado {$quedan->referencia}", $nota->detalle);
+        $this->assertSame($quedan->id, $nota->datos['cobro_solicitud_id']);
+        $bitacora = Activity::where('log_name', 'cobros_solicitud')->sole();
+        $this->assertTrue($bitacora->subject->is($quedan));
+        $this->assertSame($c->id, $bitacora->properties['cobro_documento_id']);
+
+        app(SolicitudCobroService::class)->registrarRecibido($quedan, '41030', usuario: $usuario);
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $c->refresh()->presentacion_estado);
+        $this->assertSame(0, $c->eventos()->where('tipo', 'recibido')->count());
+    }
+
+    /**
+     * Con el acuse del quedan ya registrado, lo no pagado no se devuelve: quedaría «por
+     * presentar» sin poder ir en otro quedan. El aviso lo dice y no cambia nada (todo o nada).
+     */
+    public function test_lo_no_pagado_de_un_quedan_con_acuse_no_se_devuelve_y_no_cambia_nada(): void
+    {
+        $e = $this->escenario();
+        $quedan = $this->quedanCon($e['c'], EstadoSolicitudCobro::Recibida);
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+        $itemC = $this->item($e['lote'], $e['c']->dte_id);
+        $itemNc = $this->item($e['lote'], $e['n1']->id);
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), ['hash' => $hash, 'items' => [$itemC->id, $itemNc->id]])
+            ->assertSessionHasErrors(['items' => "{$e['c']->numero_control}: no se devuelve, porque va en el quedan {$quedan->referencia}, que ya tiene el acuse del cliente."]);
+
+        $c = $e['c']->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $c->presentacion_estado);
+        $this->assertSame($quedan->id, $c->cobro_solicitud_id);
+        $this->assertFalse($c->eventos()->where('referencia_linea', 'like', 'txt-%-fuera')->exists());
+        $this->assertSame(1, $e['lote']->items()->whereKey($itemC->id)->count());
+        $this->assertSame(1, $e['lote']->items()->whereKey($itemNc->id)->count());
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
+    /**
+     * B iba en un quedan presentado sin acuse y el TXT lo pagó de menos: el pago ya lo da por
+     * recibido. No se devuelve (no podría ir en otro quedan) y el aviso dice el motivo real.
+     * Antes decía que ese quedan «no se armó con este PPQ», que es falso.
+     */
+    public function test_lo_pagado_de_menos_de_un_quedan_sin_acuse_no_se_devuelve_porque_el_cliente_ya_lo_recibio(): void
+    {
+        $e = $this->escenario();
+        $quedan = $this->quedanCon($e['b'], EstadoSolicitudCobro::Presentada);
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+        $itemB = $this->item($e['lote'], $e['b']->dte_id);
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), ['hash' => $hash, 'items' => [$itemB->id]])
+            ->assertSessionHasErrors(['items' => "{$e['b']->numero_control}: no se devuelve, porque va en el quedan {$quedan->referencia} y el cliente ya lo recibió."]);
+
+        $b = $e['b']->refresh();
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $b->presentacion_estado);
+        $this->assertSame($quedan->id, $b->cobro_solicitud_id);
+        $this->assertFalse($b->eventos()->where('referencia_linea', 'like', 'txt-%-fuera')->exists());
+        $this->assertSame(0, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
+    /** Doble clic en «Dejar listos»: el segundo envío se rechaza entero y no saca nada más del quedan. */
+    public function test_doble_clic_al_dejar_listo_lo_no_pagado_de_un_quedan_no_lo_saca_dos_veces(): void
+    {
+        $e = $this->escenario();
+        $this->quedanCon($e['c'], EstadoSolicitudCobro::Presentada);
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
+        $itemC = $this->item($e['lote'], $e['c']->dte_id);
+        $pedido = ['hash' => $hash, 'items' => [$itemC->id]];
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), $pedido)->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), $pedido)
+            ->assertSessionHasErrors(['items' => "Item #{$itemC->id}: no corresponde a los pendientes de este TXT."]);
+
+        $c = $e['c']->refresh();
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $c->presentacion_estado);
+        $this->assertNull($c->cobro_solicitud_id);
+        $this->assertSame(1, $c->eventos()->where('referencia_linea', 'like', 'txt-%-fuera')->count());
+        $this->assertSame(1, Activity::where('log_name', 'cobros_solicitud')->count());
+    }
+
     /** Sala, número y tipo de cada fila del archivo de quedan del lote. */
     private function filasQuedan(PpqLote $lote): array
     {
@@ -318,6 +434,9 @@ class CobrosTxtNoPagadosTest extends TestCase
     public function test_el_pagado_de_menos_reenviado_vuelve_a_por_presentar_si_se_borra_el_ppq_nuevo(): void
     {
         [$b, $nuevo, $usuario] = $this->pagadoDeMenosEnPpqNuevo();
+        // El lote nuevo se está armando aunque su CCF traiga el pago de menos del lote viejo:
+        // la ficha ofrece eliminarlo, igual que el servidor.
+        $this->actingAs($usuario)->get(route('ppq.lotes.show', $nuevo))->assertOk()->assertSee('Eliminar lote');
 
         $this->actingAs($usuario)->delete(route('ppq.lotes.destroy', $nuevo))
             ->assertSessionHas('status', 'Lote PPQ eliminado. 1 CCF volvieron a por presentar.');

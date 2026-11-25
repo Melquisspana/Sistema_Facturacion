@@ -13,6 +13,7 @@ use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -110,6 +111,15 @@ class ClienteSucursalController extends Controller
     {
         $this->authorize('update', $cliente);
         $this->verificarPertenencia($cliente, $sucursal);
+
+        $movimientos = $sucursal->movimientos();
+        if ($movimientos !== []) {
+            return redirect()
+                ->route('clientes.show', $cliente)
+                ->with('error', 'No se eliminó la sala «'.$sucursal->nombre.'»: tiene '.Arr::join($movimientos, ', ', ' y ')
+                    .' que quedarían sin sala. Inactivala para que no se use más.')
+                ->with('sala_destacada', $sucursal->id);
+        }
 
         $sucursal->delete(); // soft delete
 

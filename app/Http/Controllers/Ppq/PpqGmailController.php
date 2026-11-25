@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Ppq;
 
+use App\Ajustes\AuditoriaAjustes;
 use App\Ajustes\Integraciones\DesconectarGmail;
 use App\Facades\Ajustes;
 use App\Http\Controllers\Controller;
@@ -34,7 +35,7 @@ class PpqGmailController extends Controller
         return redirect()->away($gmail->authUrl($state));
     }
 
-    public function callback(Request $request, GmailClient $gmail): RedirectResponse
+    public function callback(Request $request, GmailClient $gmail, AuditoriaAjustes $auditoria): RedirectResponse
     {
         if ($request->filled('error')) {
             return redirect()->route('ppq.index')->with('error', 'Autorización de Gmail cancelada.');
@@ -59,6 +60,8 @@ class PpqGmailController extends Controller
 
             return redirect()->route('ppq.index')->with('error', 'No se pudo conectar Gmail y Drive. Revisá la configuración de Google y volvé a autorizar.');
         }
+
+        $auditoria->integracionConectada('Gmail', filled($cuenta->email) ? $cuenta->email : 'cuenta sin correo registrado');
 
         return redirect()->route('ppq.index')
             ->with('status', 'Gmail conectado'.($cuenta->email ? ' ('.$cuenta->email.')' : '').'. Ya podés buscar CCF.');

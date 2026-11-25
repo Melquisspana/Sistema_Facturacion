@@ -17,7 +17,10 @@ use Illuminate\Support\Carbon;
  * - Guarda el precio del archivo como precio especial del cliente en
  *   producto_precios_cliente (sin duplicar el activo).
  * - Solo importa filas con precio numérico; las demás se ignoran.
- * - El precio general del producto solo se fija al CREARLO (no se pisa si ya existe).
+ * - Una fila con «activo» en No (el archivo de «Exportar» trae también los inactivos) se
+ *   ignora: caía sobre el precio vigente y le ponía el precio y la fecha del inactivo.
+ * - El precio general del producto, su tipo, impuesto, inventario y si está activo solo se
+ *   fijan al CREARLO (no se pisan si ya existe).
  * Idempotente.
  */
 class ImportadorProductosPrecios
@@ -38,13 +41,14 @@ class ImportadorProductosPrecios
         'precio' => 'precio',
         'precio_calleja' => 'precio',
         'costo' => 'precio',
+        'activo' => 'activo',
     ];
 
     public function __construct(private readonly LectorCsv $lector) {}
 
     public function importar(Cliente $cliente, string $ruta): ResultadoImportacion
     {
-        $resultado = new ResultadoImportacion();
+        $resultado = new ResultadoImportacion;
         $filas = $this->lector->leer($ruta, self::ALIAS);
 
         $unidadId = UnidadMedida::where('codigo', '59')->value('id')
@@ -61,6 +65,11 @@ class ImportadorProductosPrecios
             $precio = $this->parsearPrecio($registro['precio'] ?? '');
             $etiqueta = $descripcion !== '' ? $descripcion : ($codigo !== '' ? $codigo : '(sin nombre)');
 
+            if (mb_strtolower($registro['activo'] ?? '') === 'no') {
+                $resultado->ignorada($numero, $etiqueta, 'Precio inactivo en el archivo: no se toca el precio vigente.');
+
+                continue;
+            }
             if ($precio === null) {
                 $resultado->ignorada($numero, $etiqueta, 'Precio vacío o no numérico.');
 
@@ -75,31 +84,35 @@ class ImportadorProductosPrecios
             // Producto por código interno (o por barra si no hay código).
             $producto = $codigo !== ''
                 ? Producto::firstOrNew(['codigo' => $codigo])
-                : (Producto::where('codigo_barra', $barra)->first() ?? new Producto());
+                : (Producto::where('codigo_barra', $barra)->first() ?? new Producto);
 
             $creado = ! $producto->exists;
 
             $producto->codigo = $codigo !== '' ? $codigo : ($producto->codigo ?? $barra);
             $producto->nombre = $descripcion !== '' ? $descripcion : ($producto->nombre ?? $codigo);
             $producto->codigo_barra = $barra ?: $producto->codigo_barra;
-            $producto->tipo_producto = TipoProducto::Bien->value;
-            $producto->tipo_impuesto = TipoImpuesto::Gravado->value;
             $producto->unidad_medida_id = $producto->unidad_medida_id ?? $unidadId;
-            $producto->maneja_inventario = false;
-            $producto->activo = true;
             if (! empty($registro['empaque'])) {
                 $producto->observaciones = 'Empaque: '.$registro['empaque'];
             }
+            // El archivo es de precios: no dice tipo, impuesto, inventario ni si el producto
+            // está activo. Esos valores van solo al crearlo; a uno que ya existe se le dejan
+            // los suyos (un exento no pasa a gravado, un inactivo no vuelve al catálogo).
             if ($creado) {
+                $producto->tipo_producto = TipoProducto::Bien->value;
+                $producto->tipo_impuesto = TipoImpuesto::Gravado->value;
+                $producto->maneja_inventario = false;
+                $producto->activo = true;
                 $producto->precio_unitario = $precio; // general solo al crear
             }
             $producto->save();
 
             // Precio especial del cliente (sin duplicar el activo). Conserva el
-            // precio anterior para mostrarlo en el reporte.
-            $precioRegistro = ProductoPrecioCliente::firstOrNew([
-                'producto_id' => $producto->id, 'cliente_id' => $cliente->id, 'cliente_sucursal_id' => null,
-            ]);
+            // precio anterior para mostrarlo en el reporte. Se actualiza el vigente: tomar
+            // uno viejo inactivo lo reactivaba al lado del otro y el CCF seguía con aquel.
+            $clave = ['producto_id' => $producto->id, 'cliente_id' => $cliente->id, 'cliente_sucursal_id' => null];
+            $precioRegistro = ProductoPrecioCliente::where($clave)->orderByDesc('activo')->orderByDesc('id')->first()
+                ?? new ProductoPrecioCliente($clave);
             $precioAnterior = $precioRegistro->exists ? (float) $precioRegistro->precio : null;
 
             $precioRegistro->fill([
@@ -108,9 +121,17 @@ class ImportadorProductosPrecios
                 'fecha_inicio' => $this->parsearFecha($registro['fecha_inicio'] ?? null),
             ])->save();
 
+            // Si ya había otro activo repetido, deja de estarlo (queda en la bitácora del precio).
+            ProductoPrecioCliente::where($clave)->whereKeyNot($precioRegistro->id)->where('activo', true)->get()
+                ->each(fn (ProductoPrecioCliente $repetido) => $repetido->update(['activo' => false]));
+
             $detallePrecio = $precioAnterior !== null && abs($precioAnterior - $precio) > 0.00001
                 ? sprintf('Precio %s: $%.4f → $%.4f', $cliente->nombre, $precioAnterior, $precio)
                 : sprintf('Precio %s: $%.4f', $cliente->nombre, $precio);
+            // El precio entra, pero el producto sigue fuera del catálogo: no se puede facturar.
+            if (! $producto->activo) {
+                $detallePrecio .= ' (el producto está inactivo: activalo en Productos si se vuelve a vender)';
+            }
 
             $creado
                 ? $resultado->creada($numero, $producto->nombre, $detallePrecio)
