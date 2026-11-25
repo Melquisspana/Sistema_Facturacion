@@ -47,6 +47,7 @@
                 'producto_id' => (string) ($item?->exportacion_producto_id ?? $fila['exportacion_producto_id'] ?? ''),
                 'cajas' => (int) ($fila['cantidad_cajas'] ?? 0) ?: '',
                 'precio' => $precio,
+                'precio_guardado' => $item !== null ? (float) $item->precio_caja : null,
                 'nombre' => $item?->nombre_es ?? '',
                 'nombre_en' => $item?->nombre_en ?? '',
                 'etiqueta' => $item !== null ? \App\Support\Exportaciones\EmpaqueExportacion::etiqueta($item->unidad, (int) $item->unidades_por_caja) : '',
@@ -60,6 +61,8 @@
 
     $encabezadoInicial = [
         'clienteId' => (string) old('exportacion_cliente_id', $e?->exportacion_cliente_id ?? ''),
+        // El que la lista tiene guardado: con otro, las líneas guardadas toman su precio.
+        'clienteOriginal' => (string) ($e?->exportacion_cliente_id ?? ''),
         'nombre' => old('cliente_nombre', $e?->cliente_nombre ?? ''),
         'direccion' => old('cliente_direccion', $e?->cliente_direccion ?? ''),
         'fda' => old('fda_reg_number', $e?->fda_reg_number ?? ''),
@@ -85,6 +88,9 @@
                 <p class="mt-1 text-xs text-gray-400">
                     Al elegirlo se cargan su nombre y dirección del directorio, y sus productos con SU precio.
                     <a href="{{ route('clientes.index', ['tipo_cliente' => 'exportacion']) }}" class="text-indigo-600 hover:underline">Ver clientes de exportación</a>
+                </p>
+                <p class="mt-1 text-xs text-amber-600" role="status" x-show="cambioDeCliente()" x-cloak>
+                    Cambiaste el cliente: lo que ya estaba en la lista toma los precios de este cliente al guardar.
                 </p>
                 @error('exportacion_cliente_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
@@ -309,6 +315,7 @@
             productos,
             clientes,
             clienteId: encabezadoInicial.clienteId || '',
+            clienteOriginal: encabezadoInicial.clienteOriginal || '',
             encabezado: {
                 nombre: encabezadoInicial.nombre || '',
                 direccion: encabezadoInicial.direccion || '',
@@ -346,6 +353,15 @@
                 }
                 // Otro cliente, otros precios: los escritos a mano se descartan.
                 Object.values(this.nuevas).forEach(n => { n.precio = null; });
+                // Las guardadas muestran el precio de este cliente, como lo guarda el
+                // servidor; de vuelta en el cliente original, recuperan el suyo.
+                if (this.clienteOriginal) {
+                    this.guardadas.forEach(g => { g.estado.precio = this.cambioDeCliente() ? null : g.precio_guardado; });
+                }
+            },
+            // De un cliente a otro (una lista sin cliente que lo recibe conserva sus precios).
+            cambioDeCliente() {
+                return this.clienteOriginal !== '' && this.clienteId !== '' && String(this.clienteId) !== this.clienteOriginal;
             },
             producto(id) {
                 return this.productos.find(p => p.id === String(id)) || null;

@@ -22,10 +22,10 @@ use Tests\TestCase;
 /**
  * Listas de empaque › «Editar» un borrador eligiendo OTRO cliente, por la ruta.
  *
- * Las líneas guardadas llevan el precio negociado con el cliente anterior y la FEX
- * vinculada es de ese cliente. Si el cambio pasara, la lista diría un cliente y saldría
- * impresa con la factura del otro, y al finalizarla los precios del primero quedarían
- * como los del segundo. Lo seguro es negarlo sin tocar nada. Datos ficticios.
+ * Una FEX emitida a otro cliente impide el cambio: la lista diría un cliente y saldría
+ * impresa con la factura del otro. Sin eso, las líneas guardadas pasan al cliente nuevo
+ * con SU precio, nunca con el del anterior, que al finalizar quedaría como el suyo. Una
+ * lista que no tenía cliente lo recibe sin perder sus líneas. Datos ficticios.
  */
 class ListaEmpaqueCambioClienteTest extends TestCase
 {
@@ -130,25 +130,49 @@ class ListaEmpaqueCambioClienteTest extends TestCase
         $this->assertSame([$fex->id], DB::table('exportacion_dte')->where('exportacion_id', $lista->id)->pluck('dte_id')->map(fn ($id) => (int) $id)->all());
     }
 
-    public function test_sin_fex_pero_con_lineas_guardadas_no_se_puede_cambiar_el_cliente(): void
+    /**
+     * La línea guardada viaja con su id y con el precio que traía ($140, el del cliente A):
+     * así la manda una página que no se actualizó. Pasa al cliente B con el precio de B.
+     */
+    public function test_sin_fex_la_linea_guardada_pasa_al_cliente_nuevo_con_su_precio_y_no_con_el_anterior(): void
     {
         $lista = $this->listaDelClienteA();
-        $antes = $this->foto($lista);
 
         $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteB, [
             ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 12, 'precio_caja' => '140.00'],
-        ]))->assertSessionHasErrors('exportacion_cliente_id');
+        ]))->assertSessionHasNoErrors()->assertRedirect(route('facturacion.listas.show', $lista));
 
-        $this->assertEquals($antes, $this->foto($lista));
+        $lista->refresh();
+        $linea = $lista->items()->sole();
+        $this->assertSame($this->clienteB->id, (int) $lista->exportacion_cliente_id);
+        $this->assertSame($this->producto->id, (int) $linea->exportacion_producto_id);
+        $this->assertSame(12, (int) $linea->cantidad_cajas);
+        $this->assertEquals(150.00, (float) $linea->precio_caja);
     }
 
-    /** Sin FEX y con las líneas vueltas a cargar, el cambio pasa y queda en la bitácora. */
-    public function test_sin_fex_y_con_lineas_nuevas_el_cliente_cambia_y_toma_sus_precios(): void
+    /** Un precio escrito en la línea, distinto del que tenía guardado, se respeta. */
+    public function test_al_cambiar_el_cliente_se_respeta_el_precio_escrito_en_la_linea_guardada(): void
     {
         $lista = $this->listaDelClienteA();
 
         $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteB, [
-            ['exportacion_producto_id' => $this->producto->id, 'cantidad_cajas' => 10, 'precio_caja' => ''],
+            ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 10, 'precio_caja' => '145.50'],
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame($this->clienteB->id, (int) $lista->fresh()->exportacion_cliente_id);
+        $this->assertEquals(145.50, (float) $lista->items()->sole()->precio_caja);
+    }
+
+    /**
+     * Lo que manda el formulario al elegir otro cliente: la línea guardada con su id y el
+     * precio de B, que es el que muestra. El cambio pasa y queda en la bitácora.
+     */
+    public function test_sin_fex_el_cliente_cambia_con_lo_que_manda_el_formulario_y_queda_en_la_bitacora(): void
+    {
+        $lista = $this->listaDelClienteA();
+
+        $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteB, [
+            ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 10, 'precio_caja' => '150.00'],
         ]))->assertSessionHasNoErrors()->assertRedirect(route('facturacion.listas.show', $lista));
 
         $lista->refresh();
@@ -174,5 +198,63 @@ class ListaEmpaqueCambioClienteTest extends TestCase
 
         $this->assertSame(12, (int) $linea->fresh()->cantidad_cajas);
         $this->assertSame($this->clienteA->id, (int) $lista->fresh()->exportacion_cliente_id);
+    }
+
+    /** Lista sin cliente: heredada, de un perfil borrado o copia de una de ellas. */
+    private function sinCliente(Exportacion $lista): Exportacion
+    {
+        Exportacion::query()->whereKey($lista->id)->update(['exportacion_cliente_id' => null]);
+
+        return $lista->refresh();
+    }
+
+    /**
+     * Ponerle cliente a una lista que no tenía no es cambiarlo: no hay precios de otro
+     * cliente que cuidar. Conserva sus líneas y avisa cuál no lleva el precio actual.
+     */
+    public function test_una_lista_sin_cliente_recibe_el_cliente_y_conserva_sus_lineas_con_aviso(): void
+    {
+        $lista = $this->sinCliente($this->listaDelClienteA());
+        $linea = $lista->items()->sole();
+
+        $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteB, [
+            ['id' => $linea->id, 'cantidad_cajas' => 12, 'precio_caja' => '140.00'],
+        ]))->assertSessionHasNoErrors()->assertRedirect(route('facturacion.listas.show', $lista));
+
+        $this->assertSame($this->clienteB->id, (int) $lista->fresh()->exportacion_cliente_id);
+        $this->assertSame(12, (int) $linea->fresh()->cantidad_cajas);
+        $this->assertEquals(140.00, (float) $linea->fresh()->precio_caja);
+        $aviso = (string) session('aviso_precios');
+        $this->assertStringContainsString('Producto de prueba 144 u $140.00 (actual $150.00)', $aviso);
+        $this->assertStringNotContainsString('cliente anterior', $aviso);
+    }
+
+    /** Lista heredada sin cliente con la FEX ya emitida: recibe el cliente de esa FEX. */
+    public function test_una_lista_sin_cliente_con_fex_recibe_el_cliente_al_que_se_emitio(): void
+    {
+        $lista = $this->listaDelClienteA();
+        $fex = $this->vincularFexDelClienteA($lista);
+        $this->sinCliente($lista);
+
+        $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteA, [
+            ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 10, 'precio_caja' => '140.00'],
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame($this->clienteA->id, (int) $lista->fresh()->exportacion_cliente_id);
+        $this->assertSame([$fex->id], DB::table('exportacion_dte')->where('exportacion_id', $lista->id)->pluck('dte_id')->map(fn ($id) => (int) $id)->all());
+    }
+
+    /** Pero no el de otro cliente: la lista saldría con la factura emitida a otro. */
+    public function test_una_lista_sin_cliente_con_fex_no_recibe_otro_cliente(): void
+    {
+        $lista = $this->listaDelClienteA();
+        $this->vincularFexDelClienteA($lista);
+        $antes = $this->foto($this->sinCliente($lista));
+
+        $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteB, [
+            ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 10, 'precio_caja' => '140.00'],
+        ]))->assertSessionHasErrors('exportacion_cliente_id');
+
+        $this->assertEquals($antes, $this->foto($lista));
     }
 }
