@@ -185,13 +185,12 @@ class ResumenDiarioPedidos
      *    empezó): lo que quedó, de cualquier día, con su fecha y `resto` si ya salió una parte.
      *
      * @return array{fecha: string, salio_algo: bool, envios_ids: list<int>, salas: array<string, array{
-     *     llego: list<array{numero: int, vendedor: ?string, productos: list<array{nombre: string, cantidad: string}>}>,
-     *     salio: list<array{numero: int, pedido: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
-     *     deshecho: list<array{numero: int, pedido: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
+     *     llego: list<array{numero: int, vendedor: ?string, cajitas: int, productos: list<array{nombre: string, cantidad: string}>}>,
+     *     salio: list<array{numero: int, pedido: int, cajitas: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
+     *     deshecho: list<array{numero: int, pedido: int, cajitas: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
      *     cerrados: list<array{numero: int, nada: bool, motivo: ?string, productos: list<array{nombre: string, cantidad: string, motivo: ?string}>}>,
      *     listos: list<array{numero: int, fecha: string, atraso: int, resto: bool, productos: list<array{nombre: string, cantidad: string}>}>,
      *     por_mandar: list<array{numero: int, fecha: string, atraso: int, resto: bool, armando: bool, productos: list<array{nombre: string, cantidad: string}>}>,
-     *     cajitas?: int,
      * }>}
      */
     public function contenido(Carbon $desde, Carbon $hasta): array
@@ -205,13 +204,18 @@ class ResumenDiarioPedidos
         };
         $hoy = Carbon::parse($hasta->toDateString());
         $producto = fn (PedidoSalaLinea $l, string $cantidad) => ['nombre' => (string) $l->producto?->nombre, 'cantidad' => PedidoSalaLinea::legible($cantidad)];
+        // Un pedido de la tienda se cuenta en cajitas, igual en «Llegó» y en «Salió»; 0 si no es
+        // de la tienda o no trae el detalle (entonces se cuentan sus productos).
+        $cajitas = fn (PedidoSala $p) => $p->origen === OrigenPedidoSala::Web
+            ? (int) collect($p->pedidoWeb?->cajitas_detalle ?? [])->sum(fn ($c) => $c['cantidad'] ?? 1) : 0;
         // La hora sola si es del día del correo; si no (después de las 18:00 de ayer), con la fecha.
-        $envio = function (PedidoSalaEnvio $envio) use ($hoy): array {
+        $envio = function (PedidoSalaEnvio $envio) use ($hoy, $cajitas): array {
             $local = HoraNegocio::aLocal($envio->created_at);
 
             return [
                 'numero' => $envio->numero,
                 'pedido' => $envio->pedido_sala_id,
+                'cajitas' => $cajitas($envio->pedido),
                 'hora' => $local->format($local->isSameDay($hoy) ? 'H:i' : 'd/m H:i'),
                 // `linea`: la línea del pedido, para contar cada producto una vez aunque salga en
                 // dos envíos. No el nombre: dos presentaciones pueden llamarse igual.
@@ -233,6 +237,7 @@ class ResumenDiarioPedidos
             $salas[$sala($pedido)]['llego'][] = [
                 'numero' => $pedido->id,
                 'vendedor' => $pedido->sacadoPor?->nombre,
+                'cajitas' => $cajitas($pedido),
                 'productos' => $pedido->lineas->map(fn ($l) => $producto($l, (string) $l->cantidad))->values()->all(),
             ];
         }
@@ -242,10 +247,6 @@ class ResumenDiarioPedidos
             ->with($relaciones)->orderBy('id')->get();
         foreach ($envios as $e) {
             $salas[$sala($e->pedido)]['salio'][] = $envio($e);
-            if ($e->pedido->origen === OrigenPedidoSala::Web) {
-                $salas[$sala($e->pedido)]['cajitas'] = ($salas[$sala($e->pedido)]['cajitas'] ?? 0)
-                    + collect($e->pedido->pedidoWeb?->cajitas_detalle ?? [])->sum(fn ($c) => $c['cantidad'] ?? 1);
-            }
         }
 
         // Un envío que un correo anterior dio por salido y se deshizo después. Uno que salió y

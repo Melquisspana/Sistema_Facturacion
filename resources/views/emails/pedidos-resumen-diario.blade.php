@@ -15,6 +15,9 @@
     $plural = fn (int $n, string $uno, string $varios) => $n === 1 ? '1 '.$uno : $n.' '.$varios;
     $facturas = fn (int $n) => $plural($n, 'factura', 'facturas');
     $productos = fn (int $n) => $plural($n, 'producto', 'productos');
+    // Cuánto es un pedido, igual en «Llegó» y en «Salió»: el de la tienda, en cajitas; los demás
+    // (y uno de la tienda sin el detalle de cajitas), en productos.
+    $cuanto = fn (int $cajitas, int $lineas) => $cajitas > 0 ? $plural($cajitas, 'cajita', 'cajitas') : $productos($lineas);
     $ventas = $contenido['ventas'] ?? null;
     $vendedores = $contenido['vendedores'] ?? null;
     // Hasta qué hora cuenta lo de hoy: la del envío diario o, a mano, la hora en que salió.
@@ -28,17 +31,18 @@
 
     // 2. Lo que salió de una sala, en una línea: los pedidos, lo que faltó o no se mandó y por qué.
     $salio = $salas->filter(fn ($d) => $d['salio'] !== [] || $d['cerrados'] !== [] || $d['deshecho'] !== []);
-    $lineaSalio = function (array $d) use ($plural, $productos, $literal, $motivo): string {
+    $lineaSalio = function (array $d) use ($cuanto, $literal, $motivo): string {
         $partes = [];
         if ($d['salio'] !== []) {
             $pedidos = array_values(array_unique(array_column($d['salio'], 'pedido')));
-            $partes[] = isset($d['cajitas'])
-                ? $plural((int) $d['cajitas'], 'cajita', 'cajitas')
-                : (count($pedidos) === 1 ? 'pedido' : 'pedidos').' N.º '.collect($pedidos)->join(', ', ' y ')
-                    // Cada línea del pedido, una vez: si salió en dos envíos (de mañana una parte y de
-                    // tarde el resto), sigue siendo el mismo producto, como en «Llegó». Por la línea y
-                    // no por el nombre: dos presentaciones pueden llamarse igual.
-                    .', '.$productos(collect($d['salio'])->flatMap(fn ($e) => array_column($e['productos'], 'linea'))->unique()->count());
+            // Cada pedido y cada línea del pedido, una vez: si salió en dos envíos (de mañana una
+            // parte y de tarde el resto), sigue siendo el mismo producto, como en «Llegó». Por la
+            // línea y no por el nombre: dos presentaciones pueden llamarse igual.
+            $partes[] = (count($pedidos) === 1 ? 'pedido' : 'pedidos').' N.º '.collect($pedidos)->join(', ', ' y ')
+                .', '.$cuanto(
+                    (int) collect($d['salio'])->unique('pedido')->sum('cajitas'),
+                    collect($d['salio'])->flatMap(fn ($e) => array_column($e['productos'], 'linea'))->unique()->count(),
+                );
         }
         foreach ($d['cerrados'] as $c) {
             if ($c['nada']) {
@@ -75,7 +79,7 @@
 ## Llegó de los vendedores
 
 @forelse ($salas->filter(fn ($d) => $d['llego'] !== []) as $nombre => $datos)
-- {{ $sala($nombre) }}: {{ collect($datos['llego'])->map(fn ($p) => 'N.º '.$p['numero'].($p['vendedor'] ? ' · '.$literal($p['vendedor']) : '').' · '.$productos(count($p['productos'])))->join('; ') }}
+- {{ $sala($nombre) }}: {{ collect($datos['llego'])->map(fn ($p) => 'N.º '.$p['numero'].($p['vendedor'] ? ' · '.$literal($p['vendedor']) : '').' · '.$cuanto($p['cajitas'], count($p['productos'])))->join('; ') }}
 @empty
 No llegaron pedidos nuevos.
 @endforelse

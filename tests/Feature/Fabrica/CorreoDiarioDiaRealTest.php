@@ -123,8 +123,12 @@ class CorreoDiarioDiaRealTest extends TestCase
         return $pedido;
     }
 
-    /** Un pedido de la tienda web, pagado y con su factura aceptada: la fábrica ya lo puede mandar. */
-    private function pedidoWeb(): PedidoSala
+    /**
+     * Un pedido de la tienda web, pagado y con su factura aceptada: la fábrica ya lo puede mandar.
+     *
+     * @param  list<array<string, mixed>>|null  $cajitas  el detalle de cajitas; por defecto, 2 de «La clásica»
+     */
+    private function pedidoWeb(?array $cajitas = null): PedidoSala
     {
         $pedido = PedidoSala::create(['origen' => OrigenPedidoSala::Web, 'fecha' => now()->toDateString(), 'estado' => EstadoPedidoSala::Registrado]);
         $pedido->lineas()->create(['producto_id' => $this->galleta->id, 'cantidad' => 12]);
@@ -133,14 +137,15 @@ class CorreoDiarioDiaRealTest extends TestCase
             'establecimiento_id' => $this->establecimiento->id, 'fecha_emision' => now()->toDateString(), 'hora_emision' => now()->format('H:i:s'),
             'receptor_nombre' => 'Compradora Inventada', 'receptor_correo' => 'compradora@example.test',
         ]));
+        $n = PedidoWeb::count() + 1;
         PedidoWeb::create([
-            'pedido_sala_id' => $pedido->id, 'web_id' => 1, 'codigo' => 'LN-TEST-0000-0001', 'idioma' => 'es',
+            'pedido_sala_id' => $pedido->id, 'web_id' => $n, 'codigo' => 'LN-TEST-0000-000'.$n, 'idioma' => 'es',
             'pagado_en' => now(), 'total_centavos' => 98765, 'moneda' => 'USD',
             'cliente_nombre' => 'Compradora Inventada', 'cliente_correo' => 'compradora@example.test', 'cliente_telefono' => 'telefono-secreto',
             'direccion' => 'direccion-secreta', 'entrega_tipo' => 'recoger', 'pasarela' => 'prueba',
             'estado' => EstadoPedidoWeb::Facturado, 'informado_preparando_en' => now(), 'dte_id' => $dte->id,
             'lineas' => [['producto' => 'gall', 'nombre' => 'Galleta de prueba', 'cantidad' => 12, 'precio' => 98765]],
-            'cajitas_detalle' => [['n' => 1, 'clase' => 'surtido', 'surtido' => 'La clásica', 'tam' => 12, 'cantidad' => 2, 'contenido' => ['gall' => 6], 'precio' => 98765]],
+            'cajitas_detalle' => $cajitas ?? [['n' => 1, 'clase' => 'surtido', 'surtido' => 'La clásica', 'tam' => 12, 'cantidad' => 2, 'contenido' => ['gall' => 6], 'precio' => 98765]],
         ]);
 
         return $pedido;
@@ -309,15 +314,16 @@ class CorreoDiarioDiaRealTest extends TestCase
             'Bodega Inventada Sur: N.º '.$listo->id.' · Carlos Inventado · 1 producto'
             .' Mini Súper Inventado: N.º '.$nuevo->id.' · Carlos Inventado · 1 producto'
             .' Panadería Ficticia: N.º '.$panaderia->id.' · Carlos Inventado · 1 producto'
-            .' Pedido web · Compradora I.: N.º '.$web->id.' · 1 producto'
+            .' Pedido web · Compradora I.: N.º '.$web->id.' · 2 cajitas'
             .' Súper Ficticio Centro: N.º '.$entero->id.' · Carlos Inventado · 2 productos; N.º '.$enParte->id.' · Carlos Inventado · 1 producto'
             .' Tienda Inventada Norte: N.º '.$norte->id.' · Carlos Inventado · 2 productos',
             $this->parte($texto, 'Llegó de los vendedores'),
         );
 
         // 2. Salió: el entero y el que va en parte, juntos en su sala; lo que faltó, con su motivo.
+        // El de la tienda, con su N.º y contado en cajitas, como en «Llegó».
         $this->assertSame(
-            'Pedido web · Compradora I.: 2 cajitas.'
+            'Pedido web · Compradora I.: pedido N.º '.$web->id.', 2 cajitas.'
             .' Súper Ficticio Centro: pedidos N.º '.$entero->id.' y '.$enParte->id.', 3 productos.'
             .' Tienda Inventada Norte: pedido N.º '.$norte->id.', 2 productos. Faltó Canilla de prueba 3 (Sin harina).',
             $this->parte($texto, 'Salió de la fábrica'),
@@ -391,7 +397,7 @@ class CorreoDiarioDiaRealTest extends TestCase
         // Se lee limpio: sin etiquetas, sin enlaces y sin las barras con que el HTML escapa el markdown.
         $this->assertDoesNotMatchRegularExpression('/<[a-z\/][^>]*>/i', $plano);
         $this->assertStringNotContainsString('http', $plano);
-        $this->assertStringContainsString('Pedido web · Compradora I.**: 2 cajitas.', $plano);
+        $this->assertStringContainsString('Pedido web · Compradora I.**: pedido N.º '.$web->id.', 2 cajitas.', $plano);
         $this->assertStringNotContainsString('\\', $plano);
 
         $html = (string) $mensaje->getHtmlBody();
@@ -440,6 +446,30 @@ class CorreoDiarioDiaRealTest extends TestCase
         $pdf = $this->leido(app(PdfFabricaDiario::class)->html($correo->contenido));
         $this->assertStringContainsString('N.º '.$pedido->id.' · 10:00: Galleta de prueba 10, Canilla de prueba 2 N.º '.$pedido->id.' · 16:00: Galleta de prueba 14, Canilla de prueba 4', $pdf);
         $this->assertSame(3, substr_count($pdf, 'HOJA DE DESPACHO'), 'los dos envíos del pedido en parte y el de Norte');
+    }
+
+    public function test_un_pedido_de_la_tienda_sin_el_detalle_de_cajitas_cuenta_sus_productos_y_nunca_cero_cajitas(): void
+    {
+        $this->travelTo('2026-11-09 09:00:00');
+        $web = $this->pedidoWeb();
+        $suelto = $this->pedidoWeb([]);
+        $suelto->pedidoWeb->update(['cliente_nombre' => 'Otra Inventada']);
+        $this->travelTo('2026-11-09 10:00:00');
+        $this->mandar($web, [$this->galleta->id => '12']);
+        $this->mandar($suelto, [$this->galleta->id => '12']);
+
+        $this->travelTo('2026-11-09 18:00:00');
+        $this->artisan('pedidos:correo-diario')->expectsOutput('Resumen enviado.')->assertSuccessful();
+        $texto = $this->leido($this->enviados()[0]->render());
+
+        $this->assertSame(
+            'Pedido web · Compradora I.: N.º '.$web->id.' · 2 cajitas Pedido web · Otra I.: N.º '.$suelto->id.' · 1 producto',
+            $this->parte($texto, 'Llegó de los vendedores'),
+        );
+        $this->assertSame(
+            'Pedido web · Compradora I.: pedido N.º '.$web->id.', 2 cajitas. Pedido web · Otra I.: pedido N.º '.$suelto->id.', 1 producto.',
+            $this->parte($texto, 'Salió de la fábrica'),
+        );
     }
 
     public function test_el_texto_plano_lleva_lo_escrito_tal_cual_sin_las_barras_del_markdown(): void
