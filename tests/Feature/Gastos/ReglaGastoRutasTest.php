@@ -509,6 +509,7 @@ class ReglaGastoRutasTest extends TestCase
             ->assertSee('name="periodo" value="2026-04"', false)
             ->assertSee('Saltar este período')
             ->assertSee('No se puede deshacer')
+            ->assertSee('ya no se puede pagar este período desde la regla')
             ->assertSee('aria-controls="saltar-'.$regla->id.'-2026_04"', false)
             ->assertSee('id="saltar-'.$regla->id.'-2026_04"', false);
 
@@ -516,7 +517,7 @@ class ReglaGastoRutasTest extends TestCase
             ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-04', 'motivo' => 'El local estuvo cerrado ese mes.'])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('gastos.panel'))
-            ->assertSessionHas('gastos.aviso', 'Saltado: Proveedor de prueba · 2026-04. Ya no se va a crear ni a cobrar.');
+            ->assertSessionHas('gastos.aviso', 'Saltado: Proveedor de prueba · 2026-04. Ya no aparece para pagar.');
 
         $omitida = Ocurrencia::where('regla_id', $regla->id)->where('periodo', '2026-04')->sole();
         $this->assertSame(['omitida', '2026-04-05', 'El local estuvo cerrado ese mes.'],
@@ -668,12 +669,102 @@ class ReglaGastoRutasTest extends TestCase
         $regla = $this->crear($u, ['vigente_desde' => '2026-07-01']);
 
         $proximos = $this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk()->viewData('proximos');
-        $this->assertSame('2026-07', $proximos[0]['periodo']);
+        $this->assertSame(['2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'], array_column($proximos, 'periodo'));
 
         $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-07', 'motivo' => 'Ese mes no se usa el local.'])
             ->assertSessionHasNoErrors();
         $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-05', 'motivo' => 'Antes del arranque.'])
             ->assertSessionHasErrors('periodo');
+    }
+
+    /**
+     * Una regla semanal que arranca después de seis semanas mostraba «Lo que viene»
+     * vacío («No vienen períodos nuevos»), porque la ventana se contaba desde hoy.
+     * Ahora muestra sus seis primeras semanas, y la última también se puede saltar.
+     */
+    public function test_lo_que_viene_de_una_semanal_que_arranca_lejos_no_queda_vacio(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-04-02');
+        $regla = $this->crear($u, ['frecuencia' => 'semanal', 'dia_semana' => 1, 'dia_mes' => null, 'vigente_desde' => '2026-07-01']);
+
+        $proximos = $this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk()
+            ->assertDontSee('No vienen períodos nuevos')
+            ->viewData('proximos');
+        $this->assertCount(6, $proximos);
+        $this->assertGreaterThanOrEqual('2026-07-01', $proximos[0]['vence']);
+
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => $proximos[5]['periodo'], 'motivo' => 'Esa semana no se usa.'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame('omitida', Ocurrencia::where('regla_id', $regla->id)->sole()->estado);
+    }
+
+    /** Un salto viejo guardado sin «vence» (así quedaban hasta octubre) no tumba la ficha de la regla. */
+    public function test_la_ficha_abre_con_un_salto_viejo_sin_vence(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u, ['frecuencia' => 'anual', 'mes' => 3, 'dia_mes' => 5]);
+        Ocurrencia::create([
+            'regla_id' => $regla->id, 'periodo' => '2030', 'vence' => null, 'estado' => 'omitida',
+            'gasto_id' => null, 'version_regla' => $regla->version, 'motivo' => 'Salto viejo sin fecha.',
+            'registrado_por' => $u->id, 'created_at' => now(),
+        ]);
+
+        $this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk()
+            ->assertSee('Salto viejo sin fecha.');
+    }
+
+    /** «Lo que ya pasó» no hace una consulta por cada fila para saber quién la anotó. */
+    public function test_la_ficha_no_hace_una_consulta_mas_por_cada_salto(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+        $administrar = app(AdministrarReglas::class);
+
+        $consultas = function () use ($u, $regla): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk();
+            $n = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $n;
+        };
+
+        $administrar->omitir($u, $regla, '2026-04', 'Ese mes no se usa.');
+        $consultas(); // la primera carga llena las cachés de permisos
+        $conUno = $consultas();
+        foreach (['2026-05', '2026-06', '2026-07'] as $periodo) {
+            $administrar->omitir($u, $regla, $periodo, 'Ese mes no se usa.');
+        }
+
+        $this->assertSame($conUno, $consultas());
+    }
+
+    /**
+     * La guía pide Cancelar a la izquierda y la acción a la derecha. Saltar ya lo hacía y
+     * los demás formularios de «Por pagar» no: en la misma pantalla convivían dos órdenes,
+     * y en uno el botón de la derecha era el que no tiene vuelta.
+     */
+    public function test_por_pagar_pone_cancelar_antes_de_la_accion_en_todos_sus_formularios(): void
+    {
+        $u = $this->usuario([
+            PermisoSistema::GastosVer, PermisoSistema::GastosRegistrar, PermisoSistema::GastosPersonales,
+            PermisoSistema::GastosRecurrencias, PermisoSistema::GastosPagosRegistrar,
+        ]);
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+        $this->en('2026-03-05');
+        $this->generar($u, $regla);
+        $this->en('2026-03-10');
+
+        $html = $this->actingAs($u)->get(route('gastos.panel'))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('/>Cancelar<\/button>\s*<button type="submit"[^>]*>Registrar el pago<\/button>/', $html);
+        $this->assertMatchesRegularExpression('/>Cancelar<\/button>\s*<button type="submit"[^>]*>Guardar<\/button>/', $html);
+        $this->assertDoesNotMatchRegularExpression('/<button type="submit"[^>]*>[^<]*<\/button>\s*<button type="button"[^>]*>Cancelar<\/button>/', $html);
     }
 
     /** Un formulario armado a mano con una lista en vez de texto vuelve con aviso, no con error 500. */
@@ -748,6 +839,8 @@ class ReglaGastoRutasTest extends TestCase
         $this->assertStringContainsString('abierto: \''.$panel.'\'', html_entity_decode($html));
         $this->assertSame(1, substr_count($html, 'value="ab"'), 'Lo escrito vuelve solo en la fila que dio el error.');
         $this->assertMatchesRegularExpression('/value="ab"[^<]*>\s*<p class="mt-1 text-sm text-red-600">/', $html);
+        $this->assertSame(1, substr_count($html, '$nextTick(() => $el.focus())'), 'Solo el campo de la fila que dio el error recibe el foco.');
+        $this->assertMatchesRegularExpression('/value="ab"\s*x-init="\$nextTick\(\(\) => \$el\.focus\(\)\)"/', $html);
         $this->assertSame(0, Ocurrencia::count());
     }
 

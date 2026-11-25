@@ -202,9 +202,9 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="flex gap-2">
-                                <button type="submit" class="{{ $botonAccion }}">Guardar</button>
+                            <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                                 <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                                <button type="submit" class="{{ $botonAccion }}">Guardar</button>
                             </div>
                         </form>
                     </div>
@@ -303,7 +303,7 @@
                             Ya pasó su día y nadie creó la obligación. No desaparecen al vencer —una fila que se borra
                             sola es dinero que se deja de mencionar sin que nadie lo decida— y tampoco se suman a
                             ninguna de las dos cifras, porque nadie verificó que se deban. «Registrar pago» las convierte
-                            en obligación y las paga de una vez. Si ese mes no se debe —por ejemplo, uno en que la
+                            en obligación y las paga de una vez. Si ese período no se debe —por ejemplo, uno en que la
                             regla estuvo en pausa—, «Saltar» lo saca de la lista con su motivo, que queda anotado en
                             la regla.
                         </x-gastos-ayuda>
@@ -362,7 +362,7 @@
                             <div class="flex shrink-0 items-center gap-3">
                                 {!! $chipAmbito($r->ambito) !!}
                                 @can('gastos.recurrencias')
-                                    <a href="{{ route('gastos.reglas.show', $r->regla_id) }}" class="{{ $boton }} min-h-9 px-3 text-xs">Completar</a>
+                                    <a href="{{ route('gastos.reglas.show', $r->regla_id) }}" class="{{ $boton }} text-xs">Completar</a>
                                 @endcan
                             </div>
                         </div>

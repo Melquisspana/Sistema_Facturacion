@@ -39,7 +39,7 @@
     <div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div class="min-w-0">
             <p class="truncate font-medium text-gray-900">{{ $f->beneficiario }}</p>
-            <p class="truncate text-sm text-gray-500">
+            <p class="text-sm text-gray-500">
                 {{ $f->concepto }} ·
                 {{ $esPasada ? 'vencía el '.$vence.' y no se registró' : 'vence el '.$vence }}
             </p>
@@ -99,7 +99,8 @@
                         <label class="{{ $etiqueta }}" for="saltar-motivo-{{ $panelSaltar }}">Por qué no se debe</label>
                         <input id="saltar-motivo-{{ $panelSaltar }}" name="motivo" type="text" required minlength="5" maxlength="500"
                                value="{{ old('panel') === $panelSaltar ? old('motivo') : '' }}"
-                               class="{{ $campo }}" placeholder="Por ejemplo: estuvo cerrado ese mes">
+                               @if (old('panel') === $panelSaltar) x-init="$nextTick(() => $el.focus())" @endif
+                               class="{{ $campo }}" placeholder="Por ejemplo: no se usó el servicio">
                         @if (old('panel') === $panelSaltar)
                             @error('motivo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                             @error('periodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
@@ -107,7 +108,7 @@
                     </div>
 
                     <p class="text-sm font-medium text-amber-800">
-                        No se puede deshacer: después ya no se puede pagar este mes desde la regla. Usalo solo si
+                        No se puede deshacer: después ya no se puede pagar este período desde la regla. Usalo solo si
                         estás seguro de que no se debe.
                     </p>
 

@@ -95,13 +95,15 @@
                         <input id="p-ref-{{ $g->id }}" name="referencia" maxlength="180" class="{{ $campo }}" placeholder="Opcional">
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="submit" class="{{ $botonAccion }}">Registrar el pago</button>
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                    <button type="submit" class="{{ $botonAccion }}">Registrar el pago</button>
+                </div>
+                <p>
                     <a href="{{ route('gastos.show', $g) }}" class="text-xs text-indigo-600 hover:underline">
                         Pagar solo una parte, o repartir por cuotas
                     </a>
-                </div>
+                </p>
                 <p class="text-xs text-gray-500">El comprobante se adjunta desde el detalle del pago, apenas se guarde.</p>
             </form>
 
@@ -139,14 +141,16 @@
                         </select>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="submit" class="{{ $botonAccion }}">Registrar el abono</button>
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                    <button type="submit" class="{{ $botonAccion }}">Registrar el abono</button>
+                </div>
+                <p>
                     <a href="{{ route('gastos.cuentas.show', ['proveedor' => $g->beneficiario, 'moneda' => $g->moneda]) }}"
                        class="text-xs text-indigo-600 hover:underline">
                         Ver y editar el reparto entre compras
                     </a>
-                </div>
+                </p>
                 <p class="text-xs text-gray-500">
                     Se aplica de la compra más antigua a la más nueva. Un abono mayor que la deuda no se guarda: se avisa.
                 </p>
@@ -172,9 +176,9 @@
                         <p class="mt-1 text-xs text-gray-500">La fecha que trae el papel. Si no la ponés, queda sin vencimiento.</p>
                     </div>
                 </div>
-                <div class="flex gap-2">
-                    <button type="submit" class="{{ $botonAccion }}">Guardar el monto</button>
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                    <button type="submit" class="{{ $botonAccion }}">Guardar el monto</button>
                 </div>
             </form>
         @endif

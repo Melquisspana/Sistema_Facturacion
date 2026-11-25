@@ -90,14 +90,18 @@ class ReglaController extends Controller
      * «Lo que ya pasó»: los 60 más recientes y, además, todos los saltados. Un mes
      * viejo saltado desde «Por pagar» promete que el motivo queda a la vista en la
      * regla; en una regla semanal de años quedaba fuera de los 60.
+     *
+     * Un salto viejo puede no tener «vence» (hasta octubre se guardaba vacío fuera de
+     * la ventana): va al final y la vista muestra «—», en vez de tumbar la ficha.
      */
     private function ocurrenciasParaLaFicha(Regla $regla)
     {
-        $recientes = $regla->ocurrencias()->with('gasto')->limit(60)->get();
-        $saltadosViejos = $regla->ocurrencias()->where('estado', 'omitida')
+        $recientes = $regla->ocurrencias()->with(['gasto', 'registrador'])->limit(60)->get();
+        $saltadosViejos = $regla->ocurrencias()->with('registrador')->where('estado', 'omitida')
             ->whereNotIn('id', $recientes->pluck('id'))->get();
 
-        return $recientes->concat($saltadosViejos)->sortByDesc(fn ($o) => $o->vence->toDateString())->values();
+        return $recientes->concat($saltadosViejos)
+            ->sortByDesc(fn ($o) => $o->vence?->toDateString() ?? '')->values();
     }
 
     public function edit(Request $request, Regla $regla, CalendarioRecurrencia $calendario)
@@ -187,7 +191,7 @@ class ReglaController extends Controller
         );
 
         return back()->with('gastos.aviso',
-            'Saltado: '.$regla->beneficiario.' · '.$saltado->periodo.'. Ya no se va a crear ni a cobrar.');
+            'Saltado: '.$regla->beneficiario.' · '.$saltado->periodo.'. Ya no aparece para pagar.');
     }
 
     /**

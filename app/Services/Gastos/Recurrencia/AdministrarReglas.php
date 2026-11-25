@@ -305,22 +305,23 @@ final class AdministrarReglas
      */
     public function proximosPeriodos(Regla $regla, CarbonImmutable $hoy, int $cuantos = 6): array
     {
-        $ventana = $this->hastaDondeLlegaLoQueViene($regla, $hoy, $cuantos);
+        // Una regla que arranca más adelante no ofrece los meses de antes: no los produce
+        // y saltarlos daría error. La ventana se cuenta desde ese mismo inicio, para que
+        // muestre sus primeros períodos completos y no quede vacía.
+        $inicio = max($hoy, CarbonImmutable::parse($regla->vigente_desde->toDateString()));
+        $ventana = $this->hastaDondeLlegaLoQueViene($regla, $inicio, $cuantos);
 
         $hasta = $regla->vigente_hasta !== null
             ? min($ventana, CarbonImmutable::parse($regla->vigente_hasta->toDateString()))
             : $ventana;
 
         $resueltos = Ocurrencia::where('regla_id', $regla->id)->pluck('estado', 'periodo');
-        // Una regla que arranca más adelante no ofrece los meses de antes: no los produce
-        // y saltarlos daría error.
-        $arranque = CarbonImmutable::parse($regla->vigente_desde->toDateString());
 
         return array_map(fn (array $p) => [
             'periodo' => $p['periodo'],
             'vence' => $p['vence']->toDateString(),
             'resuelto' => $resueltos[$p['periodo']] ?? null,
-        ], $this->calendario->periodos($regla->calendario(), max($hoy, $arranque), $hasta));
+        ], $this->calendario->periodos($regla->calendario(), $inicio, $hasta));
     }
 
     /** @param  array<string, bool>  $desde */
@@ -382,13 +383,14 @@ final class AdministrarReglas
     private function venceDelPeriodo(Regla $regla, string $periodo): ?CarbonImmutable
     {
         $hoy = CarbonImmutable::now();
-        // Por lo menos hasta donde llega «Lo que viene»: lo que la pantalla ofrece
-        // saltar se tiene que poder saltar. En una regla anual son seis años.
-        $hasta = max($hoy->addYears(2), $this->hastaDondeLlegaLoQueViene($regla, $hoy));
-        // Y hacia atrás, exactamente desde el arranque, como «Por pagar › Fecha pasada ·
+        // Hacia atrás, exactamente desde el arranque, como «Por pagar › Fecha pasada ·
         // por confirmar» y el pago desde ahí: cualquier mes desde ese día, aunque tenga
         // más de un año, y ninguno de antes, que la regla nunca produjo.
         $desde = CarbonImmutable::parse($regla->vigente_desde->toDateString());
+        // Y por lo menos hasta donde llega «Lo que viene», contado desde el mismo inicio:
+        // lo que la pantalla ofrece saltar se tiene que poder saltar. En una regla anual
+        // son seis años.
+        $hasta = max($hoy->addYears(2), $this->hastaDondeLlegaLoQueViene($regla, max($hoy, $desde)));
         $rango = $this->calendario->periodos($regla->calendario(), $desde, $hasta);
 
         foreach ($rango as $candidato) {
