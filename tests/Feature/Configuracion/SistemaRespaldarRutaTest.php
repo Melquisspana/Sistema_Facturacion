@@ -10,6 +10,7 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -30,6 +31,9 @@ class SistemaRespaldarRutaTest extends TestCase
     use RefreshDatabase;
 
     private const CLAVE_BD = 'clave-de-prueba-de-la-base';
+
+    /** Sin código de salida ni «registro del servidor»: el motivo se ve en la misma pantalla. */
+    private const AVISO_FALLO = 'No se pudo generar el respaldo. El motivo quedó anotado abajo, en «Última ejecución».';
 
     protected function setUp(): void
     {
@@ -60,14 +64,42 @@ class SistemaRespaldarRutaTest extends TestCase
         return "-- MySQL dump\nINSERT INTO prueba VALUES (1);\n-- Dump completed on 2026-11-25 10:00:00\n";
     }
 
+    /**
+     * La línea de auditoría del botón: quién lo apretó y cómo terminó. Nunca rutas,
+     * nombres de archivo, mensajes de error ni la clave de la base.
+     */
+    private function assertAuditado(User $quien, string $resultado): Activity
+    {
+        $linea = Activity::query()->where('log_name', 'ajustes')->sole();
+
+        $this->assertSame($quien->id, (int) $linea->causer_id);
+        $this->assertSame('respaldo_manual', $linea->getExtraProperty('accion'));
+        $this->assertSame($resultado, $linea->getExtraProperty('resultado'));
+
+        $propiedades = (string) json_encode($linea->properties, JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString(self::CLAVE_BD, $propiedades);
+        $this->assertStringNotContainsString('.sql', $propiedades);
+
+        return $linea;
+    }
+
+    private function assertSinAuditoria(): void
+    {
+        $this->assertSame(0, Activity::query()->where('log_name', 'ajustes')->count());
+    }
+
     public function test_corre_el_respaldo_manual_y_queda_registrado(): void
     {
         Process::fake(['*' => Process::result(output: $this->dumpValido())]);
+        $admin = $this->admin();
 
-        $this->actingAs($this->admin())
+        $this->actingAs($admin)
             ->post(route('configuracion.sistema.respaldar'))
             ->assertRedirect(route('configuracion.sistema'))
             ->assertSessionHas('status', 'Respaldo generado y verificado. Revisá «último respaldo válido» abajo.');
+
+        // Queda quién lo apretó: la misma corrida puede borrar respaldos vencidos.
+        $this->assertSame(0, $this->assertAuditado($admin, 'exito')->getExtraProperty('codigo'));
 
         $respaldo = RespaldoEjecucion::query()->sole();
         $this->assertTrue($respaldo->exitoso);
@@ -84,11 +116,15 @@ class SistemaRespaldarRutaTest extends TestCase
     {
         config(['backup_diario.reintentos' => 0]);
         Process::fake(['*' => Process::result(output: '', errorOutput: 'mysqldump: error de prueba', exitCode: 2)]);
+        $admin = $this->admin();
 
-        $this->actingAs($this->admin())
+        $this->actingAs($admin)
             ->post(route('configuracion.sistema.respaldar'))
             ->assertRedirect(route('configuracion.sistema'))
-            ->assertSessionHas('error', 'El respaldo terminó con código 1. Revisá el registro del servidor.');
+            ->assertSessionHas('error', self::AVISO_FALLO);
+
+        $linea = $this->assertAuditado($admin, 'fallo');
+        $this->assertStringNotContainsString('error de prueba', (string) json_encode($linea->properties));
 
         $respaldo = RespaldoEjecucion::query()->sole();
         $this->assertFalse($respaldo->exitoso);
@@ -116,10 +152,14 @@ class SistemaRespaldarRutaTest extends TestCase
             }
         });
 
-        $this->actingAs($this->admin())
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
             ->post(route('configuracion.sistema.respaldar'))
             ->assertRedirect(route('configuracion.sistema'))
-            ->assertSessionHas('error', 'El respaldo terminó con código 1. Revisá el registro del servidor.');
+            ->assertSessionHas('error', self::AVISO_FALLO);
+
+        $this->assertAuditado($admin, 'fallo');
 
         $respaldo = RespaldoEjecucion::query()->sole();
         $this->assertFalse($respaldo->exitoso);
@@ -147,6 +187,7 @@ class SistemaRespaldarRutaTest extends TestCase
         Process::assertNothingRan();
         $this->assertDatabaseCount('respaldo_ejecuciones', 0);
         $this->assertSame([], Storage::disk('backups')->allFiles());
+        $this->assertSinAuditoria();
     }
 
     public function test_un_invitado_va_al_login_sin_respaldar(): void
@@ -157,5 +198,33 @@ class SistemaRespaldarRutaTest extends TestCase
 
         Process::assertNothingRan();
         $this->assertDatabaseCount('respaldo_ejecuciones', 0);
+        $this->assertSinAuditoria();
+    }
+
+    /**
+     * El comando se cae con una excepción: el aviso es el de siempre y la auditoría
+     * deja el intento como fallido, sin el texto de la excepción.
+     */
+    public function test_si_el_respaldo_se_cae_tambien_queda_en_la_auditoria(): void
+    {
+        Process::fake(['*' => Process::result(output: $this->dumpValido())]);
+        $falso = Storage::disk('backups');
+        Storage::set('backups', new class($falso->getDriver(), $falso->getAdapter(), $falso->getConfig()) extends FilesystemAdapter
+        {
+            public function put($path, $contents, $options = [])
+            {
+                throw new \RuntimeException('disco de prueba sin espacio');
+            }
+        });
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->post(route('configuracion.sistema.respaldar'))
+            ->assertRedirect(route('configuracion.sistema'))
+            ->assertSessionHas('error', 'No se pudo generar el respaldo: disco de prueba sin espacio');
+
+        $linea = $this->assertAuditado($admin, 'fallo');
+        $this->assertNull($linea->getExtraProperty('codigo'));
+        $this->assertStringNotContainsString('disco de prueba', (string) json_encode($linea->properties));
     }
 }
