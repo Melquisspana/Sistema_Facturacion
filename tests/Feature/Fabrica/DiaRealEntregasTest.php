@@ -244,16 +244,16 @@ class DiaRealEntregasTest extends TestCase
         foreach (['A', 'B', 'E'] as $letra) {
             $this->assertCount(1, $salas['Súper Ficticio '.$letra]['salio'], $letra);
         }
-        $this->assertSame([['numero' => $cc->id, 'fecha' => '23/11/2026', 'productos' => [
+        $this->assertSame([['numero' => $cc->id, 'fecha' => '23/11/2026', 'atraso' => 0, 'resto' => false, 'productos' => [
             ['nombre' => 'Galleta de prueba', 'cantidad' => '12'], ['nombre' => 'Quesadilla de prueba', 'cantidad' => '3'],
-        ]]], $salas['Súper Ficticio C']['armados']);
+        ]]], $salas['Súper Ficticio C']['listos']);
         $this->assertSame([], $salas['Súper Ficticio C']['por_mandar']);
         foreach (['D', 'F', 'G', 'H', 'I'] as $letra) {
             $this->assertCount(1, $salas['Súper Ficticio '.$letra]['por_mandar'], $letra);
-            $this->assertSame([], $salas['Súper Ficticio '.$letra]['armados'], $letra);
+            $this->assertSame([], $salas['Súper Ficticio '.$letra]['listos'], $letra);
         }
         $pdf = $this->texto(app(PdfFabricaDiario::class)->html($contenido));
-        $this->assertMatchesRegularExpression('/Súper Ficticio C.*Listos para salir.*Pedido N\.º '.$cc->id.' del 23\/11\/2026: Galleta de prueba 12/s', $pdf);
+        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio C N\.º '.$cc->id.' 23\/11\/2026 Galleta de prueba 12, Quesadilla de prueba 3/s', $pdf);
 
         // ═══ MARTES. Carlos vuelve a pedir para D: la sala queda con dos pedidos abiertos.
         $d2 = $this->sacar($this->carlos, 'D', '2026-11-24 08:00', [$c => '3']);

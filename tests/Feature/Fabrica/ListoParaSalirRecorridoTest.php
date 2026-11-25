@@ -208,7 +208,10 @@ class ListoParaSalirRecorridoTest extends TestCase
         $correo = $correos->first();
         $junto = fn (string $s) => preg_replace('/\s+/u', ' ', $s);
 
-        return [$junto($correo->render()), $junto(html_entity_decode(strip_tags(app(PdfFabricaDiario::class)->html($correo->contenido))))];
+        // El cuerpo y el PDF como se leen: sin etiquetas, en una línea.
+        $leido = fn (string $html) => $junto(html_entity_decode(strip_tags((string) preg_replace('/^.*<body[^>]*>/s', '', $html))));
+
+        return [$leido($correo->render()), $leido(app(PdfFabricaDiario::class)->html($correo->contenido))];
     }
 
     private function cuantas(PedidoSala $pedido, string $descripcion): int
@@ -279,10 +282,10 @@ class ListoParaSalirRecorridoTest extends TestCase
 
         // El correo de las 18:00: «Listos para salir», con lo que va en cada caja.
         [$cuerpo, $pdf] = $this->correo();
-        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio Centro: pedido N\.º '.$pedido->id.'/s', $cuerpo);
-        $this->assertMatchesRegularExpression('/Listos para salir.*Tienda Inventada Norte: pedido N\.º '.$resto->id.'/s', $cuerpo);
-        $this->assertStringContainsString('Pedido N.º '.$pedido->id.' del 09/11/2026: Galleta de prueba 10, Canilla de prueba 5', $pdf);
-        $this->assertStringContainsString('Pedido N.º '.$resto->id.' del 09/11/2026: Canilla de prueba 6', $pdf);
+        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio Centro: N\.º '.$pedido->id.', de hoy/s', $cuerpo);
+        $this->assertMatchesRegularExpression('/Listos para salir.*Tienda Inventada Norte: el resto del N\.º '.$resto->id.', de hoy/s', $cuerpo);
+        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio Centro N\.º '.$pedido->id.' 09\/11\/2026 Galleta de prueba 10, Canilla de prueba 5/s', $pdf);
+        $this->assertMatchesRegularExpression('/Listos para salir.*Tienda Inventada Norte N\.º '.$resto->id.' \(el resto\) 09\/11\/2026 Canilla de prueba 6/s', $pdf);
         foreach (['Listo en fábrica', 'Armados', 'esperando salir'] as $viejo) {
             $this->assertStringNotContainsString($viejo, $cuerpo);
             $this->assertStringNotContainsString($viejo, $pdf);
@@ -331,7 +334,7 @@ class ListoParaSalirRecorridoTest extends TestCase
         $this->assertSame('10.0000', $this->vaBorrador($pedido, $this->galleta));
         $this->assertSame(1, $this->cuantas($pedido, 'empezó a armar el pedido'));
         [, $pdf] = $this->correo();
-        $this->assertStringContainsString('Pedido N.º '.$pedido->id.' del 09/11/2026: Galleta de prueba 10, Canilla de prueba 5', $pdf);
+        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio Centro N\.º '.$pedido->id.' 09\/11\/2026 Galleta de prueba 10, Canilla de prueba 5/s', $pdf);
     }
 
     public function test_si_la_oficina_baja_una_cantidad_la_caja_baja_con_ella_y_sale_de_listos(): void
@@ -430,10 +433,10 @@ class ListoParaSalirRecorridoTest extends TestCase
         $this->viajes()->assertSeeInOrder(['Súper Ficticio Centro', 'En armado'])
             ->assertSeeInOrder(['Tienda Inventada Norte', 'Mandado en parte'])->assertDontSee('Listo para salir');
 
-        // El correo: los dos en lo que sigue por mandar, ninguno en «Listos para salir».
+        // El correo: los dos siguen allá, «Armando», ninguno en «Listos para salir».
         [$cuerpo, $pdf] = $this->correo();
         $this->assertStringNotContainsString('Listos para salir', $cuerpo);
         $this->assertStringNotContainsString('Listos para salir', $pdf);
-        $this->assertStringContainsString('Por mandar: 2 pedidos', $cuerpo);
+        $this->assertMatchesRegularExpression('/Quedó allá Armando Súper Ficticio Centro: N\.º '.$pedido->id.', de hoy Tienda Inventada Norte: el resto del N\.º '.$resto->id.', de hoy Ventas del día/', $cuerpo);
     }
 }

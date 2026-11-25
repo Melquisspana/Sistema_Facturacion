@@ -290,7 +290,7 @@ class FabricaPedidoWebTest extends TestCase
         $contenido = app(ResumenDiarioPedidos::class)->contenido(now()->startOfDay(), now()->endOfDay());
         $this->assertArrayHasKey('Pedido web · Compradora I. (web)', $contenido['salas']);
         $correo = new ResumenDiarioPedidosCorreo($contenido);
-        $this->assertStringContainsString('Pedido web · Compradora I.: 2 cajitas', $correo->render());
+        $this->assertStringContainsString('Pedido web · Compradora I.: 2 cajitas', html_entity_decode(strip_tags($correo->render())));
         $pdfHtml = app(PdfFabricaDiario::class)->html($contenido);
         $this->assertStringContainsString('Pepiayote inventado', $pdfHtml);
         $this->assertStringContainsString('Cajita 1', $pdfHtml);

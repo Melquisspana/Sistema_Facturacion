@@ -1,4 +1,4 @@
-@props(['titulo', 'fecha' => null, 'message' => null])
+@props(['titulo', 'message' => null])
 {{-- La versión en texto de mail::documento: el nombre del correo y la empresa arriba, como mail::message. --}}
 <x-mail::layout>
     {{-- Header --}}
@@ -8,6 +8,15 @@
 
     {{-- Body --}}
     {{ $slot }}
+
+    {{-- Subcopy --}}
+    @isset($subcopy)
+        <x-slot:subcopy>
+            <x-mail::subcopy>
+                {{ $subcopy }}
+            </x-mail::subcopy>
+        </x-slot:subcopy>
+    @endisset
 
     {{-- Footer --}}
     <x-slot:footer>
