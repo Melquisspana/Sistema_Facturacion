@@ -4,7 +4,7 @@
     $metodos = config('gastos.metodos');
 
     $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
-    $botonAccion = 'inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-500';
+    $botonAccion = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-500';
     $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
@@ -15,6 +15,9 @@
         : '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">Empresa</span>';
 
     $fecha = fn (?string $iso) => $iso ? \Carbon\CarbonImmutable::parse($iso)->format('d/m') : null;
+    // «Fecha pasada» puede traer meses de más de un año: sin el año, enero de 2025 y
+    // enero de 2026 se leían igual.
+    $fechaConAnio = fn (?string $iso) => $iso ? \Carbon\CarbonImmutable::parse($iso)->format('d/m/Y') : null;
 @endphp
 
 {{-- LA PANTALLA PRINCIPAL DE GASTOS Y PAGOS
@@ -67,7 +70,7 @@
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6"
-         x-data="{ abierto: null, abrir(id) { this.abierto = this.abierto === id ? null : id } }">
+         x-data="{ abierto: @js($errors->any() && is_string(old('panel')) ? old('panel') : null), abrir(id) { this.abierto = this.abierto === id ? null : id } }">
         <div class="mx-auto max-w-4xl space-y-4">
 
             {{-- El aviso puede traer un enlace al registro que se acaba de crear. Volver
@@ -292,7 +295,7 @@
                             'f' => $f,
                             'tipo' => 'pasada',
                             'importe' => $f->importe_previsto,
-                            'vence' => $fecha($f->vence),
+                            'vence' => $fechaConAnio($f->vence),
                         ])
                     @endforeach
                     <x-slot name="pie">

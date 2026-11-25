@@ -80,10 +80,24 @@ class ReglaController extends Controller
                 ->proximoVencimiento($regla, CarbonImmutable::now()),
             'calendario' => $calendario,
             'proximos' => $administrar->proximosPeriodos($regla, CarbonImmutable::now()),
-            'ocurrencias' => $regla->ocurrencias()->with('gasto')->limit(60)->get(),
+            'ocurrencias' => $this->ocurrenciasParaLaFicha($regla),
             'versiones' => $regla->versiones()->with('registrador')->get(),
             'hoy' => CarbonImmutable::now()->toDateString(),
         ]);
+    }
+
+    /**
+     * «Lo que ya pasó»: los 60 más recientes y, además, todos los saltados. Un mes
+     * viejo saltado desde «Por pagar» promete que el motivo queda a la vista en la
+     * regla; en una regla semanal de años quedaba fuera de los 60.
+     */
+    private function ocurrenciasParaLaFicha(Regla $regla)
+    {
+        $recientes = $regla->ocurrencias()->with('gasto')->limit(60)->get();
+        $saltadosViejos = $regla->ocurrencias()->where('estado', 'omitida')
+            ->whereNotIn('id', $recientes->pluck('id'))->get();
+
+        return $recientes->concat($saltadosViejos)->sortByDesc(fn ($o) => $o->vence->toDateString())->values();
     }
 
     public function edit(Request $request, Regla $regla, CalendarioRecurrencia $calendario)
@@ -103,7 +117,7 @@ class ReglaController extends Controller
     {
         $this->autorizarVer($request, $regla);
 
-        $administrar->actualizar($request->user(), $regla, $request->all(), (string) $request->input('motivo', ''));
+        $administrar->actualizar($request->user(), $regla, $request->all(), $this->texto($request, 'motivo'));
 
         return redirect()
             ->route('gastos.reglas.show', $regla)
@@ -113,7 +127,7 @@ class ReglaController extends Controller
     public function pausar(Request $request, Regla $regla, AdministrarReglas $administrar)
     {
         $this->autorizarVer($request, $regla);
-        $administrar->pausar($request->user(), $regla, (string) $request->input('motivo', ''));
+        $administrar->pausar($request->user(), $regla, $this->texto($request, 'motivo'));
 
         return back()->with('gastos.aviso', 'Pausado. No generará períodos nuevos; las obligaciones que ya creó siguen vigentes.');
     }
@@ -121,7 +135,7 @@ class ReglaController extends Controller
     public function reanudar(Request $request, Regla $regla, AdministrarReglas $administrar)
     {
         $this->autorizarVer($request, $regla);
-        $administrar->reanudar($request->user(), $regla, (string) $request->input('motivo', ''));
+        $administrar->reanudar($request->user(), $regla, $this->texto($request, 'motivo'));
 
         return back()->with('gastos.aviso', 'Reanudado. Revisá los períodos pendientes antes de generarlos.');
     }
@@ -156,7 +170,7 @@ class ReglaController extends Controller
     public function cancelar(Request $request, Regla $regla, AdministrarReglas $administrar)
     {
         $this->autorizarVer($request, $regla);
-        $administrar->cancelar($request->user(), $regla, (string) $request->input('motivo', ''));
+        $administrar->cancelar($request->user(), $regla, $this->texto($request, 'motivo'));
 
         return back()->with('gastos.aviso', 'Cancelado. Lo que ya generó no se tocó: si alguna obligación no corresponde, resolvela una por una.');
     }
@@ -165,14 +179,15 @@ class ReglaController extends Controller
     {
         $this->autorizarVer($request, $regla);
 
-        $administrar->omitir(
+        $saltado = $administrar->omitir(
             $request->user(),
             $regla,
-            (string) $request->input('periodo', ''),
-            (string) $request->input('motivo', ''),
+            $this->texto($request, 'periodo'),
+            $this->texto($request, 'motivo'),
         );
 
-        return back()->with('gastos.aviso', 'Período saltado. La generación automática ya no va a crearlo.');
+        return back()->with('gastos.aviso',
+            'Saltado: '.$regla->beneficiario.' · '.$saltado->periodo.'. Ya no se va a crear ni a cobrar.');
     }
 
     /**
@@ -206,6 +221,17 @@ class ReglaController extends Controller
         }
 
         return back()->with('gastos.aviso', $aviso);
+    }
+
+    /**
+     * Un campo de texto del formulario. Una lista (`motivo[]=…`) vuelve con aviso en
+     * el campo: convertirla a texto daba error 500.
+     */
+    private function texto(Request $request, string $campo): string
+    {
+        $request->validate([$campo => ['nullable', 'string']]);
+
+        return (string) $request->input($campo, '');
     }
 
     /** Una regla personal no se abre sin alcance, igual que un gasto personal. */

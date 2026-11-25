@@ -10,6 +10,7 @@ use App\Models\Gastos\Pago;
 use App\Models\Gastos\Regla;
 use App\Models\Gastos\ReglaVersion;
 use App\Models\User;
+use App\Services\Gastos\Recurrencia\AdministrarReglas;
 use App\Services\Gastos\SaldosGastos;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -506,13 +507,16 @@ class ReglaGastoRutasTest extends TestCase
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertSee('action="'.route('gastos.reglas.omitir', $regla).'"', false)
             ->assertSee('name="periodo" value="2026-04"', false)
-            ->assertSee('Saltar este período');
+            ->assertSee('Saltar este período')
+            ->assertSee('No se puede deshacer')
+            ->assertSee('aria-controls="saltar-'.$regla->id.'-2026_04"', false)
+            ->assertSee('id="saltar-'.$regla->id.'-2026_04"', false);
 
         $this->actingAs($u)->from(route('gastos.panel'))
             ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-04', 'motivo' => 'El local estuvo cerrado ese mes.'])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('gastos.panel'))
-            ->assertSessionHas('gastos.aviso');
+            ->assertSessionHas('gastos.aviso', 'Saltado: Proveedor de prueba · 2026-04. Ya no se va a crear ni a cobrar.');
 
         $omitida = Ocurrencia::where('regla_id', $regla->id)->where('periodo', '2026-04')->sole();
         $this->assertSame(['omitida', '2026-04-05', 'El local estuvo cerrado ese mes.'],
@@ -608,6 +612,142 @@ class ReglaGastoRutasTest extends TestCase
         $this->assertSame([], $this->fechaPasada($empresa, $regla));
         $this->actingAs($empresa)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => 'Intento sin alcance.'])
             ->assertForbidden();
+        $this->assertSame(0, Ocurrencia::count());
+    }
+
+    /** Un mes saltado ya no se paga desde la fila, y el aviso dice qué hacer de verdad: no hay «reabrir». */
+    public function test_pagar_un_mes_saltado_avisa_como_anotarlo_y_no_crea_nada(): void
+    {
+        $u = $this->usuario([
+            PermisoSistema::GastosVer, PermisoSistema::GastosRegistrar, PermisoSistema::GastosPagosRegistrar,
+            PermisoSistema::GastosRecurrencias,
+        ]);
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+        $this->en('2026-04-02');
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => 'No se debía ese mes.'])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($u)->from(route('gastos.panel'))->post(route('gastos.panel.programado.pagar', $regla), [
+            'clave' => (string) Str::uuid(), 'periodo' => '2026-03', 'fecha' => '2026-04-02', 'metodo' => 'efectivo',
+        ])->assertSessionHasErrors('periodo');
+
+        $error = session('errors')->first('periodo');
+        $this->assertStringContainsString('Anotar un gasto', $error);
+        $this->assertStringNotContainsString('reabrir', $error);
+        $this->assertSame(0, Gasto::count());
+        $this->assertSame(0, Pago::count());
+    }
+
+    /**
+     * Saltar empieza en el arranque, como pagar y como «Fecha pasada». Un mes de antes
+     * no lo ofrece ninguna pantalla y se aceptaba igual, ensuciando la regla.
+     */
+    public function test_no_se_salta_un_mes_anterior_al_arranque(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-10');
+        $regla = $this->crear($u, ['vigente_desde' => '2026-03-10']);
+        $this->en('2026-04-02');
+
+        foreach (['2026-01', '2026-03'] as $antes) {
+            $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => $antes, 'motivo' => 'Antes del arranque.'])
+                ->assertSessionHasErrors('periodo');
+        }
+        $this->assertSame(0, Ocurrencia::count());
+    }
+
+    /**
+     * Una regla que arranca más adelante no muestra en «Lo que viene» los meses de
+     * antes del arranque, y el primero que muestra se puede saltar.
+     */
+    public function test_lo_que_viene_de_una_regla_que_arranca_despues_empieza_en_el_arranque(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-04-02');
+        $regla = $this->crear($u, ['vigente_desde' => '2026-07-01']);
+
+        $proximos = $this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk()->viewData('proximos');
+        $this->assertSame('2026-07', $proximos[0]['periodo']);
+
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-07', 'motivo' => 'Ese mes no se usa el local.'])
+            ->assertSessionHasNoErrors();
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-05', 'motivo' => 'Antes del arranque.'])
+            ->assertSessionHasErrors('periodo');
+    }
+
+    /** Un formulario armado a mano con una lista en vez de texto vuelve con aviso, no con error 500. */
+    public function test_motivo_o_periodo_en_forma_de_lista_dan_aviso_y_no_error_500(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => ['2026-03'], 'motivo' => 'Motivo de prueba.'])
+            ->assertSessionHasErrors('periodo');
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => ['Motivo de prueba.']])
+            ->assertSessionHasErrors('motivo');
+        $this->actingAs($u)->post(route('gastos.reglas.pausar', $regla), ['motivo' => ['Motivo de prueba.']])
+            ->assertSessionHasErrors('motivo');
+
+        $this->assertSame(0, Ocurrencia::count());
+        $this->assertSame('activa', $regla->fresh()->estado);
+    }
+
+    /**
+     * El texto de «Saltar» promete que el motivo queda a la vista en la regla. En una
+     * regla semanal de años, un mes viejo quedaba fuera de los 60 de «Lo que ya pasó».
+     */
+    public function test_la_ficha_muestra_el_motivo_de_un_salto_viejo_aunque_haya_mas_de_60_nuevos(): void
+    {
+        $u = $this->operador();
+        $this->en('2025-01-02');
+        $regla = $this->crear($u, ['frecuencia' => 'semanal', 'dia_semana' => 1, 'dia_mes' => null, 'vigente_desde' => '2025-01-01']);
+        $this->en('2026-11-25');
+
+        $semanas = $this->fechaPasada($u, $regla);
+        $this->assertGreaterThan(61, count($semanas));
+        foreach (array_slice($semanas, -61) as $semana) {
+            app(AdministrarReglas::class)->omitir($u, $regla, $semana, 'Semana sin uso.');
+        }
+
+        $this->actingAs($u)->post(route('gastos.reglas.omitir', $regla), ['periodo' => $semanas[0], 'motivo' => 'Motivo viejo de prueba.'])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($u)->get(route('gastos.reglas.show', $regla))->assertOk()
+            ->assertSee('Motivo viejo de prueba.')
+            ->assertSee($semanas[0]);
+    }
+
+    /** Las filas de «Fecha pasada» llevan el año: enero de 2025 y enero de 2026 se leían igual. */
+    public function test_fecha_pasada_muestra_el_anio_de_cada_mes(): void
+    {
+        $u = $this->operador();
+        $this->en('2025-01-02');
+        $this->crear($u, ['vigente_desde' => '2025-01-01']);
+        $this->en('2026-05-20');
+
+        $this->actingAs($u)->get(route('gastos.panel'))->assertOk()
+            ->assertSee('vencía el 05/01/2025 y no se registró')
+            ->assertSee('vencía el 05/01/2026 y no se registró');
+    }
+
+    /** Tras un error, vuelve abierta la fila que lo dio, con lo escrito y el aviso debajo del campo. */
+    public function test_tras_un_error_vuelve_abierta_la_fila_con_el_motivo_escrito(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+        $this->en('2026-05-02');
+        $panel = 'saltar-'.$regla->id.'-2026_03';
+
+        $html = $this->actingAs($u)->from(route('gastos.panel'))->followingRedirects()
+            ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => 'ab   ', 'panel' => $panel])
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('abierto: \''.$panel.'\'', html_entity_decode($html));
+        $this->assertSame(1, substr_count($html, 'value="ab"'), 'Lo escrito vuelve solo en la fila que dio el error.');
+        $this->assertMatchesRegularExpression('/value="ab"[^<]*>\s*<p class="mt-1 text-sm text-red-600">/', $html);
         $this->assertSame(0, Ocurrencia::count());
     }
 

@@ -213,8 +213,8 @@ final class GenerarObligaciones
 
         if ($ocurrencia !== null && $ocurrencia->omitida()) {
             throw ValidationException::withMessages([
-                'periodo' => 'Este período se omitió a propósito y no se puede pagar desde acá. '
-                    .'Revisá la regla si hay que reabrirlo.',
+                'periodo' => 'Este período se saltó a propósito (el motivo está en la regla, en «Lo que ya pasó») '
+                    .'y no se puede pagar desde acá. Si sí se debía, anotalo con «Anotar un gasto».',
             ]);
         }
 
