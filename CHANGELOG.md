@@ -8,6 +8,28 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.25] - 2026-11-25
+
+Entregas de la fábrica y correo de las 18:00 ordenado (#422). Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- Pedidos: «Imprimir sin mandar» saca la «Orden para la caja» con el N.º del pedido grande y la columna «Falta», sin registrar el envío ni mandarlo a facturar, y guarda la hoja aunque no se haya tocado (#422).
+- Pedidos: «Listo para salir» marca la caja como va a salir, aunque le falte algo; se puede quitar, siempre guarda lo que hay en la caja y avisa si el pedido cambió con la hoja abierta. Los listos van en su propio grupo, arriba de la lista (#422).
+- Facturación: «Llegó de pedidos» en el menú, con una fila por sala, chips por ruta y los grupos «Para facturar (OC lista)», «Esperando OC», «Esperando el resto» y «Ya facturados hoy» (#422).
+
+### Cambiado
+
+- Facturación: «Facturar» va directo al borrador cuando la OC está clara, con la OC del correo ya puesta (#422).
+- «Listo para salir» se llama igual en la fábrica, la oficina, Viajes y el correo (#422).
+- Correo de las 18:00: va en el orden «Llegó de los vendedores», «Salió de la fábrica», «Quedó allá» («Listos para salir», «Armando» y «Sin empezar», con el día de cada pedido) y «Ventas del día». Lleva los colores de la marca, el logo dentro del correo y no trae el botón «Ver en el sistema». El PDF adjunto, «Pedidos del …», sigue el mismo orden (#422).
+- Pedidos: en el celular, la barra fija de la hoja lleva solo dos botones (#422).
+
+### Corregido
+
+- Facturación: la OC que llegó por correo para un pedido ya no se usa para el resto de otro pedido de la misma sala, ni viene puesta si la sala tiene otro pedido abierto sin OC (#422).
+- Pedidos: si la oficina corrige las cantidades de un pedido listo para salir, deja de estar listo y queda en la bitácora (#422).
+
 ## [2026.11.24.2] - 2026-11-24
 
 Avisos de la tienda web y vigilantes de datos raros (#420). Sin migraciones ni cambios de permisos. La página de la tienda se subió antes, con su migración de índices.
