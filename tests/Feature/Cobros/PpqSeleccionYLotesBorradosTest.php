@@ -158,7 +158,9 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $this->assertSame(2, $p['ccf']);
         $this->assertSame(1, $p['nc']);
         $this->assertSame([$libre->numero_control], $p['volvieron_a_por_presentar']);
-        $this->assertSame([[
+        // assertEquals y no assertSame: la columna JSON de MySQL guarda las claves en
+        // otro orden (por largo), y lo que importa es qué dice, no en qué orden.
+        $this->assertEquals([[
             'numero_control' => $conSolicitud->numero_control, 'estado' => 'preparada', 'motivo' => 'va en la solicitud SOL-FICTICIA',
         ]], $p['no_se_tocaron']);
 
