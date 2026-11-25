@@ -11,6 +11,7 @@ use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
+use App\Services\Gastos\RegistrarPago;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\EstadoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
@@ -233,6 +234,35 @@ class MesDePlanillaPorLasRutasTest extends TestCase
         ])->assertSessionHasErrors('pago_id');
 
         $this->assertSame(0, PlanillaAnticipo::count());
+    }
+
+    /**
+     * Enlazado a un pago, el anticipo no puede ser mayor que lo que salió en ese pago: un
+     * cero de más al escribirlo («500» por «50») se le descontaría del sueldo entero.
+     */
+    public function test_el_anticipo_no_pasa_del_pago_con_el_que_se_entrego(): void
+    {
+        $gasto = Gasto::create([
+            'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('0', 64),
+            'beneficiario' => $this->conDescuentos->nombre, 'concepto' => 'Adelanto de prueba', 'categoria' => 'Anticipos',
+            'ambito' => 'empresarial', 'naturaleza' => 'operativo', 'moneda' => 'USD', 'importe' => '50.00',
+            'documentacion' => 'pendiente', 'responsable_id' => $this->oficina->id, 'registrado_por' => $this->oficina->id,
+        ]);
+        $cuota = $gasto->cuotas()->create(['numero' => 1, 'importe' => '50.00', 'vence' => '2026-10-05']);
+        $adelanto = app(RegistrarPago::class)->registrar($this->oficina,
+            $this->datosPago(['importe' => '50.00', 'fecha' => '2026-10-05']), [['cuota_id' => $cuota->id, 'importe' => '50.00']]);
+        $this->assertTrue(app(RegistrarAnticipo::class)->pagosCandidatos($this->conDescuentos)->contains('id', $adelanto->id));
+
+        $this->actingAs($this->oficina)->post(route('planilla.anticipos.store', $this->conDescuentos), [
+            'clave' => (string) Str::uuid(), 'fecha' => '2026-10-05', 'importe' => '500.00', 'moneda' => 'USD', 'pago_id' => $adelanto->id,
+        ])->assertSessionHasErrors('importe');
+        $this->assertSame(0, PlanillaAnticipo::count());
+
+        // Lo que de verdad salió, o una parte, sí.
+        $this->actingAs($this->oficina)->post(route('planilla.anticipos.store', $this->conDescuentos), [
+            'clave' => (string) Str::uuid(), 'fecha' => '2026-10-05', 'importe' => '50.00', 'moneda' => 'USD', 'pago_id' => $adelanto->id,
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(5000, PlanillaAnticipo::sole()->pendiente());
     }
 
     /** El anticipo de una persona no se descuenta en la línea de otra, ni por la ruta. */

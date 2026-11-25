@@ -89,6 +89,14 @@ final class RegistrarAnticipo
                     ]);
                 }
 
+                // Se recupera lo que salió en ese pago, o una parte: un cero de más al
+                // escribirlo se le descontaría del sueldo.
+                if (Dinero::centavos($datos['importe']) > Dinero::centavos((string) $pago->importe)) {
+                    throw ValidationException::withMessages([
+                        'importe' => 'El anticipo no puede ser mayor que el pago con el que se entregó ('.$pago->moneda.' '.$pago->importe.').',
+                    ]);
+                }
+
                 if (PlanillaAnticipo::where('pago_id', $pago->id)->exists()) {
                     throw ValidationException::withMessages([
                         'pago_id' => 'Ese pago ya está registrado como anticipo. Un mismo pago no puede recuperarse dos veces.',
