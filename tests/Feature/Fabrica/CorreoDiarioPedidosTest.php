@@ -384,6 +384,12 @@ class CorreoDiarioPedidosTest extends TestCase
         foreach (['#2B4A6F', '#3B5F8A', 'Correo interno'] as $deAntes) {
             $this->assertStringNotContainsString($deAntes, $html);
         }
+        // El título de cada grupo de «Quedó allá» es lo único que dice si la caja está lista o
+        // nadie la tocó: en la tinta y del tamaño del texto, no chico, gris y en mayúsculas.
+        $this->assertSame(1, preg_match('/<h3 style="([^"]*)">Sin empezar<\/h3>/', $html, $grupo));
+        $this->assertStringContainsString('color: #2B2421', $grupo[1]);
+        $this->assertStringContainsString('font-size: 16px', $grupo[1]);
+        $this->assertStringNotContainsString('uppercase', $grupo[1]);
         // Lo que faltó y por qué ahora va en el correo; lo que salió, sin la lista de productos.
         $this->assertStringContainsString('Súper Ficticio Centro: pedido N.º '.$centro->id.', 1 producto. Faltó Canilla de prueba 6 (Sin harina).', $texto);
         $this->assertStringContainsString('Tienda Inventada Norte: no se mandó el pedido N.º '.$norte->id.' (El cliente canceló).', $texto);

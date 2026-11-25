@@ -7,7 +7,7 @@
  * Colores de la marca (Melqui, 25/11/2026: «los colores del correo no me gustan»; antes era
  * el azul pizarra del PDF del día). Sobrios y cálidos, para leer de un vistazo:
  *   tinta        #2B2421  el texto (contraste 15:1 sobre blanco)
- *   gris cálido  #6F625C  lo secundario y los subtítulos (5,9:1)
+ *   gris cálido  #6F625C  lo secundario: las notas y el pie (5,9:1)
  *   rojo         #C23B26  el del logo, SOLO de acento: la franja de arriba, la marca de cada
  *                         parte y el nombre del correo (5,3:1, se lee también como texto)
  *   fondo        #F6F1EE  alrededor de la tarjeta
@@ -82,16 +82,16 @@ h2 {
     text-align: start;
 }
 
-/* Los grupos dentro de una parte («Listos para salir», «Armando», «Sin empezar»). */
+/* Los grupos dentro de una parte («Listos para salir», «Armando», «Sin empezar»). Es lo único
+   que dice si la caja ya está lista o nadie la tocó, así que se lee de un vistazo: en la tinta,
+   del tamaño del texto y en negrita (antes, 12 px, gris y en mayúsculas). */
 h3 {
-    color: #6F625C;
-    font-size: 12px;
+    color: #2B2421;
+    font-size: 16px;
     font-weight: bold;
-    letter-spacing: 1px;
-    margin-top: 16px;
+    margin-top: 18px;
     margin-bottom: 6px;
     text-align: left;
-    text-transform: uppercase;
 }
 
 p {
