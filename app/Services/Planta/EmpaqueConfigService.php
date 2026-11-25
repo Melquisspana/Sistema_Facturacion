@@ -57,6 +57,12 @@ class EmpaqueConfigService
 
             $config->fill($this->soloAtributos($datos));
 
+            // Reactivarla desde el formulario exige lo mismo que alternarActivo(): sus
+            // dependencias (ya con los valores nuevos) tienen que estar vigentes hoy.
+            if ($config->activo && ! $config->getOriginal('activo')) {
+                $this->validarDependenciasVigentes($config);
+            }
+
             return $this->guardar($config, (bool) ($datos['es_predeterminada'] ?? false));
         });
     }
@@ -235,6 +241,14 @@ class EmpaqueConfigService
     private function validar(array $datos, ?PlantaEmpaqueConfig $config): void
     {
         $this->validarMercado($datos);
+
+        // La misma regla que marcarPredeterminada(): una inactiva no ocupa ese lugar.
+        if (($datos['es_predeterminada'] ?? false) && ! ($datos['activo'] ?? true)) {
+            throw ValidationException::withMessages([
+                'es_predeterminada' => 'Una configuración inactiva no puede ser la predeterminada.',
+            ]);
+        }
+
         $this->validarPresentacion($datos, $config);
         $this->validarInsumos($datos, $config);
         $this->validarVigencia($datos);
