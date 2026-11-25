@@ -14,10 +14,14 @@ use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
 use App\Models\User;
+use App\Services\Alertas\Avisador;
 use App\Services\Sistema\DiagnosticoSistemaService;
 use App\Support\WorkerHeartbeat;
+use Illuminate\Cache\Events\RetrievingManyKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -763,5 +767,92 @@ class DashboardTest extends TestCase
         ] as $ruta) {
             $this->actingAs($admin)->get(route($ruta))->assertOk();
         }
+    }
+
+    // ---------- Avisos abiertos ----------
+
+    private function conSalud(): User
+    {
+        Permission::findOrCreate('sistema.salud', 'web');
+        $usuario = $this->usuario('administrador');
+        $usuario->givePermissionTo('sistema.salud');
+
+        return $usuario;
+    }
+
+    private function avisosAndando(): void
+    {
+        config(['alertas.enabled' => true, 'alertas.correo' => 'avisos@example.test']);
+        Cache::put(Avisador::CLAVE_ULTIMA_REVISION, now()->getTimestamp(), now()->addDay());
+    }
+
+    public function test_quien_ve_salud_del_sistema_ve_los_avisos_abiertos_con_su_boton(): void
+    {
+        $this->avisosAndando();
+        Cache::forever('alertas.abiertas.salud', [
+            'desde' => now()->subHour()->getTimestamp(), 'avisada' => false, 'conteo_avisado' => 0, 'ultimo_intento' => null,
+            'nombre' => 'Salud del sistema', 'titulo' => 'Falla en el sistema: disco', 'detalle' => 'Queda poco espacio.',
+            'que_hacer' => 'Liberá espacio.', 'enlace' => 'admin.salud-sistema',
+        ]);
+
+        $html = $this->actingAs($this->conSalud())->get(route('dashboard'))->assertOk()
+            ->assertSeeInOrder(['Avisos abiertos (1)', 'Falla en el sistema: disco', 'Queda poco espacio.', 'Desde',
+                'Liberá espacio.', 'El correo de este aviso todavía no salió.', 'Revisar', 'Se quitan solos cuando se arregla.'])
+            ->assertDontSee('Los avisos están apagados')
+            ->getContent();
+        // Esa dirección también está en «Estado del sistema»: el botón se busca dentro de la caja.
+        $this->assertSame(1, preg_match('/<section aria-labelledby="titulo-avisos".*?<\/section>/s', $html, $caja));
+        $this->assertStringContainsString('href="'.route('admin.salud-sistema').'"', $caja[0]);
+    }
+
+    public function test_sin_permiso_no_ve_los_avisos_ni_se_leen(): void
+    {
+        $this->avisosAndando();
+        Cache::forever('alertas.abiertas.salud', ['desde' => now()->getTimestamp(), 'avisada' => true, 'titulo' => 'Falla en el sistema: disco']);
+        $lecturas = 0;
+        Event::listen(RetrievingManyKeys::class, function (RetrievingManyKeys $e) use (&$lecturas) {
+            $lecturas += in_array('alertas.abiertas.salud', $e->keys, true) ? 1 : 0;
+        });
+
+        foreach (['facturacion', 'contabilidad', 'jefatura'] as $rol) {
+            $this->actingAs($this->usuario($rol))->get(route('dashboard'))->assertOk()
+                ->assertDontSee('Avisos abiertos')->assertDontSee('Falla en el sistema: disco');
+        }
+        $this->assertSame(0, $lecturas);
+    }
+
+    public function test_sin_avisos_abiertos_no_se_dibuja_la_caja(): void
+    {
+        $this->avisosAndando();
+
+        $this->actingAs($this->conSalud())->get(route('dashboard'))->assertOk()
+            ->assertDontSee('Avisos abiertos')->assertDontSee('Se quitan solos');
+    }
+
+    public function test_si_los_avisos_no_se_pueden_leer_el_inicio_carga_igual(): void
+    {
+        $this->mock(Avisador::class, fn ($m) => $m->shouldReceive('abiertos')->andThrow(new \RuntimeException('caché caída')));
+
+        $this->actingAs($this->conSalud())->get(route('dashboard'))->assertOk()->assertDontSee('Avisos abiertos');
+    }
+
+    public function test_una_linea_gris_dice_si_los_avisos_estan_apagados_sin_correo_o_atrasados(): void
+    {
+        $usuario = $this->conSalud();
+        config(['alertas.enabled' => false]);
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertSee('Los avisos están apagados: Configuración › Módulos › Avisos de fallas.');
+
+        config(['alertas.enabled' => true, 'alertas.correo' => '']);
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertSee('Los avisos no tienen a quién escribir: cargá un correo en Configuración › Módulos › Avisos de fallas.');
+
+        config(['alertas.correo' => 'avisos@example.test']);
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertSee('Los avisos no se revisaron en los últimos 15 minutos: puede faltar alguno. Si sigue así en 10 minutos, pasá este aviso a quien te ayuda con el sistema.');
+
+        $this->avisosAndando();
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertDontSee('Los avisos no se revisaron')->assertDontSee('Los avisos están apagados');
     }
 }

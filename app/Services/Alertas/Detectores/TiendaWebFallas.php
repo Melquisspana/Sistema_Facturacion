@@ -1,0 +1,377 @@
+<?php
+
+namespace App\Services\Alertas\Detectores;
+
+use App\Facades\Ajustes;
+use App\Services\Alertas\Detector;
+use App\Services\Alertas\Hallazgo;
+use App\Services\TiendaWeb\ImportarPedidosWeb;
+use App\Support\HoraNegocio;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+
+/**
+ * Lo que la página anotó que le falló (GET /api/sistema/errores, guardado por
+ * {@see ImportarPedidosWeb}) y los pedidos pagados que no llegan. Tres avisos, como
+ * {@see EventosRecientes}, cada uno con su propio tope diario, para que una basura que
+ * manda cualquiera no le gaste el tope a lo que impide vender ni a los pedidos pagados:
+ *
+ *  - pagos(): la tienda no puede cobrar o la cerró el fusible, un pago que no abrió, la
+ *    comprobación anti-robots que no contesta o tiene la llave secreta mal puesta, un pago
+ *    sin comprobar;
+ *  - otras(): errores internos, avisos con firma mala, consultas que fallan, pedidos
+ *    pagados que no se pudieron leer o quedaron en revisión, y las listas que no llegan;
+ *  - robots(): los rechazos de la comprobación anti-robots y de la trampa, que los
+ *    provoca cualquiera que mande un pedido. Antes iban en otras(): un robot toda la
+ *    mañana le gastaba el tope y el pedido pagado en revisión ya no llegaba al correo.
+ *
+ * Si la página no contesta, no opinan: de eso avisa {@see TiendaWebSinRespuesta} y no
+ * llegan dos correos por lo mismo. Cada texto sale de {@see self::CATALOGO}: nada del
+ * comprador, ni montos, ni lo que mandó la página tal cual.
+ */
+class TiendaWebFallas implements Detector
+{
+    /**
+     * Cada línea, de la más grave a la menos grave: frase, qué hacer y mínimo de veces.
+     * «:n» es la cantidad.
+     */
+    private const CATALOGO = [
+        // Pagos
+        'no_cobra' => ['La tienda no puede cobrar: los compradores ven “tienda cerrada”',
+            'Avisá a soporte: faltan las llaves de Wompi o la dirección del sitio en Cloudflare.', 1],
+        // Cloudflare dijo que la llave secreta de Turnstile no sirve: frena a todos y un robot no lo provoca.
+        'verificacion_llave' => ['La tienda no deja pagar a nadie: la llave secreta de Turnstile está mal puesta',
+            'Nadie puede comprar hasta que se arregle: copiá otra vez la llave secreta de Turnstile en Cloudflare; si no la tenés a mano, avisá a soporte.', 1],
+        // El fusible de la página: con 30 pedidos sin pagar en la última hora no abre más cobros.
+        'cobro_fusible' => ['Se cerró la tienda un rato porque entraron demasiados pedidos sin pagar: puede ser un robot',
+            'Se vuelve a abrir sola en menos de una hora. Si se repite, avisá a soporte: puede hacer falta prender Turnstile o, si es un día de promoción, subir el tope.', 1],
+        'cobro_llaves' => ['No se pudo abrir el pago: Wompi no aceptó las llaves de la tienda',
+            'Copiá otra vez el App ID y la API Secret del aplicativo En Vivo en Cloudflare.', 1],
+        'cobro_modo' => ['No se pudo abrir el pago: la tienda no está en el modo En Vivo de Wompi',
+            'Revisá en Wompi que el aplicativo siga En Vivo.', 1],
+        'cobro_wompi' => ['No se pudo abrir el pago: Wompi está fallando o lento',
+            'Esperá unos minutos y probá una compra; si sigue, revisá el estado de Wompi o avisá a soporte.', 1],
+        'cobro_llamada' => ['No se pudo abrir el pago: la página no logró llamar a Wompi', 'Avisá a soporte.', 1],
+        'cobro_guardar' => ['No se pudo abrir el pago: no se pudo guardar el enlace', 'Avisá a soporte.', 1],
+        'cobro_otra' => ['No se pudo abrir el pago: otra falla', 'Avisá a soporte.', 1],
+        'verificacion_sin_respuesta' => ['La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó',
+            'Es una falla de Cloudflare: esperá unos minutos y probá una compra desde tu celular; si sigue sin dejar pagar, avisá a soporte.', 1],
+        'error_consulta' => ['Llegó un pago que no se pudo comprobar con Wompi',
+            'Buscalo en el panel de Wompi. El pedido no se pierde: si no se confirma solo, a los 7 días queda en revisión.', 1],
+        'vencido_sin_confirmar' => [':n pedidos se cancelaron solos sin que Wompi confirmara si estaban pagados',
+            'Buscá en el panel de Wompi los pagos de hace 7 días y, si alguno entró, atendelo a mano.', 1],
+        // Otras
+        'invalidos' => [':n pedidos pagados que el sistema no pudo leer (n.º :ids); esos no entran solos',
+            'El cliente ya pagó y el pedido no entra: pasale esos números a soporte.', 1],
+        'revision' => [':n pedidos quedaron en revisión en la página: :codigos',
+            'Buscá cada código en el panel de Wompi; si el pago entró, avisá a soporte para cargarlo.', 1],
+        'revision_lista' => ['No se pudo leer la lista de pedidos en revisión de la página', 'Avisá a soporte.', 1],
+        'interno_hacer_pedido' => ['La página tuvo un error interno al hacer un pedido', 'Reenviá este correo a soporte.', 1],
+        'interno_seguir_pedido' => ['La página tuvo un error interno al seguir un pedido', 'Reenviá este correo a soporte.', 1],
+        'interno_aviso_pago' => ['La página tuvo un error interno al recibir un aviso de pago', 'Reenviá este correo a soporte.', 1],
+        'interno_sistema' => ['La página tuvo un error interno al contestarle al sistema', 'Reenviá este correo a soporte.', 1],
+        'interno_otra' => ['La página tuvo un error interno', 'Reenviá este correo a soporte.', 1],
+        'firma_no_cuadra' => ['Llegó un aviso de pago con una firma que no coincide',
+            'Revisá que la API Secret en Cloudflare sea la del aplicativo En Vivo.', 1],
+        'firma_sin_cabecera' => ['Llegó un aviso de pago sin la firma de Wompi',
+            'Avisá a soporte: Cloudflare puede estar quitando la firma de los avisos.', 1],
+        // La página anota una por pedido, motivo y hora: entre una y otra pudo fallar más veces.
+        'consulta_fallida' => ['La consulta de reserva a Wompi falló al menos :n veces',
+            'Los pagos se confirman igual cuando llega el aviso de Wompi; si se repite, avisá a soporte.', 3],
+        // Robots. Un robot o un comprador de verdad, si la llave pública de Turnstile está mal puesta: no se
+        // distinguen. La secreta mal puesta sí se distingue y va en Pagos (verificacion_llave).
+        'verificacion_rechazo' => ['La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta',
+            'Probá una compra desde tu celular: si te rechaza, revisá las dos llaves de Turnstile en Cloudflare; si pasa, eran robots y no hay que hacer nada.', 1],
+        'verificacion_trampa' => ['La tienda rechazó pedidos que llenaron la trampa para robots',
+            'Casi siempre son robots. Probá una compra desde tu celular: si te rechaza, avisá a soporte; si pasa, no hay que hacer nada.', 1],
+        'lista' => ['No se pudo leer la lista de errores de la página',
+            'Si recién se subió el sistema, falta subir la página; si no, avisá a soporte.', 1],
+    ];
+
+    private const SINGULAR = [
+        'vencido_sin_confirmar' => '1 pedido se canceló solo sin que Wompi confirmara si estaba pagado',
+        'invalidos' => '1 pedido pagado que el sistema no pudo leer (n.º :ids); ese no entra solo',
+        'revision' => '1 pedido quedó en revisión en la página: :codigos',
+    ];
+
+    /**
+     * Líneas que suman 1 al conteo: dicen cómo están las cosas y no cuántas veces pasó algo,
+     * o son de un robot, que mientras siga no tiene que mandar «Sigue la falla» cada hora.
+     */
+    private const ESTADOS = ['no_cobra', 'revision_lista', 'lista', 'verificacion_rechazo', 'verificacion_trampa'];
+
+    private const MAX_DETALLE = 4;
+
+    private const MAX_QUE_HACER = 3;
+
+    /** Minutos: la hora entre una anotación y la siguiente, más la lista que llega cada 5 y margen. */
+    private const VENTANA_CONSULTA_FALLIDA = 90;
+
+    /** @param  'pagos'|'otras'|'robots'  $grupo */
+    private function __construct(private readonly string $grupo) {}
+
+    public static function pagos(): self
+    {
+        return new self('pagos');
+    }
+
+    public static function otras(): self
+    {
+        return new self('otras');
+    }
+
+    public static function robots(): self
+    {
+        return new self('robots');
+    }
+
+    public function tipo(): string
+    {
+        return match ($this->grupo) {
+            'pagos' => 'tienda_web_pagos',
+            'otras' => 'tienda_web_fallas',
+            'robots' => 'tienda_web_robots',
+        };
+    }
+
+    public function nombre(): string
+    {
+        return match ($this->grupo) {
+            'pagos' => 'Pagos en la tienda web',
+            'otras' => 'Otras fallas de la tienda web',
+            'robots' => 'Rechazos anti-robots de la tienda web',
+        };
+    }
+
+    /**
+     * Con la traída automática prendida y una lectura buena reciente. Pagos y robots piden
+     * además la lista de errores reciente: con una vieja darían un «normalizado» falso (de
+     * la lista que no llega avisa otras()).
+     */
+    public function aplica(): bool
+    {
+        if (! Ajustes::boolSinBase('tienda.pedidos.automatica') || ! $this->reciente(TiendaWebSinRespuesta::lectura()['ok'] ?? null)) {
+            return false;
+        }
+
+        return $this->grupo === 'otras' || $this->reciente($this->errores()['en'] ?? null, ImportarPedidosWeb::MINUTOS_ERRORES);
+    }
+
+    public function revisar(): ?Hallazgo
+    {
+        $lineas = match ($this->grupo) {
+            'pagos' => $this->lineasDePagos(),
+            'otras' => $this->lineasDeOtras(),
+            'robots' => $this->lineasDeRobots(),
+        };
+        $lineas = array_filter($lineas, fn (array $l) => $l['cantidad'] >= self::CATALOGO[$l['clave']][2]);
+        if ($lineas === []) {
+            return null;
+        }
+        $orden = array_flip(array_keys(self::CATALOGO));
+        usort($lineas, fn (array $a, array $b) => $orden[$a['clave']] <=> $orden[$b['clave']]);
+
+        $una = count($lineas) === 1;
+        $detalle = $una
+            ? ($lineas[0]['cuando'] !== '' ? ucfirst($lineas[0]['cuando']).'.' : 'Revisado a las '.HoraNegocio::ahora()->format('H:i').'.')
+            : implode(' ', array_map(fn (array $l) => $l['titulo'].($l['cuando'] !== '' ? ': '.$l['cuando'] : '').'.',
+                array_slice($lineas, 0, self::MAX_DETALLE)));
+        $primeras = array_filter(array_column($lineas, 'primera'));
+
+        return new Hallazgo(
+            titulo: $una ? $lineas[0]['titulo'] : 'La tienda web tiene '.count($lineas).' problemas',
+            detalle: $detalle,
+            queHacer: implode(' ', array_slice(array_values(array_unique(array_map(fn (array $l) => self::CATALOGO[$l['clave']][1], $lineas))), 0, self::MAX_QUE_HACER)),
+            // Las líneas de estado suman 1: «Sigue la falla» sale solo si empeora de verdad.
+            conteo: array_sum(array_map(fn (array $l) => in_array($l['clave'], self::ESTADOS, true) ? 1 : $l['cantidad'], $lineas)),
+            desde: $primeras === [] ? null : Carbon::createFromTimestamp(min($primeras)),
+        );
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function lineasDePagos(): array
+    {
+        $errores = $this->errores();
+        $lineas = ($errores['cobra'] ?? true) === false ? [$this->linea('no_cobra', 1)] : [];
+
+        foreach ($this->agrupar($errores['errores'] ?? [], fn (array $e) => match ($e['tipo']) {
+            'error_cobro' => self::motivoDeCobro($e['detalle']),
+            'error_consulta', 'vencido_sin_confirmar' => $this->enVentana($e) ? $e['tipo'] : null,
+            // Que Cloudflare no conteste o no acepte la llave secreta no lo provoca un robot y frena a
+            // todos; los demás rechazos van en robots().
+            'rechazo_verificacion' => ! $this->enVentana($e) ? null : match ($e['detalle']) {
+                'turnstile_sin_respuesta' => 'verificacion_sin_respuesta',
+                'turnstile_llave' => 'verificacion_llave',
+                default => null,
+            },
+            default => null,
+        }) as $clave => $grupo) {
+            // El pago que no abrió sigue abierto hasta que otro comprador consiga su enlace.
+            $lineas[] = $this->linea($clave, $grupo['cantidad'], $grupo, ventana: ! str_starts_with($clave, 'cobro_'));
+        }
+
+        return $lineas;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function lineasDeOtras(): array
+    {
+        $lineas = [];
+        // Se fija en la primera revisión, no recién cuando falta una lista: así una que
+        // vence o deja de llegar más tarde no da un «normalizado» falso de 15 minutos.
+        $vigilando = TiendaWebSinRespuesta::vigilando();
+        $lectura = TiendaWebSinRespuesta::lectura();
+        if (($lectura['invalidos'] ?? 0) > 0) {
+            $ids = $lectura['invalidos_ids'] ?? [];
+            $mas = $lectura['invalidos'] - count($ids);
+            $lineas[] = $this->linea('invalidos', $lectura['invalidos'], reemplazos: [
+                ':ids' => implode(', ', $ids).($mas > 0 ? ' y '.$mas.' más' : ''),
+            ]);
+        }
+        // Una lista de revisión vieja (la ruta dejó de contestar) no se usa: el pedido pudo
+        // resolverse u otro quedar en revisión. Sin lista, cuenta desde que se vigila. Se
+        // pide cada MINUTOS_REVISION: con menos margen, una caída de la página avisaría acá
+        // además de en TiendaWebSinRespuesta.
+        $revision = Cache::get(ImportarPedidosWeb::CLAVE_REVISION);
+        $revision = is_array($revision) ? $revision : [];
+        if (! $this->reciente($revision['en'] ?? $vigilando, ImportarPedidosWeb::MINUTOS_REVISION)) {
+            $lineas[] = $this->linea('revision_lista', 1);
+        } elseif (($revision['n'] ?? 0) > 0) {
+            $codigos = $revision['codigos'] ?? [];
+            $mas = $revision['n'] - count($codigos);
+            $lineas[] = $this->linea('revision', $revision['n'], reemplazos: [
+                ':codigos' => implode(', ', $codigos).($mas > 0 ? ' y '.$mas.' más' : ''),
+            ]);
+        }
+
+        $errores = $this->errores();
+        foreach ($this->agrupar($errores['errores'] ?? [], fn (array $e) => ! $this->enVentana($e) ? null : match ($e['tipo']) {
+            'error_interno' => 'interno_'.self::ruta($e['detalle']),
+            'firma_invalida' => $e['detalle'] === 'sin_cabecera' ? 'firma_sin_cabecera' : 'firma_no_cuadra',
+            'consulta_fallida' => 'consulta_fallida',
+            default => null,
+        }) as $clave => $grupo) {
+            $lineas[] = $this->linea($clave, $grupo['cantidad'], $grupo, ventana: true);
+        }
+
+        // Una página vieja sin la ruta, o una que dejó de contestarla: cuenta desde que se vigila.
+        // Se pide cada MINUTOS_ERRORES, con el mismo margen que la lista de revisión.
+        if (! $this->reciente($errores['en'] ?? $vigilando, ImportarPedidosWeb::MINUTOS_ERRORES)) {
+            $lineas[] = $this->linea('lista', 1);
+        }
+
+        return $lineas;
+    }
+
+    /**
+     * Los rechazos que provoca cualquiera que mande un pedido. Que Cloudflare no conteste o
+     * no acepte la llave secreta va en pagos(): frena a todos y un robot no lo puede provocar.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function lineasDeRobots(): array
+    {
+        $lineas = [];
+        foreach ($this->agrupar($this->errores()['errores'] ?? [], fn (array $e) => $e['tipo'] !== 'rechazo_verificacion' || ! $this->enVentana($e) ? null : match ($e['detalle']) {
+            'turnstile_sin_respuesta', 'turnstile_llave' => null,
+            'campo_trampa' => 'verificacion_trampa',
+            default => 'verificacion_rechazo',
+        }) as $clave => $grupo) {
+            $lineas[] = $this->linea($clave, $grupo['cantidad'], $grupo, ventana: true);
+        }
+
+        return $lineas;
+    }
+
+    /**
+     * Las filas de la página, sumadas por la clave que les da $clave (null = no cuenta).
+     *
+     * @return array<string, array{cantidad: int, primera: int, ultima: int}>
+     */
+    private function agrupar(array $filas, callable $clave): array
+    {
+        $grupos = [];
+        foreach ($filas as $fila) {
+            $k = $clave($fila);
+            if ($k === null) {
+                continue;
+            }
+            $grupos[$k] = [
+                'cantidad' => ($grupos[$k]['cantidad'] ?? 0) + $fila['cantidad'],
+                'primera' => min($grupos[$k]['primera'] ?? $fila['primera'], $fila['primera']),
+                'ultima' => max($grupos[$k]['ultima'] ?? $fila['ultima'], $fila['ultima']),
+            ];
+        }
+
+        return $grupos;
+    }
+
+    /** @param  array{primera: int, ultima: int}|null  $grupo */
+    private function linea(string $clave, int $cantidad, ?array $grupo = null, bool $ventana = false, array $reemplazos = []): array
+    {
+        $frase = $cantidad === 1 && isset(self::SINGULAR[$clave]) ? self::SINGULAR[$clave] : self::CATALOGO[$clave][0];
+        $cuando = '';
+        if ($grupo !== null) {
+            $ultima = HoraNegocio::aLocal(Carbon::createFromTimestamp($grupo['ultima']));
+            // Si la frase ya dice cuántos, no se repite.
+            $cuando = (str_contains(self::CATALOGO[$clave][0], ':n') ? '' : $cantidad.($cantidad === 1 ? ' vez' : ' veces'))
+                .($ventana ? ' en las últimas 24 horas' : '')
+                .', la última '.($ultima->isSameDay(HoraNegocio::ahora()) ? '' : 'el '.$ultima->format('d/m').' ')
+                .'a las '.$ultima->format('H:i');
+            $cuando = ltrim($cuando, ' ,');
+        }
+
+        return [
+            'clave' => $clave, 'cantidad' => $cantidad, 'primera' => $grupo['primera'] ?? null, 'cuando' => $cuando,
+            'titulo' => strtr($frase, $reemplazos + [':n' => (string) $cantidad]),
+        ];
+    }
+
+    /** El detalle fijo que anota la página al fallar el cobro, en una categoría con su frase. */
+    private static function motivoDeCobro(string $detalle): string
+    {
+        return match (true) {
+            str_contains($detalle, 'demasiados pedidos sin pagar') => 'cobro_fusible',
+            preg_match('/\btoken HTTP 4\d\d\b|\bHTTP 40[13]\b/', $detalle) === 1 => 'cobro_llaves',
+            str_contains($detalle, 'modo equivocado') => 'cobro_modo',
+            preg_match('/\bHTTP 5\d\d\b|sin respuesta/', $detalle) === 1 => 'cobro_wompi',
+            str_contains($detalle, 'TypeError') => 'cobro_llamada',
+            str_contains($detalle, 'guardar') => 'cobro_guardar',
+            default => 'cobro_otra',
+        };
+    }
+
+    /** «seguir_pedido · TypeError» → seguir_pedido; lo desconocido, otra. */
+    private static function ruta(string $detalle): string
+    {
+        $ruta = explode(' · ', $detalle)[0];
+
+        return in_array($ruta, ['hacer_pedido', 'seguir_pedido', 'aviso_pago', 'sistema'], true) ? $ruta : 'otra';
+    }
+
+    /**
+     * Lo que pasa y se va (no un pago que no abrió) cuenta solo si pasó hace poco, como en EventosRecientes.
+     * Una consulta de reserva que sigue fallando la página la vuelve a anotar recién a la hora, y la lista
+     * llega cada MINUTOS_ERRORES: con media hora, una caída larga de Wompi daría un «normalizado» falso.
+     */
+    private function enVentana(array $fila): bool
+    {
+        $minutos = $fila['tipo'] === 'consulta_fallida' ? self::VENTANA_CONSULTA_FALLIDA : (int) config('alertas.ventana_eventos_minutos', 30);
+
+        return $fila['ultima'] >= now()->subMinutes($minutos)->getTimestamp();
+    }
+
+    /** @param  int  $cadencia  cada cuántos minutos se pide eso a la página, además de la gracia */
+    private function reciente(?int $en, int $cadencia = 0): bool
+    {
+        return $en !== null && $en >= now()->subMinutes(TiendaWebSinRespuesta::MINUTOS + $cadencia)->getTimestamp();
+    }
+
+    /** @return array{en?: int, cobra?: bool, errores?: list<array{tipo: string, detalle: string, cantidad: int, primera: int, ultima: int}>} */
+    private function errores(): array
+    {
+        $errores = Cache::get(ImportarPedidosWeb::CLAVE_ERRORES);
+
+        return is_array($errores) ? $errores : [];
+    }
+}

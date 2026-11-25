@@ -8,6 +8,31 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.24.2] - 2026-11-24
+
+Avisos de la tienda web y vigilantes de datos raros (#420). Sin migraciones ni cambios de permisos. La página de la tienda se subió antes, con su migración de índices.
+
+### Agregado
+
+- Tienda web: el sistema trae la lista de errores de la página cada 5 minutos, pide la consulta de pagos sin aviso en cada pasada y la limpieza una vez por hora. Avisa por correo, con tope diario por tipo, cuando:
+  - la página no responde;
+  - no puede cobrar o un pago no abrió;
+  - la llave secreta de la verificación anti-robots está mal puesta;
+  - el fusible cerró la tienda;
+  - hay otras fallas;
+  - hay rechazos anti-robots, en un correo aparte.
+
+  Cada aviso dice qué hacer y se cierra solo (#420).
+- Vigilantes de datos raros en el Inicio y por correo (#420):
+  - CCF «preparado» sin PPQ vivo, el mismo CCF en dos PPQ o CCF invalidados que siguen en cobro;
+  - documentos de producción sin el sello de Hacienda, o una nota sobre un CCF invalidado;
+  - las alertas en rojo de Salud del sistema.
+- Inicio: caja «Avisos abiertos» para quien tiene `sistema.salud`, con qué hacer y el botón «Revisar» (#420).
+
+### Cambiado
+
+- Pedidos web: un pedido pagado que sigue sin factura pasada media hora sube a «Requieren atención» y avisa (#420).
+
 ## [2026.11.24] - 2026-11-24
 
 Barrido de botones sin prueba, tandas 1 y 2: cobros, PPQ, precios, salas y clientes (#418), y numeración fiscal y contraseñas (#417). Sin migraciones ni cambios de permisos.

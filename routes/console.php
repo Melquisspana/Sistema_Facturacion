@@ -355,5 +355,9 @@ Schedule::command('tienda:traer-pedidos --aplicar')
     // Candado de 5 minutos: si una pasada se cae, la siguiente no queda trabada un día entero.
     ->withoutOverlapping(5)
     // Emite a Hacienda (ADR 0011): una emisión lenta no frena las otras tareas del programador.
+    // Una tarea en segundo plano no dispara ScheduledTaskFailed: su vigilancia es
+    // TiendaWebSinRespuesta (y la facturación que falla se anota en el comando). A propósito
+    // no se escucha ScheduledBackgroundTaskFinished: corre cada minuto y un corte de un minuto
+    // ya mandaría correo, con el tope de las otras tareas.
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/tienda-pedidos.log'));
