@@ -21,7 +21,7 @@ use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
- * El correo de las 18:00, para quien dirige la fábrica. En tres partes, en este orden
+ * El correo de las 18:00 (a quién va: ver A QUIÉN; lleva dinero). En tres partes, en este orden
  * (Melqui, 25/11/2026), una línea por sala: «Llegó de los vendedores» (los pedidos que
  * entraron desde el correo anterior), «Salió de la fábrica» (lo que se mandó, con lo que
  * faltó y por qué) y «Quedó allá» (primero «Listos para salir», después «Armando» y al final

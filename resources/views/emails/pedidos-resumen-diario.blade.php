@@ -1,4 +1,4 @@
-{{-- El correo de las 18:00 para quien dirige la fábrica (Melqui, 25/11/2026: «que ella entienda
+{{-- El correo de las 18:00, para la lista de Configuración › Rutas (Melqui, 25/11/2026: «que ella entienda
      de forma fácil todo»). Tres partes, en este orden y una línea por sala: lo que llegó de los
      vendedores, lo que salió de la fábrica (con lo que faltó y por qué) y lo que quedó allá
      (listos para salir, armando y sin empezar, cada uno con su día); al final, lo vendido,
