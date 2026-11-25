@@ -702,6 +702,7 @@ class NavigationTest extends TestCase
         return [
             'ventas / clientes' => ['clientes.index', 'ventas'],
             'ventas / documentos fiscales' => ['facturacion.index', 'ventas'],
+            'ventas / llegó de pedidos' => ['facturacion.llego-de-fabrica', 'ventas'],
             'cobros / ppq' => ['ppq.index', 'cobros'],
             'contabilidad / compras' => ['documentos-recibidos.index', 'contabilidad'],
             'contabilidad / paquete mensual' => ['contabilidad.paquete', 'contabilidad'],
