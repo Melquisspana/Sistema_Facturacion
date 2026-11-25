@@ -130,6 +130,9 @@ class ListoParaSalirTest extends TestCase
                 ->assertDontSee('7.77')->assertDontSee('fábrica')
                 ->getContent();
             $this->assertStringContainsString('class="v num-grande">'.$pedido->id.'<', $html, 'el N.º de pedido va grande');
+            // La barra «Volver al pedido» / «Imprimir» se ve en pantalla y no sale en el papel.
+            $this->assertMatchesRegularExpression('/<div class="no-print">\s*<a href="'.preg_quote(route('fabrica.pedidos.show', $pedido), '/').'">Volver al pedido<\/a>/', $html);
+            $this->assertMatchesRegularExpression('/@media print \{(?:(?!@media).)*\.no-print \{ display: none; \}/s', $html);
         }
 
         // No registra envío, no cambia el estado, no llega a facturación ni deja auditoría.
