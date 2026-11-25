@@ -83,7 +83,7 @@ class GastosGenerarRecurrentesCommand extends Command
 
         foreach ($reglas as $regla) {
             if (! $aplicar) {
-                [$cuantas, $fuera] = $this->simular($regla, $hoy, $calendario);
+                [$cuantas, $fuera] = $this->simular($regla, $hoy, $calendario, $generador);
                 $total += $cuantas;
                 $pendientesDeRevisar += $fuera;
 
@@ -100,6 +100,10 @@ class GastosGenerarRecurrentesCommand extends Command
             }
 
             $this->avisarFueraDeVentana($regla, $resultado['fuera_de_ventana']);
+
+            if ($resultado['en_pausa'] !== []) {
+                $this->warn('#'.$regla->id.' '.$regla->nombre.': vencieron en pausa, SIN generar — '.implode(', ', $resultado['en_pausa']));
+            }
         }
 
         $this->newLine();
@@ -116,8 +120,10 @@ class GastosGenerarRecurrentesCommand extends Command
     }
 
     /** @return array{0: int, 1: int} */
-    private function simular(Regla $regla, CarbonImmutable $hoy, CalendarioRecurrencia $calendario): array
+    private function simular(Regla $regla, CarbonImmutable $hoy, CalendarioRecurrencia $calendario, GenerarObligaciones $generador): array
     {
+        // Lo que venció en una pausa ya terminada tampoco se crearía ({@see GenerarObligaciones::paraRegla()}).
+        $vencioEnPausa = $generador->vencioEnPausa($regla);
         $ventana = (int) config('gastos.recurrencias.ventana_recuperacion_dias', 62);
         $hasta = $hoy->addDays((int) $regla->dias_generar_antes);
 
@@ -134,7 +140,7 @@ class GastosGenerarRecurrentesCommand extends Command
         $nuevos = [];
 
         foreach ($calendario->periodos($regla->calendario(), $desde, $hasta) as $periodo) {
-            if (! in_array($periodo['periodo'], $resueltos, true)) {
+            if (! in_array($periodo['periodo'], $resueltos, true) && ! $vencioEnPausa($periodo['vence'])) {
                 $nuevos[] = $periodo['periodo'].' (vence '.$periodo['vence']->toDateString().')';
             }
         }

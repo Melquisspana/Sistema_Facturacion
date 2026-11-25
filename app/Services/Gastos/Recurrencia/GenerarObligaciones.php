@@ -62,11 +62,11 @@ final class GenerarObligaciones
     /**
      * Genera lo que le toque a UNA regla.
      *
-     * @return array{generadas: int, periodos: array<int, string>, fuera_de_ventana: array<int, string>, motivo_omision: ?string}
+     * @return array{generadas: int, periodos: array<int, string>, fuera_de_ventana: array<int, string>, en_pausa: array<int, string>, motivo_omision: ?string}
      */
     public function paraRegla(Regla $regla, CarbonImmutable $hoy, ?User $usuario = null): array
     {
-        $vacio = ['generadas' => 0, 'periodos' => [], 'fuera_de_ventana' => [], 'motivo_omision' => null];
+        $vacio = ['generadas' => 0, 'periodos' => [], 'fuera_de_ventana' => [], 'en_pausa' => [], 'motivo_omision' => null];
 
         if (! $regla->activa()) {
             // Pausada o cancelada: no genera. Lo ya generado sigue igual.
@@ -100,7 +100,21 @@ final class GenerarObligaciones
         $generadas = 0;
         $periodos = [];
 
+        // Lo que venció mientras la regla estuvo en pausa no se crea de golpe al
+        // reanudarla: pausar frena lo que viene. Se informa, y en «Por pagar» queda en
+        // «Fecha pasada · por confirmar» para que una persona decida si se debe.
+        $vencioEnPausa = $this->vencioEnPausa($regla);
+        $enPausa = [];
+
         foreach ($this->calendario->periodos($regla->calendario(), $desde, $hasta) as $periodo) {
+            if ($vencioEnPausa($periodo['vence'])) {
+                if (! Ocurrencia::where('regla_id', $regla->id)->where('periodo', $periodo['periodo'])->exists()) {
+                    $enPausa[] = $periodo['periodo'];
+                }
+
+                continue;
+            }
+
             if ($this->generarPeriodo($regla, $periodo['periodo'], $periodo['vence'], $usuario)) {
                 $generadas++;
                 $periodos[] = $periodo['periodo'];
@@ -116,8 +130,42 @@ final class GenerarObligaciones
             'generadas' => $generadas,
             'periodos' => $periodos,
             'fuera_de_ventana' => $fueraDeVentana,
+            'en_pausa' => $enPausa,
             'motivo_omision' => null,
         ];
+    }
+
+    /**
+     * Dice si un vencimiento cayó en una pausa ya terminada de la regla: del día en que
+     * se pausó (incluido) al día en que se reanudó (excluido). Las pausas salen de la
+     * bitácora de la regla. Lo usa también la simulación del comando.
+     *
+     * @return \Closure(CarbonImmutable): bool
+     */
+    public function vencioEnPausa(Regla $regla): \Closure
+    {
+        $pausas = [];
+        $desde = null;
+
+        $eventos = DB::table('gastos_eventos')->where('regla_id', $regla->id)
+            ->whereIn('accion', ['regla_pausada', 'regla_reanudada'])->orderBy('id')->get(['accion', 'created_at']);
+
+        foreach ($eventos as $evento) {
+            $dia = CarbonImmutable::parse($evento->created_at)->toDateString();
+
+            if ($evento->accion === 'regla_pausada') {
+                $desde ??= $dia;
+            } elseif ($desde !== null) {
+                $pausas[] = [$desde, $dia];
+                $desde = null;
+            }
+        }
+
+        return function (CarbonImmutable $vence) use ($pausas): bool {
+            $dia = $vence->toDateString();
+
+            return array_filter($pausas, fn (array $p) => $dia >= $p[0] && $dia < $p[1]) !== [];
+        };
     }
 
     /**

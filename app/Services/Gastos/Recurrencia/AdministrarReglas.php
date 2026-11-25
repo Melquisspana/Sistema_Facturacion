@@ -259,10 +259,18 @@ final class AdministrarReglas
 
                 $vence = $this->venceDelPeriodo($regla, $periodo);
 
+                // Un período que la regla no produce («2026-13», «marzo») no se guarda: no
+                // saltaría nada y el mes de verdad se generaría igual.
+                if ($vence === null) {
+                    throw ValidationException::withMessages([
+                        'periodo' => 'Ese período no le toca a esta regla. Saltá uno de los de «Lo que viene».',
+                    ]);
+                }
+
                 $ocurrencia = Ocurrencia::create([
                     'regla_id' => $regla->id,
                     'periodo' => $periodo,
-                    'vence' => $vence?->toDateString(),
+                    'vence' => $vence->toDateString(),
                     'estado' => 'omitida',
                     'gasto_id' => null,
                     'version_regla' => $regla->version,

@@ -200,6 +200,11 @@ class ReglaController extends Controller
                 .' período(s) anteriores a la ventana de recuperación sin generar; revisalos antes de crearlos.';
         }
 
+        if ($resultado['en_pausa'] !== []) {
+            $aviso .= ' No se crearon los que vencieron mientras estaba en pausa ('.implode(', ', $resultado['en_pausa'])
+                .'): si alguno se debe, está en «Por pagar», en «Fecha pasada · por confirmar».';
+        }
+
         return back()->with('gastos.aviso', $aviso);
     }
 
