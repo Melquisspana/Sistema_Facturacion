@@ -2,6 +2,7 @@
 
 namespace App\Enums;
 
+use App\Models\PedidoSala;
 use App\Services\Rutas\PedidosFabrica;
 
 /**
@@ -11,16 +12,23 @@ use App\Services\Rutas\PedidosFabrica;
  *
  *  - registrado («Pendiente»): falta mandarlo; sin envíos vigentes.
  *  - parcial («Mandado en parte»): salió algo y lo que falta va en otro envío.
+ *  - listo («Listo para salir», 24/11/2026; igual en la fábrica y en la oficina desde el
+ *    25/11/2026): la caja quedó como va a salir, aunque falte algo que no hay; espera el
+ *    próximo viaje. Lo marcan a mano en la PC de pedidos, que guarda ahí lo que hay en la caja,
+ *    y se quita con otro toque: vuelve a pendiente o a mandado en parte según sus envíos.
+ *    Quién y cuándo, en la auditoría. Puede ser el resto de un envío anterior
+ *    ({@see PedidoSala::enParte()}).
  *  - enviado («Mandado»): cerrado; salió todo, o salió una parte y lo que falta ya no va.
  *  - no_se_trae: cerrado sin envíos vigentes.
  *  - anulado: solo lo anula el vendedor.
  *
- * «Vigente» es todo menos anulado; «por mandar» es registrado o parcial.
+ * «Vigente» es todo menos anulado; «por mandar» es registrado, parcial o listo.
  */
 enum EstadoPedidoSala: string
 {
     case Registrado = 'registrado';
     case Parcial = 'parcial';
+    case Listo = 'listo';
     case Enviado = 'enviado';
     case NoSeTrae = 'no_se_trae';
     case Anulado = 'anulado';
@@ -30,6 +38,7 @@ enum EstadoPedidoSala: string
         return match ($this) {
             self::Registrado => 'Pendiente',
             self::Parcial => 'Mandado en parte',
+            self::Listo => 'Listo para salir',
             self::Enviado => 'Mandado',
             self::NoSeTrae => 'No se trae',
             self::Anulado => 'Anulado',
@@ -40,7 +49,7 @@ enum EstadoPedidoSala: string
     public function color(): string
     {
         return match ($this) {
-            self::Registrado, self::Parcial => 'amber',
+            self::Registrado, self::Parcial, self::Listo => 'amber',
             self::Enviado => 'green',
             self::NoSeTrae => 'gray',
             self::Anulado => 'red',
@@ -50,7 +59,7 @@ enum EstadoPedidoSala: string
     /** ¿Le falta salir de la fábrica? */
     public function porMandar(): bool
     {
-        return $this === self::Registrado || $this === self::Parcial;
+        return $this === self::Registrado || $this === self::Parcial || $this === self::Listo;
     }
 
     /** ¿Cerrado? Lo que no salió ya no va: solo acá la hoja marca la «F» de faltó. */
@@ -59,7 +68,10 @@ enum EstadoPedidoSala: string
         return $this === self::Enviado || $this === self::NoSeTrae;
     }
 
-    /** ¿Tiene hoja para imprimir? Salió algo o ya se cerró (no si está pendiente o anulado). */
+    /**
+     * ¿Tiene hoja para imprimir? Salió algo o ya se cerró (no si está pendiente o anulado). El
+     * listo que es resto de un envío también: {@see PedidoSala::tieneHoja()}.
+     */
     public function tieneHoja(): bool
     {
         return $this === self::Parcial || $this->cerrado();
@@ -68,7 +80,7 @@ enum EstadoPedidoSala: string
     /** @return list<string> */
     public static function valoresPorMandar(): array
     {
-        return [self::Registrado->value, self::Parcial->value];
+        return [self::Registrado->value, self::Parcial->value, self::Listo->value];
     }
 
     /** @return array<string, string> [valor => etiqueta] */

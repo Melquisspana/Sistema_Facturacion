@@ -405,8 +405,11 @@ class PantallaFabricaTest extends TestCase
         $this->assertTrue(Activity::where('log_name', 'pedido_sala')->where('description', 'mandó todo el pedido')->exists());
 
         // Imprimir no cambia nada, y al volver a la lista sigue el aviso con «Deshacer».
-        $this->get(route('fabrica.pedidos.imprimir', [$pedido, $envio]))->assertOk()->assertSee('window.print()', false);
+        $html = $this->get(route('fabrica.pedidos.imprimir', [$pedido, $envio]))->assertOk()->assertSee('window.print()', false)->getContent();
         $this->assertSame(1, PedidoSalaEnvio::count());
+        // La barra «Volver a Pedidos» / «Imprimir» se ve en pantalla y no sale en el papel.
+        $this->assertMatchesRegularExpression('/<div class="no-print">\s*<a href="'.preg_quote(route('fabrica.pedidos.index'), '/').'">Volver a Pedidos<\/a>/', $html);
+        $this->assertMatchesRegularExpression('/@media print \{(?:(?!@media).)*\.no-print \{ display: none; \}/s', $html);
         $this->get(route('fabrica.pedidos.index'))->assertSee('Salió el pedido de Súper Ficticio Centro.')->assertSee('Deshacer</button>', false);
     }
 

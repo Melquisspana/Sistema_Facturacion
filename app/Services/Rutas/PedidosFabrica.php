@@ -73,6 +73,14 @@ class PedidosFabrica
 
     public const AUDITORIA_TODO = 'mandó todo el pedido';
 
+    /** «Listo para salir» (24/11/2026): quién y cuándo quedan en estos registros, sin columna propia. */
+    public const AUDITORIA_LISTO = 'dejó el pedido listo para salir';
+
+    public const AUDITORIA_NO_LISTO = 'quitó el pedido de listos para salir';
+
+    /** «Listo para salir» con nada en la caja (todo en 0): no hay caja que llevarse. */
+    public const CAJA_VACIA = 'No va nada en esta caja: marcá lo que va antes de tocar «Listo para salir».';
+
     /** Lo que dice la auditoría al mandar un envío; ahí va `corrige_numero` si corrige a otro. */
     public const AUDITORIA_MANDO = [self::AUDITORIA_TODO, self::AUDITORIA_PARTE];
 
@@ -156,7 +164,7 @@ class PedidosFabrica
     public function otrosPorMandar(PedidoSala $pedido): Collection
     {
         return $this->porMandar()->withOnly(['sala:id,nombre', 'pedidoWeb:id,pedido_sala_id,cliente_nombre,entrega_tipo'])->whereKeyNot($pedido->id)
-            ->get(['id', 'origen', 'cliente_sucursal_id', 'sala_nueva_nombre', 'armando_desde', 'fecha'])
+            ->get(['id', 'origen', 'cliente_sucursal_id', 'sala_nueva_nombre', 'estado', 'armando_desde', 'fecha'])
             ->sortBy(fn (PedidoSala $p) => $p->armando_desde === null ? 1 : 0)
             ->values();
     }
@@ -257,23 +265,48 @@ class PedidosFabrica
             }
 
             $pedido->update(['armando_sigue' => ! empty($datos['sigue'])]);
-            if ($pedido->armando_desde === null) {
-                $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id]);
+            $this->empezarArmado($pedido, $usuario);
+            // Una caja lista en la que ya no va nada deja de estar lista: no hay caja que llevarse.
+            if ($pedido->estado === EstadoPedidoSala::Listo && ! $this->vaAlgoEnLaCaja($pedido)) {
+                $pedido->update(['estado' => $this->sinListo($pedido)]);
                 activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
-                    ->withProperties(['estado' => $pedido->estado->value])
-                    ->log('empezó a armar el pedido');
+                    ->withProperties(['estado_anterior' => EstadoPedidoSala::Listo->value, 'estado_nuevo' => $pedido->estado->value, 'motivo' => 'No va nada en la caja.'])
+                    ->log(self::AUDITORIA_NO_LISTO);
             }
         }, 3);
     }
 
-    /** «Borrar lo marcado»: limpia el borrador y el armado. Lo ya mandado (y su motivo) no se toca. */
+    /** Desde el primer guardado el pedido queda «Armando», con quién; eso se audita una vez. */
+    private function empezarArmado(PedidoSala $pedido, User $usuario): void
+    {
+        if ($pedido->armando_desde !== null) {
+            return;
+        }
+        $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id]);
+        activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+            ->withProperties(['estado' => $pedido->estado->value])
+            ->log('empezó a armar el pedido');
+    }
+
+    /** ¿Va algo en la caja? Lo marcado o, sin marcar, lo que falta. Con las líneas ya cargadas. */
+    private function vaAlgoEnLaCaja(PedidoSala $pedido): bool
+    {
+        return $pedido->lineas->contains(fn (PedidoSalaLinea $l) => bccomp($l->vaEnLaCaja(), '0', 4) === 1);
+    }
+
+    /**
+     * «Borrar lo marcado»: limpia el borrador y el armado. Lo ya mandado (y su motivo) no se
+     * toca. Si estaba listo para salir, deja de estarlo: vuelve a quedar cargado todo lo que
+     * falta y la caja se revisa de nuevo (cambiar lo marcado, en cambio, la deja lista).
+     */
     public function borrarBorrador(PedidoSala $pedido, User $usuario): void
     {
         DB::transaction(function () use ($pedido, $usuario) {
             $pedido = $this->bloquear($pedido);
             $this->exigirPorMandar($pedido);
             Gate::forUser($usuario)->authorize('mandar', $pedido);
-            $lineas = $pedido->lineas()->orderBy('id')->lockForUpdate()->get();
+            $this->cargarBloqueado($pedido);
+            $lineas = $pedido->lineas;
 
             $conBorrador = $lineas->whereNotNull('va_borrador');
             if ($conBorrador->isEmpty() && $pedido->armando_desde === null) {
@@ -282,12 +315,64 @@ class PedidosFabrica
             foreach ($conBorrador as $linea) {
                 $linea->update(['va_borrador' => null, 'motivo_borrador' => null]);
             }
-            $pedido->update(['armando_desde' => null, 'armando_por' => null, 'armando_sigue' => false]);
+            $anterior = $pedido->estado;
+            $pedido->update(['estado' => $this->sinListo($pedido), 'armando_desde' => null, 'armando_por' => null, 'armando_sigue' => false]);
             activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
                 ->withProperties(['lineas' => $conBorrador->map(fn (PedidoSalaLinea $l) => [
                     'pedido_sala_linea_id' => $l->id, 'producto_id' => $l->producto_id, 'va_borrador' => (string) $l->getOriginal('va_borrador'),
-                ])->values()->all()])
+                ])->values()->all()] + ($anterior !== $pedido->estado ? ['estado_anterior' => $anterior->value, 'estado_nuevo' => $pedido->estado->value] : []))
                 ->log(self::AUDITORIA_BORRO);
+        }, 3);
+    }
+
+    /**
+     * «Listo para salir» (24/11/2026): la caja quedó como va a salir, aunque falte algo que no
+     * hay (eso sigue como falta, con su motivo opcional). Se quita con otro toque y vuelve a
+     * como estaba. Lo marcado se guarda antes, desde la hoja. Al marcarlo, además, queda
+     * guardado SIEMPRE lo que hay en la caja (Melqui, 25/11/2026), aunque no hayan tocado
+     * nada: lo que no marcaron va todo, y el pedido queda «Armando», como con «Imprimir sin
+     * mandar». Así una corrección posterior de la oficina se compara contra lo que hay en la
+     * caja ({@see PedidosOficina}). Se guarda acá, después de revisar la versión, y no en la
+     * hoja: una hoja vieja no deja anotada una caja que no es. Quitarlo no toca lo marcado.
+     * Quién y cuándo, en la auditoría. Mandar sigue siendo «Imprimir y mandar», de uno en uno.
+     * Devuelve false si ya estaba así (doble toque).
+     *
+     * Marcarlo pide la versión de la hoja, como «Imprimir y mandar»: si el vendedor o la oficina
+     * lo corrigieron, u otra tableta mandó una parte, mientras la hoja estaba abierta sin tocar,
+     * la caja no es la que ven y se revisa de nuevo. Y tiene que ir algo en la caja: si no va
+     * nada, es «No mandar nada de este pedido». Quitarlo no pide nada: la caja se vuelve a revisar.
+     */
+    public function marcarListo(PedidoSala $pedido, bool $listo, User $usuario, ?string $version = null): bool
+    {
+        return DB::transaction(function () use ($pedido, $listo, $usuario, $version) {
+            $pedido = $this->bloquear($pedido);
+            $this->exigirPorMandar($pedido);
+            Gate::forUser($usuario)->authorize('mandar', $pedido);
+            if ($pedido->origen === OrigenPedidoSala::Web) {
+                throw ValidationException::withMessages(['pedido' => 'Los pedidos web se mandan apenas tienen su factura.']);
+            }
+            if ($listo === ($pedido->estado === EstadoPedidoSala::Listo)) {
+                return false;
+            }
+            $this->cargarBloqueado($pedido);
+            if ($listo) {
+                $this->exigirVersion($pedido, (string) $version);
+                if (! $this->vaAlgoEnLaCaja($pedido)) {
+                    throw ValidationException::withMessages(['pedido' => self::CAJA_VACIA]);
+                }
+                foreach ($pedido->lineas->filter->tienePendiente()->whereNull('va_borrador') as $linea) {
+                    $linea->update(['va_borrador' => $linea->vaEnLaCaja()]);
+                }
+                $this->empezarArmado($pedido, $usuario);
+            }
+
+            $anterior = $pedido->estado;
+            $pedido->update(['estado' => $listo ? EstadoPedidoSala::Listo : $this->sinListo($pedido)]);
+            activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+                ->withProperties(['estado_anterior' => $anterior->value, 'estado_nuevo' => $pedido->estado->value])
+                ->log($listo ? self::AUDITORIA_LISTO : self::AUDITORIA_NO_LISTO);
+
+            return true;
         }, 3);
     }
 
@@ -346,7 +431,7 @@ class PedidosFabrica
             }
             if ($cantidades === []) {
                 throw ValidationException::withMessages(['cantidades' => 'No marcaste nada para mandar. Si no va nada, tocá «'
-                    .($pedido->estado === EstadoPedidoSala::Parcial ? 'No mandar lo que falta' : 'No mandar nada de este pedido').'».']);
+                    .($pedido->enParte() ? 'No mandar lo que falta' : 'No mandar nada de este pedido').'».']);
             }
 
             $anterior = $pedido->estado;
@@ -500,7 +585,7 @@ class PedidosFabrica
     {
         return DB::transaction(function () use ($pedido, $envio, $usuario) {
             $pedido = $this->bloquear($pedido);
-            $anterior = $pedido->estado;
+            $enParte = $pedido->enParte();
             $envio = $this->anularBloqueado($pedido, $envio, $usuario);
             if ($envio === null) {
                 return false;
@@ -517,7 +602,7 @@ class PedidosFabrica
                 ]);
                 $marcado[] = ['pedido_sala_linea_id' => $linea->id, 'va_borrador' => $va];
             }
-            $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id, 'armando_sigue' => $anterior === EstadoPedidoSala::Parcial]);
+            $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id, 'armando_sigue' => $enParte]);
 
             activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
                 ->withProperties(['envio_id' => $envio->id, 'numero' => $envio->numero, 'lineas' => $marcado, 'sigue' => $pedido->armando_sigue])
@@ -628,6 +713,12 @@ class PedidosFabrica
         }
 
         return $cerrar || ! $pedido->faltaAlgo() ? EstadoPedidoSala::Enviado : EstadoPedidoSala::Parcial;
+    }
+
+    /** El estado sin «Listo para salir»: el listo vuelve a como estaba, por sus envíos; el resto queda igual. */
+    private function sinListo(PedidoSala $pedido): EstadoPedidoSala
+    {
+        return $pedido->estado === EstadoPedidoSala::Listo ? $this->estadoSegun($pedido, cerrar: false) : $pedido->estado;
     }
 
     public function paraRecoger(): Builder

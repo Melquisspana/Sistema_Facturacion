@@ -176,6 +176,28 @@ class TableroViajesTest extends TestCase
         $this->assertSame(13, $fila['salas'], 'Las salas con pedido vigente, sin la anulada.');
     }
 
+    public function test_la_caja_lista_para_salir_se_distingue_en_viajes_con_el_nombre_de_la_fabrica(): void
+    {
+        $viaje = $this->viaje();
+        $this->pedido($viaje, 'Sala en armado', extra: ['armando_desde' => now()]);
+        $this->pedido($viaje, 'Sala lista', estado: EstadoPedidoSala::Listo);
+        // El resto de un envío que ya salió y se facturó: sigue en fábrica, listo.
+        $resto = $this->pedido($viaje, 'Sala con el resto listo');
+        $this->mandado($resto, 'aceptado');
+        $resto->update(['estado' => EstadoPedidoSala::Listo]);
+
+        $pedidos = $this->tablero()['abiertos']->first()['pedidos']
+            ->mapWithKeys(fn (array $p) => [$p['pedido']->sala->nombre => [$p['paso'], $p['detalle']]])->all();
+
+        $this->assertSame([TableroViajes::EN_FABRICA, 'En armado'], $pedidos['Sala en armado']);
+        $this->assertSame([TableroViajes::EN_FABRICA, 'Listo para salir'], $pedidos['Sala lista']);
+        $this->assertSame([TableroViajes::EN_FABRICA, 'Listo para salir'], $pedidos['Sala con el resto listo']);
+
+        $jefe = User::factory()->create(['activo' => true])->assignRole('jefe_vendedores');
+        $this->actingAs($jefe)->get(route('rutas.viajes'))->assertOk()
+            ->assertSeeInOrder(['Sala lista', 'Listo para salir'])->assertDontSee('Listo en fábrica');
+    }
+
     public function test_un_pedido_mandado_en_dos_ccf_va_en_el_paso_del_que_va_mas_atras(): void
     {
         $viaje = $this->viaje();

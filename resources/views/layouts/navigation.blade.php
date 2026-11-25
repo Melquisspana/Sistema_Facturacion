@@ -87,7 +87,7 @@
     // «Productos» cubre nacionales Y la pestaña de exportación: productos.exportacion.*
     // cuelga del mismo prefijo de nombre, así que `productos.*` las enciende las dos y
     // no hay que mantener ninguna lista de excepciones.
-    $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*', 'facturacion.ordenes-recibidas.*', 'facturacion.pedidos-web.*');
+    $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*', 'facturacion.ordenes-recibidas.*', 'facturacion.pedidos-web.*', 'facturacion.llego-de-fabrica');
     $grupoCobrosActivo = request()->routeIs('ppq.*', 'cobros.*');
     $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*');
     $grupoGastosActivo = request()->routeIs('gastos.*');

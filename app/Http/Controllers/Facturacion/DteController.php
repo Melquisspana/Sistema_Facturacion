@@ -294,7 +294,7 @@ class DteController extends Controller
      *    entero, precio, problema), `problemas` (si hay alguno, el botón va apagado), `oc`
      *    (la del pedido, valor inicial; `old()` sigue mandando), `oc_con_ccf` y `borrador`.
      *  - `$cancelar` (url): a donde se estaba. `desde=pedido` vuelve a la ficha del pedido; si
-     *    no, a «Llegó de la fábrica» con su `fecha` o, sin una fecha válida, a «Sin facturar».
+     *    no, a «Llegó de pedidos» con su `fecha` o, sin una fecha válida, a todo lo pendiente.
      * Sin `?pedido=` la pantalla queda exactamente igual.
      */
     public function createCcf(Request $request): View
@@ -315,8 +315,8 @@ class DteController extends Controller
             'propuesta' => app(FacturarPedido::class)->propuesta($pedido),
             'cancelar' => match (true) {
                 $request->query('desde') === 'pedido' => route('rutas.pedidos.show', $pedido),
-                $fecha !== null && ! $request->boolean('sin_facturar') => route('facturacion.llego-de-fabrica', ['fecha' => $fecha]),
-                default => route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]),
+                $fecha !== null => route('facturacion.llego-de-fabrica', ['fecha' => $fecha]),
+                default => route('facturacion.llego-de-fabrica'),
             },
         ]));
     }

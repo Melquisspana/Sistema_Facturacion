@@ -293,6 +293,36 @@ class OficinaCorrigePedidosTest extends TestCase
         $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
     }
 
+    public function test_si_la_oficina_corrige_un_pedido_listo_para_salir_deja_de_estar_listo(): void
+    {
+        // La caja quedó lista con las 10 galletas, sin tocar nada en la hoja.
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        app(PedidosFabrica::class)->marcarListo($pedido, true, $this->fabrica, $this->version($pedido));
+
+        // La oficina la sube a 15: la caja ya no coincide y la fábrica la revisa de nuevo.
+        $this->corregir($pedido, [$this->galleta->id => '15'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+        $log = Activity::where('description', PedidosOficina::AUDITORIA_CORRIGE)->sole();
+        $this->assertSame(EstadoPedidoSala::Listo->value, $log->properties['estado_anterior']);
+        $this->assertSame(EstadoPedidoSala::Registrado->value, $log->properties['estado_nuevo']);
+    }
+
+    public function test_corregir_el_resto_listo_para_salir_lo_saca_de_listos(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12', $this->pan->id => '6']);
+        $this->mandar($pedido, [$this->galleta->id => '4']);
+        app(PedidosFabrica::class)->marcarListo($pedido, true, $this->fabrica, $this->version($pedido));
+
+        // Cambiar lo que falta lo saca de «Listos para salir»: vuelve a «Mandado en parte».
+        $this->corregir($pedido, [$this->galleta->id => '10', $this->pan->id => '6'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Parcial, $pedido->refresh()->estado);
+
+        // Si ya no falta nada, queda mandado.
+        app(PedidosFabrica::class)->marcarListo($pedido, true, $this->fabrica, $this->version($pedido));
+        $this->corregir($pedido, [$this->galleta->id => '4', $this->pan->id => '0'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+    }
+
     public function test_al_dejar_solo_lo_mandado_el_pedido_queda_mandado(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '12']);

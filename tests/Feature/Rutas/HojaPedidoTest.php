@@ -173,6 +173,27 @@ class HojaPedidoTest extends TestCase
         $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
     }
 
+    public function test_la_caja_lista_para_salir_se_distingue_en_la_hoja_y_en_el_detalle(): void
+    {
+        // Lista sin haber salido nada: lo dice, sin hoja que imprimir desde la ficha.
+        $this->pedido->update(['estado' => EstadoPedidoSala::Listo]);
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertSee('Listo para salir')->assertDontSee('Listo en fábrica')->assertSee('Todavía no se despachó nada de este pedido.')
+            ->assertDontSee('Va en otro envío');
+        $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
+            ->assertSee('Listo para salir')->assertDontSee('Listo en fábrica')->assertDontSee('Imprimir hoja');
+
+        // El resto de un envío que ya salió, listo: como mandado en parte, con su hoja.
+        $this->envio([$this->galleta->id => '6', $this->canilla->id => '4', $this->pan->id => '2']);
+        $respuesta = $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertSee('Listo para salir')->assertDontSee('Todavía no se despachó nada')
+            ->assertSeeInOrder(['G01', 'Galleta de prueba', '10', '6', 'Va en otro envío', '4'])
+            ->assertDontSee('F: faltó');
+        $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
+        $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
+            ->assertSee('Listo para salir')->assertDontSee('Listo en fábrica')->assertSee('Imprimir hoja');
+    }
+
     public function test_vuelve_al_dia_que_se_estaba_mirando_y_cada_envio_dice_su_dia(): void
     {
         $this->envio([$this->galleta->id => '6'], fecha: '2026-11-08');
@@ -183,9 +204,11 @@ class HojaPedidoTest extends TestCase
             ->assertDontSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false)
             ->assertSeeInOrder(['Envío 1 · 08/11/2026', 'Envío 2 · 09/11/2026', 'Envío 1<br>08/11', 'Envío 2<br>09/11', 'G01'], false);
 
-        // Sin fecha, la del último envío; una fecha mal escrita no se usa.
+        // Sin fecha, a todo lo pendiente, que es como abre la lista (24/11/2026); una fecha mal
+        // escrita no se usa.
         $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
-            ->assertSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false);
+            ->assertSee('href="'.route('facturacion.llego-de-fabrica').'"', false)
+            ->assertDontSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false);
         $this->get(route('rutas.pedidos.hoja', [$this->pedido, 'fecha' => '8/11/2026']))
             ->assertSessionHasErrors('fecha');
     }

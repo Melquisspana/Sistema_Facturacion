@@ -1,6 +1,7 @@
 @php
     // Solo si es el último envío de todos (ni uno deshecho después) el estado y los motivos actuales son los suyos.
-    $queda = $ultimo && $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+    // El resto que ya quedó «Listo para salir» (24/11/2026) también va en otro envío: enParte().
+    $queda = $ultimo && $pedido->enParte();
     $titulo = ! $ultimo ? 'No fue en este envío' : ($queda ? 'Queda pendiente (va en otro envío)' : 'No va');
     $clase = ! $ultimo ? '' : ($queda ? 'queda' : 'no-va');
     $direccion = $pedido->direccionSala();

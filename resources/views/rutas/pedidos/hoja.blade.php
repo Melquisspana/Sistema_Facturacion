@@ -27,7 +27,7 @@
         Variables: $pedido con sala, ruta, sacadoPor, lineas.producto,
         lineas.envioLineasVigentes y envios (solo los vigentes) con sus lineas y su dte; $regresa
         [producto_id => llego, facturado, regresa] (vacío si no hay nada facturado); $volverAl
-        (Y-m-d o null), el día al que vuelve «Llegó de la fábrica».
+        (Y-m-d o null), el día al que vuelve «Llegó de pedidos» (null: a todo lo pendiente).
     --}}
     <style>
         <x-documento.estilos acento="ocre" />
@@ -113,7 +113,8 @@
     $variosEnvios = $envios->count() > 1;
     $estado = $pedido->estado;
     $cerrado = $estado->cerrado();
-    $parcial = $estado === \App\Enums\EstadoPedidoSala::Parcial;
+    // «Listo para salir» (24/11/2026) que es el resto de un envío cuenta como mandado en parte.
+    $parcial = $pedido->enParte();
     // Sin consultas: los envíos ya traen su CCF.
     $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);
     $conCcf = $facturacion['facturados']->isNotEmpty() || $facturacion['borrador'] !== null;
@@ -125,7 +126,7 @@
 
 <div class="no-print">
     @can('viewAny', App\Models\Dte::class)
-        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de pedidos»</a>
+        <a href="{{ route('facturacion.llego-de-fabrica', array_filter(['fecha' => $volverAl])) }}">Volver a «Llegó de pedidos»</a>
     @endcan
     @if ($volverPorEntregar ?? false)
         <a href="{{ route('rutas.por-entregar.index') }}">Volver a «Por entregar»</a>
@@ -146,7 +147,7 @@
 
     @if ($estado === \App\Enums\EstadoPedidoSala::Anulado)
         <p class="st rojo" role="alert"><strong>Este pedido está anulado: no se factura.</strong></p>
-    @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado)
+    @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado || ($estado === \App\Enums\EstadoPedidoSala::Listo && ! $parcial))
         <p class="st" role="alert"><strong>Todavía no se despachó nada de este pedido.</strong></p>
     @endif
 

@@ -35,13 +35,17 @@ class PedidoFabricaController extends Controller
         $hoy = HoraNegocio::fechaHoy();
 
         $porMandar = $ver === 'por-mandar' ? $this->fabrica->porMandar()->get() : null;
+        // Arriba, las cajas listas para salir (24/11/2026): lo que se lleva la persona que se
+        // regresa en la tarde. Debajo, lo demás por día, como antes.
+        [$listos, $armando] = ($porMandar ?? collect())->partition(fn (PedidoSala $p) => $p->estado === EstadoPedidoSala::Listo);
 
         return view('fabrica.pedidos.index', [
             'ver' => $ver,
             'paraRecoger' => $this->fabrica->paraRecoger()->get(),
             'cuantosPorMandar' => $porMandar?->count() ?? $this->fabrica->porMandar()->count(),
-            'atrasados' => $porMandar?->filter(fn (PedidoSala $p) => $p->fecha->toDateString() < $hoy)->values() ?? collect(),
-            'deHoy' => $porMandar?->filter(fn (PedidoSala $p) => $p->fecha->toDateString() >= $hoy)->values() ?? collect(),
+            'listos' => $listos->values(),
+            'atrasados' => $armando->filter(fn (PedidoSala $p) => $p->fecha->toDateString() < $hoy)->values(),
+            'deHoy' => $armando->filter(fn (PedidoSala $p) => $p->fecha->toDateString() >= $hoy)->values(),
             'hechos' => $ver === 'hechos' ? $this->fabrica->hechos() : null,
             // La recarga sola renueva la sesión: para quien ve más del sistema que Fábrica se
             // corta antes de que la sesión venza por inactividad (SESSION_LIFETIME). La
@@ -75,6 +79,25 @@ class PedidoFabricaController extends Controller
             'clave' => (string) Str::uuid(),
             'otros' => $this->fabrica->otrosPorMandar($pedido),
         ]);
+    }
+
+    /**
+     * «Imprimir sin mandar» (24/11/2026): la «Orden para la caja», sacada de lo marcado,
+     * para dejarla encima de la caja armada que todavía no sale. Solo lectura (GET): no
+     * registra envío, no cambia el estado ni llega a facturación, y se saca las veces que
+     * haga falta. La hoja guarda antes de abrirla, aunque no se haya tocado nada: desde ahí el
+     * pedido queda «Armando» y el vendedor ya no lo cambia. El pedido web tiene su propio papel.
+     */
+    public function caja(PedidoSala $pedido): View|RedirectResponse
+    {
+        abort_if($pedido->origen === OrigenPedidoSala::Web, 404);
+        if (! $pedido->estaPorMandar()) {
+            return redirect()->route('fabrica.pedidos.index')->with('status', 'Ese pedido ya está resuelto.');
+        }
+        Gate::authorize('mandar', $pedido);
+        $pedido->load($this->fabrica->relaciones(conSala: true));
+
+        return view('fabrica.pedidos.caja', ['pedido' => $pedido]);
     }
 
     /**
@@ -131,6 +154,39 @@ class PedidoFabricaController extends Controller
         $this->fabrica->borrarBorrador($pedido, $request->user());
 
         return redirect()->route('fabrica.pedidos.show', $pedido)->with('status', 'Se borró lo marcado.');
+    }
+
+    /**
+     * «Listo para salir» (listo=1) o «Quitar de listos» (listo=0), sin confirmar. Al marcarlo
+     * vuelve a la lista, donde el aviso trae «Deshacer»; al quitarlo vuelve a donde estaba: la
+     * hoja (para seguir armando) o la lista (su «Deshacer»). Marcarlo lleva la versión de la
+     * hoja, como «Imprimir y mandar»; quitarlo, no.
+     */
+    public function listo(Request $request, PedidoSala $pedido): RedirectResponse
+    {
+        $vieja = 'Esta pantalla quedó vieja. Volvé a abrir el pedido.';
+        $datos = $request->validate([
+            'listo' => ['required', 'boolean'],
+            'version' => ['exclude_unless:listo,1,true', 'required', 'string', 'size:64'],
+        ], [
+            'listo.required' => $vieja,
+            'listo.boolean' => $vieja,
+            'version.required' => $vieja,
+            'version.string' => $vieja,
+            'version.size' => $vieja,
+        ]);
+        $listo = (bool) $datos['listo'];
+        $cambio = $this->fabrica->marcarListo($pedido, $listo, $request->user(), $datos['version'] ?? null);
+        $sala = $pedido->nombreSala();
+
+        if (! $listo) {
+            return redirect()->to(url()->previous(route('fabrica.pedidos.show', $pedido)))
+                ->with('status', 'El pedido de '.$sala.($cambio ? ' ya no está' : ' ya no estaba').' en «Listos para salir».');
+        }
+
+        return redirect()->route('fabrica.pedidos.index')
+            ->with('status', 'El pedido de '.$sala.($cambio ? ' quedó' : ' ya estaba').' en «Listos para salir».')
+            ->with('deshacer', $cambio ? ['tipo' => 'listo', 'pedido' => $pedido->id] : null);
     }
 
     /** «Imprimir y mandar»: registra el envío y abre su hoja para imprimir. */

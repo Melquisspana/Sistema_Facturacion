@@ -6,12 +6,15 @@ use App\Enums\EstadoPedidoSala;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\CorregirPedidoOficinaRequest;
 use App\Models\ClienteSucursal;
+use App\Models\Dte;
+use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
 use App\Models\Ruta;
 use App\Services\Rutas\FacturarPedido;
 use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\PedidosOficina;
 use App\Services\Rutas\PedidosSala;
+use App\Support\OrdenCompra;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -74,12 +77,34 @@ class PedidoSalaController extends Controller
     public function show(PedidoSala $pedido, FacturarPedido $facturar): View
     {
         Gate::authorize('view', $pedido);
-        $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'salida', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'registradoPor:id,name', 'lineas.producto:id,codigo,nombre',
+        $pedido->load(['sala:id,cliente_id,nombre,codigo,requiere_orden_compra', 'sala.cliente:id,requiere_orden_compra', 'ruta:id,nombre', 'salida', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'registradoPor:id,name', 'lineas.producto:id,codigo,nombre',
             'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->orderBy('numero'), 'envios.lineas.linea.producto:id,nombre',
             'envios.registradoPor:id,name', 'envios.anuladoPor:id,name', 'envios.dte']);
 
         // `regresa`: por producto_id, llegó − facturado en los CCF vigentes (FacturarPedido::regresa).
-        return view('rutas.pedidos.show', ['pedido' => $pedido, 'regresa' => $facturar->regresa($pedido)]);
+        // `oc`: para «Facturar», con la misma regla que «Llegó de pedidos»; solo a quien factura.
+        return view('rutas.pedidos.show', [
+            'pedido' => $pedido,
+            'regresa' => $facturar->regresa($pedido),
+            'oc' => Gate::allows('create', Dte::class) ? self::ocParaFacturar($pedido) : null,
+        ]);
+    }
+
+    /**
+     * La OC del pedido y si «Facturar» va directo al borrador ({@see FacturarPedido::oc()} y
+     * {@see FacturarPedido::vaDirecto()}), con `sala.cliente` y `envios.dte` ya cargados.
+     *
+     * @return array{propuestas: list<string>, titulo: string, aviso: ?string, lista: bool, directo: bool}
+     */
+    private static function ocParaFacturar(PedidoSala $pedido): array
+    {
+        $estado = FacturarPedido::estado($pedido);
+        $numero = OrdenCompra::normalizar($pedido->numero_orden_compra);
+        $oc = FacturarPedido::oc($pedido, $estado, OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [],
+            OrdenCompraRecibida::ccfPorNumero([$numero])[$numero] ?? null,
+            FacturarPedido::otroSinOc($pedido, FacturarPedido::sinOcPorSala($pedido->cliente_sucursal_id)));
+
+        return $oc + ['directo' => FacturarPedido::vaDirecto($pedido, $estado, $oc, FacturarPedido::emisorSolo())];
     }
 
     /**
@@ -112,7 +137,8 @@ class PedidoSalaController extends Controller
         return [
             'pedido' => $pedido,
             'regresa' => $facturar->regresa($pedido),
-            'volverAl' => $fecha ?? $pedido->envios->last()?->fecha?->format('Y-m-d'),
+            // Sin día, a todo lo pendiente: así abre «Llegó de pedidos» (24/11/2026).
+            'volverAl' => $fecha,
         ];
     }
 

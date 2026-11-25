@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Enums\OrigenPedidoSala;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\OrdenCompraRequeridaException;
+use App\Exceptions\Dte\PuntoVentaPredeterminadoInvalidoException;
 use App\Models\Dte;
 use App\Models\DteLinea;
 use App\Models\OrdenCompraRecibida;
@@ -17,7 +18,10 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\PrecioProductoResolver;
 use App\Support\Dte\CondicionOperacion;
+use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\Dte\ResuelveEmisorUnico;
 use App\Support\OrdenCompra;
+use App\Support\Sala;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +63,12 @@ class FacturarPedido
     /** La sala del pedido se borró de Clientes después de sacarlo: sin sala no hay a quién facturar. */
     public const SALA_BORRADA = 'La sala de este pedido ya no está en Clientes (la borraron). Sin sala no se factura: pedile a quien maneja Clientes que la revise.';
 
+    /**
+     * La OC del correo con otro pedido abierto en la sala sin OC propia: puede ser de ese otro
+     * (24/11/2026). No va directo ni viene puesta: se elige en el formulario, viendo su detalle.
+     */
+    public const OC_DE_OTRO_PEDIDO = 'La sala tiene otro pedido sin OC: revisá de cuál es esta OC.';
+
     /** Bitácora de {@see pasarAlCcfQueCorrige()}. */
     public const PASO_AL_QUE_CORRIGE = 'el CCF que corrige se quedó con lo que llegó del pedido';
 
@@ -84,6 +94,17 @@ class FacturarPedido
     {
         $envios = $pedido->envios()->porFacturar()->orderBy('numero')->with('lineas.linea.producto')->get();
         $oc = filled($pedido->numero_orden_compra) ? $pedido->numero_orden_compra : null;
+        // El resto de un pedido con una parte ya facturada: la OC de ese CCF (con su aviso), no
+        // una del correo, que suele ser la del próximo pedido de la sala ({@see oc()}).
+        $facturados = $oc === null
+            ? $pedido->envios()->whereNull('anulado_en')->whereNotIn('id', $envios->modelKeys())->with('dte:id,numero_orden_compra')->get()
+            : collect();
+        $oc ??= $facturados->pluck('dte.numero_orden_compra')->first(fn ($n) => filled($n));
+        // Sin la del vendedor ni una parte facturada, la única que llegó por correo para la sala
+        // viene puesta (24/11/2026); con varias, o con otro pedido de la sala sin OC (puede ser
+        // de ese), se elige en el formulario.
+        $delCorreo = $oc === null && $facturados->isEmpty() ? array_column(OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [], 'numero') : [];
+        $oc ??= count($delCorreo) === 1 && ! self::otroSinOc($pedido, self::sinOcPorSala($pedido->cliente_sucursal_id)) ? $delCorreo[0] : null;
 
         return $this->armar($pedido, $envios) + [
             'envios' => $envios,
@@ -306,6 +327,124 @@ class FacturarPedido
             'borrador' => $dtes->first(fn (Dte $d) => $d->estado === EstadoDte::Borrador),
             'facturados' => $dtes->reject(fn (Dte $d) => $d->estado === EstadoDte::Borrador)->values(),
         ];
+    }
+
+    /**
+     * La OC de un pedido para «Llegó de pedidos», sin consultas. Primero la que anotó el
+     * vendedor; si no hay y ya está en su CCF (o lo que llegó va en su borrador), la de sus
+     * CCF; si no, las del correo de su sala. El resto que llega con una parte ya facturada
+     * lleva la de sus CCF, con aviso. Avisa si la del pedido es de otra sala o ya tiene un
+     * CCF de otro envío (un CCF rechazado no cuenta: hay que volver a facturar).
+     * `lista`: sin aviso y con OC, o la sala no la pide, o ya quedó resuelta en su CCF.
+     *
+     * @param  array{por_facturar: Collection<int, PedidoSalaEnvio>, borrador: ?Dte, facturados: Collection<int, Dte>}  $estado  {@see estado()}
+     * @param  list<array{numero: string}>  $delCorreo  las OC del correo de su sala sin CCF ({@see OrdenCompraRecibida::pendientesPorSucursal()})
+     * @param  ?Dte  $ccfDeLaOc  el CCF que ya lleva la OC del pedido ({@see OrdenCompraRecibida::ccfPorNumero()})
+     * @param  bool  $otroSinOc  la sala tiene otro pedido abierto sin OC propia ({@see otroSinOc()}): la del correo
+     *                           puede ser de ese, así que se revisa (no queda lista ni va directo)
+     * @return array{propuestas: list<string>, titulo: string, aviso: ?string, lista: bool}
+     */
+    public static function oc(PedidoSala $pedido, array $estado, array $delCorreo, ?Dte $ccfDeLaOc, bool $otroSinOc): array
+    {
+        $delPedido = filled($pedido->numero_orden_compra);
+        $enSuCcf = ! $delPedido && ($estado['por_facturar']->isEmpty() || $estado['borrador'] !== null);
+        // El resto que llega con una parte ya facturada (24/11/2026): su OC es la del CCF de esa
+        // parte, no una del correo (esa suele ser la del próximo pedido de la sala). Como ya
+        // tiene un CCF, se revisa en el formulario, como la del vendedor: no va directo.
+        $resto = ! $delPedido && ! $enSuCcf && $estado['facturados']->isNotEmpty();
+        $deOtraSala = $delPedido ? ReglaOrdenCompra::salaDistinta($pedido->numero_orden_compra, $pedido->sala) : null;
+        $ccfDeLaOc = $delPedido ? $ccfDeLaOc : null;
+        // El CCF de la OC es el de este mismo pedido y no queda nada por facturar: no es aviso.
+        $esElPropio = $ccfDeLaOc !== null && $estado['por_facturar']->isEmpty()
+            && $pedido->envios->contains('dte_id', $ccfDeLaOc->id);
+        $propuestas = match (true) {
+            $delPedido => [$pedido->numero_orden_compra],
+            $enSuCcf || $resto => collect([$estado['borrador']])->filter()->merge($estado['facturados'])
+                ->pluck('numero_orden_compra')->filter(fn ($n) => filled($n))->unique()->values()->all(),
+            default => array_column($delCorreo, 'numero'),
+        };
+        $delCorreoDudosa = ! $delPedido && ! $enSuCcf && ! $resto && $propuestas !== [] && $otroSinOc;
+        $aviso = match (true) {
+            $ccfDeLaOc !== null && ! $esElPropio, $resto && $propuestas !== [] => 'Esa OC ya tiene un CCF.',
+            $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
+            $delCorreoDudosa => self::OC_DE_OTRO_PEDIDO,
+            default => null,
+        };
+
+        return [
+            'propuestas' => $propuestas,
+            'titulo' => match (true) {
+                $propuestas === [] => 'Orden de compra',
+                $delPedido => 'OC del pedido',
+                $enSuCcf || $resto => 'OC del CCF',
+                default => 'OC del correo',
+            },
+            'aviso' => $aviso,
+            // Ya en su CCF: la OC quedó resuelta ahí (crearBorrador exige la que pide la sala).
+            'lista' => $aviso === null && ($enSuCcf || $propuestas !== [] || ! ReglaOrdenCompra::requerida($pedido->sala?->cliente, $pedido->sala)),
+        ];
+    }
+
+    /**
+     * Por sala, los pedidos que todavía pueden llevar una OC del correo: de sala, vigentes, sin
+     * la OC del vendedor, sin ningún CCF (tampoco en borrador) y por mandar o con algo por
+     * facturar. Una sola consulta para todas las salas (o solo para una).
+     *
+     * @return array<int, list<int>> [cliente_sucursal_id => ids de pedido]
+     */
+    public static function sinOcPorSala(?int $salaId = null): array
+    {
+        return PedidoSala::query()
+            ->where('origen', OrigenPedidoSala::Sala->value)
+            ->vigentes()
+            ->when($salaId !== null, fn ($q) => $q->where('cliente_sucursal_id', $salaId), fn ($q) => $q->whereNotNull('cliente_sucursal_id'))
+            ->where(fn ($q) => $q->whereNull('numero_orden_compra')->orWhere('numero_orden_compra', ''))
+            ->where(fn ($q) => $q->porMandar()->orWhereHas('envios', fn ($e) => $e->porFacturar()))
+            ->whereDoesntHave('envios', fn ($e) => $e->vigentes()->whereHas('dte', fn ($d) => $d->cuentaComoFacturado()))
+            ->get(['id', 'cliente_sucursal_id'])
+            ->groupBy('cliente_sucursal_id')
+            ->map(fn ($pedidos) => $pedidos->pluck('id')->all())
+            ->all();
+    }
+
+    /**
+     * ¿La sala del pedido tiene OTRO pedido que puede llevar la OC del correo? Entonces esa OC
+     * puede ser del otro.
+     *
+     * @param  array<int, list<int>>  $sinOcPorSala  {@see sinOcPorSala()}
+     */
+    public static function otroSinOc(PedidoSala $pedido, array $sinOcPorSala): bool
+    {
+        return collect($sinOcPorSala[$pedido->cliente_sucursal_id] ?? [])->contains(fn (int $id) => $id !== $pedido->id);
+    }
+
+    /**
+     * ¿«Facturar» va directo al borrador, sin el formulario? (Melqui, 24/11/2026). Sí cuando
+     * hay algo por facturar sin borrador abierto, la sala existe, la OC está lista y es una
+     * sola (la del pedido o la única del correo; ninguna si la sala no la pide) y el emisor se
+     * elige solo. Si no, el formulario: falta la OC, hay varias para elegir o hay que elegir
+     * el emisor. Lo que mande la fila se vuelve a revisar entero en {@see crear()}.
+     *
+     * @param  array{por_facturar: Collection<int, PedidoSalaEnvio>, borrador: ?Dte, facturados: Collection<int, Dte>}  $estado  {@see estado()}
+     * @param  array{propuestas: list<string>, lista: bool}  $oc  {@see oc()}
+     */
+    public static function vaDirecto(PedidoSala $pedido, array $estado, array $oc, bool $emisorSolo): bool
+    {
+        return $emisorSolo && $pedido->estaVigente() && ! $pedido->esTiendaNueva() && $pedido->sala !== null
+            && $estado['por_facturar']->isNotEmpty() && $estado['borrador'] === null
+            && $oc['lista'] && count($oc['propuestas']) <= 1;
+    }
+
+    /** ¿El emisor (establecimiento y punto de venta) se elige solo, como en el formulario del CCF? */
+    public static function emisorSolo(): bool
+    {
+        try {
+            $emisor = ResuelveEmisorUnico::resolver(null, null);
+        } catch (PuntoVentaPredeterminadoInvalidoException) {
+            return false;
+        }
+
+        return filled($emisor['establecimiento_id']) && filled($emisor['punto_venta_id']);
     }
 
     /**

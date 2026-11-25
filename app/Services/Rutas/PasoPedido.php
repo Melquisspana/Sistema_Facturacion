@@ -16,8 +16,9 @@ use Illuminate\Support\Collection;
  * ({@see Viajes::todoEntregado()}), para que no digan cosas distintas.
  *
  *   1. Sacado: registrado y la fábrica todavía no lo tocó.
- *   2. En fábrica: en armado, mandado en parte, o mandado y todavía sin un CCF que cuente
- *      (nunca facturado, o su CCF se invalidó, rechazó o borró).
+ *   2. En fábrica: en armado, «Listo para salir» (24/11/2026; con el nombre de la fábrica),
+ *      mandado en parte, o mandado y todavía sin un CCF que cuente (nunca facturado, o su
+ *      CCF se invalidó, rechazó o borró).
  *   3. Facturado: todo lo mandado está en CCF que cuentan (`pedido_sala_envios.dte_id`).
  *   4. Entregado: cada uno de esos CCF está entregado ({@see entregados()}).
  *
@@ -59,6 +60,7 @@ class PasoPedido
         return match (true) {
             $pedido->estado === EstadoPedidoSala::NoSeTrae => [self::NO_SE_TRAE, 'No se trae', $sacado],
             $pedido->estaRegistrado() && $pedido->armando_desde === null => [self::SACADO, null, $sacado],
+            $pedido->estado === EstadoPedidoSala::Listo => [self::EN_FABRICA, EstadoPedidoSala::Listo->label(), $sacado],
             $pedido->estaPorMandar() => [self::EN_FABRICA, $pedido->estaRegistrado() ? 'En armado' : 'Mandado en parte', $sacado],
             default => $this->despuesDeLaFabrica($pedido, $entregados, $sacado),
         };

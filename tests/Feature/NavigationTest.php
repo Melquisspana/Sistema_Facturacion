@@ -440,6 +440,10 @@ class NavigationTest extends TestCase
             // la tienda web que nombra el aviso de alertas. Mismo permiso que los
             // documentos (dte.ver), así que no le abre la puerta a nadie nuevo.
             'facturacion.pedidos-web.index',
+            // ENTRA 'facturacion.llego-de-fabrica' (24/11/2026): «Llegó de pedidos», lo que
+            // mandó la PC de pedidos para facturar con la OC. Mismo permiso que los
+            // documentos (dte.ver): no le abre la puerta a nadie nuevo.
+            'facturacion.llego-de-fabrica',
             // SALE 'ppq.index' y ENTRA 'cobros.index': Facturas por cobrar, del
             // grupo Seguimiento, reemplazó la búsqueda de PPQ como primera fila;
             // se conserva el mismo permiso ppq.ver.
@@ -702,6 +706,7 @@ class NavigationTest extends TestCase
         return [
             'ventas / clientes' => ['clientes.index', 'ventas'],
             'ventas / documentos fiscales' => ['facturacion.index', 'ventas'],
+            'ventas / llegó de pedidos' => ['facturacion.llego-de-fabrica', 'ventas'],
             'cobros / ppq' => ['ppq.index', 'cobros'],
             'contabilidad / compras' => ['documentos-recibidos.index', 'contabilidad'],
             'contabilidad / paquete mensual' => ['contabilidad.paquete', 'contabilidad'],

@@ -168,10 +168,26 @@ class PedidoSala extends Model
         return $this->estado !== EstadoPedidoSala::Anulado;
     }
 
-    /** Registrado o parcial: le falta salir de la fábrica. */
+    /** Registrado, parcial o listo: le falta salir de la fábrica. */
     public function estaPorMandar(): bool
     {
         return $this->estado->porMandar();
+    }
+
+    /**
+     * ¿Salió algo y lo que falta va en otro envío? «Mandado en parte», también cuando ese
+     * resto ya está listo para salir (24/11/2026). Usa los envíos cargados si vinieron.
+     */
+    public function enParte(): bool
+    {
+        return $this->estado === EstadoPedidoSala::Parcial
+            || ($this->estado === EstadoPedidoSala::Listo && $this->envios->whereNull('anulado_en')->isNotEmpty());
+    }
+
+    /** ¿Tiene hoja de pedido para imprimir? Salió algo o ya se cerró ({@see EstadoPedidoSala::tieneHoja()}). */
+    public function tieneHoja(): bool
+    {
+        return $this->estado->tieneHoja() || $this->enParte();
     }
 
     /**
@@ -204,14 +220,18 @@ class PedidoSala extends Model
      * los envíos vigentes. Detecta la corrección del vendedor (cambian los id de las líneas),
      * la de la oficina (la sala o una cantidad, 13/11/2026: no se despacha mirando la sala
      * vieja), otra tableta que mandó primero y un envío anulado. El borrador NO entra:
-     * guardarlo no invalida la tarjeta de otra tableta. Se calcula con las relaciones ya cargadas.
+     * guardarlo no invalida la tarjeta de otra tableta. «Listo para salir» tampoco (24/11/2026):
+     * cuenta como el estado que tenía, que sale de sus envíos. Se calcula con las relaciones ya
+     * cargadas.
      */
     public function versionProduccion(): string
     {
         $lineas = $this->lineas->sortBy('id')->map(fn (PedidoSalaLinea $l) => [$l->id, (string) $l->cantidad])->values()->all();
         $envios = $this->envios->whereNull('anulado_en')->pluck('id')->sort()->values()->all();
+        $estado = $this->estado !== EstadoPedidoSala::Listo ? $this->estado
+            : ($envios === [] ? EstadoPedidoSala::Registrado : EstadoPedidoSala::Parcial);
 
-        return hash('sha256', json_encode([$this->estado->value, $this->cliente_sucursal_id, $lineas, $envios]));
+        return hash('sha256', json_encode([$estado->value, $this->cliente_sucursal_id, $lineas, $envios]));
     }
 
     /**

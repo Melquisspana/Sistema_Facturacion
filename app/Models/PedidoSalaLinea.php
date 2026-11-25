@@ -69,6 +69,21 @@ class PedidoSalaLinea extends Model
         return bccomp($this->pendiente(), '0', 4) === 1;
     }
 
+    /**
+     * Lo que va en la caja que se está armando: lo marcado en la hoja o, sin marcar, todo lo
+     * que falta (como lo muestra la hoja). Lo usan la «Orden para la caja» y el correo diario.
+     */
+    public function vaEnLaCaja(): string
+    {
+        return $this->va_borrador !== null ? bcadd((string) $this->va_borrador, '0', 4) : $this->pendiente();
+    }
+
+    /** Lo que falta en esa caja: lo que falta mandar menos lo que va. */
+    public function faltaEnLaCaja(): string
+    {
+        return bcsub($this->pendiente(), $this->vaEnLaCaja(), 4);
+    }
+
     /** La cantidad sin ceros de más: «12», «2.5». */
     public function cantidadLegible(): string
     {

@@ -473,7 +473,7 @@ class PedidosSala
      */
     private function exigirSinFabrica(PedidoSala $pedido): void
     {
-        if (in_array($pedido->estado, [EstadoPedidoSala::Parcial, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae], true)
+        if (in_array($pedido->estado, [EstadoPedidoSala::Parcial, EstadoPedidoSala::Listo, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae], true)
             || $pedido->armando_desde !== null
             || $pedido->envios()->sharedLock()->exists()) {
             throw ValidationException::withMessages(['lineas' => self::EN_FABRICA]);

@@ -46,4 +46,26 @@ class FacturarPedidoRequest extends CrearBorradorRequest
             'cliente_sucursal_id' => $pedido->sala?->id,
         ]);
     }
+
+    /** ¿Vino del «Facturar» directo de la lista (24/11/2026), sin pasar por el formulario? */
+    public function esDirecto(): bool
+    {
+        return $this->boolean('directo');
+    }
+
+    /**
+     * El formulario del CCF de este pedido: ahí se ve lo que frenó y se corrige. Desde la
+     * ficha del pedido (`desde=pedido`), «Cancelar» vuelve a la ficha.
+     */
+    public function formulario(): string
+    {
+        return route('facturacion.create-ccf', ['pedido' => $this->route('pedido')->id]
+            + ($this->input('desde') === 'pedido' ? ['desde' => 'pedido'] : []));
+    }
+
+    /** Lo que no pasa, si vino directo, se muestra en el formulario del pedido y no en la lista. */
+    protected function getRedirectUrl(): string
+    {
+        return $this->esDirecto() ? $this->formulario() : parent::getRedirectUrl();
+    }
 }

@@ -21,9 +21,13 @@ use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
- * El correo de las 18:00: cuerpo corto por sala y vendedor; hojas de despacho y detalle
- * de lo deshecho, faltantes y pendientes en el PDF de fábrica (16/11/2026).
- * Si no salió nada, sale igual con «Hoy no salió ningún pedido» y el resumen de pendientes.
+ * El correo de las 18:00 (a quién va: ver A QUIÉN; lleva dinero). En tres partes, en este orden
+ * (Melqui, 25/11/2026), una línea por sala: «Llegó de los vendedores» (los pedidos que
+ * entraron desde el correo anterior), «Salió de la fábrica» (lo que se mandó, con lo que
+ * faltó y por qué) y «Quedó allá» (primero «Listos para salir», después «Armando» y al final
+ * «Sin empezar», cada uno con su día); al final, lo vendido. El PDF adjunto («Pedidos del
+ * día») lleva las mismas tres partes con los productos y después la hoja de cada envío.
+ * Si no hubo nada en una parte, lo dice en una frase («Hoy no salió ningún pedido»).
  *
  * ES EL CIERRE DEL DÍA (11/11/2026): lleva además lo vendido HOY en una línea (el total y
  * cuántas facturas, con la cuenta de la pantalla de Ventas; ni cada CCF ni el mes) y,
@@ -128,7 +132,7 @@ class ResumenDiarioPedidos
         $contenido['fabrica_pdf_fallo'] = false;
         if ($contenido['salas'] !== []) {
             try {
-                $pdf['salio-de-la-fabrica-'.$fecha.'.pdf'] = app(PdfFabricaDiario::class)->binario($contenido);
+                $pdf['pedidos-del-'.$fecha.'.pdf'] = app(PdfFabricaDiario::class)->binario($contenido);
             } catch (Throwable $e) {
                 // No registrar el mensaje del render: podría contener datos del pedido.
                 report(new \RuntimeException('No se pudo adjuntar el PDF de la fábrica ('.get_class($e).')'));
@@ -172,43 +176,77 @@ class ResumenDiarioPedidos
 
     /**
      * Lo que pasó entre `$desde` y `$hasta` (en la hora de la base, app.timezone), agrupado
-     * por sala y ordenado por su nombre.
+     * por sala y ordenado por su nombre, en las tres partes del correo:
+     *  - `llego`: los pedidos vigentes que entraron al sistema en el período (también los de
+     *    la tienda web, con su nombre), con quién los sacó y sus productos.
+     *  - `salio` y `deshecho`: los envíos del período y los que un correo anterior dio por
+     *    salidos y se deshicieron; `cerrados`: lo que faltó o no se mandó, y por qué.
+     *  - `listos` (listos para salir) y `por_mandar` (con `armando` si la fábrica ya lo
+     *    empezó): lo que quedó, de cualquier día, con su fecha y `resto` si ya salió una parte.
      *
-     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, deshecho: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, motivos_cierre: list<string>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>}>}
+     * @return array{fecha: string, salio_algo: bool, envios_ids: list<int>, salas: array<string, array{
+     *     llego: list<array{numero: int, vendedor: ?string, cajitas: int, productos: list<array{nombre: string, cantidad: string}>}>,
+     *     salio: list<array{numero: int, pedido: int, cajitas: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
+     *     deshecho: list<array{numero: int, pedido: int, cajitas: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
+     *     cerrados: list<array{numero: int, nada: bool, motivo: ?string, productos: list<array{nombre: string, cantidad: string, motivo: ?string}>}>,
+     *     listos: list<array{numero: int, fecha: string, atraso: int, resto: bool, productos: list<array{nombre: string, cantidad: string}>}>,
+     *     por_mandar: list<array{numero: int, fecha: string, atraso: int, resto: bool, armando: bool, productos: list<array{nombre: string, cantidad: string}>}>,
+     * }>}
      */
     public function contenido(Carbon $desde, Carbon $hasta): array
     {
         $salas = [];
         $sala = function (PedidoSala $pedido) use (&$salas): string {
             $nombre = $pedido->nombreSala().($pedido->origen === OrigenPedidoSala::Web ? ' (web)' : '');
-            $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'motivos_cierre' => [], 'por_mandar' => []];
+            $salas[$nombre] ??= ['llego' => [], 'salio' => [], 'deshecho' => [], 'cerrados' => [], 'listos' => [], 'por_mandar' => []];
 
             return $nombre;
         };
         $hoy = Carbon::parse($hasta->toDateString());
+        $producto = fn (PedidoSalaLinea $l, string $cantidad) => ['nombre' => (string) $l->producto?->nombre, 'cantidad' => PedidoSalaLinea::legible($cantidad)];
+        // Un pedido de la tienda se cuenta en cajitas, igual en «Llegó» y en «Salió»; 0 si no es
+        // de la tienda o no trae el detalle (entonces se cuentan sus productos).
+        $cajitas = fn (PedidoSala $p) => $p->origen === OrigenPedidoSala::Web
+            ? (int) collect($p->pedidoWeb?->cajitas_detalle ?? [])->sum(fn ($c) => $c['cantidad'] ?? 1) : 0;
         // La hora sola si es del día del correo; si no (después de las 18:00 de ayer), con la fecha.
-        $envio = function (PedidoSalaEnvio $envio) use ($hoy): array {
+        $envio = function (PedidoSalaEnvio $envio) use ($hoy, $cajitas): array {
             $local = HoraNegocio::aLocal($envio->created_at);
 
             return [
                 'numero' => $envio->numero,
+                'pedido' => $envio->pedido_sala_id,
+                'cajitas' => $cajitas($envio->pedido),
                 'hora' => $local->format($local->isSameDay($hoy) ? 'H:i' : 'd/m H:i'),
+                // `linea`: la línea del pedido, para contar cada producto una vez aunque salga en
+                // dos envíos. No el nombre: dos presentaciones pueden llamarse igual.
                 'productos' => $envio->lineas->map(fn ($l) => [
                     'nombre' => (string) $l->linea?->producto?->nombre,
                     'cantidad' => PedidoSalaLinea::legible((string) $l->cantidad),
+                    'linea' => $l->pedido_sala_linea_id,
                 ])->values()->all(),
             ];
         };
         $relaciones = ['pedido.sala:id,nombre', 'pedido.pedidoWeb', 'lineas.linea.producto:id,nombre'];
 
+        // 1. Lo que llegó: el pedido que entró al sistema entre los dos correos. Uno que el
+        // vendedor ya anuló no se nombra.
+        $llegaron = PedidoSala::query()->vigentes()->whereBetween('created_at', [$desde, $hasta])
+            ->with(['sala:id,nombre', 'pedidoWeb', 'sacadoPor:id,nombre', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre'])
+            ->orderBy('id')->get();
+        foreach ($llegaron as $pedido) {
+            $salas[$sala($pedido)]['llego'][] = [
+                'numero' => $pedido->id,
+                'vendedor' => $pedido->sacadoPor?->nombre,
+                'cajitas' => $cajitas($pedido),
+                'productos' => $pedido->lineas->map(fn ($l) => $producto($l, (string) $l->cantidad))->values()->all(),
+            ];
+        }
+
+        // 2. Lo que salió.
         $envios = PedidoSalaEnvio::query()->vigentes()->whereBetween('created_at', [$desde, $hasta])
             ->with($relaciones)->orderBy('id')->get();
         foreach ($envios as $e) {
             $salas[$sala($e->pedido)]['salio'][] = $envio($e);
-            if ($e->pedido->origen === OrigenPedidoSala::Web) {
-                $salas[$sala($e->pedido)]['cajitas'] = ($salas[$sala($e->pedido)]['cajitas'] ?? 0)
-                    + collect($e->pedido->pedidoWeb?->cajitas_detalle ?? [])->sum(fn ($c) => $c['cantidad'] ?? 1);
-            }
         }
 
         // Un envío que un correo anterior dio por salido y se deshizo después. Uno que salió y
@@ -219,10 +257,10 @@ class ResumenDiarioPedidos
             $salas[$sala($e->pedido)]['deshecho'][] = $envio($e);
         }
 
-        // Lo que faltó y lo que no se trae: los pedidos que se CERRARON en el período, según la
+        // Lo que faltó y lo que no se mandó: los pedidos que se CERRARON en el período, según la
         // auditoría del cierre, aunque su envío haya salido otro día («Lo que falta no se
         // trae» no crea envío). No se usa `updated_at`: agregar la OC después lo movería.
-        // Un pedido que se reabrió y sigue por mandar sale abajo, con los pendientes.
+        // Un pedido que se reabrió y sigue por mandar sale en lo que quedó.
         $cerrados = PedidoSala::query()
             ->whereIn('id', Activity::query()
                 ->where('log_name', 'pedido_sala')
@@ -235,39 +273,45 @@ class ResumenDiarioPedidos
             ->orderBy('id')
             ->get();
 
-        // Por qué no se mandó, si se cerró con «No mandar…» (13/11/2026): uno por pedido.
+        // Por qué no se mandó, si se cerró con «No mandar…» (13/11/2026): uno por pedido. El
+        // de cada producto que faltó es el que marcaron al mandar.
         $motivos = $this->fabrica->motivosDeCierre($cerrados->modelKeys());
         foreach ($cerrados as $pedido) {
-            if (isset($motivos[$pedido->id])) {
-                $salas[$sala($pedido)]['motivos_cierre'][] = $motivos[$pedido->id];
+            $nada = $pedido->estado === EstadoPedidoSala::NoSeTrae;
+            $productos = $nada
+                ? $pedido->lineas->map(fn ($l) => $producto($l, (string) $l->cantidad) + ['motivo' => null])
+                : $pedido->lineas->filter->tienePendiente()->map(fn ($l) => $producto($l, $l->pendiente()) + ['motivo' => $l->motivo_no_enviado]);
+            if (! $nada && $productos->isEmpty()) {
+                continue;
             }
-            if ($pedido->estado === EstadoPedidoSala::NoSeTrae) {
-                foreach ($pedido->lineas as $linea) {
-                    $salas[$sala($pedido)]['no_se_trae'][] = [
-                        'nombre' => (string) $linea->producto?->nombre,
-                        'cantidad' => $linea->cantidadLegible(),
-                    ];
-                }
+            $salas[$sala($pedido)]['cerrados'][] = [
+                'numero' => $pedido->id,
+                'nada' => $nada,
+                'motivo' => $motivos[$pedido->id] ?? null,
+                'productos' => $productos->values()->all(),
+            ];
+        }
+
+        // 3. Lo que quedó allá, de cualquier día. La caja lista para salir lleva lo que va en
+        // ella; lo demás, lo que falta mandar y si ya lo están armando.
+        foreach ($this->fabrica->porMandar()->with('pedidoWeb')->get() as $pedido) {
+            $quedo = [
+                'numero' => $pedido->id,
+                'fecha' => $pedido->fecha->format('d/m/Y'),
+                'atraso' => (int) $pedido->fecha->copy()->startOfDay()->diffInDays($hoy),
+                'resto' => $pedido->enParte(),
+            ];
+            if ($pedido->estado === EstadoPedidoSala::Listo) {
+                $salas[$sala($pedido)]['listos'][] = $quedo + [
+                    'productos' => $pedido->lineas->filter(fn ($l) => bccomp($l->vaEnLaCaja(), '0', 4) === 1)
+                        ->map(fn ($l) => $producto($l, $l->vaEnLaCaja()))->values()->all(),
+                ];
 
                 continue;
             }
-            foreach ($pedido->lineas->filter->tienePendiente() as $linea) {
-                $salas[$sala($pedido)]['falto'][] = [
-                    'nombre' => (string) $linea->producto?->nombre,
-                    'cantidad' => PedidoSalaLinea::legible($linea->pendiente()),
-                    'motivo' => $linea->motivo_no_enviado,
-                ];
-            }
-        }
-
-        foreach ($this->fabrica->porMandar()->with('pedidoWeb')->get() as $pedido) {
-            $salas[$sala($pedido)]['por_mandar'][] = [
-                'fecha' => $pedido->fecha->format('d/m/Y'),
-                'atraso' => (int) $pedido->fecha->copy()->startOfDay()->diffInDays($hoy),
-                'productos' => $pedido->lineas->filter->tienePendiente()->map(fn ($l) => [
-                    'nombre' => (string) $l->producto?->nombre,
-                    'cantidad' => PedidoSalaLinea::legible($l->pendiente()),
-                ])->values()->all(),
+            $salas[$sala($pedido)]['por_mandar'][] = $quedo + [
+                'armando' => $pedido->armando_desde !== null,
+                'productos' => $pedido->lineas->filter->tienePendiente()->map(fn ($l) => $producto($l, $l->pendiente()))->values()->all(),
             ];
         }
 

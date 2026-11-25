@@ -35,6 +35,9 @@
         <x-sidebar-group titulo="Ventas y facturación" icono="facturacion" clave="ventas" :activo="$grupoVentasActivo">
             @if ($veFacturacion)
                 <x-sidebar-link :href="route('facturacion.index')" :active="$enDocumentosFiscales">Documentos fiscales</x-sidebar-link>
+                {{-- Lo que mandó la PC de pedidos, para facturar con la OC (24/11/2026). Mismo
+                     permiso que los documentos (dte.ver). --}}
+                <x-sidebar-link :href="route('facturacion.llego-de-fabrica')" :active="request()->routeIs('facturacion.llego-de-fabrica')">Llegó de pedidos</x-sidebar-link>
                 <x-sidebar-link :href="route('facturacion.pedidos-web.index')" :active="request()->routeIs('facturacion.pedidos-web.*')">Pedidos web</x-sidebar-link>
                 {{-- Órdenes de compra que llegaron por correo, para ver las que faltan facturar.
                      Mismo permiso que los documentos (dte.ver). Apagada por defecto desde el

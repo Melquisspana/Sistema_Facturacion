@@ -9,6 +9,7 @@ use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
+use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
@@ -614,18 +615,179 @@ class FacturarPedidoTest extends TestCase
         $this->envio($pedido, [$this->galleta->id => '10']);
         $enlace = fn (string $url) => 'href="'.e($url).'"';
 
-        // Desde el detalle del pedido vuelve a la ficha.
+        // Desde el detalle del pedido vuelve a la ficha (el enlace de la ficha, en
+        // test_el_facturar_de_la_ficha_del_pedido_tambien_va_directo).
         $desdePedido = route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']);
-        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee($enlace($desdePedido), false);
         $this->get($desdePedido)->assertOk()
             ->assertSeeInOrder([$enlace(route('rutas.pedidos.show', $pedido)), 'Cancelar', 'Crear borrador'], false);
 
-        // Desde la lista, a la lista con el mismo filtro; si no se sabe, a «Sin facturar».
+        // Desde la lista, a la lista con el mismo día; si no se sabe, a todo lo pendiente.
         $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id, 'fecha' => '2026-11-08']))->assertOk()
             ->assertSee($enlace(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08'])), false);
-        foreach ([['sin_facturar' => 1], ['fecha' => 'no-es-fecha'], []] as $filtro) {
-            $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id] + $filtro))->assertOk()
-                ->assertSee($enlace(route('facturacion.llego-de-fabrica', ['sin_facturar' => 1])), false);
+        // (El menú de Facturación también enlaza la lista: se mira el «Cancelar».)
+        foreach ([['fecha' => 'no-es-fecha'], []] as $filtro) {
+            $this->assertMatchesRegularExpression(
+                '/'.preg_quote($enlace(route('facturacion.llego-de-fabrica')), '/').'\s*class="[^"]*">Cancelar</',
+                $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id] + $filtro))->assertOk()->getContent(),
+            );
+        }
+    }
+
+    private function ocDelCorreo(ClienteSucursal $sala, string $numero): void
+    {
+        OrdenCompraRecibida::create([
+            'numero' => $numero, 'sala_codigo' => $sala->codigo, 'cliente_sucursal_id' => $sala->id,
+            'fecha_creacion' => '2026-11-08', 'fecha_despacho' => '2026-11-10', 'total' => '22.90',
+            'pdf_path' => 'ppq/ordenes-compra/x.pdf', 'pdf_hash' => hash('sha256', $numero),
+            'gmail_message_id' => 'm-'.$numero, 'estado' => OrdenCompraRecibida::LEIDA,
+        ]);
+    }
+
+    private function salaQueExigeOc(string $nombre, string $codigo): ClienteSucursal
+    {
+        return Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente de prueba '.$codigo, 'requiere_orden_compra' => true])
+            ->sucursales()->create(['nombre' => $nombre, 'codigo' => $codigo, 'ruta_id' => $this->ruta->id]);
+    }
+
+    /** El «Facturar» de la fila: el formulario que manda directo al borrador, o el enlace al formulario del CCF. */
+    private function directo(string $html, PedidoSala $pedido): ?string
+    {
+        $accion = preg_quote('action="'.route('facturacion.pedidos.facturar', $pedido).'"', '/');
+        if (preg_match('/<form method="POST" '.$accion.'>(.*?)<\/form>/s', $html, $form) !== 1) {
+            return null;
+        }
+        preg_match('/name="numero_orden_compra" value="([^"]*)"/', $form[1], $oc);
+
+        return $oc[1] ?? '';
+    }
+
+    /**
+     * Melqui (24/11/2026): «Facturar» va directo al borrador cuando hay una sola OC clara (la
+     * del vendedor, o la única que llegó por correo) o la sala no pide OC; el formulario sale
+     * solo si falta la OC o hay varias para elegir.
+     */
+    public function test_con_una_sola_oc_clara_facturar_va_directo_al_borrador(): void
+    {
+        $delVendedor = $this->pedido([$this->galleta->id => '4'], '26119001000317');
+        $this->envio($delVendedor, [$this->galleta->id => '4']);
+        $salaCorreo = $this->salaQueExigeOc('Sala de prueba Correo', '9002');
+        $this->ocDelCorreo($salaCorreo, '26119002000555');
+        $delCorreo = $this->pedido([$this->quesadilla->id => '2'], sala: $salaCorreo);
+        $this->envio($delCorreo, [$this->quesadilla->id => '2']);
+        $sinOc = $this->pedido([$this->quesadilla->id => '1'], sala: $this->salaQueExigeOc('Sala de prueba Sin OC', '9003'));
+        $this->envio($sinOc, [$this->quesadilla->id => '1']);
+        $salaVarias = $this->salaQueExigeOc('Sala de prueba Varias', '9004');
+        $this->ocDelCorreo($salaVarias, '26119004000111');
+        $this->ocDelCorreo($salaVarias, '26119004000222');
+        $varias = $this->pedido([$this->quesadilla->id => '1'], sala: $salaVarias);
+        $this->envio($varias, [$this->quesadilla->id => '1']);
+        $noPide = $this->pedido([$this->quesadilla->id => '3']);
+        $this->envio($noPide, [$this->quesadilla->id => '3']);
+
+        $html = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()->getContent();
+
+        $this->assertSame('26119001000317', $this->directo($html, $delVendedor));
+        $this->assertSame('26119002000555', $this->directo($html, $delCorreo));
+        $this->assertSame('', $this->directo($html, $noPide));
+        foreach ([$sinOc, $varias] as $pedido) {
+            $this->assertNull($this->directo($html, $pedido));
+            $this->assertStringContainsString('href="'.e(route('facturacion.create-ccf', ['pedido' => $pedido->id])).'"', $html);
+        }
+        $this->assertStringNotContainsString(e(route('facturacion.create-ccf', ['pedido' => $delCorreo->id])), $html);
+
+        // Lo que manda la fila: el borrador sale con la OC del correo y abre el editor.
+        $this->post(route('facturacion.pedidos.facturar', $delCorreo), ['numero_orden_compra' => '26119002000555', 'directo' => '1'])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('facturacion.edit', $dte = Dte::sole()));
+        $this->assertSame('26119002000555', $dte->numero_orden_compra);
+        $this->assertSame($salaCorreo->id, $dte->cliente_sucursal_id);
+        $this->assertSame([$this->quesadilla->id => 2.0], $this->cantidades($dte));
+    }
+
+    public function test_si_algo_frena_el_directo_abre_el_formulario_con_lo_que_falta(): void
+    {
+        $sinPrecio = Producto::factory()->create(['nombre' => 'Turrón de prueba', 'precio_unitario' => 0]);
+        $pedido = $this->pedido([$sinPrecio->id => '1'], '26119001000317');
+        $this->envio($pedido, [$sinPrecio->id => '1']);
+        $formulario = route('facturacion.create-ccf', ['pedido' => $pedido->id]);
+
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000317', 'directo' => '1'])
+            ->assertRedirect($formulario)
+            ->assertSessionHasErrors('pedido');
+        $this->assertSame(0, Dte::withTrashed()->count());
+        $this->get($formulario)->assertOk()->assertSee('Turrón de prueba no tiene precio para esta sala.');
+
+        // Lo que no pasa la validación del formulario (la OC que pide la sala) también vuelve ahí.
+        $this->sala->update(['requiere_orden_compra' => true]);
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '', 'directo' => '1'])
+            ->assertRedirect($formulario)
+            ->assertSessionHasErrors('numero_orden_compra');
+        $this->assertSame(0, Dte::withTrashed()->count());
+    }
+
+    public function test_si_hay_que_elegir_el_emisor_facturar_abre_el_formulario(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '4'], '26119001000317');
+        $this->envio($pedido, [$this->galleta->id => '4']);
+        PuntoVenta::create(['establecimiento_id' => Establecimiento::sole()->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+
+        $html = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()->getContent();
+
+        $this->assertNull($this->directo($html, $pedido));
+        $this->assertStringContainsString('href="'.e(route('facturacion.create-ccf', ['pedido' => $pedido->id])).'"', $html);
+    }
+
+    /** En el formulario, la única OC del correo de la sala viene puesta, no como un botón que hay que tocar. */
+    public function test_el_formulario_trae_puesta_la_unica_oc_del_correo(): void
+    {
+        $sala = $this->salaQueExigeOc('Sala de prueba Correo', '9002');
+        $this->ocDelCorreo($sala, '26119002000555');
+        $pedido = $this->pedido([$this->quesadilla->id => '2'], sala: $sala);
+        $this->envio($pedido, [$this->quesadilla->id => '2']);
+
+        $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
+            ->assertViewHas('propuesta', fn ($p) => $p['oc'] === '26119002000555')
+            ->assertSee('value="26119002000555"', false);
+
+        // Con dos, se elige: ninguna viene puesta.
+        $this->ocDelCorreo($sala, '26119002000666');
+        $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
+            ->assertViewHas('propuesta', fn ($p) => $p['oc'] === null);
+    }
+
+    /** El «Facturar» de la ficha del pedido sigue la misma regla que el de la lista. */
+    public function test_el_facturar_de_la_ficha_del_pedido_tambien_va_directo(): void
+    {
+        $conOc = $this->pedido([$this->galleta->id => '4'], '26119001000317');
+        $this->envio($conOc, [$this->galleta->id => '4']);
+        $sinOc = $this->pedido([$this->quesadilla->id => '1'], sala: $this->salaQueExigeOc('Sala de prueba Sin OC', '9003'));
+        $this->envio($sinOc, [$this->quesadilla->id => '1']);
+
+        $html = $this->get(route('rutas.pedidos.show', $conOc))->assertOk()->getContent();
+        $this->assertSame('26119001000317', $this->directo($html, $conOc));
+        $this->assertStringContainsString('name="desde" value="pedido"', $html);
+        $this->assertStringNotContainsString(e(route('facturacion.create-ccf', ['pedido' => $conOc->id, 'desde' => 'pedido'])), $html);
+
+        $html = $this->get(route('rutas.pedidos.show', $sinOc))->assertOk()->getContent();
+        $this->assertNull($this->directo($html, $sinOc));
+        $this->assertStringContainsString('href="'.e(route('facturacion.create-ccf', ['pedido' => $sinOc->id, 'desde' => 'pedido'])).'"', $html);
+
+        // Si algo frena, el formulario abre con «Cancelar» a la ficha.
+        $this->post(route('facturacion.pedidos.facturar', $sinOc), ['numero_orden_compra' => '', 'directo' => '1', 'desde' => 'pedido'])
+            ->assertRedirect(route('facturacion.create-ccf', ['pedido' => $sinOc->id, 'desde' => 'pedido']))
+            ->assertSessionHasErrors('numero_orden_compra');
+    }
+
+    /** En el celular el formulario no queda pegado a los bordes: el contenedor lleva su margen. */
+    public function test_el_formulario_del_ccf_tiene_margen_en_el_celular(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '4'], '26119001000317');
+        $this->envio($pedido, [$this->galleta->id => '4']);
+
+        foreach ([route('facturacion.create-ccf', ['pedido' => $pedido->id]), route('facturacion.create-ccf')] as $url) {
+            $this->get($url)->assertOk()
+                ->assertSee('class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8"', false)
+                ->assertSee('class="bg-white shadow rounded-lg p-4 sm:p-6"', false);
         }
     }
 

@@ -1,23 +1,23 @@
-@props(['titulo', 'fecha' => null, 'message' => null])
-{{-- Como mail::message, pero con el encabezado de los documentos impresos (docs/GUIA_PANTALLAS.md,
-     «Documentos impresos»): logo y empresa a la izquierda y el recuadro con el nombre del correo
-     a la derecha. Va con el tema «documento» (themes/documento.css). El logo va incrustado en el
-     correo (cid:): los correos no cargan imágenes en data-URI ni de un servidor interno. Sin
-     $message (vista previa sin mensaje) o sin el archivo, sale solo el nombre. --}}
+@props(['titulo', 'message' => null])
+{{-- Como mail::message, pero con el encabezado de la empresa: el logo como un sello (un
+     círculo blanco que se ve igual en el modo oscuro de Gmail), el nombre de la empresa y,
+     debajo, el nombre del correo en el rojo de la marca. Va con el tema «documento»
+     (themes/documento.css). El logo va incrustado en el correo (cid:, App\Support\Correo\LogoCorreo):
+     los correos no cargan imágenes en data-URI ni de un servidor interno. Sin $message (vista
+     previa sin mensaje), sin el archivo o si no se puede pasar a sello, sale solo el nombre. Hoy lo usa solo el resumen
+     diario de pedidos. --}}
 @php
     $empresa = \App\Support\NombreEmpresa::actual();
-    $rutaLogo = (string) config('dte.pdf.logo_path', '');
-    $logo = $message !== null && $rutaLogo !== '' && is_file($rutaLogo) ? $message->embed($rutaLogo) : null;
+    $logo = $message !== null ? \App\Support\Correo\LogoCorreo::incrustar($message) : null;
 @endphp
 <x-mail::layout>
-{{-- En el celular el recuadro baja debajo de la empresa. --}}
+{{-- En el celular, menos margen alrededor. --}}
 <x-slot:head>
 <style>
 @media only screen and (max-width: 600px) {
-.doc-header { padding: 16px 16px 12px !important; }
+.doc-header { padding: 20px 16px 12px !important; }
 .doc-head { width: 100% !important; }
-.doc-emisor, .doc-box { display: block !important; width: auto !important; }
-.doc-box { margin-top: 10px !important; }
+.content-cell { padding: 20px !important; }
 }
 </style>
 </x-slot:head>
@@ -28,22 +28,12 @@
 <td class="doc-header">
 <table class="doc-head" align="center" width="600" cellpadding="0" cellspacing="0" role="presentation">
 <tr>
-<td class="doc-emisor">
-<table cellpadding="0" cellspacing="0" role="presentation">
-<tr>
 @if ($logo)
-<td class="doc-logo-cell"><img src="{{ $logo }}" class="doc-logo" width="32" height="48" alt=""></td>
+<td class="doc-logo-cell" width="56"><img src="{{ $logo }}" class="doc-logo" width="56" height="56" alt="Logo de {{ $empresa }}"></td>
 @endif
-<td class="doc-razon">{{ $empresa }}</td>
-</tr>
-</table>
-</td>
-<td class="doc-box">
-<span class="doc-lbl">Correo interno</span><br>
+<td class="doc-emisor">
+<span class="doc-razon">{{ $empresa }}</span><br>
 <span class="doc-ttl">{{ $titulo }}</span>
-@if ($fecha)
-<br><span class="doc-fecha">{{ $fecha }}</span>
-@endif
 </td>
 </tr>
 </table>
@@ -53,6 +43,15 @@
 
 {{-- Body --}}
 {!! $slot !!}
+
+{{-- Subcopy: las notas del final, más chicas y en gris (como mail::message). --}}
+@isset($subcopy)
+<x-slot:subcopy>
+<x-mail::subcopy>
+{!! $subcopy !!}
+</x-mail::subcopy>
+</x-slot:subcopy>
+@endisset
 
 {{-- Footer --}}
 <x-slot:footer>

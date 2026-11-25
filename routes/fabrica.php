@@ -25,9 +25,14 @@ Route::middleware(['auth', 'permission:fabrica.pedidos.mandar', 'cache.headers:n
         Route::get('/', [PedidoFabricaController::class, 'index'])->name('index');
         Route::get('{pedido}/otros', [PedidoFabricaController::class, 'otros'])->name('otros');
         Route::get('{pedido}', [PedidoFabricaController::class, 'show'])->name('show');
+        // «Imprimir sin mandar»: la orden sacada de lo marcado, sin mandar nada (solo lectura).
+        Route::get('{pedido}/caja', [PedidoFabricaController::class, 'caja'])->name('caja');
         // Lo marcado en la hoja se guarda solo (fetch), sin mandar nada.
         Route::patch('{pedido}/borrador', [PedidoFabricaController::class, 'borrador'])->name('borrador');
         Route::patch('{pedido}/borrador/borrar', [PedidoFabricaController::class, 'borrarBorrador'])->name('borrador.borrar');
+        // «Listo para salir» y quitarlo. Lo marcado se guarda antes desde la hoja; al marcarlo, lo
+        // que hay en la caja queda guardado aunque no se haya tocado nada.
+        Route::patch('{pedido}/listo', [PedidoFabricaController::class, 'listo'])->name('listo');
         Route::post('{pedido}/envios', [PedidoFabricaController::class, 'mandar'])->name('mandar');
         // La hoja para imprimir de un envío de ese pedido (solo lectura).
         Route::get('{pedido}/envios/{envio}/imprimir', [PedidoFabricaController::class, 'imprimir'])->name('imprimir')

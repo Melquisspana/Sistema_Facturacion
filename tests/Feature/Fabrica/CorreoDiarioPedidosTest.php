@@ -18,6 +18,7 @@ use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\PdfFabricaDiario;
 use App\Services\Rutas\PedidosFabrica;
+use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\ResumenDiarioPedidos;
 use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Console\Scheduling\Event;
@@ -131,6 +132,28 @@ class CorreoDiarioPedidosTest extends TestCase
         return html_entity_decode(strip_tags(app(PdfFabricaDiario::class)->html($correo->contenido)));
     }
 
+    /** El cuerpo del correo como lo lee la persona: sin etiquetas ni estilos, en una línea. */
+    private function texto(ResumenDiarioPedidosCorreo $correo): string
+    {
+        $cuerpo = (string) preg_replace('/^.*<body[^>]*>/s', '', $correo->render());
+
+        return trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($cuerpo))));
+    }
+
+    /** Las partes del correo, en el orden que aprobó Melqui (25/11/2026). */
+    private const PARTES = ['Llegó de los vendedores', 'Salió de la fábrica', 'Quedó allá', 'Ventas del día'];
+
+    /** Lo que dice una parte: desde su título hasta el de la parte que sigue. */
+    private function parte(string $texto, string $titulo): string
+    {
+        $inicio = strpos($texto, $titulo);
+        $this->assertNotFalse($inicio, 'Falta la parte «'.$titulo.'»');
+        $siguiente = self::PARTES[array_search($titulo, self::PARTES, true) + 1] ?? null;
+        $fin = $siguiente !== null ? strpos($texto, $siguiente, $inicio) : false;
+
+        return substr($texto, $inicio, $fin === false ? null : $fin - $inicio);
+    }
+
     public function test_sin_movimiento_ni_pendientes_no_adjunta_pdf_de_fabrica(): void
     {
         Mail::fake();
@@ -138,8 +161,177 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
         $correo = $this->enviado();
         $this->assertSame([], $correo->pdf);
-        $this->assertStringNotContainsString('Faltaron cosas', $correo->render());
-        $this->assertStringNotContainsString('Por mandar:', $correo->render());
+        $this->assertStringNotContainsString('PDF adjunto', $this->texto($correo));
+    }
+
+    // ══════════════════════════════ las tres partes (Melqui, 25/11/2026)
+
+    public function test_el_correo_va_en_tres_partes_y_al_final_las_ventas(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $fabrica = app(PedidosFabrica::class);
+
+        // De días anteriores: no llegaron desde el correo anterior.
+        $this->travelTo('2026-11-06 09:00:00');
+        $armando = $this->pedido($this->sala('Abarrotes Inventados'), [$this->canilla->id => '2'], '2026-11-06');
+        $this->travelTo('2026-11-07 09:00:00');
+        $cancelado = $this->pedido($this->sala('Kiosco Inventado'), [$this->galleta->id => '3'], '2026-11-07');
+        $this->travelTo('2026-11-08 09:00:00');
+        $listo = $this->pedido($this->sala('Tienda Inventada Norte'), [$this->galleta->id => '5'], '2026-11-08');
+
+        // Hoy llegaron dos.
+        $this->travelTo('2026-11-09 10:00:00');
+        $salio = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '24', $this->canilla->id => '6']);
+        $this->travelTo('2026-11-09 11:00:00');
+        $nuevo = $this->pedido($this->sala('Bodega Inventada Sur'), [$this->galleta->id => '1']);
+
+        // Lo que hizo la fábrica.
+        $this->travelTo('2026-11-09 15:00:00');
+        $this->mandar($salio, [$this->galleta->id => '24', $this->canilla->id => '0'], [$this->canilla->id => 'Sin harina']);
+        $fabrica->cerrar($cancelado, $this->version($cancelado), $this->fabrica, 'El cliente canceló');
+        $fabrica->marcarListo($listo, true, $this->fabrica, $this->version($listo));
+        $fabrica->guardarBorrador($armando, ['cantidades' => [$armando->lineas()->value('id') => '1']], $this->fabrica);
+
+        $this->travelTo('2026-11-09 18:00:00');
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+        $correo = $this->enviado();
+        $texto = $this->texto($correo);
+
+        // Las tres partes en orden y lo de ventas al final.
+        $posiciones = array_map(fn (string $titulo) => strpos($texto, $titulo), self::PARTES);
+        $this->assertNotContains(false, $posiciones);
+        $enOrden = $posiciones;
+        sort($enOrden);
+        $this->assertSame($enOrden, $posiciones, 'Llegó, Salió, Quedó allá y Ventas, en ese orden');
+
+        // 1. Una línea por sala con el N.º, quién lo sacó y cuántos productos.
+        $llego = $this->parte($texto, 'Llegó de los vendedores');
+        $this->assertStringContainsString('Bodega Inventada Sur: N.º '.$nuevo->id.' · Carlos Inventado · 1 producto', $llego);
+        $this->assertStringContainsString('Súper Ficticio Centro: N.º '.$salio->id.' · Carlos Inventado · 2 productos', $llego);
+        foreach (['Tienda Inventada Norte', 'Abarrotes Inventados', 'Kiosco Inventado'] as $deAntes) {
+            $this->assertStringNotContainsString($deAntes, $llego);
+        }
+
+        // 2. Lo que salió, por sala, con lo que faltó y por qué.
+        $salioParte = $this->parte($texto, 'Salió de la fábrica');
+        $this->assertStringContainsString('Súper Ficticio Centro: pedido N.º '.$salio->id.', 1 producto. Faltó Canilla de prueba 6 (Sin harina).', $salioParte);
+        $this->assertStringContainsString('Kiosco Inventado: no se mandó el pedido N.º '.$cancelado->id.' (El cliente canceló).', $salioParte);
+        $this->assertStringNotContainsString('Hoy no salió ningún pedido', $salioParte);
+
+        // 3. Lo que quedó: primero lo listo, después lo que están armando y al final lo que nadie tocó, con su día.
+        $this->assertMatchesRegularExpression(
+            '/^Quedó allá\s*Listos para salir\s*Tienda Inventada Norte: N\.º '.$listo->id.', de ayer\s*'
+            .'Armando\s*Abarrotes Inventados: N\.º '.$armando->id.', del 06\/11\s*'
+            .'Sin empezar\s*Bodega Inventada Sur: N\.º '.$nuevo->id.', de hoy\s*$/u',
+            $this->parte($texto, 'Quedó allá'),
+        );
+
+        // 4. Ventas, como siempre.
+        $this->assertStringContainsString('Hoy no se facturó nada.', $this->parte($texto, 'Ventas del día'));
+
+        // Los ceros no se dicen y no queda nada de la forma de antes.
+        $this->assertDoesNotMatchRegularExpression('/\b0 (productos?|pedidos?|salas?|envíos?|cajitas?)\b/u', $texto);
+        foreach (['Por mandar:', 'Faltaron cosas', 'Sigue por mandar'] as $viejo) {
+            $this->assertStringNotContainsString($viejo, $texto);
+        }
+        // Dice cuál de los PDF adjuntos es: un día con entregas llega también el de cada vendedor.
+        $this->assertStringContainsString('El detalle de cada pedido, con sus productos, va en el PDF adjunto «Pedidos del 09/11/2026».', $texto);
+
+        // El PDF, con las mismas tres partes y después la hoja de cada envío.
+        $pdf = preg_replace('/\s+/u', ' ', $this->detalle($correo));
+        $this->assertMatchesRegularExpression('/RESUMEN DE PEDIDOS.*Llegó de los vendedores.*Salió de la fábrica.*Quedó allá.*Listos para salir.*Armando.*Sin empezar.*HOJA DE DESPACHO/s', $pdf);
+        $this->assertStringContainsString('Súper Ficticio Centro N.º '.$salio->id.' Carlos Inventado Galleta de prueba 24, Canilla de prueba 6', $pdf);
+        $this->assertStringContainsString('N.º '.$salio->id.' · 15:00: Galleta de prueba 24 Canilla de prueba 6 — Sin harina', $pdf);
+        $this->assertStringContainsString('No se mandó el pedido N.º '.$cancelado->id.': Galleta de prueba 3 — El cliente canceló', $pdf);
+        $this->assertStringContainsString('Tienda Inventada Norte N.º '.$listo->id.' 08/11/2026 Galleta de prueba 5', $pdf);
+        $this->assertStringContainsString('Abarrotes Inventados N.º '.$armando->id.' 06/11/2026 Canilla de prueba 2', $pdf);
+        $this->assertStringContainsString('Bodega Inventada Sur N.º '.$nuevo->id.' 09/11/2026 Galleta de prueba 1', $pdf);
+    }
+
+    public function test_un_pedido_que_el_vendedor_anulo_no_sale_en_llego_ni_en_el_correo_ni_en_el_pdf(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $this->travelTo('2026-11-09 09:00:00');
+        $vigente = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5']);
+        $anulado = $this->pedido($this->sala('Kiosco Inventado'), [$this->galleta->id => '3']);
+        $this->travelTo('2026-11-09 10:00:00');
+        app(PedidosSala::class)->anular($anulado, $this->persona->user);
+        $this->assertSame(EstadoPedidoSala::Anulado, $anulado->fresh()->estado);
+
+        $this->travelTo('2026-11-09 18:00:00');
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+        $correo = $this->enviado();
+
+        $texto = $this->texto($correo);
+        $pdf = (string) preg_replace('/\s+/u', ' ', $this->detalle($correo));
+        foreach (['correo' => $texto, 'PDF' => $pdf] as $donde => $leido) {
+            $llego = $this->parte($leido, 'Llegó de los vendedores');
+            $this->assertStringContainsString('N.º '.$vigente->id, $llego, $donde);
+            $this->assertStringNotContainsString('Kiosco Inventado', $llego, $donde);
+            $this->assertStringNotContainsString('N.º '.$anulado->id, $leido, $donde);
+        }
+    }
+
+    public function test_si_no_hubo_nada_cada_parte_lo_dice_en_una_frase_corta(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        $texto = $this->texto($this->enviado());
+        $this->assertStringContainsString('Llegó de los vendedores No llegaron pedidos nuevos.', $texto);
+        $this->assertStringContainsString('Salió de la fábrica Hoy no salió ningún pedido.', $texto);
+        $this->assertStringContainsString('Quedó allá No quedó nada por mandar.', $texto);
+        foreach (['Listos para salir', 'Armando', 'Sin empezar'] as $grupoVacio) {
+            $this->assertStringNotContainsString($grupoVacio, $texto);
+        }
+        $this->assertDoesNotMatchRegularExpression('/\b0 (productos?|pedidos?|salas?|envíos?|cajitas?)\b/u', $texto);
+    }
+
+    public function test_el_correo_no_lleva_el_boton_ni_enlaces_al_sistema(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5']);
+
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        // «Ver en el sistema» llevaba a la pantalla de la fábrica: el resumen y el PDF bastan.
+        $html = $this->enviado()->render();
+        $this->assertStringNotContainsString('Ver en el sistema', $html);
+        $this->assertStringNotContainsString('fabrica/pedidos', $html);
+        $this->assertDoesNotMatchRegularExpression('/<a\b/i', $html);
+    }
+
+    public function test_el_logo_va_incrustado_en_el_correo_con_fondo_blanco_y_su_nombre(): void
+    {
+        Empresa::create(['razon_social' => 'Empresa de prueba, S.A. de C.V.', 'nombre_comercial' => 'Confitería de prueba', 'activo' => true]);
+        $contenido = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now());
+
+        // Por el transporte de prueba (array), que guarda el mensaje tal como saldría y no lo entrega.
+        Mail::mailer('array')->to('oficina@ejemplo.test')->send(new ResumenDiarioPedidosCorreo($contenido));
+        $mensaje = Mail::mailer('array')->getSymfonyTransport()->messages()->sole()->getOriginalMessage();
+        $html = $mensaje->getHtmlBody();
+
+        // Va dentro del correo (cid:): no se pide al sistema por una dirección.
+        $this->assertSame(1, preg_match('/<img src="cid:([^"]+)" class="doc-logo"[^>]*width="56" height="56" alt="Logo de Confitería de prueba"/', $html, $m));
+        $this->assertStringNotContainsString('images/dte', $html);
+        $this->assertStringNotContainsString('data:image', $html);
+        $logo = collect($mensaje->getAttachments())->filter(fn ($parte) => $parte->getContentId() === $m[1]);
+        $this->assertCount(1, $logo);
+        $this->assertSame('inline', $logo->first()->getDisposition());
+        $this->assertSame('image/png', $logo->first()->getContentType());
+
+        // Con su propio círculo blanco: en el modo oscuro de Gmail el fondo se oscurece y el
+        // dibujo negro del logo, sin fondo, se perdía.
+        $imagen = imagecreatefromstring($logo->first()->getBody());
+        $this->assertSame([168, 168], [imagesx($imagen), imagesy($imagen)]);
+        $color = fn (int $x, int $y) => imagecolorsforindex($imagen, imagecolorat($imagen, $x, $y));
+        $this->assertSame(127, $color(2, 2)['alpha'], 'afuera del círculo, transparente');
+        $this->assertSame(['red' => 255, 'green' => 255, 'blue' => 255, 'alpha' => 0], $color(14, 84), 'adentro, blanco');
     }
 
     public function test_si_falla_el_pdf_de_fabrica_sale_el_correo_con_aviso(): void
@@ -153,7 +345,9 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
         $correo = $this->enviado();
         $this->assertSame([], $correo->pdf);
-        $this->assertStringContainsString('No se pudo adjuntar el PDF de la fábrica', $correo->render());
+        // Con el mismo nombre que la nota del final, y esa nota no promete un PDF que no fue.
+        $this->assertStringContainsString('No se pudo adjuntar el PDF «Pedidos del 09/11/2026».', $this->texto($correo));
+        $this->assertStringNotContainsString('va en el PDF adjunto', $this->texto($correo));
         Exceptions::assertReported(fn (\RuntimeException $e) => str_contains($e->getMessage(), 'No se pudo adjuntar el PDF de la fábrica')
             && ! str_contains($e->getMessage(), 'datos privados'));
     }
@@ -168,12 +362,14 @@ class CorreoDiarioPedidosTest extends TestCase
         }
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
         $correo = $this->enviado();
-        $pdf = $correo->pdf['salio-de-la-fabrica-2026-11-09.pdf'];
+        $pdf = $correo->pdf['pedidos-del-2026-11-09.pdf'];
         $this->assertStringStartsWith('%PDF', $pdf);
-        $this->assertSame(30, preg_match_all('/\/Type \/Page\b/', $pdf), 'Una página por envío, sin detalle final vacío');
+        // El resumen (unas pocas páginas) y una página por envío.
+        $this->assertThat(preg_match_all('/\/Type \/Page\b/', $pdf), $this->logicalAnd($this->greaterThan(30), $this->lessThan(36)));
         $this->assertLessThan(3 * 1024 * 1024, strlen(base64_encode($pdf)) + strlen($correo->render()));
         $html = app(PdfFabricaDiario::class)->html($correo->contenido);
         $this->assertSame(30, substr_count($html, 'HOJA DE DESPACHO'));
+        $this->assertSame(1, substr_count($html, 'RESUMEN DE PEDIDOS'));
     }
     // ══════════════════════════════ contenido
 
@@ -199,30 +395,42 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertSame('Pedidos del 09/11/2026', $correo->envelope()->subject);
 
         $html = $correo->render();
-        $this->assertStringNotContainsString('Hoy no salió ningún pedido', $html);
+        $texto = $this->texto($correo);
+        $this->assertStringNotContainsString('Hoy no salió ningún pedido', $texto);
         $this->assertStringNotContainsString('7.77', $html, 'el resumen no lleva precios');
-        // Firma con el nombre de Configuración › Empresa emisora, no con el del .env.
+        // Con el nombre de Configuración › Empresa emisora, no con el del .env, y una sola vez arriba.
         $this->assertStringContainsString('Confitería de prueba', $html);
         $this->assertStringNotContainsString('Sistema de prueba', $html);
-        // La identidad de los documentos impresos: logo incrustado, empresa y el recuadro «Resumen diario» en azul pizarra.
+        // Los colores de la marca (25/11/2026): el rojo del logo solo de acento, en la franja de
+        // arriba, la marca de cada parte y el nombre del correo; nada del azul pizarra de antes.
         $this->assertMatchesRegularExpression('/<img src="data:image\/png;base64,[^"]+" class="doc-logo"/', $html);
-        $this->assertMatchesRegularExpression('/Correo interno<\/span><br>\s*<span class="doc-ttl"[^>]*color: #2B4A6F[^>]*>Resumen diario<\/span>\s*<br><span class="doc-fecha"[^>]*>09\/11\/2026<\/span>/', $html);
-        $this->assertStringContainsString('border-top: 2px solid #3B5F8A', $html);
-        $this->assertStringNotContainsString('Galleta de prueba', $html);
-        $this->assertStringNotContainsString('Canilla de prueba', $html);
-        $this->assertStringContainsString('Súper Ficticio Centro: 1 producto (1 envío)', $html);
-        $this->assertStringContainsString('Faltaron cosas en 1 sala · Por mandar: 1 pedido', $html);
-        $this->assertArrayHasKey('salio-de-la-fabrica-2026-11-09.pdf', $correo->pdf);
-        $this->assertStringStartsWith('%PDF', $correo->pdf['salio-de-la-fabrica-2026-11-09.pdf']);
+        $this->assertMatchesRegularExpression('/<span class="doc-ttl"[^>]*color: #C23B26[^>]*>Resumen diario<\/span>/', $html);
+        $this->assertStringContainsString('border-top: 4px solid #C23B26', $html);
+        $this->assertMatchesRegularExpression('/<h2 style="[^"]*border-left: 4px solid #C23B26[^"]*">Salió de la fábrica<\/h2>/', $html);
+        foreach (['#2B4A6F', '#3B5F8A', 'Correo interno'] as $deAntes) {
+            $this->assertStringNotContainsString($deAntes, $html);
+        }
+        // El título de cada grupo de «Quedó allá» es lo único que dice si la caja está lista o
+        // nadie la tocó: en la tinta y del tamaño del texto, no chico, gris y en mayúsculas.
+        $this->assertSame(1, preg_match('/<h3 style="([^"]*)">Sin empezar<\/h3>/', $html, $grupo));
+        $this->assertStringContainsString('color: #2B2421', $grupo[1]);
+        $this->assertStringContainsString('font-size: 16px', $grupo[1]);
+        $this->assertStringNotContainsString('uppercase', $grupo[1]);
+        // Lo que faltó y por qué ahora va en el correo; lo que salió, sin la lista de productos.
+        $this->assertStringContainsString('Súper Ficticio Centro: pedido N.º '.$centro->id.', 1 producto. Faltó Canilla de prueba 6 (Sin harina).', $texto);
+        $this->assertStringContainsString('Tienda Inventada Norte: no se mandó el pedido N.º '.$norte->id.' (El cliente canceló).', $texto);
+        $this->assertStringNotContainsString('Galleta de prueba', $texto);
+        $this->assertMatchesRegularExpression('/Sin empezar\s*Abarrotes Inventados: N\.º \d+, del 06\/11/', $texto);
+        $this->assertArrayHasKey('pedidos-del-2026-11-09.pdf', $correo->pdf);
+        $this->assertStringStartsWith('%PDF', $correo->pdf['pedidos-del-2026-11-09.pdf']);
         $html = preg_replace('/\s+/u', ' ', $this->detalle($correo));
         $this->assertStringContainsString('HOJA DE DESPACHO', $html);
         $this->assertStringContainsString('Lo que va', $html);
-        $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 06\/11\/2026 \(3 días de atraso\): Canilla de prueba 2\.5/s', $html);
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Galleta de prueba.*24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
-        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*No se trae.*Galleta de prueba: 3.*Por qué no se mandó: El cliente canceló/s', $html);
-        $this->assertSame(1, substr_count($html, 'Por qué no se mandó'), 'solo el pedido cerrado con «No mandar»');
+        $this->assertMatchesRegularExpression('/Quedó allá.*Sin empezar.*Abarrotes Inventados N\.º \d+ 06\/11\/2026 Canilla de prueba 2\.5/s', $html);
+        $this->assertMatchesRegularExpression('/Salió de la fábrica.*Súper Ficticio Centro N\.º '.$centro->id.' · 18:00: Galleta de prueba 24 Canilla de prueba 6 — Sin harina/s', $html);
+        $this->assertMatchesRegularExpression('/Salió de la fábrica.*Tienda Inventada Norte No se mandó el pedido N\.º '.$norte->id.': Galleta de prueba 3 — El cliente canceló/s', $html);
 
-        $this->assertTrue(strpos($html, 'Súper Ficticio Centro') < strpos($html, 'Tienda Inventada Norte'));
+        $this->assertTrue(strpos($texto, 'Súper Ficticio Centro: pedido') < strpos($texto, 'Tienda Inventada Norte: no se mandó'));
     }
 
     public function test_lo_que_falta_y_se_da_por_perdido_otro_dia_sale_en_falto_ese_dia(): void
@@ -242,9 +450,10 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->travelTo('2026-11-10 18:00:00');
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
 
-        $html = $this->detalle($this->enviado());
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Faltó.*Canilla de prueba: 6 — Sin harina.*Por qué no se mandó: No hay producto/s', $html);
-        $this->assertStringNotContainsString('Sigue por mandar', $html);
+        $this->assertStringContainsString('Súper Ficticio Centro: faltó Canilla de prueba 6 (Sin harina). Lo que faltó ya no va: No hay producto.', $this->texto($this->enviado()));
+        $html = preg_replace('/\s+/u', ' ', $this->detalle($this->enviado()));
+        $this->assertMatchesRegularExpression('/Salió de la fábrica.*Súper Ficticio Centro Canilla de prueba 6 — Sin harina Lo que faltó ya no va: No hay producto/s', $html);
+        $this->assertStringContainsString('No quedó nada por mandar.', $html);
     }
 
     public function test_lo_que_pasa_despues_de_las_seis_sale_en_el_correo_del_dia_siguiente(): void
@@ -275,11 +484,14 @@ class CorreoDiarioPedidosTest extends TestCase
         $correos = Mail::sent(ResumenDiarioPedidosCorreo::class);
         $this->assertCount(2, $correos);
         $html = preg_replace('/\s+/u', ' ', $this->detalle($correos->last()));
-        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*Galleta de prueba.*3/s', $html);
-        $this->assertMatchesRegularExpression('/Abarrotes Inventados Sur.*No se trae.*Canilla de prueba: 2/s', $html);
-        // El envío que el correo del lunes dio por salido se deshizo: se avisa y vuelve a pendiente.
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Se deshizo.*Envío 1 \(09\/11 16:00\): Galleta de prueba 5.*Sigue por mandar/s', $html);
+        $this->assertMatchesRegularExpression('/Salió de la fábrica.*Tienda Inventada Norte N\.º '.$norte->id.' · 09\/11 18:20: Galleta de prueba 3/s', $html);
+        $this->assertMatchesRegularExpression('/Salió de la fábrica.*Abarrotes Inventados Sur No se mandó el pedido N\.º '.$sur->id.': Canilla de prueba 2 — No hay producto/s', $html);
+        // El envío que el correo del lunes dio por salido se deshizo: se avisa y vuelve a quedar allá.
+        $this->assertMatchesRegularExpression('/Salió de la fábrica.*Súper Ficticio Centro Se deshizo el envío del N\.º '.$centro->id.' \(09\/11 16:00\): Galleta de prueba 5\. Había salido en el correo anterior\..*Quedó allá.*Súper Ficticio Centro N\.º '.$centro->id.'/s', $html);
         $this->assertStringNotContainsString('Hoy no salió ningún pedido', $html);
+        $texto = $this->texto($correos->last());
+        $this->assertStringContainsString('Súper Ficticio Centro: se deshizo 1 envío que había salido en el correo anterior.', $texto);
+        $this->assertStringContainsString('Abarrotes Inventados Sur: no se mandó el pedido N.º '.$sur->id.' (No hay producto).', $texto);
     }
 
     public function test_lo_escrito_en_la_fabrica_no_mete_enlaces_ni_imagenes_en_el_correo(): void
@@ -295,28 +507,66 @@ class CorreoDiarioPedidosTest extends TestCase
 
         $correo = $this->enviado();
         $pdfHtml = app(PdfFabricaDiario::class)->html($correo->contenido);
+        // Ni una etiqueta de imagen ni un enlace hacia afuera: lo escrito queda como texto.
         foreach ([$correo->render(), $pdfHtml] as $html) {
-            $this->assertStringNotContainsString('src="https://rastreo.example', $html);
-            $this->assertStringNotContainsString('href="https://phishing.example', $html);
+            $this->assertDoesNotMatchRegularExpression('/<img\b[^>]*rastreo\.example/i', $html);
+            $this->assertDoesNotMatchRegularExpression('/<a\b[^>]*phishing\.example/i', $html);
+            $this->assertStringContainsString('&lt;img', $html);
         }
-        $this->assertStringContainsString('&lt;img', $pdfHtml);
-        $html = $this->detalle($correo);
-        // Se lee tal cual se escribió.
-        $this->assertStringContainsString('[Ver detalle](https://phishing.example/login)', $html);
-        $this->assertStringContainsString('Súper [Ficticio](https://phishing.example/sala) Centro', $html);
+        // Se lee tal cual se escribió, en el PDF y ahora también en el correo (el motivo de lo que faltó).
+        foreach ([$this->detalle($correo), $this->texto($correo)] as $html) {
+            $this->assertStringContainsString('[Ver detalle](https://phishing.example/login)', $html);
+            $this->assertStringContainsString('Súper [Ficticio](https://phishing.example/sala) Centro', $html);
+        }
     }
 
     public function test_si_no_salio_nada_dice_hoy_no_salio_ningun_pedido_con_los_pendientes(): void
     {
         Mail::fake();
         $this->correoReal();
-        $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5'], '2026-11-08');
+        $pedido = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5'], '2026-11-08');
 
         $this->artisan('pedidos:correo-diario')->assertSuccessful();
 
-        $html = $this->detalle($this->enviado());
-        $this->assertStringContainsString('Hoy no salió ningún pedido', $this->enviado()->render());
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Sigue por mandar.*Pedido del 08\/11\/2026 \(1 día de atraso\): Galleta de prueba 5/s', $html);
+        $texto = $this->texto($this->enviado());
+        $this->assertStringContainsString('Salió de la fábrica Hoy no salió ningún pedido.', $texto);
+        $this->assertMatchesRegularExpression('/Sin empezar\s*Súper Ficticio Centro: N\.º '.$pedido->id.', de ayer/', $texto);
+        $html = preg_replace('/\s+/u', ' ', $this->detalle($this->enviado()));
+        $this->assertMatchesRegularExpression('/Quedó allá.*Sin empezar.*Súper Ficticio Centro N\.º '.$pedido->id.' 08\/11\/2026 Galleta de prueba 5/s', $html);
+    }
+
+    public function test_las_cajas_listas_salen_en_listos_para_salir_y_no_en_lo_que_sigue_por_mandar(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $listo = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '24', $this->canilla->id => '6'], '2026-11-08');
+        $otro = $this->pedido($this->sala('Abarrotes Inventados'), [$this->canilla->id => '2.5'], '2026-11-07');
+        $fabrica = app(PedidosFabrica::class);
+        // La caja va con 20 galletas y sin canillas (no hay).
+        $fabrica->guardarBorrador($listo, ['cantidades' => [
+            $listo->lineas()->where('producto_id', $this->galleta->id)->value('id') => '20',
+            $listo->lineas()->where('producto_id', $this->canilla->id)->value('id') => '0',
+        ]], $this->fabrica);
+        $fabrica->marcarListo($listo, true, $this->fabrica, $this->version($listo));
+
+        $sala = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now())['salas']['Súper Ficticio Centro'];
+        $this->assertSame([], $sala['por_mandar']);
+        $this->assertSame([['numero' => $listo->id, 'fecha' => '08/11/2026', 'atraso' => 1, 'resto' => false, 'productos' => [['nombre' => 'Galleta de prueba', 'cantidad' => '20']]]], $sala['listos']);
+
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        $correo = $this->enviado();
+        $texto = $this->texto($correo);
+        // Se llama como en la fábrica y en la oficina: «Listos para salir» (25/11/2026), y va
+        // antes de lo que nadie tocó; sin «Armando» si no hay ninguno armándose.
+        $this->assertMatchesRegularExpression('/Quedó allá\s*Listos para salir\s*Súper Ficticio Centro: N\.º '.$listo->id.', de ayer\s*Sin empezar\s*Abarrotes Inventados: N\.º '.$otro->id.', del 07\/11/', $texto);
+        $this->assertStringNotContainsString('Armando', $texto);
+        $this->assertStringNotContainsString('Armados', $texto);
+
+        $pdf = preg_replace('/\s+/u', ' ', $this->detalle($correo));
+        $this->assertMatchesRegularExpression('/Listos para salir.*Súper Ficticio Centro N\.º '.$listo->id.' 08\/11\/2026 Galleta de prueba 20.*Sin empezar.*Abarrotes Inventados N\.º '.$otro->id.' 07\/11\/2026 Canilla de prueba 2\.5/s', $pdf);
+        $this->assertStringNotContainsString('Armados', $pdf);
+        $this->assertSame(1, substr_count($pdf, 'Sin empezar'));
     }
 
     public function test_lo_que_falta_y_va_en_otro_envio_sale_con_lo_que_sigue_por_mandar(): void
@@ -329,8 +579,8 @@ class CorreoDiarioPedidosTest extends TestCase
 
         $sala = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now())['salas']['Súper Ficticio Centro'];
 
-        $this->assertSame([], $sala['falto']);
-        $this->assertSame([['fecha' => '09/11/2026', 'atraso' => 0, 'productos' => [['nombre' => 'Galleta de prueba', 'cantidad' => '4']]]], $sala['por_mandar']);
+        $this->assertSame([], $sala['cerrados']);
+        $this->assertSame([['numero' => $pedido->id, 'fecha' => '09/11/2026', 'atraso' => 0, 'resto' => true, 'armando' => false, 'productos' => [['nombre' => 'Galleta de prueba', 'cantidad' => '4']]]], $sala['por_mandar']);
     }
 
     // ══════════════════════════════ cuándo no se manda
