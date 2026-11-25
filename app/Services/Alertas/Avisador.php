@@ -72,6 +72,7 @@ class Avisador
             app(TiendaWebSinRespuesta::class),
             TiendaWebFallas::pagos(),
             TiendaWebFallas::otras(),
+            TiendaWebFallas::robots(),
             app(ContingenciaVencida::class),
             app(ContingenciaPorVencer::class),
             app(ContingenciaManualSinTerminar::class),

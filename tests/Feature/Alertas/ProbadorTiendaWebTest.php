@@ -41,6 +41,8 @@ class ProbadorTiendaWebTest extends TestCase
 
     private const OTRAS = 'Otras fallas de la tienda web';
 
+    private const ROBOTS = 'Rechazos anti-robots de la tienda web';
+
     /** Cómo está la página: bien, caida (sin conexión), clave (401 a todo) o vieja (sin /errores). */
     private string $pagina = 'bien';
 
@@ -415,14 +417,38 @@ class ProbadorTiendaWebTest extends TestCase
         $this->errores = [$this->fila('rechazo_verificacion', 'turnstile_invalido', 1), $this->fila('rechazo_verificacion', 'turnstile_sin_respuesta', 1)];
         $this->pasan(5);
 
-        $this->assertSame('La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta', $this->ultimo(self::OTRAS)->hallazgo->titulo);
+        $this->assertSame('La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta', $this->ultimo(self::ROBOTS)->hallazgo->titulo);
         $this->assertSame('La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó', $this->ultimo(self::PAGOS)->hallazgo->titulo);
-        $this->assertSinDatosSensibles($this->ultimo(self::OTRAS));
+        $this->assertSinDatosSensibles($this->ultimo(self::ROBOTS));
         $this->assertSinDatosSensibles($this->ultimo(self::PAGOS));
 
         $this->pasan(40);
-        $this->assertSame(['falla', 'normalizado'], $this->correos(self::OTRAS));
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::ROBOTS));
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::PAGOS));
+        $this->assertSame([], $this->correos(self::OTRAS));
+    }
+
+    public function test_un_robot_toda_la_manana_no_le_gasta_el_tope_a_otras_y_el_pedido_pagado_en_revision_igual_avisa(): void
+    {
+        // De 10:00 a 16:00 un robot llena la trampa sin parar: la página anota una fila cada 15 minutos.
+        for ($cuarto = 1; $cuarto <= 24; $cuarto++) {
+            $this->errores = [$this->fila('rechazo_verificacion', 'campo_trampa', $cuarto, primeraHace: ($cuarto - 1) * 15)];
+            $this->pasan(15);
+        }
+        // A las 16:00 un pedido pagado queda en revisión en la página.
+        $this->enRevision = [['id' => 50, 'codigo' => 'LN-REVI-0000-0050', 'estado' => 'para_revisar', 'alerta' => '', 'pasarela' => 'wompi']];
+        $this->pasan(10);
+
+        $this->assertSame(['falla'], $this->correos(self::OTRAS));
+        $this->assertSame('1 pedido quedó en revisión en la página: LN-REVI-0000-0050', $this->ultimo(self::OTRAS)->hallazgo->titulo);
+        // El robot avisa una vez, no cada hora mientras siga.
+        $this->assertSame(['falla'], $this->correos(self::ROBOTS));
+        $this->assertSame('La tienda rechazó pedidos que llenaron la trampa para robots', $this->ultimo(self::ROBOTS)->hallazgo->titulo);
+        $this->assertSinDatosSensibles($this->ultimo(self::ROBOTS));
+
+        $this->errores = [$this->fila('rechazo_verificacion', 'campo_trampa', 24, primeraHace: 370, ultimaHace: 10)];
+        $this->pasan(30);
+        $this->assertSame(['falla', 'normalizado'], $this->correos(self::ROBOTS));
     }
 
     public function test_una_caida_larga_de_wompi_con_un_solo_pedido_pendiente_avisa_una_vez_sin_normalizados_falsos(): void

@@ -12,15 +12,17 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Lo que la página anotó que le falló (GET /api/sistema/errores, guardado por
- * {@see ImportarPedidosWeb}) y los pedidos pagados que no llegan. Dos avisos, como
- * {@see EventosRecientes}, para que lo que impide vender tenga su propio tope diario y
- * una basura que manda cualquiera no se lo gaste:
+ * {@see ImportarPedidosWeb}) y los pedidos pagados que no llegan. Tres avisos, como
+ * {@see EventosRecientes}, cada uno con su propio tope diario, para que una basura que
+ * manda cualquiera no le gaste el tope a lo que impide vender ni a los pedidos pagados:
  *
  *  - pagos(): la tienda no puede cobrar o la cerró el fusible, un pago que no abrió, la
  *    comprobación anti-robots que no contesta, un pago sin comprobar;
- *  - otras(): errores internos, avisos con firma mala, consultas que fallan, rechazos de
- *    la comprobación anti-robots (los provoca cualquiera que mande un pedido), pedidos
- *    pagados que no se pudieron leer o quedaron en revisión, y las listas que no llegan.
+ *  - otras(): errores internos, avisos con firma mala, consultas que fallan, pedidos
+ *    pagados que no se pudieron leer o quedaron en revisión, y las listas que no llegan;
+ *  - robots(): los rechazos de la comprobación anti-robots y de la trampa, que los
+ *    provoca cualquiera que mande un pedido. Antes iban en otras(): un robot toda la
+ *    mañana le gastaba el tope y el pedido pagado en revisión ya no llegaba al correo.
  *
  * Si la página no contesta, no opinan: de eso avisa {@see TiendaWebSinRespuesta} y no
  * llegan dos correos por lo mismo. Cada texto sale de {@see self::CATALOGO}: nada del
@@ -72,7 +74,7 @@ class TiendaWebFallas implements Detector
         // La página anota una por pedido, motivo y hora: entre una y otra pudo fallar más veces.
         'consulta_fallida' => ['La consulta de reserva a Wompi falló al menos :n veces',
             'Los pagos se confirman igual cuando llega el aviso de Wompi; si se repite, avisá a soporte.', 3],
-        // Un robot o un comprador de verdad, si una llave de Turnstile está mal puesta: no se distinguen.
+        // Robots. Un robot o un comprador de verdad, si una llave de Turnstile está mal puesta: no se distinguen.
         'verificacion_rechazo' => ['La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta',
             'Probá una compra desde tu celular: si te rechaza, revisá las dos llaves de Turnstile en Cloudflare; si pasa, eran robots y no hay que hacer nada.', 1],
         'verificacion_trampa' => ['La tienda rechazó pedidos que llenaron la trampa para robots',
@@ -87,8 +89,11 @@ class TiendaWebFallas implements Detector
         'revision' => '1 pedido quedó en revisión en la página: :codigos',
     ];
 
-    /** Líneas que dicen cómo están las cosas y no cuántas veces pasó algo. */
-    private const ESTADOS = ['no_cobra', 'revision_lista', 'lista'];
+    /**
+     * Líneas que suman 1 al conteo: dicen cómo están las cosas y no cuántas veces pasó algo,
+     * o son de un robot, que mientras siga no tiene que mandar «Sigue la falla» cada hora.
+     */
+    private const ESTADOS = ['no_cobra', 'revision_lista', 'lista', 'verificacion_rechazo', 'verificacion_trampa'];
 
     private const MAX_DETALLE = 4;
 
@@ -97,31 +102,46 @@ class TiendaWebFallas implements Detector
     /** Minutos: la hora entre una anotación y la siguiente, más la lista que llega cada 5 y margen. */
     private const VENTANA_CONSULTA_FALLIDA = 90;
 
-    private function __construct(private readonly bool $pagos) {}
+    /** @param  'pagos'|'otras'|'robots'  $grupo */
+    private function __construct(private readonly string $grupo) {}
 
     public static function pagos(): self
     {
-        return new self(true);
+        return new self('pagos');
     }
 
     public static function otras(): self
     {
-        return new self(false);
+        return new self('otras');
+    }
+
+    public static function robots(): self
+    {
+        return new self('robots');
     }
 
     public function tipo(): string
     {
-        return $this->pagos ? 'tienda_web_pagos' : 'tienda_web_fallas';
+        return match ($this->grupo) {
+            'pagos' => 'tienda_web_pagos',
+            'otras' => 'tienda_web_fallas',
+            'robots' => 'tienda_web_robots',
+        };
     }
 
     public function nombre(): string
     {
-        return $this->pagos ? 'Pagos en la tienda web' : 'Otras fallas de la tienda web';
+        return match ($this->grupo) {
+            'pagos' => 'Pagos en la tienda web',
+            'otras' => 'Otras fallas de la tienda web',
+            'robots' => 'Rechazos anti-robots de la tienda web',
+        };
     }
 
     /**
-     * Con la traída automática prendida y una lectura buena reciente. Pagos pide además la
-     * lista de errores reciente: con una vieja daría un «normalizado» falso.
+     * Con la traída automática prendida y una lectura buena reciente. Pagos y robots piden
+     * además la lista de errores reciente: con una vieja darían un «normalizado» falso (de
+     * la lista que no llega avisa otras()).
      */
     public function aplica(): bool
     {
@@ -129,12 +149,16 @@ class TiendaWebFallas implements Detector
             return false;
         }
 
-        return ! $this->pagos || $this->reciente($this->errores()['en'] ?? null, ImportarPedidosWeb::MINUTOS_ERRORES);
+        return $this->grupo === 'otras' || $this->reciente($this->errores()['en'] ?? null, ImportarPedidosWeb::MINUTOS_ERRORES);
     }
 
     public function revisar(): ?Hallazgo
     {
-        $lineas = $this->pagos ? $this->lineasDePagos() : $this->lineasDeOtras();
+        $lineas = match ($this->grupo) {
+            'pagos' => $this->lineasDePagos(),
+            'otras' => $this->lineasDeOtras(),
+            'robots' => $this->lineasDeRobots(),
+        };
         $lineas = array_filter($lineas, fn (array $l) => $l['cantidad'] >= self::CATALOGO[$l['clave']][2]);
         if ($lineas === []) {
             return null;
@@ -168,7 +192,7 @@ class TiendaWebFallas implements Detector
         foreach ($this->agrupar($errores['errores'] ?? [], fn (array $e) => match ($e['tipo']) {
             'error_cobro' => self::motivoDeCobro($e['detalle']),
             'error_consulta', 'vencido_sin_confirmar' => $this->enVentana($e) ? $e['tipo'] : null,
-            // Que Cloudflare no conteste no lo provoca un robot y frena a todos; los demás rechazos van en otras().
+            // Que Cloudflare no conteste no lo provoca un robot y frena a todos; los demás rechazos van en robots().
             'rechazo_verificacion' => $e['detalle'] === 'turnstile_sin_respuesta' && $this->enVentana($e) ? 'verificacion_sin_respuesta' : null,
             default => null,
         }) as $clave => $grupo) {
@@ -215,11 +239,6 @@ class TiendaWebFallas implements Detector
             'error_interno' => 'interno_'.self::ruta($e['detalle']),
             'firma_invalida' => $e['detalle'] === 'sin_cabecera' ? 'firma_sin_cabecera' : 'firma_no_cuadra',
             'consulta_fallida' => 'consulta_fallida',
-            'rechazo_verificacion' => match ($e['detalle']) {
-                'turnstile_sin_respuesta' => null,
-                'campo_trampa' => 'verificacion_trampa',
-                default => 'verificacion_rechazo',
-            },
             default => null,
         }) as $clave => $grupo) {
             $lineas[] = $this->linea($clave, $grupo['cantidad'], $grupo, ventana: true);
@@ -229,6 +248,26 @@ class TiendaWebFallas implements Detector
         // Se pide cada MINUTOS_ERRORES, con el mismo margen que la lista de revisión.
         if (! $this->reciente($errores['en'] ?? $vigilando, ImportarPedidosWeb::MINUTOS_ERRORES)) {
             $lineas[] = $this->linea('lista', 1);
+        }
+
+        return $lineas;
+    }
+
+    /**
+     * Los rechazos que provoca cualquiera que mande un pedido. Que Cloudflare no conteste va
+     * en pagos(): frena a todos y un robot no lo puede provocar.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function lineasDeRobots(): array
+    {
+        $lineas = [];
+        foreach ($this->agrupar($this->errores()['errores'] ?? [], fn (array $e) => $e['tipo'] !== 'rechazo_verificacion' || ! $this->enVentana($e) ? null : match ($e['detalle']) {
+            'turnstile_sin_respuesta' => null,
+            'campo_trampa' => 'verificacion_trampa',
+            default => 'verificacion_rechazo',
+        }) as $clave => $grupo) {
+            $lineas[] = $this->linea($clave, $grupo['cantidad'], $grupo, ventana: true);
         }
 
         return $lineas;

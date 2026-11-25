@@ -279,7 +279,8 @@ class TiendaWebTest extends TestCase
             // Cloudflare no contestó: no deja pagar a nadie, y un robot no lo puede provocar.
             'Turnstile sin respuesta' => ['turnstile_sin_respuesta', true,
                 'La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó', 'esperá unos minutos y probá una compra'],
-            // Lo provoca cualquiera que mande un pedido sin token: va con las otras, que tienen su propio tope.
+            // Lo provoca cualquiera que mande un pedido sin token: va en su propio aviso, con su propio tope,
+            // para no gastarle el tope a pagos ni a otras (los pedidos pagados en revisión).
             'Turnstile rechazó' => ['turnstile_invalido', false,
                 'La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta', 'revisá las dos llaves de Turnstile en Cloudflare'],
             'campo trampa' => ['campo_trampa', false,
@@ -295,15 +296,20 @@ class TiendaWebTest extends TestCase
         $this->lectura(okHace: 1);
         // La página anota como mucho uno por motivo cada 15 minutos: la cantidad son esos ratos.
         $this->errores([['rechazo_verificacion', $motivo, 2, 5]]);
-        [$aviso, $otro] = $enPagos ? [TiendaWebFallas::pagos(), TiendaWebFallas::otras()] : [TiendaWebFallas::otras(), TiendaWebFallas::pagos()];
+        $aviso = $enPagos ? TiendaWebFallas::pagos() : TiendaWebFallas::robots();
 
         $h = $aviso->revisar();
 
         $this->assertSame($titulo, $h->titulo);
         $this->assertStringContainsString($queHacer, $h->queHacer);
         $this->assertSame('2 veces en las últimas 24 horas, la última a las 09:55.', $h->detalle);
-        $this->assertSame(2, $h->conteo);
-        $this->assertNull($otro->revisar(), 'El mismo rechazo no avisa dos veces.');
+        // Lo de un robot suma 1: mientras siga, no manda «Sigue la falla» cada hora.
+        $this->assertSame($enPagos ? 2 : 1, $h->conteo);
+        foreach ([TiendaWebFallas::pagos(), TiendaWebFallas::otras(), TiendaWebFallas::robots()] as $otro) {
+            if ($otro->tipo() !== $aviso->tipo()) {
+                $this->assertNull($otro->revisar(), 'El mismo rechazo no avisa dos veces.');
+            }
+        }
         $this->assertSinDatosSensibles($h);
 
         $this->errores([['rechazo_verificacion', $motivo, 2, 31]]);
@@ -443,10 +449,10 @@ class TiendaWebTest extends TestCase
 
     // ───────────── Con el Avisador ─────────────
 
-    public function test_los_tres_estan_en_el_avisador_y_se_normalizan_cuando_la_pagina_vuelve(): void
+    public function test_los_cuatro_estan_en_el_avisador_y_se_normalizan_cuando_la_pagina_vuelve(): void
     {
         $tipos = array_map(fn ($d) => $d->tipo(), app(Avisador::class)->detectores());
-        foreach (['tienda_web_sin_respuesta', 'tienda_web_pagos', 'tienda_web_fallas'] as $tipo) {
+        foreach (['tienda_web_sin_respuesta', 'tienda_web_pagos', 'tienda_web_fallas', 'tienda_web_robots'] as $tipo) {
             $this->assertContains($tipo, $tipos);
         }
 
