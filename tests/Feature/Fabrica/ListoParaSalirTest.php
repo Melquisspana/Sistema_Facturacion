@@ -356,7 +356,7 @@ class ListoParaSalirTest extends TestCase
         $pedido = $this->pedido([$this->galleta->id => '10']);
         $this->listo($pedido);
 
-        $this->assertFalse($pedido->refresh()->fabricaEmpezo() === false);
+        $this->assertTrue($pedido->refresh()->fabricaEmpezo());
         $this->assertFalse($this->vendedor->can('corregir', $pedido));
     }
 
