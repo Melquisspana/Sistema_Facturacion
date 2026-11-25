@@ -99,6 +99,13 @@ class SecretoController extends Controller
             'confirmacion.accepted' => 'Confirmá que querés volver al valor del archivo de configuración.',
         ]);
 
+        // Nada guardado que quitar (doble clic o pantalla vieja): sin una segunda línea
+        // de auditoría por algo que no pasó. Igual que «Usar el valor del servidor».
+        if (Ajustes::fuente($definicion->clave) !== FuenteAjuste::BaseDeDatos) {
+            return redirect($this->volver($request))
+                ->with('status', $definicion->etiqueta.': ya usa el valor del archivo de configuración.');
+        }
+
         Ajustes::quitarOverride($definicion->clave);
 
         return redirect($this->volver($request))
