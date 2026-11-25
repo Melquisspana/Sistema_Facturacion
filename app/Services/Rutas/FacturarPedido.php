@@ -88,9 +88,15 @@ class FacturarPedido
     {
         $envios = $pedido->envios()->porFacturar()->orderBy('numero')->with('lineas.linea.producto')->get();
         $oc = filled($pedido->numero_orden_compra) ? $pedido->numero_orden_compra : null;
-        // Sin la del vendedor, la única que llegó por correo para la sala viene puesta (24/11/2026);
-        // con varias, se elige en el formulario.
-        $delCorreo = $oc === null ? array_column(OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [], 'numero') : [];
+        // El resto de un pedido con una parte ya facturada: la OC de ese CCF (con su aviso), no
+        // una del correo, que suele ser la del próximo pedido de la sala ({@see oc()}).
+        $facturados = $oc === null
+            ? $pedido->envios()->whereNull('anulado_en')->whereNotIn('id', $envios->modelKeys())->with('dte:id,numero_orden_compra')->get()
+            : collect();
+        $oc ??= $facturados->pluck('dte.numero_orden_compra')->first(fn ($n) => filled($n));
+        // Sin la del vendedor ni una parte facturada, la única que llegó por correo para la sala
+        // viene puesta (24/11/2026); con varias, se elige en el formulario.
+        $delCorreo = $oc === null && $facturados->isEmpty() ? array_column(OrdenCompraRecibida::pendientesPorSucursal()[$pedido->cliente_sucursal_id] ?? [], 'numero') : [];
         $oc ??= count($delCorreo) === 1 ? $delCorreo[0] : null;
 
         return $this->armar($pedido, $envios) + [
@@ -319,8 +325,9 @@ class FacturarPedido
     /**
      * La OC de un pedido para «Llegó de pedidos», sin consultas. Primero la que anotó el
      * vendedor; si no hay y ya está en su CCF (o lo que llegó va en su borrador), la de sus
-     * CCF; si no, las del correo de su sala. Avisa si la del pedido es de otra sala o ya
-     * tiene un CCF de otro pedido (un CCF rechazado no cuenta: hay que volver a facturar).
+     * CCF; si no, las del correo de su sala. El resto que llega con una parte ya facturada
+     * lleva la de sus CCF, con aviso. Avisa si la del pedido es de otra sala o ya tiene un
+     * CCF de otro envío (un CCF rechazado no cuenta: hay que volver a facturar).
      * `lista`: sin aviso y con OC, o la sala no la pide, o ya quedó resuelta en su CCF.
      *
      * @param  array{por_facturar: Collection<int, PedidoSalaEnvio>, borrador: ?Dte, facturados: Collection<int, Dte>}  $estado  {@see estado()}
@@ -332,21 +339,25 @@ class FacturarPedido
     {
         $delPedido = filled($pedido->numero_orden_compra);
         $enSuCcf = ! $delPedido && ($estado['por_facturar']->isEmpty() || $estado['borrador'] !== null);
+        // El resto que llega con una parte ya facturada (24/11/2026): su OC es la del CCF de esa
+        // parte, no una del correo (esa suele ser la del próximo pedido de la sala). Como ya
+        // tiene un CCF, se revisa en el formulario, como la del vendedor: no va directo.
+        $resto = ! $delPedido && ! $enSuCcf && $estado['facturados']->isNotEmpty();
         $deOtraSala = $delPedido ? ReglaOrdenCompra::salaDistinta($pedido->numero_orden_compra, $pedido->sala) : null;
         $ccfDeLaOc = $delPedido ? $ccfDeLaOc : null;
         // El CCF de la OC es el de este mismo pedido y no queda nada por facturar: no es aviso.
         $esElPropio = $ccfDeLaOc !== null && $estado['por_facturar']->isEmpty()
             && $pedido->envios->contains('dte_id', $ccfDeLaOc->id);
-        $aviso = match (true) {
-            $ccfDeLaOc !== null && ! $esElPropio => 'Esa OC ya tiene un CCF.',
-            $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
-            default => null,
-        };
         $propuestas = match (true) {
             $delPedido => [$pedido->numero_orden_compra],
-            $enSuCcf => collect([$estado['borrador']])->filter()->merge($estado['facturados'])
+            $enSuCcf || $resto => collect([$estado['borrador']])->filter()->merge($estado['facturados'])
                 ->pluck('numero_orden_compra')->filter(fn ($n) => filled($n))->unique()->values()->all(),
             default => array_column($delCorreo, 'numero'),
+        };
+        $aviso = match (true) {
+            $ccfDeLaOc !== null && ! $esElPropio, $resto && $propuestas !== [] => 'Esa OC ya tiene un CCF.',
+            $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
+            default => null,
         };
 
         return [
@@ -354,7 +365,7 @@ class FacturarPedido
             'titulo' => match (true) {
                 $propuestas === [] => 'Orden de compra',
                 $delPedido => 'OC del pedido',
-                $enSuCcf => 'OC del CCF',
+                $enSuCcf || $resto => 'OC del CCF',
                 default => 'OC del correo',
             },
             'aviso' => $aviso,
