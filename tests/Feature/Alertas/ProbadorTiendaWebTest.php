@@ -428,6 +428,30 @@ class ProbadorTiendaWebTest extends TestCase
         $this->assertSame([], $this->correos(self::OTRAS));
     }
 
+    public function test_la_llave_secreta_mal_puesta_avisa_aunque_un_robot_ya_tenga_su_aviso_abierto(): void
+    {
+        // Un robot dispara rechazos desde las 10:00: se abre su aviso y Melqui prueba desde el celular («eran robots»).
+        $this->errores = [$this->fila('rechazo_verificacion', 'turnstile_invalido', 1)];
+        $this->pasan(10);
+        $this->assertSame(['falla'], $this->correos(self::ROBOTS));
+
+        // A las 10:10 se cambia mal la llave secreta: la página anota turnstile_llave y nadie puede comprar.
+        $this->errores = [
+            $this->fila('rechazo_verificacion', 'turnstile_invalido', 2, primeraHace: 10),
+            $this->fila('rechazo_verificacion', 'turnstile_llave', 1),
+        ];
+        $this->pasan(10);
+
+        $this->assertSame(['falla'], $this->correos(self::PAGOS));
+        $falla = $this->ultimo(self::PAGOS);
+        $this->assertSame('La tienda no deja pagar a nadie: la llave secreta de Turnstile está mal puesta', $falla->hallazgo->titulo);
+        $this->assertStringContainsString('llave secreta de Turnstile', $falla->hallazgo->queHacer);
+        $this->assertSinDatosSensibles($falla);
+        // El aviso de los robots sigue igual: no suma la llave ni manda «Sigue la falla».
+        $this->assertSame(['falla'], $this->correos(self::ROBOTS));
+        $this->assertSame([], $this->correos(self::OTRAS));
+    }
+
     public function test_un_robot_toda_la_manana_no_le_gasta_el_tope_a_otras_y_el_pedido_pagado_en_revision_igual_avisa(): void
     {
         // De 10:00 a 16:00 un robot llena la trampa sin parar: la página anota una fila cada 15 minutos.

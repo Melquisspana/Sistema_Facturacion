@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\Cache;
  * manda cualquiera no le gaste el tope a lo que impide vender ni a los pedidos pagados:
  *
  *  - pagos(): la tienda no puede cobrar o la cerró el fusible, un pago que no abrió, la
- *    comprobación anti-robots que no contesta, un pago sin comprobar;
+ *    comprobación anti-robots que no contesta o tiene la llave secreta mal puesta, un pago
+ *    sin comprobar;
  *  - otras(): errores internos, avisos con firma mala, consultas que fallan, pedidos
  *    pagados que no se pudieron leer o quedaron en revisión, y las listas que no llegan;
  *  - robots(): los rechazos de la comprobación anti-robots y de la trampa, que los
@@ -38,6 +39,9 @@ class TiendaWebFallas implements Detector
         // Pagos
         'no_cobra' => ['La tienda no puede cobrar: los compradores ven “tienda cerrada”',
             'Avisá a soporte: faltan las llaves de Wompi o la dirección del sitio en Cloudflare.', 1],
+        // Cloudflare dijo que la llave secreta de Turnstile no sirve: frena a todos y un robot no lo provoca.
+        'verificacion_llave' => ['La tienda no deja pagar a nadie: la llave secreta de Turnstile está mal puesta',
+            'Nadie puede comprar hasta que se arregle: copiá otra vez la llave secreta de Turnstile en Cloudflare; si no la tenés a mano, avisá a soporte.', 1],
         // El fusible de la página: con 30 pedidos sin pagar en la última hora no abre más cobros.
         'cobro_fusible' => ['Se cerró la tienda un rato porque entraron demasiados pedidos sin pagar: puede ser un robot',
             'Se vuelve a abrir sola en menos de una hora. Si se repite, avisá a soporte: puede hacer falta prender Turnstile o, si es un día de promoción, subir el tope.', 1],
@@ -74,7 +78,8 @@ class TiendaWebFallas implements Detector
         // La página anota una por pedido, motivo y hora: entre una y otra pudo fallar más veces.
         'consulta_fallida' => ['La consulta de reserva a Wompi falló al menos :n veces',
             'Los pagos se confirman igual cuando llega el aviso de Wompi; si se repite, avisá a soporte.', 3],
-        // Robots. Un robot o un comprador de verdad, si una llave de Turnstile está mal puesta: no se distinguen.
+        // Robots. Un robot o un comprador de verdad, si la llave pública de Turnstile está mal puesta: no se
+        // distinguen. La secreta mal puesta sí se distingue y va en Pagos (verificacion_llave).
         'verificacion_rechazo' => ['La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta',
             'Probá una compra desde tu celular: si te rechaza, revisá las dos llaves de Turnstile en Cloudflare; si pasa, eran robots y no hay que hacer nada.', 1],
         'verificacion_trampa' => ['La tienda rechazó pedidos que llenaron la trampa para robots',
@@ -192,8 +197,13 @@ class TiendaWebFallas implements Detector
         foreach ($this->agrupar($errores['errores'] ?? [], fn (array $e) => match ($e['tipo']) {
             'error_cobro' => self::motivoDeCobro($e['detalle']),
             'error_consulta', 'vencido_sin_confirmar' => $this->enVentana($e) ? $e['tipo'] : null,
-            // Que Cloudflare no conteste no lo provoca un robot y frena a todos; los demás rechazos van en robots().
-            'rechazo_verificacion' => $e['detalle'] === 'turnstile_sin_respuesta' && $this->enVentana($e) ? 'verificacion_sin_respuesta' : null,
+            // Que Cloudflare no conteste o no acepte la llave secreta no lo provoca un robot y frena a
+            // todos; los demás rechazos van en robots().
+            'rechazo_verificacion' => ! $this->enVentana($e) ? null : match ($e['detalle']) {
+                'turnstile_sin_respuesta' => 'verificacion_sin_respuesta',
+                'turnstile_llave' => 'verificacion_llave',
+                default => null,
+            },
             default => null,
         }) as $clave => $grupo) {
             // El pago que no abrió sigue abierto hasta que otro comprador consiga su enlace.
@@ -254,8 +264,8 @@ class TiendaWebFallas implements Detector
     }
 
     /**
-     * Los rechazos que provoca cualquiera que mande un pedido. Que Cloudflare no conteste va
-     * en pagos(): frena a todos y un robot no lo puede provocar.
+     * Los rechazos que provoca cualquiera que mande un pedido. Que Cloudflare no conteste o
+     * no acepte la llave secreta va en pagos(): frena a todos y un robot no lo puede provocar.
      *
      * @return list<array<string, mixed>>
      */
@@ -263,7 +273,7 @@ class TiendaWebFallas implements Detector
     {
         $lineas = [];
         foreach ($this->agrupar($this->errores()['errores'] ?? [], fn (array $e) => $e['tipo'] !== 'rechazo_verificacion' || ! $this->enVentana($e) ? null : match ($e['detalle']) {
-            'turnstile_sin_respuesta' => null,
+            'turnstile_sin_respuesta', 'turnstile_llave' => null,
             'campo_trampa' => 'verificacion_trampa',
             default => 'verificacion_rechazo',
         }) as $clave => $grupo) {

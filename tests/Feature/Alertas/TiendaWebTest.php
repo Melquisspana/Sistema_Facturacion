@@ -279,6 +279,10 @@ class TiendaWebTest extends TestCase
             // Cloudflare no contestó: no deja pagar a nadie, y un robot no lo puede provocar.
             'Turnstile sin respuesta' => ['turnstile_sin_respuesta', true,
                 'La tienda no dejó pagar: la comprobación anti-robots de Cloudflare no contestó', 'esperá unos minutos y probá una compra'],
+            // La llave secreta mal puesta (24/11/2026): Cloudflare lo dice con su propio código y frena a todos; un robot no
+            // lo provoca. Antes caía con los robots y, con un aviso de robots abierto, no salía ningún correo.
+            'llave secreta mal puesta' => ['turnstile_llave', true,
+                'La tienda no deja pagar a nadie: la llave secreta de Turnstile está mal puesta', 'copiá otra vez la llave secreta de Turnstile'],
             // Lo provoca cualquiera que mande un pedido sin token: va en su propio aviso, con su propio tope,
             // para no gastarle el tope a pagos ni a otras (los pedidos pagados en revisión).
             'Turnstile rechazó' => ['turnstile_invalido', false,
