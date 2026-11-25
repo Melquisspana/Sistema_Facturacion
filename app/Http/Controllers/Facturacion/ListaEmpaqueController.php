@@ -233,6 +233,12 @@ class ListaEmpaqueController extends Controller
     {
         $this->autorizarGestion();
 
+        // Congelada hasta que un administrador la clasifique: la ficha no ofrece
+        // «Duplicar» y por la ruta tampoco se copia.
+        if ($lista->requiereRevision()) {
+            return $this->error($lista, 'No se puede duplicar: la lista viene del flujo anterior y está pendiente de clasificar. Un administrador tiene que resolverla primero.');
+        }
+
         $copia = DB::transaction(function () use ($lista) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
             $copia->fecha = HoraNegocio::fechaHoy();
@@ -242,6 +248,15 @@ class ListaEmpaqueController extends Controller
             $copia->finalizada_por_user_id = null;
             $copia->requiere_revision = false;
             $copia->revision_motivo = null;
+            // Es una lista nueva: no hereda la marca de archivada ni la clasificación de
+            // la revisión de la original. Con ellas nacía escondida de «Abiertas» y sin
+            // poder editarse.
+            $copia->archivada = false;
+            $copia->archivada_en = null;
+            $copia->revision_estado_original = null;
+            $copia->revision_resuelta_en = null;
+            $copia->revision_resuelta_por_user_id = null;
+            $copia->revision_resolucion = null;
             // El número de factura ya no se copia: se deriva de las FEX que se vinculen
             // a la copia, y copiar el de otra lista es exactamente el error que se quiso
             // eliminar al dejar de teclearlo.
