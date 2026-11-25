@@ -118,9 +118,12 @@ class ListaEmpaqueController extends Controller
         $avisos = [];
 
         $lista = DB::transaction(function () use ($datos, &$avisos) {
-            $lista = Exportacion::create(
-                collect($datos)->except('items')->all() + ['estado' => Exportacion::ESTADO_BORRADOR]
-            );
+            // El FDA es el de Configuración, nunca el del campo oculto, y el número de
+            // factura nace vacío: sale de las FEX que se vinculen.
+            $lista = Exportacion::create(collect($datos)->except(['items', 'factura', 'fda_reg_number'])->all() + [
+                'estado' => Exportacion::ESTADO_BORRADOR,
+                'fda_reg_number' => $this->exportador->fdaRegNumber(),
+            ]);
             $avisos = $this->crearItems($lista, $datos['items']);
 
             return $lista;
@@ -182,7 +185,8 @@ class ListaEmpaqueController extends Controller
         }
 
         DB::transaction(function () use ($lista, $datos, &$avisos) {
-            $lista->update(collect($datos)->except('items')->all());
+            // La lista conserva su FDA y su texto de factura históricos.
+            $lista->update(collect($datos)->except(['items', 'factura', 'fda_reg_number'])->all());
 
             // Items existentes (traen id): solo cambia la cantidad y se CONSERVA el
             // snapshot. Items nuevos: snapshot del catálogo de hoy. Los no enviados se quitan.

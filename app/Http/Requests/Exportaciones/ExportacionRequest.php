@@ -24,8 +24,8 @@ class ExportacionRequest extends FormRequest
             'exportador_nombre' => ['required', 'string', 'max:255'],
             'exportador_direccion' => ['nullable', 'string', 'max:255'],
             'fecha' => ['required', 'date'],
-            'factura' => ['nullable', 'string', 'max:100'],
-            'fda_reg_number' => ['nullable', 'string', 'max:50'],
+            // `factura` y `fda_reg_number` NO se aceptan del navegador: el número de
+            // factura sale de las FEX vinculadas y el FDA de Configuración (ver store()).
             'observaciones' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
             // id presente = item existente (conserva su snapshot); ausente = item nuevo.

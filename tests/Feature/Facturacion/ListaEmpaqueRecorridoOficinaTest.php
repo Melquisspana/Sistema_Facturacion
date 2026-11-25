@@ -308,6 +308,7 @@ class ListaEmpaqueRecorridoOficinaTest extends TestCase
     public function test_el_fda_guardado_sale_en_la_copia_y_el_exportador_conserva_el_de_la_lista_vieja(): void
     {
         $usuario = $this->usuario();
+        Ajustes::guardarComoSistema('exportaciones.fda_reg_number', '00000000001');
         $vieja = $this->armarLista($usuario, $this->perfil(), [['exportacion_producto_id' => $this->presentacion()->id, 'cantidad_cajas' => 10, 'precio_caja' => '']]);
         Ajustes::guardarComoSistema('exportaciones.fda_reg_number', '00000000002');
         Ajustes::guardarComoSistema('exportaciones.exportador_nombre', 'Exportador nuevo de prueba');
@@ -318,6 +319,50 @@ class ListaEmpaqueRecorridoOficinaTest extends TestCase
         $this->assertSame('Exportador de prueba', $copia->exportador_nombre);
         $this->assertSame('00000000001', $vieja->fresh()->fda_reg_number);
         $this->actingAs($usuario)->get(route('facturacion.listas.imprimir', $copia))->assertOk()->assertSee('00000000002');
+    }
+
+    /**
+     * Intento de romperla: el FDA y el número de factura no se escriben en la lista, pero
+     * el campo oculto se puede cambiar a mano o venir de un formulario viejo abierto en
+     * otra pestaña. Al crear, el FDA sale de Configuración y la factura queda vacía; al
+     * guardar un borrador, la lista conserva los suyos.
+     */
+    public function test_el_fda_y_la_factura_que_manda_el_navegador_no_se_guardan(): void
+    {
+        $usuario = $this->usuario();
+        $perfil = $this->perfil();
+        $producto = $this->presentacion();
+        $tecleado = ['fda_reg_number' => '99999999999', 'factura' => 'DTE-11-M001P001-000000000000777'];
+        $items = [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 10, 'precio_caja' => '']];
+
+        // Sin nada en Configuración, el FDA queda vacío.
+        $antes = Exportacion::query()->pluck('id');
+        $this->actingAs($usuario)->post(route('facturacion.listas.store'), $tecleado + $this->formularioNuevaLista($perfil, $items))
+            ->assertSessionHasNoErrors();
+        $sinConfigurar = Exportacion::query()->whereNotIn('id', $antes)->sole();
+        $this->assertNull($sinConfigurar->fda_reg_number);
+        $this->assertNull($sinConfigurar->factura);
+
+        // Con el FDA en Configuración, la lista lleva ese y no el tecleado.
+        Ajustes::guardarComoSistema('exportaciones.fda_reg_number', '00000000002');
+        $antes = Exportacion::query()->pluck('id');
+        $this->actingAs($usuario)->post(route('facturacion.listas.store'), $tecleado + $this->formularioNuevaLista($perfil, $items))
+            ->assertSessionHasNoErrors();
+        $lista = Exportacion::query()->whereNotIn('id', $antes)->sole();
+        $this->assertSame('00000000002', $lista->fda_reg_number);
+        $this->assertNull($lista->factura);
+        $this->actingAs($usuario)->get(route('facturacion.listas.imprimir', $lista))->assertOk()
+            ->assertSee('00000000002')->assertDontSee('99999999999')->assertDontSee('000000000000777');
+
+        // Un borrador con su FDA y su texto de factura históricos los conserva al guardarse.
+        $lista->update(['fda_reg_number' => '00000000001', 'factura' => 'Factura anterior de prueba 12']);
+        $this->actingAs($usuario)->put(route('facturacion.listas.update', $lista), $tecleado + $this->formularioNuevaLista($perfil, [
+            ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 12, 'precio_caja' => ''],
+        ]))->assertSessionHasNoErrors();
+        $lista->refresh();
+        $this->assertSame(12, (int) $lista->items()->sole()->cantidad_cajas);
+        $this->assertSame('00000000001', $lista->fda_reg_number);
+        $this->assertSame('Factura anterior de prueba 12', $lista->factura);
     }
 
     public function test_duplicar_no_crea_documentos_ni_gasta_numeros(): void
