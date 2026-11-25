@@ -4,7 +4,9 @@
      (docs/GUIA_PANTALLAS.md, «Pantalla táctil»): letra text-2xl, todo el recuadro se toca.
 
      En «Listos para salir» (24/11/2026) es la misma tarjeta, sin «Armando»; el resto de un
-     envío anterior sigue diciendo «Mandado en parte».
+     envío anterior sigue diciendo «Mandado en parte». La línea chica empieza con el N.º de
+     pedido, el mismo que va en grande en la «Orden para la caja»: con el papel en la mano se
+     sabe qué tarjeta es, aunque la sala tenga dos pedidos abiertos.
 
      Variables: $pedido (con lo de PedidosFabrica::relaciones()), $atrasado (bool), $hoy (Y-m-d). --}}
 @php
@@ -31,7 +33,7 @@
         @if ($pedido->origen === \App\Enums\OrigenPedidoSala::Web)
             {{ $pedido->pedidoWeb->entrega_tipo === 'recoger' ? 'Para recoger' : 'Con ruta · '.$pedido->zonaNombre() }} · {{ collect($pedido->pedidoWeb->cajitas_detalle)->sum('cantidad') }} cajitas · {{ $pedido->pedidoWeb->pagado_en->format('H:i') }}
         @else
-        {{ $pedido->zonaNombre() }} · {{ $cuantos === 1 ? '1 producto' : $cuantos.' productos' }} · {{ $pedido->created_at->format('H:i') }}
+        N.º {{ $pedido->id }} · {{ $pedido->zonaNombre() }} · {{ $cuantos === 1 ? '1 producto' : $cuantos.' productos' }} · {{ $pedido->created_at->format('H:i') }}
         @endif
     </span>
     {{-- Los de días anteriores van bajo su propio título; la tarjeta es igual a las de hoy y

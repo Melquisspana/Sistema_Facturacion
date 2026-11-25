@@ -155,6 +155,9 @@
                     @endif
                 </div>
                 <dl class="mt-1 flex flex-wrap gap-x-3 gap-y-2 text-base">
+                    {{-- El mismo N.º que va en grande en la «Orden para la caja» (24/11/2026): así se
+                         sabe de qué pedido es la caja, aunque la sala tenga dos pedidos abiertos. --}}
+                    <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Pedido N.º:</dt><dd class="tabular-nums text-gray-800">{{ $pedido->id }}</dd></div>
                     @if ($pedido->direccionSala())
                         <div class="flex flex-wrap items-baseline gap-1"><dt class="text-sm text-gray-500">Dirección:</dt><dd class="text-gray-800">{{ $pedido->direccionSala() }}</dd></div>
                     @endif
