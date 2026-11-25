@@ -148,10 +148,11 @@ class FdaEmpresaExportadoraTest extends TestCase
         $resp->assertSee('FDA de la empresa');
         $resp->assertSee('00000000001');
         $resp->assertSee('Titular de Ejemplo');
-        // Viaja en un campo oculto: la lista conserva su propio snapshot, pero nadie
-        // lo escribe a mano.
+        // Se muestra (y viaja en un campo oculto que el servidor no toma), pero nadie lo
+        // escribe a mano. El texto lleva a la página donde de verdad se cambia.
         $resp->assertSee('type="hidden" name="fda_reg_number"', false);
-        $resp->assertSee('Configuración → Parámetros fiscales');
+        $resp->assertSee('Lo cambia un administrador en Configuración › Módulos › Exportaciones.');
+        $resp->assertDontSee('Configuración → Parámetros fiscales');
     }
 
     /**

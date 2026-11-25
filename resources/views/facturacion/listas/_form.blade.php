@@ -101,16 +101,16 @@
                 @error('cliente_direccion') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
             <div>
-                {{-- FDA de la EMPRESA: ya no se teclea por lista. Sale de Configuración →
-                     Parámetros fiscales, se muestra para que se vea qué va a imprimirse, y
-                     viaja en un campo oculto para que la lista conserve su propio valor
-                     histórico igual que el resto del encabezado. --}}
+                {{-- FDA de la EMPRESA: ya no se teclea por lista. Sale de Configuración ›
+                     Módulos › Exportaciones (en Parámetros fiscales solo se ve) y se muestra
+                     para que se vea qué va a imprimirse. El servidor no toma el campo oculto:
+                     una lista nueva lleva el de Configuración y una guardada conserva el suyo. --}}
                 <label class="block text-sm font-medium text-gray-700">FDA de la empresa</label>
                 <input type="hidden" name="fda_reg_number" value="{{ old('fda_reg_number', $e?->fda_reg_number ?? $defaults['fda_reg_number'] ?? '') }}">
                 <p class="mt-2 font-mono text-sm text-gray-800">
                     {{ old('fda_reg_number', $e?->fda_reg_number ?? $defaults['fda_reg_number'] ?? '') ?: '— sin configurar —' }}
                 </p>
-                <p class="mt-1 text-xs text-gray-400">Se configura una sola vez en Configuración → Parámetros fiscales.</p>
+                <p class="mt-1 text-xs text-gray-400">Lo cambia un administrador en Configuración › Módulos › Exportaciones.</p>
                 @error('fda_reg_number') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
         </div>
