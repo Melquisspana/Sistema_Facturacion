@@ -69,7 +69,8 @@ class TiendaWebFallas implements Detector
             'Revisá que la API Secret en Cloudflare sea la del aplicativo En Vivo.', 1],
         'firma_sin_cabecera' => ['Llegó un aviso de pago sin la firma de Wompi',
             'Avisá a soporte: Cloudflare puede estar quitando la firma de los avisos.', 1],
-        'consulta_fallida' => ['La consulta de reserva a Wompi falló :n veces',
+        // La página anota una por pedido, motivo y hora: entre una y otra pudo fallar más veces.
+        'consulta_fallida' => ['La consulta de reserva a Wompi falló al menos :n veces',
             'Los pagos se confirman igual cuando llega el aviso de Wompi; si se repite, avisá a soporte.', 3],
         // Un robot o un comprador de verdad, si una llave de Turnstile está mal puesta: no se distinguen.
         'verificacion_rechazo' => ['La comprobación anti-robots rechazó pedidos: pueden ser robots o una llave mal puesta',
@@ -92,6 +93,9 @@ class TiendaWebFallas implements Detector
     private const MAX_DETALLE = 4;
 
     private const MAX_QUE_HACER = 3;
+
+    /** Minutos: la hora entre una anotación y la siguiente, más la lista que llega cada 5 y margen. */
+    private const VENTANA_CONSULTA_FALLIDA = 90;
 
     private function __construct(private readonly bool $pagos) {}
 
@@ -296,10 +300,16 @@ class TiendaWebFallas implements Detector
         return in_array($ruta, ['hacer_pedido', 'seguir_pedido', 'aviso_pago', 'sistema'], true) ? $ruta : 'otra';
     }
 
-    /** Lo que pasa y se va (no un pago que no abrió) cuenta solo si pasó hace poco, como en EventosRecientes. */
+    /**
+     * Lo que pasa y se va (no un pago que no abrió) cuenta solo si pasó hace poco, como en EventosRecientes.
+     * Una consulta de reserva que sigue fallando la página la vuelve a anotar recién a la hora, y la lista
+     * llega cada MINUTOS_ERRORES: con media hora, una caída larga de Wompi daría un «normalizado» falso.
+     */
     private function enVentana(array $fila): bool
     {
-        return $fila['ultima'] >= now()->subMinutes((int) config('alertas.ventana_eventos_minutos', 30))->getTimestamp();
+        $minutos = $fila['tipo'] === 'consulta_fallida' ? self::VENTANA_CONSULTA_FALLIDA : (int) config('alertas.ventana_eventos_minutos', 30);
+
+        return $fila['ultima'] >= now()->subMinutes($minutos)->getTimestamp();
     }
 
     /** @param  int  $cadencia  cada cuántos minutos se pide eso a la página, además de la gracia */

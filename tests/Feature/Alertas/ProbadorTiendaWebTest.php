@@ -424,6 +424,24 @@ class ProbadorTiendaWebTest extends TestCase
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::OTRAS));
         $this->assertSame(['falla', 'normalizado'], $this->correos(self::PAGOS));
     }
+
+    public function test_una_caida_larga_de_wompi_con_un_solo_pedido_pendiente_avisa_una_vez_sin_normalizados_falsos(): void
+    {
+        $this->pasan(2);
+        // La página vuelve a anotar la consulta que sigue fallando una vez por hora y por pedido: 10:02, 11:02, 12:02 y 13:02.
+        foreach (range(1, 4) as $veces) {
+            $this->errores = [$this->fila('consulta_fallida', '', $veces, primeraHace: ($veces - 1) * 60)];
+            $this->pasan(60);
+        }
+        // Wompi vuelve a las 14:02 y no se anota ninguna más.
+        $this->pasan(120);
+
+        $this->assertSame(['falla', 'sigue', 'normalizado'], $this->correos(self::OTRAS));
+        $this->assertSame([], $this->correos(self::PAGOS));
+        $sigue = Mail::sent(AlertaSistemaCorreo::class, fn (AlertaSistemaCorreo $m) => $m->nombre === self::OTRAS && $m->accion === 'sigue')->first();
+        $this->assertSame('La consulta de reserva a Wompi falló al menos 4 veces', $sigue->hallazgo->titulo);
+    }
+
     // ───────────── Caché vaciada ─────────────
 
     public function test_la_cache_vaciada_a_mitad_de_una_pasada_no_manda_avisos_falsos(): void

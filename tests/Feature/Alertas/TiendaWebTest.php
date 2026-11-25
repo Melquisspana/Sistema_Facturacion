@@ -337,9 +337,10 @@ class TiendaWebTest extends TestCase
         $this->assertSame(5, $h->conteo);
         $this->assertSinDatosSensibles($h);
 
+        // La página anota una por pedido, motivo y hora: entre una y otra pudo fallar más veces.
         $this->errores([['consulta_fallida', '', 3, 2]]);
         $h = $detector->revisar();
-        $this->assertSame('La consulta de reserva a Wompi falló 3 veces', $h->titulo);
+        $this->assertSame('La consulta de reserva a Wompi falló al menos 3 veces', $h->titulo);
     }
 
     public function test_otras_no_cuenta_eventos_de_hace_mas_de_media_hora(): void
@@ -349,6 +350,18 @@ class TiendaWebTest extends TestCase
 
         $this->assertNull(TiendaWebFallas::otras()->revisar());
     }
+
+    public function test_la_consulta_de_reserva_que_sigue_fallando_no_se_da_por_resuelta_entre_una_hora_y_la_siguiente(): void
+    {
+        // Con un solo pedido pendiente, la página la vuelve a anotar recién a la hora, y la lista llega cada 5 minutos.
+        $this->lectura(okHace: 1);
+        $this->errores([['consulta_fallida', '', 3, 70]]);
+        $this->assertSame('La consulta de reserva a Wompi falló al menos 3 veces', TiendaWebFallas::otras()->revisar()?->titulo);
+
+        $this->errores([['consulta_fallida', '', 3, 91]]);
+        $this->assertNull(TiendaWebFallas::otras()->revisar(), 'Hora y media sin una nueva: Wompi volvió.');
+    }
+
     public function test_otras_avisa_los_pedidos_pagados_que_no_se_pudieron_leer_y_los_que_quedaron_en_revision(): void
     {
         $this->lectura(okHace: 1, invalidos: 4, ids: [41, 57, 60]);
