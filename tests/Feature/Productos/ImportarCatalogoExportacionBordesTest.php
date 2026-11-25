@@ -40,7 +40,10 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
     /**
      * Excel con el formato de la hoja «Lista»: encabezados en la fila 8 y productos desde la 9.
      *
-     * @param  list<array{0: string, 1: int, 2: float, 3: float, 4: float, 5: float}>  $filas  descripción, unidades, gramos, precio, neto, bruto
+     * El 7.º elemento, opcional, cambia celdas sueltas de la fila (null = celda vacía),
+     * por ejemplo ['D' => null] para una fila sin empaque.
+     *
+     * @param  list<array{0: string, 1: int, 2: float, 3: float, 4: float, 5: float, 6?: array<string, mixed>}>  $filas  descripción, unidades, gramos, precio, neto, bruto
      */
     private function rutaExcel(array $filas): string
     {
@@ -48,18 +51,26 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
         $hoja = $libro->getActiveSheet()->setTitle('Lista');
         $hoja->setCellValue('C8', 'Descripción');
         $fila = 9;
-        foreach ($filas as $i => [$descripcion, $unidades, $gramos, $precio, $neto, $bruto]) {
-            $hoja->setCellValue('B'.$fila, $i + 1);
-            $hoja->setCellValue('C'.$fila, $descripcion);
-            $hoja->setCellValue('D'.$fila, 'Bolsa de prueba');
-            $hoja->setCellValue('E'.$fila, $unidades);
-            $hoja->setCellValue('F'.$fila, $gramos);
-            $hoja->setCellValue('H'.$fila, round($gramos * 0.035274, 2));
-            $hoja->setCellValue('J'.$fila, $precio);
-            $hoja->setCellValue('L'.$fila, $neto);
-            $hoja->setCellValue('M'.$fila, $bruto);
-            $hoja->setCellValue('Q'.$fila, round($neto * 2.20462, 2));
-            $hoja->setCellValue('R'.$fila, round($bruto * 2.20462, 2));
+        foreach ($filas as $i => $datos) {
+            [$descripcion, $unidades, $gramos, $precio, $neto, $bruto] = $datos;
+            $celdas = ($datos[6] ?? []) + [
+                'B' => $i + 1,
+                'C' => $descripcion,
+                'D' => 'Bolsa de prueba',
+                'E' => $unidades,
+                'F' => $gramos,
+                'H' => round($gramos * 0.035274, 2),
+                'J' => $precio,
+                'L' => $neto,
+                'M' => $bruto,
+                'Q' => round($neto * 2.20462, 2),
+                'R' => round($bruto * 2.20462, 2),
+            ];
+            foreach ($celdas as $columna => $valor) {
+                if ($valor !== null) {
+                    $hoja->setCellValue($columna.$fila, $valor);
+                }
+            }
             $fila++;
         }
         $hoja->setCellValue('B'.$fila, '=SUM(E9:E'.($fila - 1).')');
@@ -92,6 +103,51 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
         $this->assertStringContainsString('Importación completada: 1 creados', $mensaje);
         $this->assertStringContainsString('Fila 10', $mensaje);
         $this->assertStringContainsString('peso bruto', $mensaje);
+    }
+
+    /**
+     * Onzas y libras se calculan de gramos y kilos, igual que en el formulario: una fila
+     * con las onzas vacías y las libras en 0 o mal tecleadas no deja una caja con 0 oz ni
+     * con el bruto en libras menor que el neto. Sin peso bruto, la caja pesa neto + 1 kg.
+     */
+    public function test_onzas_y_libras_salen_de_gramos_y_kilos_aunque_el_excel_las_traiga_mal(): void
+    {
+        $ruta = $this->rutaExcel([
+            ['Producto de prueba \\ Test product', 144, 85, 136.80, 13, 14, ['H' => null, 'Q' => 2.86, 'R' => 0]],
+            ['Otro producto de prueba \\ Other test product', 24, 40, 99.00, 5, 0, ['M' => null, 'R' => null]],
+        ]);
+
+        $this->actingAs($this->usuario())->post(route('productos.exportacion.importar.run'), ['archivo' => $this->subir($ruta)])
+            ->assertSessionHas('status', 'Importación completada: 2 creados, 0 omitidos (ya existían).');
+
+        $producto = ExportacionProducto::query()->where('nombre_es', 'Producto de prueba')->sole();
+        $this->assertEquals(3.00, (float) $producto->onzas_por_unidad);
+        $this->assertEquals(14.00, (float) $producto->peso_bruto_caja_kg);
+        $this->assertEquals(28.66, (float) $producto->peso_neto_caja_lb);
+        $this->assertEquals(30.86, (float) $producto->peso_bruto_caja_lb);
+
+        $sinBruto = ExportacionProducto::query()->where('nombre_es', 'Otro producto de prueba')->sole();
+        $this->assertEquals(6.00, (float) $sinBruto->peso_bruto_caja_kg);
+        $this->assertEquals(13.23, (float) $sinBruto->peso_bruto_caja_lb);
+    }
+
+    /** El empaque es obligatorio en el formulario: una fila sin columna D no se crea y se informa. */
+    public function test_una_fila_sin_empaque_no_se_crea_y_se_informa(): void
+    {
+        $ruta = $this->rutaExcel([
+            ['Producto de prueba \\ Test product', 144, 85, 136.80, 13, 14],
+            ['Sin empaque de prueba \\ No packaging', 144, 85, 136.80, 13, 14, ['D' => null]],
+        ]);
+
+        $this->actingAs($this->usuario())->post(route('productos.exportacion.importar.run'), ['archivo' => $this->subir($ruta)])
+            ->assertRedirect(route('productos.exportacion.index'))
+            ->assertSessionHas('error');
+
+        $this->assertSame(['Producto de prueba'], ExportacionProducto::query()->pluck('nombre_es')->all());
+        $mensaje = (string) session('error');
+        $this->assertStringContainsString('Importación completada: 1 creados', $mensaje);
+        $this->assertStringContainsString('Fila 10', $mensaje);
+        $this->assertStringContainsString('empaque', $mensaje);
     }
 
     /** El mismo producto dos veces en el archivo: entra el primero y el segundo no lo pisa. */
