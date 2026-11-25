@@ -68,7 +68,8 @@ class ExportacionesRetiradasRutasTest extends TestCase
 
     /**
      * Huella de TODA la base: filas y contenido de cada tabla. Si una ruta escribiera
-     * algo —una fila nueva, un estado cambiado, una entrada de bitácora—, cambia.
+     * algo —una fila nueva, un estado cambiado, una entrada de bitácora—, cambia. Las
+     * filas se ordenan antes de calcularla: sin ORDER BY, MySQL no promete el orden.
      *
      * @return array<string, array{filas: int, contenido: string}>
      */
@@ -76,9 +77,10 @@ class ExportacionesRetiradasRutasTest extends TestCase
     {
         $foto = [];
         foreach (array_column(Schema::getTables(), 'name') as $tabla) {
+            $filas = DB::table($tabla)->get()->map(fn ($fila) => json_encode($fila))->sort()->values();
             $foto[$tabla] = [
-                'filas' => DB::table($tabla)->count(),
-                'contenido' => md5(json_encode(DB::table($tabla)->get())),
+                'filas' => $filas->count(),
+                'contenido' => md5($filas->implode("\n")),
             ];
         }
         ksort($foto);
