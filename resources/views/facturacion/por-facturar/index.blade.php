@@ -111,7 +111,7 @@
                         <section aria-labelledby="grupo-{{ $grupo['clave'] }}" class="mt-6">
                             <h2 id="grupo-{{ $grupo['clave'] }}" class="{{ $titulo }}">{{ $grupo['titulo'] }} <span class="text-sm font-normal text-gray-500">· {{ $grupo['pedidos']->count() }}</span></h2>
                             @if ($grupo['clave'] === 'esperando_resto')
-                                <p class="mt-1 text-sm text-gray-600">Ya se facturó lo que llegó y falta que pedidos mande el resto. Cuando llegue, sale arriba para facturar.</p>
+                                <p class="mt-1 text-sm text-gray-600">Ya se facturó lo que llegó; falta que Pedidos mande el resto. Cuando llegue, sale arriba para facturar.</p>
                             @endif
                             <ul class="mt-3 space-y-3">
                                 @foreach ($grupo['pedidos'] as $pedido)

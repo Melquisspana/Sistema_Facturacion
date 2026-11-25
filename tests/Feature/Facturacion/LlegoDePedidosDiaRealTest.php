@@ -242,7 +242,7 @@ class LlegoDePedidosDiaRealTest extends TestCase
         $lista = $this->lista();
         $this->assertSame([$d->id], $this->grupos($lista)['esperando_resto']);
         $this->assertNull($this->facturar($lista->getContent(), $d));
-        $lista->assertSee('Ya se facturó lo que llegó y falta que pedidos mande el resto.');
+        $lista->assertSee('Ya se facturó lo que llegó; falta que Pedidos mande el resto.');
         // Ni a mano: no hay nada nuevo por facturar.
         $this->actingAs($this->oficina)->post(route('facturacion.pedidos.facturar', $d), ['numero_orden_compra' => '26119104000004', 'directo' => '1'])
             ->assertSessionHasErrors();
