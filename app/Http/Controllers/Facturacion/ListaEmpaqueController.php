@@ -257,6 +257,9 @@ class ListaEmpaqueController extends Controller
             $copia->revision_resuelta_en = null;
             $copia->revision_resuelta_por_user_id = null;
             $copia->revision_resolucion = null;
+            // El FDA es de la empresa y en la lista no se escribe: la copia lleva el que
+            // está configurado hoy, no el de la lista vieja. Sin nada configurado, el suyo.
+            $copia->fda_reg_number = $this->exportador->fdaRegNumber() ?? $lista->fda_reg_number;
             // El número de factura ya no se copia: se deriva de las FEX que se vinculen
             // a la copia, y copiar el de otra lista es exactamente el error que se quiso
             // eliminar al dejar de teclearlo.

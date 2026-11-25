@@ -3,6 +3,7 @@
 namespace Tests\Feature\Facturacion;
 
 use App\Enums\TipoDte;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -199,6 +200,30 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
         $this->assertTrue($original->archivada);
         $this->assertSame('archivada', $original->revision_resolucion);
         $this->assertNotContains($original->id, $this->idsEnAbiertas($usuario));
+    }
+
+    /**
+     * El FDA es de la EMPRESA, se configura en Configuración › Módulos › Exportaciones y
+     * en la lista no se puede escribir. Si la copia arrastrara el de la lista vieja, el
+     * próximo embarque saldría con un FDA que ya no vale y nadie podría corregirlo. Sin
+     * nada configurado, la copia conserva el de la original.
+     */
+    public function test_la_copia_lleva_el_fda_de_la_empresa_configurado_hoy(): void
+    {
+        config(['exportaciones.fda_reg_number' => '']);
+        $usuario = $this->usuario();
+        $original = $this->lista(['fda_reg_number' => '00000000001']);
+
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))->assertRedirect();
+        $sinConfigurar = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertSame('00000000001', $sinConfigurar->fda_reg_number);
+
+        Ajustes::guardarComoSistema('exportaciones.fda_reg_number', '00000000002');
+
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))->assertRedirect();
+        $copia = Exportacion::query()->whereKeyNot([$original->id, $sinConfigurar->id])->sole();
+        $this->assertSame('00000000002', $copia->fda_reg_number);
+        $this->assertSame('00000000001', $original->fresh()->fda_reg_number);
     }
 
     /**
