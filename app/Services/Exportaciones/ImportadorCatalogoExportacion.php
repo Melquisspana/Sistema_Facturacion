@@ -29,8 +29,14 @@ class ImportadorCatalogoExportacion
             throw new RuntimeException('No se encontró el archivo a importar: '.$ruta);
         }
 
-        $spreadsheet = IOFactory::load($ruta);
-        $hoja = app(ListaEmpaqueExcelService::class)->hojaLista($spreadsheet);
+        // Un Excel dañado que igual se llama .xlsx pasa el control del tipo de archivo y
+        // al leerlo revienta con un aviso de PHP: sin esto, el usuario veía una página de error.
+        try {
+            $spreadsheet = IOFactory::load($ruta);
+            $hoja = app(ListaEmpaqueExcelService::class)->hojaLista($spreadsheet);
+        } catch (Throwable) {
+            throw new RuntimeException('No se pudo leer el Excel: está dañado o no es la lista de empaque. Abrilo en Excel, guardalo de nuevo y volvé a subirlo. No se importó nada.');
+        }
 
         $resumen = ['creados' => 0, 'omitidos' => 0, 'errores' => []];
 
@@ -104,6 +110,7 @@ class ImportadorCatalogoExportacion
             $datos['unidades_por_caja'] < 1 ? 'las unidades por caja tienen que ser al menos 1' : null,
             $datos['gramos_por_unidad'] <= 0 ? 'los gramos por unidad tienen que ser más que 0' : null,
             $datos['peso_neto_caja_kg'] <= 0 ? 'el peso neto por caja tiene que ser más que 0' : null,
+            $datos['peso_bruto_caja_kg'] < $datos['peso_neto_caja_kg'] ? 'el peso bruto por caja no puede ser menor que el neto' : null,
             $datos['precio_caja'] < 0 ? 'el precio por caja no puede ser negativo' : null,
         ]);
 
