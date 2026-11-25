@@ -474,6 +474,143 @@ class ReglaGastoRutasTest extends TestCase
         $this->assertNull($omitida->gasto_id);
     }
 
+    // ──────────── «Saltar» desde Por pagar › Fecha pasada · por confirmar ────────────
+
+    /** @return list<string> Los períodos que «Fecha pasada · por confirmar» muestra hoy para la regla. */
+    private function fechaPasada(User $u, Regla $regla): array
+    {
+        return collect($this->actingAs($u)->get(route('gastos.panel'))->assertOk()->viewData('datos')['fecha_pasada'])
+            ->where('regla_id', $regla->id)->pluck('periodo')->values()->all();
+    }
+
+    /**
+     * El mes que venció en la pausa queda en «Fecha pasada · por confirmar». Si no se
+     * debe, se salta ahí mismo: sale de la lista y ya no se genera. Antes solo se podía
+     * pagar, y el mes se quedaba en la pantalla para siempre.
+     */
+    public function test_el_mes_de_la_pausa_se_salta_desde_fecha_pasada_y_ya_no_vuelve(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-05');
+        $regla = $this->crear($u);
+        $this->generar($u, $regla);
+        $this->en('2026-03-10');
+        $this->actingAs($u)->post(route('gastos.reglas.pausar', $regla), ['motivo' => 'El local está cerrado por remodelación.'])
+            ->assertSessionHasNoErrors();
+        $this->en('2026-05-01');
+        $this->actingAs($u)->post(route('gastos.reglas.reanudar', $regla), ['motivo' => 'Volvimos a ocupar el local.'])
+            ->assertSessionHasNoErrors();
+
+        $this->en('2026-05-02');
+        $this->assertSame(['2026-04'], $this->fechaPasada($u, $regla));
+        $this->actingAs($u)->get(route('gastos.panel'))
+            ->assertSee('action="'.route('gastos.reglas.omitir', $regla).'"', false)
+            ->assertSee('name="periodo" value="2026-04"', false)
+            ->assertSee('Saltar este período');
+
+        $this->actingAs($u)->from(route('gastos.panel'))
+            ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-04', 'motivo' => 'El local estuvo cerrado ese mes.'])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('gastos.panel'))
+            ->assertSessionHas('gastos.aviso');
+
+        $omitida = Ocurrencia::where('regla_id', $regla->id)->where('periodo', '2026-04')->sole();
+        $this->assertSame(['omitida', '2026-04-05', 'El local estuvo cerrado ese mes.'],
+            [$omitida->estado, $omitida->vence->format('Y-m-d'), $omitida->motivo]);
+        $this->assertSame([], $this->fechaPasada($u, $regla));
+
+        // Repetir el envío (doble clic) no crea otra fila.
+        $this->actingAs($u)->from(route('gastos.panel'))
+            ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-04', 'motivo' => 'El local estuvo cerrado ese mes.'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(1, Ocurrencia::where('regla_id', $regla->id)->where('periodo', '2026-04')->count());
+
+        // Generar ya no lo crea.
+        $this->en('2026-05-05');
+        $this->generar($u, $regla);
+        $this->assertSame(['2026-03', '2026-05'], $this->periodosGenerados($regla));
+    }
+
+    /**
+     * «Fecha pasada» lista desde el arranque de la regla, aunque sea de hace más de un
+     * año. Saltar solo aceptaba el último año y respondía «Ese período no le toca a
+     * esta regla» a un mes que la pantalla sí mostraba.
+     */
+    public function test_un_mes_de_hace_mas_de_un_anio_que_muestra_fecha_pasada_tambien_se_salta(): void
+    {
+        $u = $this->operador();
+        $this->en('2025-01-02');
+        $regla = $this->crear($u, ['vigente_desde' => '2025-01-01']);
+
+        $this->en('2026-05-20');
+        $this->assertContains('2025-01', $this->fechaPasada($u, $regla));
+
+        $this->actingAs($u)->from(route('gastos.panel'))
+            ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2025-01', 'motivo' => 'Ese mes se pagó por fuera del sistema.'])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('gastos.panel'));
+
+        $omitida = Ocurrencia::where('regla_id', $regla->id)->sole();
+        $this->assertSame(['2025-01', 'omitida', '2025-01-05'], [$omitida->periodo, $omitida->estado, $omitida->vence->format('Y-m-d')]);
+        $this->assertNotContains('2025-01', $this->fechaPasada($u, $regla));
+    }
+
+    /** Sin motivo no se salta, y la fila sigue en la lista. */
+    public function test_saltar_desde_fecha_pasada_sin_motivo_no_cambia_nada(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+        $this->en('2026-04-02');
+
+        $this->actingAs($u)->from(route('gastos.panel'))
+            ->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => '  '])
+            ->assertSessionHasErrors('motivo')
+            ->assertRedirect(route('gastos.panel'));
+
+        $this->assertSame(0, Ocurrencia::count());
+        $this->assertSame(['2026-03'], $this->fechaPasada($u, $regla));
+    }
+
+    /**
+     * Quien paga pero no maneja las reglas ve la fila con «Registrar pago» y sin
+     * «Saltar»; y si manda el formulario a mano, el servidor lo frena.
+     */
+    public function test_sin_permiso_de_recurrencias_no_aparece_saltar_y_la_ruta_da_403(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u);
+        $this->en('2026-04-02');
+
+        $pagador = $this->usuario([PermisoSistema::GastosVer, PermisoSistema::GastosRegistrar, PermisoSistema::GastosPagosRegistrar]);
+        $this->assertSame(['2026-03'], $this->fechaPasada($pagador, $regla));
+        $this->actingAs($pagador)->get(route('gastos.panel'))
+            ->assertSee('Registrar pago')
+            ->assertDontSee('action="'.route('gastos.reglas.omitir', $regla).'"', false)
+            ->assertDontSee('Saltar este período');
+
+        $this->actingAs($pagador)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => 'Intento sin permiso.'])
+            ->assertForbidden();
+        $this->assertSame(0, Ocurrencia::count());
+    }
+
+    /** Una regla personal no se salta sin el alcance de lo personal, aunque se manejen reglas. */
+    public function test_un_mes_de_una_regla_personal_no_se_salta_sin_alcance_personal(): void
+    {
+        $u = $this->operador();
+        $this->en('2026-03-01');
+        $regla = $this->crear($u, ['ambito' => 'personal']);
+        $this->assertSame('personal', $regla->ambito);
+        $this->en('2026-04-02');
+
+        $empresa = $this->soloEmpresa();
+        $this->assertSame([], $this->fechaPasada($empresa, $regla));
+        $this->actingAs($empresa)->post(route('gastos.reglas.omitir', $regla), ['periodo' => '2026-03', 'motivo' => 'Intento sin alcance.'])
+            ->assertForbidden();
+        $this->assertSame(0, Ocurrencia::count());
+    }
+
     // ─────────────────────────── gastos.avisos.leer-todos ───────────────────────────
 
     private function aviso(User $u, Gasto $gasto, ?string $leido = null): Aviso

@@ -282,8 +282,8 @@
                  es dinero que se deja de mencionar sin que nadie lo haya decidido.
 
                  Van en su propio grupo, SIN total: no son deuda confirmada —nadie
-                 verificó que se deban— y tampoco son ya «lo que viene». Sin botón de
-                 pagar: todavía no existen como obligación. --}}
+                 verificó que se deban— y tampoco son ya «lo que viene». Cada fila se
+                 resuelve sola: «Registrar pago» si se debe, «Saltar» con motivo si no. --}}
             @if ($datos['fecha_pasada']->isNotEmpty())
                 <x-gastos-grupo titulo="Fecha pasada · por confirmar" tono="ambar"
                                 :leyenda="(string) $datos['fecha_pasada']->count()">
@@ -300,7 +300,9 @@
                             Ya pasó su día y nadie creó la obligación. No desaparecen al vencer —una fila que se borra
                             sola es dinero que se deja de mencionar sin que nadie lo decida— y tampoco se suman a
                             ninguna de las dos cifras, porque nadie verificó que se deban. «Registrar pago» las convierte
-                            en obligación y las paga de una vez; si ya no corresponde, se pausa la regla.
+                            en obligación y las paga de una vez. Si ese mes no se debe —por ejemplo, uno en que la
+                            regla estuvo en pausa—, «Saltar» lo saca de la lista con su motivo, que queda anotado en
+                            la regla.
                         </x-gastos-ayuda>
                     </x-slot>
                 </x-gastos-grupo>

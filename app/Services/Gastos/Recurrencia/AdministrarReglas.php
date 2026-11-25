@@ -382,7 +382,10 @@ final class AdministrarReglas
         // Por lo menos hasta donde llega «Lo que viene»: lo que la pantalla ofrece
         // saltar se tiene que poder saltar. En una regla anual son seis años.
         $hasta = max($hoy->addYears(2), $this->hastaDondeLlegaLoQueViene($regla, $hoy));
-        $rango = $this->calendario->periodos($regla->calendario(), $hoy->subYear(), $hasta);
+        // Y hacia atrás, por lo menos desde el arranque: «Por pagar › Fecha pasada ·
+        // por confirmar» ofrece saltar cualquier mes desde ahí, aunque tenga más de un año.
+        $desde = min($hoy->subYear(), CarbonImmutable::parse($regla->vigente_desde->toDateString()));
+        $rango = $this->calendario->periodos($regla->calendario(), $desde, $hasta);
 
         foreach ($rango as $candidato) {
             if ($candidato['periodo'] === $periodo) {
