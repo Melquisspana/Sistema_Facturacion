@@ -93,6 +93,7 @@ class Exportacion extends Model
     {
         return LogOptions::defaults()
             ->logOnly([
+                'exportacion_cliente_id', 'cliente_nombre',
                 'estado', 'finalizada_en', 'finalizada_por_user_id', 'dte_id', 'archivada',
                 'requiere_revision', 'revision_motivo', 'revision_resolucion', 'revision_resuelta_por_user_id',
             ])

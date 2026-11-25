@@ -184,6 +184,22 @@ class ListaEmpaqueController extends Controller
             ]);
         }
 
+        // Otro cliente: la FEX vinculada y los precios de las líneas guardadas son del
+        // anterior. La lista diría un cliente, saldría con la factura del otro y, al
+        // finalizarla, los precios del primero quedarían como los del segundo.
+        if ((int) $datos['exportacion_cliente_id'] !== (int) $lista->exportacion_cliente_id) {
+            if ($lista->facturas()->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'exportacion_cliente_id' => 'No se puede cambiar el cliente: la lista ya tiene factura(s) de exportación de otro cliente. Desvinculalas primero o armá una lista nueva.',
+                ]);
+            }
+            if (collect($datos['items'])->pluck('id')->filter()->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'exportacion_cliente_id' => 'Las líneas guardadas tienen los precios del cliente anterior: quitalas y volvé a agregarlas, o armá una lista nueva.',
+                ]);
+            }
+        }
+
         DB::transaction(function () use ($lista, $datos, &$avisos) {
             // La lista conserva su FDA y su texto de factura históricos.
             $lista->update(collect($datos)->except(['items', 'factura', 'fda_reg_number'])->all());
