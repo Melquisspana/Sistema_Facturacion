@@ -405,6 +405,30 @@ class CorreoDiarioDiaRealTest extends TestCase
             ->map(fn ($a) => $a->getFilename())->values()->all());
     }
 
+    public function test_un_pedido_que_sale_en_dos_envios_el_mismo_dia_cuenta_sus_productos_una_vez(): void
+    {
+        // De mañana sale una parte y de tarde el resto: es un pedido de 2 productos, no de 4.
+        $this->travelTo('2026-11-09 08:00:00');
+        $pedido = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '24', $this->canilla->id => '6']);
+        $this->travelTo('2026-11-09 10:00:00');
+        $this->mandar($pedido, [$this->galleta->id => '10', $this->canilla->id => '2'], sigue: true);
+        $this->travelTo('2026-11-09 16:00:00');
+        $this->mandar($pedido, [$this->galleta->id => '14', $this->canilla->id => '4']);
+
+        $this->travelTo('2026-11-09 18:00:00');
+        $this->artisan('pedidos:correo-diario')->expectsOutput('Resumen enviado.')->assertSuccessful();
+        $correo = $this->enviados()[0];
+
+        $texto = $this->leido($correo->render());
+        $this->assertSame('Súper Ficticio Centro: N.º '.$pedido->id.' · Carlos Inventado · 2 productos', $this->parte($texto, 'Llegó de los vendedores'));
+        $this->assertSame('Súper Ficticio Centro: pedido N.º '.$pedido->id.', 2 productos.', $this->parte($texto, 'Salió de la fábrica'));
+        $this->assertSame('No quedó nada por mandar.', $this->parte($texto, 'Quedó allá'));
+        // El PDF sí lleva los dos envíos, cada uno con su hora y su hoja.
+        $pdf = $this->leido(app(PdfFabricaDiario::class)->html($correo->contenido));
+        $this->assertStringContainsString('N.º '.$pedido->id.' · 10:00: Galleta de prueba 10, Canilla de prueba 2 N.º '.$pedido->id.' · 16:00: Galleta de prueba 14, Canilla de prueba 4', $pdf);
+        $this->assertSame(2, substr_count($pdf, 'HOJA DE DESPACHO'));
+    }
+
     public function test_el_texto_plano_lleva_lo_escrito_tal_cual_sin_las_barras_del_markdown(): void
     {
         // En el HTML, lo escrito se escapa para que el markdown no arme enlaces ni títulos; el
