@@ -331,7 +331,7 @@ class CorreoDiarioPedidosTest extends TestCase
             $listo->lineas()->where('producto_id', $this->galleta->id)->value('id') => '20',
             $listo->lineas()->where('producto_id', $this->canilla->id)->value('id') => '0',
         ]], $this->fabrica);
-        $fabrica->marcarListo($listo, true, $this->fabrica);
+        $fabrica->marcarListo($listo, true, $this->fabrica, $this->version($listo));
 
         $sala = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now())['salas']['Súper Ficticio Centro'];
         $this->assertSame([], $sala['por_mandar']);

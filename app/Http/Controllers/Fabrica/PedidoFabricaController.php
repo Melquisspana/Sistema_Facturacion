@@ -159,15 +159,24 @@ class PedidoFabricaController extends Controller
     /**
      * «Listo para salir» (listo=1) o «Quitar de listos» (listo=0), sin confirmar. Al marcarlo
      * vuelve a la lista, donde el aviso trae «Deshacer»; al quitarlo vuelve a donde estaba: la
-     * hoja (para seguir armando) o la lista (su «Deshacer»).
+     * hoja (para seguir armando) o la lista (su «Deshacer»). Marcarlo lleva la versión de la
+     * hoja, como «Imprimir y mandar»; quitarlo, no.
      */
     public function listo(Request $request, PedidoSala $pedido): RedirectResponse
     {
-        $listo = (bool) $request->validate(['listo' => ['required', 'boolean']], [
-            'listo.required' => 'Esta pantalla quedó vieja. Volvé a abrir el pedido.',
-            'listo.boolean' => 'Esta pantalla quedó vieja. Volvé a abrir el pedido.',
-        ])['listo'];
-        $cambio = $this->fabrica->marcarListo($pedido, $listo, $request->user());
+        $vieja = 'Esta pantalla quedó vieja. Volvé a abrir el pedido.';
+        $datos = $request->validate([
+            'listo' => ['required', 'boolean'],
+            'version' => ['exclude_unless:listo,1,true', 'required', 'string', 'size:64'],
+        ], [
+            'listo.required' => $vieja,
+            'listo.boolean' => $vieja,
+            'version.required' => $vieja,
+            'version.string' => $vieja,
+            'version.size' => $vieja,
+        ]);
+        $listo = (bool) $datos['listo'];
+        $cambio = $this->fabrica->marcarListo($pedido, $listo, $request->user(), $datos['version'] ?? null);
         $sala = $pedido->nombreSala();
 
         if (! $listo) {

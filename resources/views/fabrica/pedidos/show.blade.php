@@ -263,10 +263,13 @@
                 </div>
             </form>
 
-            {{-- Lo manda el botón «Listo para salir» / «Quitar de listos» de la barra, cuando ya se guardó lo marcado. --}}
+            {{-- Lo manda el botón «Listo para salir» / «Quitar de listos» de la barra, cuando ya se
+                 guardó lo marcado. Con la versión de la hoja, como «Imprimir y mandar»: si el
+                 pedido cambió mientras estaba abierta, avisa en vez de marcar una caja que no ven. --}}
             <form method="POST" action="{{ route('fabrica.pedidos.listo', $pedido) }}" x-ref="listo" class="hidden">
                 @csrf @method('PATCH')
                 <input type="hidden" name="listo" value="{{ $listo ? '0' : '1' }}">
+                <input type="hidden" name="version" value="{{ $pedido->versionProduccion() }}">
             </form>
 
             {{-- «No mandar nada de este pedido» (o lo que falta): rojo de peligro y aparte, debajo

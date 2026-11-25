@@ -119,7 +119,7 @@ class LlegoDePedidosDiaRealTest extends TestCase
     {
         $fabrica = app(PedidosFabrica::class);
         $fabrica->guardarBorrador($pedido, ['cantidades' => $this->porLinea($pedido, $cantidades), 'sigue' => $sigue], $this->fabrica);
-        $fabrica->marcarListo($pedido->refresh(), true, $this->fabrica);
+        $fabrica->marcarListo($pedido->refresh(), true, $this->fabrica, $pedido->load($fabrica->relaciones())->versionProduccion());
 
         return $fabrica->mandar($pedido->refresh(), [
             'clave' => (string) Str::uuid(),
@@ -251,7 +251,7 @@ class LlegoDePedidosDiaRealTest extends TestCase
         $this->travelTo('2026-11-24 16:30');
         $fabrica = app(PedidosFabrica::class);
         $fabrica->guardarBorrador($d, ['cantidades' => $this->porLinea($d, [$q => '2'])], $this->fabrica);
-        $fabrica->marcarListo($d->refresh(), true, $this->fabrica);
+        $fabrica->marcarListo($d->refresh(), true, $this->fabrica, $d->load($fabrica->relaciones())->versionProduccion());
         $lista = $this->lista();
         $this->assertSame([$d->id], $this->grupos($lista)['esperando_resto']);
         $this->assertNull($this->facturar($lista->getContent(), $d));

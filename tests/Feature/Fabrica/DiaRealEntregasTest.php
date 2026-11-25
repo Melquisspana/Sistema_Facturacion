@@ -104,7 +104,9 @@ class DiaRealEntregasTest extends TestCase
 
     private function listo(PedidoSala $pedido, bool $listo = true): TestResponse
     {
-        return $this->actingAs($this->fabrica)->patch(route('fabrica.pedidos.listo', $pedido), ['listo' => $listo ? '1' : '0']);
+        return $this->actingAs($this->fabrica)->patch(route('fabrica.pedidos.listo', $pedido), $listo
+            ? ['listo' => '1', 'version' => PedidoSala::with(app(PedidosFabrica::class)->relaciones())->findOrFail($pedido->id)->versionProduccion()]
+            : ['listo' => '0']);
     }
 
     /** «Imprimir para la caja»: el texto de la orden, sin espacios de más. */

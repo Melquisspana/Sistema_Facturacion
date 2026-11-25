@@ -78,6 +78,9 @@ class PedidosFabrica
 
     public const AUDITORIA_NO_LISTO = 'quitó el pedido de listos para salir';
 
+    /** «Listo para salir» con nada en la caja (todo en 0): no hay caja que llevarse. */
+    public const CAJA_VACIA = 'No va nada en esta caja: marcá lo que va antes de tocar «Listo para salir».';
+
     /** Lo que dice la auditoría al mandar un envío; ahí va `corrige_numero` si corrige a otro. */
     public const AUDITORIA_MANDO = [self::AUDITORIA_TODO, self::AUDITORIA_PARTE];
 
@@ -268,7 +271,20 @@ class PedidosFabrica
                     ->withProperties(['estado' => $pedido->estado->value])
                     ->log('empezó a armar el pedido');
             }
+            // Una caja lista en la que ya no va nada deja de estar lista: no hay caja que llevarse.
+            if ($pedido->estado === EstadoPedidoSala::Listo && ! $this->vaAlgoEnLaCaja($pedido)) {
+                $pedido->update(['estado' => $this->sinListo($pedido)]);
+                activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+                    ->withProperties(['estado_anterior' => EstadoPedidoSala::Listo->value, 'estado_nuevo' => $pedido->estado->value, 'motivo' => 'No va nada en la caja.'])
+                    ->log(self::AUDITORIA_NO_LISTO);
+            }
         }, 3);
+    }
+
+    /** ¿Va algo en la caja? Lo marcado o, sin marcar, lo que falta. Con las líneas ya cargadas. */
+    private function vaAlgoEnLaCaja(PedidoSala $pedido): bool
+    {
+        return $pedido->lineas->contains(fn (PedidoSalaLinea $l) => bccomp($l->vaEnLaCaja(), '0', 4) === 1);
     }
 
     /**
@@ -308,10 +324,15 @@ class PedidosFabrica
      * como estaba. Lo marcado se guarda antes, desde la hoja; acá solo cambia el estado.
      * Quién y cuándo, en la auditoría. Mandar sigue siendo «Imprimir y mandar», de uno en uno.
      * Devuelve false si ya estaba así (doble toque).
+     *
+     * Marcarlo pide la versión de la hoja, como «Imprimir y mandar»: si el vendedor o la oficina
+     * lo corrigieron, u otra tableta mandó una parte, mientras la hoja estaba abierta sin tocar,
+     * la caja no es la que ven y se revisa de nuevo. Y tiene que ir algo en la caja: si no va
+     * nada, es «No mandar nada de este pedido». Quitarlo no pide nada: la caja se vuelve a revisar.
      */
-    public function marcarListo(PedidoSala $pedido, bool $listo, User $usuario): bool
+    public function marcarListo(PedidoSala $pedido, bool $listo, User $usuario, ?string $version = null): bool
     {
-        return DB::transaction(function () use ($pedido, $listo, $usuario) {
+        return DB::transaction(function () use ($pedido, $listo, $usuario, $version) {
             $pedido = $this->bloquear($pedido);
             $this->exigirPorMandar($pedido);
             Gate::forUser($usuario)->authorize('mandar', $pedido);
@@ -322,6 +343,12 @@ class PedidosFabrica
                 return false;
             }
             $this->cargarBloqueado($pedido);
+            if ($listo) {
+                $this->exigirVersion($pedido, (string) $version);
+                if (! $this->vaAlgoEnLaCaja($pedido)) {
+                    throw ValidationException::withMessages(['pedido' => self::CAJA_VACIA]);
+                }
+            }
 
             $anterior = $pedido->estado;
             $pedido->update(['estado' => $listo ? EstadoPedidoSala::Listo : $this->sinListo($pedido)]);

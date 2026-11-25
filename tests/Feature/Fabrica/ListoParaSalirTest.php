@@ -187,9 +187,12 @@ class ListoParaSalirTest extends TestCase
 
     // ══════════════════════════════ 3. «Listo para salir»
 
-    private function listo(PedidoSala $pedido, bool $listo = true): TestResponse
+    /** Marcarlo lleva la versión de la hoja (recién abierta, salvo que se diga otra); quitarlo, no. */
+    private function listo(PedidoSala $pedido, bool $listo = true, ?string $version = null): TestResponse
     {
-        return $this->patch(route('fabrica.pedidos.listo', $pedido), ['listo' => $listo ? '1' : '0']);
+        return $this->patch(route('fabrica.pedidos.listo', $pedido), $listo
+            ? ['listo' => '1', 'version' => $version ?? $this->version($pedido)]
+            : ['listo' => '0']);
     }
 
     /** @return list<array{descripcion: string, quien: ?int, cuando: string}> */
@@ -262,6 +265,64 @@ class ListoParaSalirTest extends TestCase
         $this->listo($pedido, false);
         $this->listo($pedido, false)->assertSessionHas('status', 'El pedido de Súper Ficticio Centro ya no estaba en «Listos para salir».');
         $this->assertCount(2, $this->auditoriaListo($pedido));
+    }
+
+    public function test_listo_con_la_hoja_vieja_no_pasa_si_el_vendedor_corrigio_el_pedido(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        // Abren la hoja y arman la caja sin tocar nada: no se guarda nada y el vendedor todavía
+        // puede corregir. El formulario de «Listo para salir» lleva la versión de la hoja.
+        $vieja = $this->version($pedido);
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/x-ref="listo"[^>]*>(?:(?!<\/form>).)*name="version" value="'.$vieja.'"/s', $html);
+
+        // Mientras arman, el vendedor sube las galletas de 10 a 20.
+        $pedido->lineas()->update(['cantidad' => '20']);
+
+        $this->listo($pedido, version: $vieja)->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+        $this->assertSame([], $this->auditoriaListo($pedido));
+        // Sin la versión, tampoco: la pantalla quedó vieja.
+        $this->patch(route('fabrica.pedidos.listo', $pedido), ['listo' => '1'])->assertSessionHasErrors('version');
+
+        // Con la hoja abierta de nuevo (ya dice 20), sí.
+        $this->listo($pedido)->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Listo, $pedido->refresh()->estado);
+    }
+
+    public function test_listo_con_la_hoja_vieja_no_pasa_si_otra_tableta_mando_una_parte(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '5']);
+        $vieja = $this->version($pedido);
+        // Otra tableta manda las galletas; lo que falta va en otro envío.
+        $this->mandar($pedido, [$this->galleta->id => '10', $this->canilla->id => '0'], ['sigue' => '1'])->assertSessionHasNoErrors();
+
+        $this->listo($pedido, version: $vieja)->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
+        $this->assertSame(EstadoPedidoSala::Parcial, $pedido->refresh()->estado);
+    }
+
+    public function test_no_se_marca_listo_con_la_caja_vacia_y_si_se_vacia_deja_de_estar_listo(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->canilla->id => '5']);
+        $g = $this->linea($pedido, $this->galleta);
+        $c = $this->linea($pedido, $this->canilla);
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '0', $c => '0'], 'motivos' => [$c => 'No hay']])->assertOk();
+
+        // No va nada: no hay caja que llevarse. Para eso está «No mandar nada de este pedido».
+        $this->listo($pedido)->assertSessionHasErrors(['pedido' => PedidosFabrica::CAJA_VACIA]);
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+        $this->assertSame([], $this->auditoriaListo($pedido));
+
+        // Lista con las galletas; si después ponen todo en 0, ya no queda una caja esperando.
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '10', $c => '0']])->assertOk();
+        $this->listo($pedido)->assertSessionHasNoErrors();
+        $this->travelTo('2026-11-09 10:00:00');
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '0', $c => '0']])->assertOk();
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+        $this->assertSame([
+            ['descripcion' => PedidosFabrica::AUDITORIA_LISTO, 'quien' => $this->fabrica->id, 'cuando' => '2026-11-09 09:00'],
+            ['descripcion' => PedidosFabrica::AUDITORIA_NO_LISTO, 'quien' => $this->fabrica->id, 'cuando' => '2026-11-09 10:00'],
+        ], $this->auditoriaListo($pedido));
     }
 
     public function test_cambiar_lo_marcado_no_lo_saca_de_listos_pero_borrar_lo_marcado_si(): void

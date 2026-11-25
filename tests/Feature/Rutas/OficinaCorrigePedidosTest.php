@@ -297,7 +297,7 @@ class OficinaCorrigePedidosTest extends TestCase
     {
         $pedido = $this->pedido([$this->galleta->id => '12', $this->pan->id => '6']);
         $this->mandar($pedido, [$this->galleta->id => '4']);
-        app(PedidosFabrica::class)->marcarListo($pedido, true, $this->fabrica);
+        app(PedidosFabrica::class)->marcarListo($pedido, true, $this->fabrica, $this->version($pedido));
 
         // Cambiar lo que falta no le quita «Listo para salir»; la caja sigue lista.
         $this->corregir($pedido, [$this->galleta->id => '10', $this->pan->id => '6'])->assertSessionHasNoErrors();
