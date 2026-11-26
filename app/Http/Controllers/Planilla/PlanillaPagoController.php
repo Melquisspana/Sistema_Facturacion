@@ -130,9 +130,13 @@ class PlanillaPagoController extends Controller
         return view('planilla.anticipos', [
             'empleados' => $empleados,
             'anticipos' => PlanillaAnticipo::with('empleado', 'pago')->orderByDesc('fecha')->orderByDesc('id')->get(),
-            'candidatosPorEmpleado' => $empleados->mapWithKeys(
-                fn (PlanillaEmpleado $e) => [$e->id => $anticipos->pagosCandidatos($e)]
-            ),
+            // Va al navegador dentro de la página: solo lo que muestra la lista, no la
+            // nota, la huella ni quién registró o pagó.
+            'candidatosPorEmpleado' => $empleados->mapWithKeys(fn (PlanillaEmpleado $e) => [
+                $e->id => $anticipos->pagosCandidatos($request->user(), $e)->map(fn (Pago $p) => [
+                    'id' => $p->id, 'fecha' => $p->fecha->toDateString(), 'moneda' => $p->moneda, 'importe' => $p->importe,
+                ]),
+            ]),
             'clave' => (string) Str::uuid(),
         ]);
     }

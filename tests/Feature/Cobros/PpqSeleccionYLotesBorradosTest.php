@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -125,6 +126,83 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
             ->assertSessionHasNoErrors();
         $this->assertSame(1, PpqLote::count());
         $this->assertSame(2, PpqLote::sole()->items()->where('tipo_dte', '03')->count());
+    }
+
+    /**
+     * Borrar un PPQ deja rastro en la auditoría (Melqui, 20/11/2026): qué lote y de qué
+     * cliente, cuántos CCF y NC tenía, a qué estado volvió cada CCF y quién lo borró.
+     */
+    public function test_borrar_el_ppq_queda_en_la_auditoria_con_lo_que_tenia_y_quien_lo_borro(): void
+    {
+        $libre = $this->ccf();
+        $conSolicitud = $this->ccf();
+        $lote = $this->crear([$libre, $conSolicitud]);
+        $lote->items()->create(['tipo_dte' => '05', 'numero_control' => 'DTE-05-M001P002-000000000000999', 'monto_dte' => '-10.00']);
+        $solicitud = CobroSolicitud::create([
+            'cliente_id' => $this->cliente->id, 'referencia' => 'SOL-FICTICIA',
+            'formato' => 'carga_masiva_nc_v1', 'archivo_nombre' => 'ficticio.xlsx',
+        ]);
+        $conSolicitud->refresh()->update(['cobro_solicitud_id' => $solicitud->id]);
+        $user = $this->usuario();
+
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))->assertRedirect(route('ppq.lotes.index'));
+
+        $actividad = Activity::where('description', 'ppq.lote_eliminado')->sole();
+        $this->assertSame($user->id, (int) $actividad->causer_id);
+        $this->assertSame(PpqLote::class, $actividad->subject_type);
+        $this->assertSame($lote->id, (int) $actividad->subject_id);
+        $p = $actividad->properties;
+        $this->assertSame($lote->referencia, $p['referencia']);
+        $this->assertSame($this->cliente->id, (int) $p['cliente_id']);
+        $this->assertSame('Cliente ficticio PPQ', $p['cliente']);
+        $this->assertSame(2, $p['ccf']);
+        $this->assertSame(1, $p['nc']);
+        $this->assertSame([$libre->numero_control], $p['volvieron_a_por_presentar']);
+        // assertEquals y no assertSame: la columna JSON de MySQL guarda las claves en
+        // otro orden (por largo), y lo que importa es qué dice, no en qué orden.
+        $this->assertEquals([[
+            'numero_control' => $conSolicitud->numero_control, 'estado' => 'preparada', 'motivo' => 'va en la solicitud SOL-FICTICIA',
+        ]], $p['no_se_tocaron']);
+
+        // Y un lote que ya no se elimina no deja una baja que no ocurrió.
+        $presentado = $this->crear([$this->ccf()]);
+        PpqLote::whereKey($presentado->id)->update(['estado' => 'enviado']);
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $presentado))->assertSessionHas('error');
+        $this->assertSame(1, Activity::where('description', 'ppq.lote_eliminado')->count());
+    }
+
+    /** Doble clic en «Eliminar»: una sola baja en la auditoría, y el segundo no rompe nada. */
+    public function test_borrar_el_ppq_con_doble_clic_deja_una_sola_baja(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $user = $this->usuario();
+
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))->assertRedirect(route('ppq.lotes.index'));
+        $this->actingAs($user)->delete(route('ppq.lotes.destroy', $lote))->assertNotFound();
+
+        $this->assertSame(1, Activity::where('description', 'ppq.lote_eliminado')->count());
+        $this->assertSame([$doc->numero_control], Activity::where('description', 'ppq.lote_eliminado')->sole()->properties['volvieron_a_por_presentar']);
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->refresh()->presentacion_estado);
+        // Y la auditoría se abre con la baja adentro.
+        $this->actingAs($user)->get(route('auditoria.index'))->assertOk()->assertSee('ppq.lote_eliminado');
+    }
+
+    /** Quien solo consulta PPQ (Contabilidad, Jefatura) no lo borra: 403, el lote sigue y no queda una baja. */
+    public function test_sin_permiso_de_gestionar_ppq_no_se_borra_ni_queda_baja(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $estado = $doc->refresh()->presentacion_estado;
+
+        foreach ([RolSistema::Contabilidad, RolSistema::Jefatura] as $rol) {
+            $this->actingAs(User::factory()->create()->assignRole($rol->value))
+                ->delete(route('ppq.lotes.destroy', $lote))->assertForbidden();
+        }
+
+        $this->assertNotNull(PpqLote::find($lote->id));
+        $this->assertSame($estado, $doc->refresh()->presentacion_estado);
+        $this->assertSame(0, Activity::where('description', 'ppq.lote_eliminado')->count());
     }
 
     public function test_un_lote_borrado_ya_no_bloquea_aunque_queden_sus_items(): void

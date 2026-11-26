@@ -441,6 +441,22 @@ class PpqLoteController extends Controller
             }
             $resultado = $liberador->liberar($actual, $request->user());
             $actual->delete();
+            // La baja queda en la auditoría, como editar o marcar presentado: qué lote, de qué
+            // cliente, qué tenía y a qué estado quedó cada CCF. Quién, en el causante.
+            activity()->performedOn($actual)->causedBy($request->user())->withProperties([
+                'referencia' => $actual->referencia,
+                'cliente_id' => $actual->cliente_id,
+                'cliente' => $actual->cliente?->nombre,
+                'ccf' => $actual->items()->where('tipo_dte', '03')->count(),
+                'nc' => $actual->items()->where('tipo_dte', '05')->count(),
+                'volvieron_a_por_presentar' => $resultado['liberados']->pluck('numero_control')->values()->all(),
+                'no_se_tocaron' => $resultado['conservados']->map(fn ($fila) => [
+                    'numero_control' => $fila['documento']->numero_control,
+                    'estado' => $fila['documento']->presentacion_estado->value,
+                    'motivo' => $fila['motivo'],
+                ])->values()->all(),
+                'ya_estaban_por_presentar' => $resultado['sin_cambio']->pluck('numero_control')->values()->all(),
+            ])->log('ppq.lote_eliminado');
 
             return $resultado;
         });

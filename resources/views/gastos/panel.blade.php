@@ -4,7 +4,7 @@
     $metodos = config('gastos.metodos');
 
     $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
-    $botonAccion = 'inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-500';
+    $botonAccion = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-500';
     $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
@@ -15,6 +15,9 @@
         : '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">Empresa</span>';
 
     $fecha = fn (?string $iso) => $iso ? \Carbon\CarbonImmutable::parse($iso)->format('d/m') : null;
+    // «Fecha pasada» puede traer meses de más de un año: sin el año, enero de 2025 y
+    // enero de 2026 se leían igual.
+    $fechaConAnio = fn (?string $iso) => $iso ? \Carbon\CarbonImmutable::parse($iso)->format('d/m/Y') : null;
 @endphp
 
 {{-- LA PANTALLA PRINCIPAL DE GASTOS Y PAGOS
@@ -67,7 +70,7 @@
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6"
-         x-data="{ abierto: null, abrir(id) { this.abierto = this.abierto === id ? null : id } }">
+         x-data="{ abierto: @js($errors->any() && is_string(old('panel')) ? old('panel') : null), abrir(id) { this.abierto = this.abierto === id ? null : id } }">
         <div class="mx-auto max-w-4xl space-y-4">
 
             {{-- El aviso puede traer un enlace al registro que se acaba de crear. Volver
@@ -199,9 +202,9 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="flex gap-2">
-                                <button type="submit" class="{{ $botonAccion }}">Guardar</button>
+                            <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                                 <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                                <button type="submit" class="{{ $botonAccion }}">Guardar</button>
                             </div>
                         </form>
                     </div>
@@ -282,8 +285,8 @@
                  es dinero que se deja de mencionar sin que nadie lo haya decidido.
 
                  Van en su propio grupo, SIN total: no son deuda confirmada —nadie
-                 verificó que se deban— y tampoco son ya «lo que viene». Sin botón de
-                 pagar: todavía no existen como obligación. --}}
+                 verificó que se deban— y tampoco son ya «lo que viene». Cada fila se
+                 resuelve sola: «Registrar pago» si se debe, «Saltar» con motivo si no. --}}
             @if ($datos['fecha_pasada']->isNotEmpty())
                 <x-gastos-grupo titulo="Fecha pasada · por confirmar" tono="ambar"
                                 :leyenda="(string) $datos['fecha_pasada']->count()">
@@ -292,7 +295,7 @@
                             'f' => $f,
                             'tipo' => 'pasada',
                             'importe' => $f->importe_previsto,
-                            'vence' => $fecha($f->vence),
+                            'vence' => $fechaConAnio($f->vence),
                         ])
                     @endforeach
                     <x-slot name="pie">
@@ -300,7 +303,9 @@
                             Ya pasó su día y nadie creó la obligación. No desaparecen al vencer —una fila que se borra
                             sola es dinero que se deja de mencionar sin que nadie lo decida— y tampoco se suman a
                             ninguna de las dos cifras, porque nadie verificó que se deban. «Registrar pago» las convierte
-                            en obligación y las paga de una vez; si ya no corresponde, se pausa la regla.
+                            en obligación y las paga de una vez. Si ese período no se debe —por ejemplo, uno en que la
+                            regla estuvo en pausa—, «Saltar» lo saca de la lista con su motivo, que queda anotado en
+                            la regla.
                         </x-gastos-ayuda>
                     </x-slot>
                 </x-gastos-grupo>
@@ -357,7 +362,7 @@
                             <div class="flex shrink-0 items-center gap-3">
                                 {!! $chipAmbito($r->ambito) !!}
                                 @can('gastos.recurrencias')
-                                    <a href="{{ route('gastos.reglas.show', $r->regla_id) }}" class="{{ $boton }} min-h-9 px-3 text-xs">Completar</a>
+                                    <a href="{{ route('gastos.reglas.show', $r->regla_id) }}" class="{{ $boton }} text-xs">Completar</a>
                                 @endcan
                             </div>
                         </div>

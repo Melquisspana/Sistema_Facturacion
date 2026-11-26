@@ -1,8 +1,8 @@
 @php
     use App\Services\Gastos\Dinero;
 
-    $boton = 'inline-flex min-h-9 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50';
-    $botonAccion = 'inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-xs font-medium text-white hover:bg-indigo-500';
+    $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50';
+    $botonAccion = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-xs font-medium text-white hover:bg-indigo-500';
     $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
@@ -95,13 +95,15 @@
                         <input id="p-ref-{{ $g->id }}" name="referencia" maxlength="180" class="{{ $campo }}" placeholder="Opcional">
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="submit" class="{{ $botonAccion }}">Registrar el pago</button>
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                    <button type="submit" class="{{ $botonAccion }}">Registrar el pago</button>
+                </div>
+                <p>
                     <a href="{{ route('gastos.show', $g) }}" class="text-xs text-indigo-600 hover:underline">
                         Pagar solo una parte, o repartir por cuotas
                     </a>
-                </div>
+                </p>
                 <p class="text-xs text-gray-500">El comprobante se adjunta desde el detalle del pago, apenas se guarde.</p>
             </form>
 
@@ -139,14 +141,16 @@
                         </select>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="submit" class="{{ $botonAccion }}">Registrar el abono</button>
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                    <button type="submit" class="{{ $botonAccion }}">Registrar el abono</button>
+                </div>
+                <p>
                     <a href="{{ route('gastos.cuentas.show', ['proveedor' => $g->beneficiario, 'moneda' => $g->moneda]) }}"
                        class="text-xs text-indigo-600 hover:underline">
                         Ver y editar el reparto entre compras
                     </a>
-                </div>
+                </p>
                 <p class="text-xs text-gray-500">
                     Se aplica de la compra más antigua a la más nueva. Un abono mayor que la deuda no se guarda: se avisa.
                 </p>
@@ -172,9 +176,9 @@
                         <p class="mt-1 text-xs text-gray-500">La fecha que trae el papel. Si no la ponés, queda sin vencimiento.</p>
                     </div>
                 </div>
-                <div class="flex gap-2">
-                    <button type="submit" class="{{ $botonAccion }}">Guardar el monto</button>
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                    <button type="submit" class="{{ $botonAccion }}">Guardar el monto</button>
                 </div>
             </form>
         @endif

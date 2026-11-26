@@ -1,9 +1,9 @@
 @php
     use App\Services\Gastos\Dinero;
 
-    $boton = 'inline-flex min-h-9 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50';
-    $botonAccion = 'inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-xs font-medium text-white hover:bg-indigo-500';
-    $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
+    $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50';
+    $botonAccion = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-xs font-medium text-white hover:bg-indigo-500';
+    $campo = 'mt-1 min-h-11 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
     $metodos = config('gastos.metodos');
@@ -12,6 +12,7 @@
     // Identificador del panel: regla + período. Dos filas de la misma regla —octubre y
     // noviembre— tienen que poder abrirse por separado.
     $panel = 'prog-'.$f->regla_id.'-'.str_replace(['-', ' '], '_', $f->periodo);
+    $panelSaltar = 'saltar-'.$f->regla_id.'-'.str_replace(['-', ' '], '_', $f->periodo);
 
     $variable = $f->monto_modo === 'variable';
     $esPasada = $tipo === 'pasada';
@@ -28,18 +29,23 @@
 
      Al confirmar, el servidor crea la obligación del período —o reutiliza la que ya
      haya— y registra el pago en una sola operación. Abrir este panel y cerrarlo no
-     crea nada: el formulario se despliega en el navegador y no toca el servidor. --}}
+     crea nada: el formulario se despliega en el navegador y no toca el servidor.
+
+     ── «Saltar», solo en las de fecha pasada ─────────────────────────────────────
+     Un mes que ya pasó y no se debe (el de una pausa, por ejemplo) no tenía salida:
+     «Lo que viene» de la regla solo ofrece los futuros. Saltar usa la misma ruta que
+     allá (gastos.reglas.omitir), con motivo obligatorio y su candado de período. --}}
 <div class="border-t border-gray-100 first:border-t-0">
-    <div class="flex items-center justify-between gap-3 px-4 py-3">
+    <div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div class="min-w-0">
             <p class="truncate font-medium text-gray-900">{{ $f->beneficiario }}</p>
-            <p class="truncate text-sm text-gray-500">
+            <p class="text-sm text-gray-500">
                 {{ $f->concepto }} ·
                 {{ $esPasada ? 'vencía el '.$vence.' y no se registró' : 'vence el '.$vence }}
             </p>
         </div>
 
-        <div class="flex shrink-0 items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3 sm:shrink-0">
             @if ($f->ambito === 'personal')
                 <span class="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">Casa</span>
             @else
@@ -56,13 +62,71 @@
 
             @can('gastos.pagos.registrar')
                 @can('gastos.registrar')
-                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}">Registrar pago</button>
+                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}"
+                            :aria-expanded="abierto === '{{ $panel }}' ? 'true' : 'false'" aria-expanded="false" aria-controls="{{ $panel }}">
+                        Registrar pago<span class="sr-only"> de {{ $f->beneficiario }}, período {{ $f->periodo }}</span>
+                    </button>
                 @endcan
             @endcan
+
+            @if ($esPasada)
+                @can('gastos.recurrencias')
+                    <button type="button" @click="abrir('{{ $panelSaltar }}')" class="{{ $boton }}"
+                            :aria-expanded="abierto === '{{ $panelSaltar }}' ? 'true' : 'false'" aria-expanded="false" aria-controls="{{ $panelSaltar }}">
+                        Saltar<span class="sr-only"> {{ $f->beneficiario }}, período {{ $f->periodo }}</span>
+                    </button>
+                @endcan
+            @endif
         </div>
     </div>
 
-    <div x-show="abierto === '{{ $panel }}'" x-cloak class="border-t border-gray-100 bg-gray-50 px-4 py-4">
+    @if ($esPasada)
+        @can('gastos.recurrencias')
+            <div id="{{ $panelSaltar }}" x-show="abierto === '{{ $panelSaltar }}'" x-cloak class="border-t border-gray-100 bg-gray-50 px-4 py-4">
+                <form method="POST" action="{{ route('gastos.reglas.omitir', $f->regla_id) }}" class="space-y-3">
+                    @csrf
+                    <input type="hidden" name="periodo" value="{{ $f->periodo }}">
+                    {{-- Si vuelve con error, esta fila se abre sola y conserva lo escrito:
+                         todas las filas mandan «motivo», y sin esto se veía en todas. --}}
+                    <input type="hidden" name="panel" value="{{ $panelSaltar }}">
+
+                    <p class="text-sm text-gray-700">
+                        Saltar <span class="font-semibold">{{ $f->beneficiario }}</span> · {{ $f->concepto }}
+                        · período {{ $f->periodo }}, que vencía el {{ $vence }}.
+                    </p>
+
+                    <div>
+                        <label class="{{ $etiqueta }}" for="saltar-motivo-{{ $panelSaltar }}">Por qué no se debe</label>
+                        <input id="saltar-motivo-{{ $panelSaltar }}" name="motivo" type="text" required minlength="5" maxlength="500"
+                               value="{{ old('panel') === $panelSaltar ? old('motivo') : '' }}"
+                               @if (old('panel') === $panelSaltar) x-init="$nextTick(() => $el.focus())" @endif
+                               class="{{ $campo }}" placeholder="Por ejemplo: no se usó el servicio">
+                        @if (old('panel') === $panelSaltar)
+                            @error('motivo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('periodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
+                    </div>
+
+                    <p class="text-sm font-medium text-amber-800">
+                        No se puede deshacer: después ya no se puede pagar este período desde la regla. Usalo solo si
+                        estás seguro de que no se debe.
+                    </p>
+
+                    <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                        <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
+                        <button type="submit" class="{{ $botonAccion }}">Saltar este período</button>
+                    </div>
+
+                    <p class="text-xs text-gray-500">
+                        Sale de esta lista, no se crea la obligación y la generación automática ya no lo vuelve a
+                        crear. Queda anotado en la regla con tu motivo. Cancelar no deja nada guardado.
+                    </p>
+                </form>
+            </div>
+        @endcan
+    @endif
+
+    <div id="{{ $panel }}" x-show="abierto === '{{ $panel }}'" x-cloak class="border-t border-gray-100 bg-gray-50 px-4 py-4">
         <form method="POST" action="{{ route('gastos.panel.programado.pagar', $f->regla_id) }}" class="space-y-3">
             @csrf
             <input type="hidden" name="clave" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
@@ -100,7 +164,8 @@
                 </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
                 <button type="submit" class="{{ $botonAccion }}">
                     @if ($variable)
                         Registrar la obligación y el pago
@@ -108,7 +173,6 @@
                         Registrar ${{ Dinero::mostrar((int) $importe) }} pagados
                     @endif
                 </button>
-                <button type="button" @click="abrir(null)" class="{{ $boton }}">Cancelar</button>
             </div>
 
             <p class="text-xs text-gray-500">

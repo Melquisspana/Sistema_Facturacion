@@ -259,10 +259,18 @@ final class AdministrarReglas
 
                 $vence = $this->venceDelPeriodo($regla, $periodo);
 
+                // Un período que la regla no produce («2026-13», «marzo») no se guarda: no
+                // saltaría nada y el mes de verdad se generaría igual.
+                if ($vence === null) {
+                    throw ValidationException::withMessages([
+                        'periodo' => 'Ese período no le toca a esta regla. Saltá uno de los de «Lo que viene».',
+                    ]);
+                }
+
                 $ocurrencia = Ocurrencia::create([
                     'regla_id' => $regla->id,
                     'periodo' => $periodo,
-                    'vence' => $vence?->toDateString(),
+                    'vence' => $vence->toDateString(),
                     'estado' => 'omitida',
                     'gasto_id' => null,
                     'version_regla' => $regla->version,
@@ -297,12 +305,11 @@ final class AdministrarReglas
      */
     public function proximosPeriodos(Regla $regla, CarbonImmutable $hoy, int $cuantos = 6): array
     {
-        $ventana = match ($regla->frecuencia) {
-            'semanal' => $hoy->addWeeks($cuantos),
-            'quincenal' => $hoy->addMonths((int) ceil($cuantos / 2)),
-            'anual' => $hoy->addYears($cuantos),
-            default => $hoy->addMonths($cuantos),
-        };
+        // Una regla que arranca más adelante no ofrece los meses de antes: no los produce
+        // y saltarlos daría error. La ventana se cuenta desde ese mismo inicio, para que
+        // muestre sus primeros períodos completos y no quede vacía.
+        $inicio = max($hoy, CarbonImmutable::parse($regla->vigente_desde->toDateString()));
+        $ventana = $this->hastaDondeLlegaLoQueViene($regla, $inicio, $cuantos);
 
         $hasta = $regla->vigente_hasta !== null
             ? min($ventana, CarbonImmutable::parse($regla->vigente_hasta->toDateString()))
@@ -314,7 +321,7 @@ final class AdministrarReglas
             'periodo' => $p['periodo'],
             'vence' => $p['vence']->toDateString(),
             'resuelto' => $resueltos[$p['periodo']] ?? null,
-        ], $this->calendario->periodos($regla->calendario(), $hoy, $hasta));
+        ], $this->calendario->periodos($regla->calendario(), $inicio, $hasta));
     }
 
     /** @param  array<string, bool>  $desde */
@@ -363,10 +370,28 @@ final class AdministrarReglas
         });
     }
 
+    private function hastaDondeLlegaLoQueViene(Regla $regla, CarbonImmutable $hoy, int $cuantos = 6): CarbonImmutable
+    {
+        return match ($regla->frecuencia) {
+            'semanal' => $hoy->addWeeks($cuantos),
+            'quincenal' => $hoy->addMonths((int) ceil($cuantos / 2)),
+            'anual' => $hoy->addYears($cuantos),
+            default => $hoy->addMonths($cuantos),
+        };
+    }
+
     private function venceDelPeriodo(Regla $regla, string $periodo): ?CarbonImmutable
     {
         $hoy = CarbonImmutable::now();
-        $rango = $this->calendario->periodos($regla->calendario(), $hoy->subYear(), $hoy->addYears(2));
+        // Hacia atrás, exactamente desde el arranque, como «Por pagar › Fecha pasada ·
+        // por confirmar» y el pago desde ahí: cualquier mes desde ese día, aunque tenga
+        // más de un año, y ninguno de antes, que la regla nunca produjo.
+        $desde = CarbonImmutable::parse($regla->vigente_desde->toDateString());
+        // Y por lo menos hasta donde llega «Lo que viene», contado desde el mismo inicio:
+        // lo que la pantalla ofrece saltar se tiene que poder saltar. En una regla anual
+        // son seis años.
+        $hasta = max($hoy->addYears(2), $this->hastaDondeLlegaLoQueViene($regla, max($hoy, $desde)));
+        $rango = $this->calendario->periodos($regla->calendario(), $desde, $hasta);
 
         foreach ($rango as $candidato) {
             if ($candidato['periodo'] === $periodo) {
