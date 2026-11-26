@@ -395,20 +395,63 @@ class PedidosYEntregasTest extends TestCase
         $this->assertSame('Sala de prueba Norte', $fabrica['listos'][0]['sala']);
     }
 
-    public function test_la_pantalla_muestra_los_numeros_y_las_listas(): void
+    /**
+     * Concisa (Melqui, 26/11/2026: «más concisa, cuál pedido es»): el total chico en el título
+     * y una línea corta por pedido o entrega, a la vista sin tocar nada.
+     */
+    public function test_la_pantalla_dice_cual_pedido_es_en_una_linea(): void
     {
         $this->semana();
+        $jefatura = $this->usuario('jefatura');
 
-        $respuesta = $this->actingAs($this->usuario('jefatura'))->get(route('rutas.pedidos-entregas'))->assertOk()
+        $respuesta = $this->actingAs($jefatura)->get(route('rutas.pedidos-entregas'))->assertOk()
             ->assertSeeInOrder(['Pedidos de las salas', 'En la fábrica', 'Entregado', 'Vendido'])
-            ->assertSee('Sala de prueba Norte')->assertSee('Vendedor de prueba')
-            ->assertSee('Listo para salir')->assertSee('No se trae')
-            ->assertDontSee('Cliente de prueba');
+            ->assertSee('Vendedor de prueba')->assertSee('Listo para salir')->assertSee('No se trae')
+            ->assertDontSee('Cliente de prueba')
+            // La lista ya está a la vista: nada que abrir con pocas líneas.
+            ->assertDontSee('<details', false)->assertDontSee('restantes');
         $texto = $this->texto($respuesta->getContent());
-        foreach (['3 pedidos entraron hoy', '5 pedidos están en la fábrica ahora', 'El más viejo es de hace 4 días.', 'Salió hoy: 1 pedido.',
-            '2 entregadas hoy', 'No se pudo entregar: 1', 'Zona de prueba Norte 1 entregada · 1 no se pudo', 'Zona de prueba Sur 1 entregada',
-            '$100.50 hoy, sin IVA', 'En 3 facturas.'] as $frase) {
+        foreach ([
+            'Pedidos de las salas · 3', 'Sala de prueba Norte · N.º '.$this->p['listo']->id, 'Sala de prueba Sur · N.º '.$this->p['pendiente']->id,
+            'En la fábrica · 5', 'Listos para salir · 1', 'Armando · 1', 'Sin empezar · 3',
+            'Sala de prueba Norte · N.º '.$this->p['viejo']->id.' hace 4 días', 'Salió hoy · 1', 'Sala de prueba Norte · N.º '.$this->p['parte']->id.' 11:00',
+            'Entregado · 2 (1 no se pudo)', 'Zona de prueba Norte', 'Sala de prueba Norte · CCF …0004', 'No se pudo',
+            '$100.50 sin IVA · 3 facturas',
+        ] as $frase) {
             $this->assertStringContainsString($frase, $texto);
+        }
+        // Sin frases largas ni números gigantes.
+        foreach (['entraron', 'están en la fábrica', 'entregadas hoy', 'El más viejo', 'Ver los 3 pedidos', 'Ver la lista'] as $frase) {
+            $this->assertStringNotContainsString($frase, $texto);
+        }
+        // El atraso solo si pasa de un día.
+        $this->assertStringNotContainsString('hace 1 día', $texto);
+
+        // Ayer no hubo entregas, pero sí un «No se pudo».
+        $ayer = $this->texto($this->get(route('rutas.pedidos-entregas', ['periodo' => 'ayer']))->assertOk()->getContent());
+        $this->assertStringContainsString('Entregado · 0 (1 no se pudo)', $ayer);
+        $this->assertStringContainsString('$300.00 sin IVA · 1 factura', $ayer);
+    }
+
+    public function test_mas_de_ocho_lineas_por_grupo_se_abren_aparte(): void
+    {
+        foreach (range(1, 11) as $i) {
+            $this->pedido($i % 2 ? $this->norte : $this->sur);
+        }
+        // En el orden de la lista (por sala, como el correo).
+        $numeros = $this->numeros(app(PedidosYEntregas::class)->calcular('hoy')['pedidos']['lista']);
+        $this->assertCount(11, $numeros);
+
+        $html = $this->actingAs($this->usuario('jefatura'))->get(route('rutas.pedidos-entregas'))->assertOk()->getContent();
+
+        // Ocho a la vista y los tres que siguen detrás de «Ver los 3 restantes»: en los pedidos
+        // de las salas y en «Sin empezar».
+        $this->assertSame(2, substr_count($this->texto($html), 'Ver los 3 restantes'));
+        $this->assertSame(2, substr_count($html, '<details'));
+        $pedidos = substr($html, strpos($html, 'Pedidos de las salas'), strpos($html, 'En la fábrica') - strpos($html, 'Pedidos de las salas'));
+        [$vista, $resto] = explode('<details', $pedidos);
+        foreach ($numeros as $i => $numero) {
+            $this->assertStringContainsString('N.º '.$numero.'<', $i < 8 ? $vista : $resto);
         }
     }
 
@@ -418,15 +461,16 @@ class PedidosYEntregasTest extends TestCase
         return trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($html))));
     }
 
-    public function test_un_periodo_sin_nada_lo_dice(): void
+    public function test_un_periodo_sin_nada_lo_dice_en_una_linea(): void
     {
-        $this->actingAs($this->usuario('jefatura'))->get(route('rutas.pedidos-entregas', ['periodo' => 'ayer']))->assertOk()
-            ->assertSee('No entraron pedidos ayer.')
-            ->assertSee('No hay nada en la fábrica.')
-            ->assertSee('No salió ningún pedido ayer.')
-            ->assertSee('No se registraron entregas ayer.')
-            ->assertSee('No se facturó nada ayer.')
-            ->assertDontSee('Ver la lista');
+        $html = $this->actingAs($this->usuario('jefatura'))->get(route('rutas.pedidos-entregas', ['periodo' => 'ayer']))->assertOk()->getContent();
+        $texto = $this->texto($html);
+
+        // Pedidos, entregas y ventas; la fábrica es la de ahora.
+        $this->assertSame(3, substr_count($texto, 'Nada ayer.'));
+        $this->assertStringContainsString('En la fábrica Nada ahora.', $texto);
+        $this->assertStringNotContainsString('· 0', $texto);
+        $this->assertStringNotContainsString('<details', $html);
     }
 
     public function test_si_falla_la_cuenta_de_ventas_lo_dice_y_lo_demas_sale_igual(): void
@@ -437,7 +481,7 @@ class PedidosYEntregasTest extends TestCase
 
         $respuesta = $this->actingAs($this->usuario('jefatura'))->get(route('rutas.pedidos-entregas'))->assertOk()
             ->assertSee('No se pudo calcular lo vendido.');
-        $this->assertStringContainsString('1 pedido entró hoy', $this->texto($respuesta->getContent()));
+        $this->assertStringContainsString('Pedidos de las salas · 1', $this->texto($respuesta->getContent()));
         Exceptions::assertReported(fn (RuntimeException $e) => $e->getMessage() === 'Falla simulada de ventas');
     }
 
