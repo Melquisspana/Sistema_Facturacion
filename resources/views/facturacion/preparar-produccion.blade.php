@@ -24,6 +24,10 @@
             @if (session('status'))
                 <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
             @endif
+            {{-- Ámbar: no falló, pero hay que esperar (docs/GUIA_PANTALLAS.md). --}}
+            @if (session('espera'))
+                <div role="status" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">{{ session('espera') }}</div>
+            @endif
             @if (session('error'))
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif

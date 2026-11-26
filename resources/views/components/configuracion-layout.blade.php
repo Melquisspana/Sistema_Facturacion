@@ -64,6 +64,14 @@
                             </div>
                         @endif
 
+                        {{-- Ámbar: no falló, pero todavía no se hizo y hay que esperar o
+                             reintentar (docs/GUIA_PANTALLAS.md, «Mensajes de éxito y de error»). --}}
+                        @if (session('espera'))
+                            <div role="status" class="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+                                {{ session('espera') }}
+                            </div>
+                        @endif
+
                         @if (session('error'))
                             <div class="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                                 {{ session('error') }}

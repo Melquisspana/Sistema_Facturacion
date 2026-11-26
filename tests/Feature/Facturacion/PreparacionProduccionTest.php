@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Facturacion;
 
+use App\Console\Commands\BackupMysqlDiarioCommand;
+use App\Models\Configuracion;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Establecimiento;
@@ -171,9 +173,9 @@ class PreparacionProduccionTest extends TestCase
         Correlativo::updateOrCreate(
             ['tipo_dte' => '03', 'ambiente' => '01'],
             ['establecimiento_id' => Establecimiento::firstOrFail()->id, 'punto_venta_id' => null,
-             'serie' => 'M001P001', 'ultimo_numero' => 502, 'activo' => true]
+                'serie' => 'M001P001', 'ultimo_numero' => 502, 'activo' => true]
         );
-        \App\Models\Configuracion::set('produccion.ultimo_ccf_externo', '9999');
+        Configuracion::set('produccion.ultimo_ccf_externo', '9999');
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
@@ -196,7 +198,7 @@ class PreparacionProduccionTest extends TestCase
         }
         // Confirmar otro último externo (p. ej. Conta llegó a 1100): es solo una clave
         // de configuración informativa, NUNCA toca el correlativo de P002 ni su próximo.
-        \App\Models\Configuracion::set('produccion.ultimo_ccf_externo', '1100');
+        Configuracion::set('produccion.ultimo_ccf_externo', '1100');
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
@@ -234,6 +236,35 @@ class PreparacionProduccionTest extends TestCase
             ->assertSessionHas('status');
 
         $this->assertSame(0, Dte::count()); // el backup no emite documentos
+    }
+
+    /**
+     * Con otro respaldo corriendo no es un error: sale en ámbar, con el mismo texto que en
+     * Configuración › Sistema, sin el «terminó con código 2».
+     */
+    public function test_backup_con_otro_en_curso_avisa_en_ambar_que_espere(): void
+    {
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('backup:mysql-diario', ['--origen' => 'manual'])
+            ->andReturn(BackupMysqlDiarioCommand::EN_CURSO);
+        Artisan::shouldReceive('output')->andReturn('Ya hay un respaldo en curso; esperá a que termine.');
+        $admin = $this->usuario('administrador');
+
+        $this->actingAs($admin)
+            ->from(route('facturacion.preparar-produccion'))
+            ->post(route('facturacion.preparar-produccion.backup'))
+            ->assertRedirect(route('facturacion.preparar-produccion'))
+            ->assertSessionHas('espera', 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.')
+            ->assertSessionMissing('error')
+            ->assertSessionMissing('status');
+
+        $this->actingAs($admin)
+            ->withSession(['espera' => 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.'])
+            ->get(route('facturacion.preparar-produccion'))
+            ->assertOk()
+            ->assertSee('<div role="status" class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">Ya hay un respaldo en curso; esperá unos minutos y recargá la página.</div>', false)
+            ->assertDontSee('terminó con código');
     }
 
     public function test_prueba_en_vivo_del_firmador_devuelve_json_sin_firmar(): void

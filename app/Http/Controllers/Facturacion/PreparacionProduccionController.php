@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Facturacion;
 
+use App\Console\Commands\BackupMysqlDiarioCommand;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
@@ -90,6 +91,12 @@ class PreparacionProduccionController extends Controller
 
             if ($codigo === 0) {
                 return back()->with('status', 'Backup de base de datos generado y verificado. Revisá el "último backup" abajo.');
+            }
+
+            // Otro respaldo corriendo no es un error: ámbar y el mismo texto que en
+            // Configuración › Sistema.
+            if ($codigo === BackupMysqlDiarioCommand::EN_CURSO) {
+                return back()->with('espera', 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.');
             }
 
             return back()->with('error', 'El backup terminó con código '.$codigo.'. Detalle: '.$this->cola($salida));

@@ -128,9 +128,10 @@ Tres niveles, según lo que se pierde si uno se equivoca:
 Tomado de `x-rutas.avisos` (éxito, error y errores de validación en un solo componente) más lo que agregó Gastos para el lector de pantalla.
 
 - Un solo componente `x-avisos`, que reemplaza a los cuatro de hoy y a los escritos a mano.
-- Dos claves de sesión y nada más: `status` para éxito y `error` para fallas. `gastos.aviso` y `planilla.aviso` pasan a `status`.
+- Tres claves de sesión y nada más: `status` para éxito, `error` para fallas y `espera` para lo que no falló pero todavía no se hizo. `gastos.aviso` y `planilla.aviso` pasan a `status`.
 - Éxito: caja verde `rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700` con `role="status"`.
 - Error: caja roja (no rosa) igual, con `role="alert"`.
+- Espera (25/11/2026): caja ámbar `rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800` con `role="status"`. Va cuando algo **no falló pero todavía no se hizo** y hay que esperar o reintentar: «Ya hay un respaldo en curso; esperá unos minutos y recargá la página.». No es un error (rojo) ni un éxito (verde): el verde diría que se hizo y el rojo, que algo anda mal. Lo que falta configurar no es un aviso: se dice con la etiqueta ámbar de la pantalla. Hoy la dibujan el marco de Configuración y «Preparar emisión real».
 - Va arriba del contenido, debajo del encabezado. Al final se dibuja una sola vez desde el layout, así ninguna pantalla puede perder un mensaje.
 - Texto: qué pasó, en pasado y con el dato que importa. «Pago de $120.00 registrado.», «No se pudo emitir: Hacienda no respondió. Probá de nuevo en unos minutos.»
 
