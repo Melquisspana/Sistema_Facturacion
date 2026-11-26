@@ -94,6 +94,50 @@ class ConfirmacionN2
         return $cambios;
     }
 
+    /**
+     * Valores que el catálogo no admite (formato de hora, correo, URL…), clave ⇒ motivo.
+     *
+     * {@see calcular()} los omite en silencio y solo se guarda lo que cambia, así que
+     * quien guarda los frena ANTES: si no, un valor mal escrito diría «nada que cambiar»
+     * o se perdería sin aviso junto a otro que sí cambia.
+     *
+     * @param  array<string, mixed>  $propuestos  clave del registry ⇒ valor propuesto
+     * @return array<string, string>
+     */
+    public function invalidos(array $propuestos): array
+    {
+        $errores = [];
+
+        foreach ($propuestos as $clave => $propuesto) {
+            try {
+                $this->conversor->validarYNormalizar($this->catalogo->definicion($clave), $propuesto);
+            } catch (ValorAjusteInvalidoException $e) {
+                $errores[$clave] = $e->getMessage();
+            }
+        }
+
+        return $errores;
+    }
+
+    /**
+     * Lo que hay que escribir: solo los valores que cambian. Lo demás sigue saliendo del
+     * servidor (.env) y no deja en la auditoría una línea sin cambio («No → No»).
+     *
+     * @param  array<int, CambioPropuesto>  $cambios  lo que devolvió {@see calcular()}
+     * @param  array<string, mixed>  $propuestos  clave del registry ⇒ valor propuesto
+     * @return array<string, mixed>
+     */
+    public function soloLoQueCambia(array $cambios, array $propuestos): array
+    {
+        $aGuardar = [];
+
+        foreach ($cambios as $cambio) {
+            $aGuardar[$cambio->clave] = $propuestos[$cambio->clave];
+        }
+
+        return $aGuardar;
+    }
+
     /** @return list<string> */
     private function nombresSalas(mixed $ids): array
     {

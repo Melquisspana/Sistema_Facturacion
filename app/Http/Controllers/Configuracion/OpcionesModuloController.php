@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Configuracion;
 use App\Ajustes\Ajustes as ServicioAjustes;
 use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\Ceremonias\ConfirmacionN2;
-use App\Ajustes\ConversorValor;
 use App\Ajustes\Definicion\DefinicionAjuste;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
@@ -277,7 +276,6 @@ class OpcionesModuloController extends Controller
         Request $request,
         ConfirmacionN2 $confirmacion,
         ServicioAjustes $ajustes,
-        ConversorValor $conversor,
     ): View|RedirectResponse {
         $pagina = $this->pagina($request);
         $definiciones = $this->definiciones($pagina);
@@ -290,7 +288,6 @@ class OpcionesModuloController extends Controller
         );
 
         $propuestos = [];
-        $errores = [];
         foreach ($definiciones as $campo => $definicion) {
             $valor = $definicion->tipo === TipoAjuste::Booleano
                 ? $request->boolean($campo)
@@ -310,22 +307,18 @@ class OpcionesModuloController extends Controller
                 }
             }
 
-            // La validación del catálogo (formato de hora, de fecha, lista de correos)
-            // va ANTES de calcular los cambios: ConfirmacionN2 omite en silencio lo que
-            // no valida, y sin esto un correo mal escrito diría «nada que cambiar».
-            try {
-                $conversor->validarYNormalizar($definicion, $valor);
-            } catch (ValorAjusteInvalidoException $e) {
-                $errores[$campo] = $e->getMessage();
-
-                continue;
-            }
-
             $propuestos[$definicion->clave] = $valor;
         }
 
+        // La validación del catálogo (formato de hora, de fecha, lista de correos) va
+        // ANTES de calcular los cambios: ConfirmacionN2 omite en silencio lo que no
+        // valida, y sin esto un correo mal escrito diría «nada que cambiar».
+        $errores = $confirmacion->invalidos($propuestos);
+
         if ($errores !== []) {
-            throw ValidationException::withMessages($errores);
+            throw ValidationException::withMessages(
+                collect($errores)->mapWithKeys(fn (string $motivo, string $clave) => [self::campo($clave) => $motivo])->all(),
+            );
         }
 
         $cambios = $confirmacion->calcular($propuestos);
@@ -348,13 +341,8 @@ class OpcionesModuloController extends Controller
         }
 
         // Solo lo que cambia: lo demás sigue saliendo del .env.
-        $aGuardar = [];
-        foreach ($cambios as $cambio) {
-            $aGuardar[$cambio->clave] = $propuestos[$cambio->clave];
-        }
-
         try {
-            $ajustes->guardarVarios($aGuardar);
+            $ajustes->guardarVarios($confirmacion->soloLoQueCambia($cambios, $propuestos));
         } catch (ValorAjusteInvalidoException $e) {
             throw ValidationException::withMessages([self::campo($e->clave) => $e->getMessage()]);
         }
