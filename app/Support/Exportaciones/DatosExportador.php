@@ -26,6 +26,11 @@ use App\Models\Empresa;
  * El FDA NO cae a la Empresa: no existe esa columna y no se va a inventar. Si no
  * está ni en Configuración ni en la config histórica, la respuesta es null y la
  * pantalla lo dice.
+ *
+ * Al DUPLICAR una lista se usa solo el paso 1 ({@see nombreConfigurado()},
+ * {@see direccionConfigurada()}): lo que Configuración no tenga se conserva de la
+ * lista original, que pudo llevar a mano la bodega de despacho, y no se cambia en
+ * silencio por la razón social o la dirección fiscal de la Empresa.
  */
 class DatosExportador
 {
@@ -41,7 +46,7 @@ class DatosExportador
     public function nombre(): ?string
     {
         return $this->primeroNoVacio([
-            $this->deAjustes('exportaciones.exportador_nombre'),
+            (string) $this->nombreConfigurado(),
             (string) (Empresa::query()->where('activo', true)->orderBy('id')->value('razon_social') ?? ''),
         ]);
     }
@@ -49,9 +54,21 @@ class DatosExportador
     public function direccion(): ?string
     {
         return $this->primeroNoVacio([
-            $this->deAjustes('exportaciones.exportador_direccion'),
+            (string) $this->direccionConfigurada(),
             (string) (Empresa::query()->where('activo', true)->orderBy('id')->value('direccion') ?? ''),
         ]);
+    }
+
+    /** Solo lo guardado en Configuración (o el `.env`), sin caer a la Empresa. */
+    public function nombreConfigurado(): ?string
+    {
+        return $this->primeroNoVacio([$this->deAjustes('exportaciones.exportador_nombre')]);
+    }
+
+    /** Solo lo guardado en Configuración (o el `.env`), sin caer a la Empresa. */
+    public function direccionConfigurada(): ?string
+    {
+        return $this->primeroNoVacio([$this->deAjustes('exportaciones.exportador_direccion')]);
     }
 
     /**

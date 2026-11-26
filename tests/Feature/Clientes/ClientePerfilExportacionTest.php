@@ -162,62 +162,48 @@ class ClientePerfilExportacionTest extends TestCase
 
     // -------------------------------------------------------- lista de precios
 
-    public function test_la_lista_de_precios_se_administra_desde_la_ficha(): void
+    /**
+     * La ficha MUESTRA la lista de precios, pero ya no la escribe: sus rutas se
+     * retiraron (409) y los precios se asignan en Productos › «De exportación».
+     */
+    public function test_la_ficha_muestra_la_lista_de_precios_y_sus_rutas_viejas_no_la_cambian(): void
     {
         $cliente = Cliente::factory()->exportacion()->create();
         $producto = $this->producto(['nombre_es' => 'CAJA DE CAMOTE']);
+        $otro = $this->producto(['nombre_es' => 'CAJA DE CAMOTE GRANDE', 'unidades_por_caja' => 216]);
         $this->actingAs($this->usuario())->post(route('clientes.exportacion.habilitar', $cliente));
-
-        $this->actingAs($this->usuario())->post(route('clientes.exportacion.productos.store', $cliente), [
+        $asignacion = ExportacionClienteProducto::create([
+            'exportacion_cliente_id' => $cliente->exportacionClientes()->first()->id,
             'exportacion_producto_id' => $producto->id,
             'precio_caja' => 160.00,
-        ])->assertSessionHas('status');
-
-        $asignacion = ExportacionClienteProducto::firstOrFail();
-        $this->assertSame('160.00', (string) $asignacion->precio_caja);
+            'activo' => true,
+        ]);
 
         $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk()
             ->assertSee('CAJA DE CAMOTE')
-            ->assertSee('160.00');
+            ->assertSee('160.00')
+            ->assertSee(route('productos.exportacion.index'), false);
 
-        // Cambiar el precio.
+        // Agregar (también con precio $0 confirmado), cambiar el precio y apagarlo: nada cambia.
+        foreach ([['precio_caja' => 175.00], ['precio_caja' => 0, 'confirmar_cero' => 1]] as $datos) {
+            $this->actingAs($this->usuario())->post(route('clientes.exportacion.productos.store', $cliente), $datos + [
+                'exportacion_producto_id' => $otro->id,
+            ])->assertStatus(409);
+        }
         $this->actingAs($this->usuario())->patch(route('clientes.exportacion.productos.update', [$cliente, $asignacion]), [
             'precio_caja' => 175.25,
             'confirmar_cero' => 1,
-        ])->assertSessionHas('status');
-        $this->assertSame('175.25', (string) $asignacion->fresh()->precio_caja);
-
-        // Deshabilitar sin perder el precio.
+        ])->assertStatus(409);
         $this->actingAs($this->usuario())->patch(route('clientes.exportacion.productos.update', [$cliente, $asignacion]), [
             'toggle_activo' => 1,
-        ]);
-        $this->assertFalse($asignacion->fresh()->activo);
-        $this->assertSame('175.25', (string) $asignacion->fresh()->precio_caja);
-    }
-
-    public function test_un_precio_en_cero_exige_confirmacion_explicita(): void
-    {
-        $cliente = Cliente::factory()->exportacion()->create();
-        $producto = $this->producto();
-        $this->actingAs($this->usuario())->post(route('clientes.exportacion.habilitar', $cliente));
-
-        $this->actingAs($this->usuario())->post(route('clientes.exportacion.productos.store', $cliente), [
-            'exportacion_producto_id' => $producto->id,
-            'precio_caja' => 0,
-        ])->assertSessionHasErrors('precio_caja');
-
-        $this->assertSame(0, ExportacionClienteProducto::count());
-
-        $this->actingAs($this->usuario())->post(route('clientes.exportacion.productos.store', $cliente), [
-            'exportacion_producto_id' => $producto->id,
-            'precio_caja' => 0,
-            'confirmar_cero' => 1,
-        ])->assertSessionHas('status');
+        ])->assertStatus(409);
 
         $this->assertSame(1, ExportacionClienteProducto::count());
+        $this->assertSame('160.00', (string) $asignacion->fresh()->precio_caja);
+        $this->assertTrue($asignacion->fresh()->activo);
     }
 
-    public function test_no_se_puede_tocar_el_precio_de_otro_cliente(): void
+    public function test_tampoco_se_puede_tocar_el_precio_de_otro_cliente(): void
     {
         $clienteA = Cliente::factory()->exportacion()->create();
         $clienteB = Cliente::factory()->exportacion()->create();
@@ -236,7 +222,7 @@ class ClientePerfilExportacionTest extends TestCase
 
         $this->actingAs($this->usuario())
             ->patch(route('clientes.exportacion.productos.update', [$clienteA, $deB]), ['precio_caja' => 1])
-            ->assertNotFound();
+            ->assertStatus(409);
 
         $this->assertSame('100.00', (string) $deB->fresh()->precio_caja);
     }

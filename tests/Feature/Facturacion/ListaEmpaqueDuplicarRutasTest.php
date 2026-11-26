@@ -280,8 +280,8 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
     /**
      * Decisión de Melqui: la copia toma de una el precio actual del cliente. Al
      * finalizarla, el precio de la lista pasa a ser el del cliente; una copia con el
-     * precio viejo se lo bajaba. Solo cambia el precio: el resto de la línea se copia
-     * tal cual.
+     * precio viejo se lo bajaba. Acá los pesos no cambiaron en Productos, así que solo
+     * cambia el precio: el resto de la línea se copia tal cual.
      */
     public function test_la_copia_toma_el_precio_actual_del_cliente_y_al_finalizarla_no_lo_baja(): void
     {
@@ -356,10 +356,10 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-11-25 09:00', HoraNegocio::zona()));
         $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))
             ->assertSessionHas('status')
-            ->assertSessionHas('aviso_precios', "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio de la lista #{$original->id}: "
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio y los pesos de la lista #{$original->id}: "
                 .'Producto de prueba 144 u $140.00 (ahora 120 u). Quitalas en Editar y volvé a agregarlas antes de facturar.');
 
-        // La línea queda entera como estaba: 144 u a $140, no 144 u a $125.
+        // La línea queda entera como estaba: 144 u a $140 con sus pesos, no 144 u a $125 ni los kilos de la caja de 120 u.
         $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
         $this->assertEquals($lineasOriginales, $this->lineas($copia));
         $this->assertEquals(125.00, $this->precioDelCliente($perfil, $producto));
@@ -407,8 +407,9 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
      * Lado seguro: sin precio del cliente (no lo tiene, está apagado o en $0) la línea
      * conserva el de la lista vieja y se avisa, porque al finalizar ese pasa a ser el
      * del cliente. Nunca toma el precio base ni queda sin precio. Una línea que no
-     * viene del catálogo, o una lista sin cliente, conserva su precio sin aviso: al
-     * finalizar no le cambia el precio a ningún cliente.
+     * viene del catálogo conserva su precio y el aviso solo dice que no está en
+     * Productos; una lista sin cliente conserva sus precios sin aviso: al finalizar no
+     * le cambia el precio a ningún cliente.
      */
     public function test_sin_precio_del_cliente_la_copia_conserva_el_de_la_lista_y_lo_avisa(): void
     {
@@ -441,7 +442,9 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
         $this->assertStringContainsString('porque el cliente no tiene precio para ellas: Producto sin precio de prueba 144 u $120.00; Producto en cero de prueba 144 u $110.00.', $aviso);
         $this->assertStringContainsString("están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$original->id}: Producto apagado de prueba 144 u \$160.00.", $aviso);
         $this->assertStringNotContainsString('Producto de prueba 144 u', $aviso);
-        $this->assertStringNotContainsString('Línea anterior de prueba', $aviso);
+        // La línea que no viene del catálogo conserva su precio: el aviso solo dice que no está en Productos.
+        $this->assertStringContainsString("Ojo: estas líneas no están en Productos y quedaron con el precio y los pesos de la lista #{$original->id}: Línea anterior de prueba 144 u \$99.50.", $aviso);
+        $this->assertSame(1, substr_count($aviso, 'Línea anterior de prueba'));
         $this->assertStringNotContainsString('Se pusieron los precios actuales', $aviso);
 
         // Lista sin cliente: conserva sus precios y no hay aviso.
@@ -474,6 +477,249 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
         $this->assertStringNotContainsString('Producto 7 de prueba', $aviso);
         $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
         $this->assertEquals(array_fill(0, 8, 150.00), $this->precios($copia));
+    }
+
+    /** Cambia la presentación desde Productos, como lo hace la oficina. */
+    private function cambiarEnProductos(ExportacionProducto $producto, array $datos): void
+    {
+        $this->actingAs($this->usuario())->put(route('productos.exportacion.update', $producto), $datos + [
+            'unidad' => 'Bolsa de prueba', 'unidades_por_caja' => 144, 'gramos_por_unidad' => 85,
+            'peso_neto_caja_kg' => 13, 'precio_caja' => 136.80, 'activo' => '1',
+        ])->assertSessionHasNoErrors();
+    }
+
+    /** @return array<string, float> los pesos de la única línea de la lista, como números */
+    private function pesos(Exportacion $lista, string $nombre = 'Producto de prueba'): array
+    {
+        $linea = $lista->items()->where('nombre_es', $nombre)->sole();
+
+        return collect(['gramos_por_unidad', 'onzas_por_unidad', 'peso_neto_caja_kg', 'peso_bruto_caja_kg', 'peso_neto_caja_lb', 'peso_bruto_caja_lb'])
+            ->mapWithKeys(fn (string $campo) => [$campo => (float) $linea->{$campo}])
+            ->all();
+    }
+
+    /**
+     * Decisión de Melqui: la copia toma de hoy los pesos de cada línea, los de la
+     * presentación en Productos (neto y bruto por caja, gramos, onzas y libras). Los
+     * totales de la lista salen de las líneas, así que cuadran con ellas. La original
+     * no cambia y el aviso dice qué líneas cambiaron de peso.
+     */
+    public function test_la_copia_toma_los_pesos_de_hoy_de_productos_y_los_totales_cuadran(): void
+    {
+        $producto = $this->presentacion();
+        $otro = $this->presentacion('Otro producto de prueba');
+        $original = $this->listaDelCatalogo(null, [[$producto, 136.80], [$otro, 136.80]]);
+        $pesosOriginales = $this->pesos($original);
+
+        // La caja de «Producto de prueba» pesa ahora 15 kg neto y 16.50 kg bruto.
+        $this->cambiarEnProductos($producto, ['peso_neto_caja_kg' => 15, 'peso_bruto_caja_kg' => 16.5]);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', 'Se pusieron el empaque y los pesos actuales de Productos: Producto de prueba 144 u.');
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals([
+            'gramos_por_unidad' => 85.00, 'onzas_por_unidad' => 3.00,
+            'peso_neto_caja_kg' => 15.00, 'peso_bruto_caja_kg' => 16.50,
+            'peso_neto_caja_lb' => 33.07, 'peso_bruto_caja_lb' => 36.38,
+        ], $this->pesos($copia));
+        // La otra línea no cambió en Productos: sigue igual. Precios y cajas tampoco cambian.
+        $this->assertEquals($this->pesos($original, 'Otro producto de prueba'), $this->pesos($copia, 'Otro producto de prueba'));
+        $this->assertEquals([136.80, 136.80], $this->precios($copia));
+
+        // Totales: 10 cajas de 15 kg + 10 de 13 kg neto; 10 de 16.50 kg + 10 de 14 kg bruto.
+        $copia->load('items');
+        $this->assertEquals(280.00, $copia->pesoNetoTotalKg());
+        $this->assertEquals(305.00, $copia->pesoBrutoTotalKg());
+        $this->assertEquals(617.30, $copia->pesoNetoTotalLb());
+        $this->assertEquals(672.40, $copia->pesoBrutoTotalLb());
+
+        // La original conserva sus pesos.
+        $this->assertEquals($pesosOriginales, $this->pesos($original->fresh()));
+    }
+
+    /**
+     * El empaque también es de la presentación y sale impreso junto a los pesos: si en
+     * Productos se cambió la bolsa por una caja master (mismas unidades y gramos), la
+     * copia lleva el empaque de hoy con el peso de hoy, no el empaque viejo con el peso
+     * de la caja nueva.
+     */
+    public function test_la_copia_toma_el_empaque_de_hoy_junto_con_los_pesos(): void
+    {
+        $producto = $this->presentacion();
+        $original = $this->listaDelCatalogo(null, [[$producto, 136.80]]);
+
+        $this->cambiarEnProductos($producto, ['unidad' => 'Caja master de prueba', 'peso_bruto_caja_kg' => 15.5]);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('aviso_precios', 'Se pusieron el empaque y los pesos actuales de Productos: Producto de prueba 144 u.');
+
+        $linea = Exportacion::query()->whereKeyNot($original->id)->sole()->items()->sole();
+        $this->assertSame('Caja master de prueba', $linea->unidad);
+        $this->assertEquals(15.50, (float) $linea->peso_bruto_caja_kg);
+        $this->assertSame('Bolsa de prueba', $original->items()->sole()->unidad);
+    }
+
+    /**
+     * Solo cambió el empaque en Productos, no los pesos: igual se pone al día y se avisa.
+     */
+    public function test_si_solo_cambio_el_empaque_la_copia_lo_pone_al_dia_y_lo_avisa(): void
+    {
+        $producto = $this->presentacion();
+        $original = $this->listaDelCatalogo(null, [[$producto, 136.80]]);
+
+        $this->cambiarEnProductos($producto, ['unidad' => 'Caja master de prueba']);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('aviso_precios', 'Se pusieron el empaque y los pesos actuales de Productos: Producto de prueba 144 u.');
+
+        $this->assertSame('Caja master de prueba', Exportacion::query()->whereKeyNot($original->id)->sole()->items()->sole()->unidad);
+    }
+
+    /**
+     * Si los gramos cambiaron en Productos, es otra presentación: los pesos de hoy son
+     * de otra caja. La línea conserva todo lo de la lista vieja y el aviso lo dice,
+     * también en una lista sin cliente.
+     */
+    public function test_si_cambiaron_los_gramos_la_copia_conserva_los_pesos_y_lo_avisa(): void
+    {
+        $producto = $this->presentacion();
+        $original = $this->listaDelCatalogo(null, [[$producto, 136.80]]);
+        $lineasOriginales = $this->lineas($original);
+
+        $this->cambiarEnProductos($producto, ['gramos_por_unidad' => 90, 'peso_neto_caja_kg' => 14]);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio y los pesos de la lista #{$original->id}: "
+                .'Producto de prueba 144 u $136.80 (ahora 144 u de 90 g). Quitalas en Editar y volvé a agregarlas antes de facturar.');
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals($lineasOriginales, $this->lineas($copia));
+    }
+
+    /**
+     * Si el producto ya no está en Productos (se borró, o la línea nunca vino del
+     * catálogo), no hay de dónde tomar pesos ni precio: la línea conserva todo lo de la
+     * lista vieja y el aviso lo dice.
+     */
+    public function test_si_el_producto_ya_no_esta_la_copia_conserva_la_linea_y_lo_avisa(): void
+    {
+        $perfil = $this->perfil();
+        $borrado = $this->presentacion('Producto borrado de prueba');
+        $original = $this->listaDelCatalogo($perfil, [[$borrado, 120.00]]);
+        // La aplicación no deja borrar un producto que está en una lista; solo por fuera.
+        DB::table('exportacion_productos')->where('id', $borrado->id)->delete();
+        $lineasOriginales = $this->lineas($original->fresh());
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas no están en Productos y quedaron con el precio y los pesos de la lista #{$original->id}: "
+                .'Producto borrado de prueba 144 u $120.00. Revisalas en Editar antes de facturar.');
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals($lineasOriginales, $this->lineas($copia));
+    }
+
+    /**
+     * Dentro de la aplicación un producto «ya no está» porque se archivó: no se puede
+     * borrar si está en una lista, y archivado deja de ofrecerse al armar listas. La copia
+     * lo trata igual que uno borrado: la línea conserva todo lo de la lista vieja (ni los
+     * pesos ni el precio de hoy) y el aviso lo dice. Vale si se archivó la presentación o
+     * el producto entero, aunque después se haya reactivado solo la presentación.
+     */
+    public function test_si_el_producto_esta_archivado_la_copia_conserva_la_linea_y_lo_avisa(): void
+    {
+        $usuario = $this->usuario();
+        $perfil = $this->perfil();
+        $presentacionArchivada = $this->presentacion('Producto archivado de prueba');
+        $baseArchivada = $this->presentacion('Producto con base archivada de prueba');
+        foreach ([$presentacionArchivada, $baseArchivada] as $producto) {
+            ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $producto->id, 'precio_caja' => 140.00, 'precio_fijado_en' => '2026-11-01', 'activo' => true]);
+        }
+        $original = $this->listaDelCatalogo($perfil, [[$presentacionArchivada, 140.00], [$baseArchivada, 140.00]], '2026-11-01');
+        $lineasOriginales = $this->lineas($original);
+
+        // En Productos cambian los pesos y el precio del cliente, y después se archivan.
+        foreach ([$presentacionArchivada, $baseArchivada] as $producto) {
+            $this->cambiarEnProductos($producto, ['peso_neto_caja_kg' => 15]);
+            $this->actingAs($usuario)->put(route('productos.exportacion.clientes', $producto), [
+                'clientes' => [$perfil->id => ['activo' => '1', 'precio' => '150']],
+            ])->assertSessionHasNoErrors();
+        }
+        $this->actingAs($usuario)->patch(route('productos.exportacion.toggle-activo', $presentacionArchivada))->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->patch(route('productos.exportacion.base.toggle-activo', $baseArchivada->base))->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->patch(route('productos.exportacion.toggle-activo', $baseArchivada))->assertSessionHasNoErrors();
+        $this->assertFalse($presentacionArchivada->fresh()->activo);
+        $this->assertTrue($baseArchivada->fresh()->activo);
+        $this->assertFalse($baseArchivada->fresh()->base->activo);
+
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas están archivadas en Productos y quedaron con el precio y los pesos de la lista #{$original->id}: "
+                .'Producto archivado de prueba 144 u $140.00; Producto con base archivada de prueba 144 u $140.00. Si ya no se venden, quitalas en Editar antes de facturar.');
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals($lineasOriginales, $this->lineas($copia));
+    }
+
+    /**
+     * Los datos del exportador salen de Configuración, como el FDA y como en una lista
+     * nueva. El que Configuración no tenga se conserva de la original, no el de la
+     * Empresa emisora: en producción siempre hay una, y la copia salía con su razón
+     * social o su dirección fiscal en vez de la bodega que se escribió en la lista.
+     */
+    public function test_la_copia_toma_el_exportador_de_configuracion_y_conserva_lo_que_falte(): void
+    {
+        config(['exportaciones.exportador_nombre' => '', 'exportaciones.exportador_direccion' => '', 'exportaciones.fda_reg_number' => '']);
+        Empresa::create(['razon_social' => 'Empresa de prueba', 'direccion' => 'Dirección fiscal de prueba', 'ambiente' => '00', 'activo' => true]);
+        $usuario = $this->usuario();
+        $original = $this->lista(['exportador_direccion' => 'Dirección del exportador de prueba']);
+
+        // Nada configurado: conserva los de la original.
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))->assertRedirect();
+        $sinConfigurar = Exportacion::query()->whereKeyNot($original->id)->latest('id')->first();
+        $this->assertSame('Exportador de prueba', $sinConfigurar->exportador_nombre);
+        $this->assertSame('Dirección del exportador de prueba', $sinConfigurar->exportador_direccion);
+
+        // Solo el nombre configurado: el nombre es el de hoy y la dirección, la de la original.
+        Ajustes::guardarComoSistema('exportaciones.exportador_nombre', 'Exportador configurado de prueba');
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))->assertRedirect();
+        $conNombre = Exportacion::query()->latest('id')->first();
+        $this->assertSame('Exportador configurado de prueba', $conNombre->exportador_nombre);
+        $this->assertSame('Dirección del exportador de prueba', $conNombre->exportador_direccion);
+
+        // Con los dos configurados, la copia lleva los dos.
+        Ajustes::guardarComoSistema('exportaciones.exportador_direccion', 'Dirección configurada de prueba');
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))->assertRedirect();
+        $conTodo = Exportacion::query()->latest('id')->first();
+        $this->assertSame('Exportador configurado de prueba', $conTodo->exportador_nombre);
+        $this->assertSame('Dirección configurada de prueba', $conTodo->exportador_direccion);
+
+        // La original no cambia.
+        $original->refresh();
+        $this->assertSame('Exportador de prueba', $original->exportador_nombre);
+        $this->assertSame('Dirección del exportador de prueba', $original->exportador_direccion);
+    }
+
+    /**
+     * Duplicar crea una lista nueva por cada envío: el botón se apaga al apretarlo, igual
+     * que «Generar respaldo ahora», para que un doble clic no deje dos copias.
+     */
+    public function test_el_boton_duplicar_se_apaga_al_apretarlo(): void
+    {
+        $original = $this->lista();
+
+        $html = $this->actingAs($this->usuario())->get(route('facturacion.listas.show', $original))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '~<form method="POST" action="'.preg_quote(route('facturacion.listas.duplicar', $original), '~').'"\s+'
+            .'x-data="\{ enviando: false \}" @submit="enviando = true">\s*'
+            .'<input type="hidden" name="_token"[^>]*>\s*'
+            .'<button type="submit" :disabled="enviando" class="[^"]*\bdisabled:opacity-50\b[^"]*"[^>]*>\s*Duplicar\s*</button>~',
+            $html,
+        );
     }
 
     /**

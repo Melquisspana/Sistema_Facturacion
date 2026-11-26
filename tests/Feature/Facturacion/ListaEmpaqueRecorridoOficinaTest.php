@@ -268,8 +268,9 @@ class ListaEmpaqueRecorridoOficinaTest extends TestCase
 
     /**
      * Cambiar una presentación (precio por caja y pesos) cuando ya hay listas hechas:
-     * las listas guardan su copia —también en la impresión—, la próxima lista sale con
-     * el dato nuevo, y hoy una COPIA de la lista vieja conserva la copia vieja.
+     * las listas guardan su copia —también en la impresión— y la próxima lista sale con
+     * el dato nuevo. Una COPIA de la lista vieja lleva los pesos de hoy (decisión de
+     * Melqui); el precio sigue siendo el de la lista porque el cliente no tiene uno propio.
      */
     public function test_cambiar_una_presentacion_no_cambia_las_listas_hechas_y_la_proxima_lleva_el_dato_nuevo(): void
     {
@@ -297,16 +298,21 @@ class ListaEmpaqueRecorridoOficinaTest extends TestCase
         $this->assertEquals(16.5, (float) $linea->peso_bruto_caja_kg);
 
         $copia = $this->duplicar($usuario, $vieja->fresh());
-        $this->assertEquals($lineasViejas, $this->lineas($copia));
+        $pesosDeHoy = ['peso_neto_caja_kg' => 15.5, 'peso_bruto_caja_kg' => 16.5, 'peso_neto_caja_lb' => 34.17, 'peso_bruto_caja_lb' => 36.38];
+        $this->assertEquals(array_replace($lineasViejas[0], $pesosDeHoy), $this->lineas($copia)[0]);
+        $this->assertEquals(136.80, (float) $copia->items()->sole()->precio_caja);
+        $this->assertEquals($lineasViejas, $this->lineas($vieja->fresh()));
     }
 
     /**
-     * FDA y exportador guardados en Configuración: el FDA de la copia es el de hoy,
-     * porque en la lista no se puede escribir. El nombre del exportador, que sí se ve y
-     * se cambia en el formulario, hoy sale de la lista vieja.
+     * FDA y exportador guardados en Configuración: la copia lleva los de hoy, como una
+     * lista nueva (decisión de Melqui). El nombre del exportador se sigue pudiendo
+     * cambiar en el formulario de la copia; la lista vieja no cambia.
      */
-    public function test_el_fda_guardado_sale_en_la_copia_y_el_exportador_conserva_el_de_la_lista_vieja(): void
+    public function test_el_fda_y_el_exportador_guardados_salen_en_la_copia(): void
     {
+        // Como en producción, hay una Empresa emisora con su dirección fiscal.
+        Empresa::create(['razon_social' => 'Empresa de prueba', 'direccion' => 'Dirección fiscal de prueba', 'ambiente' => '00', 'activo' => true]);
         $usuario = $this->usuario();
         Ajustes::guardarComoSistema('exportaciones.fda_reg_number', '00000000001');
         $vieja = $this->armarLista($usuario, $this->perfil(), [['exportacion_producto_id' => $this->presentacion()->id, 'cantidad_cajas' => 10, 'precio_caja' => '']]);
@@ -316,8 +322,11 @@ class ListaEmpaqueRecorridoOficinaTest extends TestCase
         $copia = $this->duplicar($usuario, $vieja);
 
         $this->assertSame('00000000002', $copia->fda_reg_number);
-        $this->assertSame('Exportador de prueba', $copia->exportador_nombre);
+        $this->assertSame('Exportador nuevo de prueba', $copia->exportador_nombre);
+        // La dirección no está guardada en Configuración: se conserva la de la lista vieja.
+        $this->assertSame('Dirección del exportador de prueba', $copia->exportador_direccion);
         $this->assertSame('00000000001', $vieja->fresh()->fda_reg_number);
+        $this->assertSame('Exportador de prueba', $vieja->fresh()->exportador_nombre);
         $this->actingAs($usuario)->get(route('facturacion.listas.imprimir', $copia))->assertOk()->assertSee('00000000002');
     }
 

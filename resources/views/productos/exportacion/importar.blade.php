@@ -13,8 +13,9 @@
 
                 <p class="text-sm text-gray-700">
                     Lee la hoja <strong>«Lista»</strong> de un Excel con el mismo layout que la lista de empaque y da de alta los
-                    productos que falten. Los que ya existen (mismo nombre en español) <strong>se omiten</strong>: importar dos
-                    veces no duplica el catálogo ni pisa precios.
+                    productos que falten. Si un producto ya existe (mismo nombre en español) con otra presentación (otras
+                    unidades por caja u otros gramos), <strong>se le agrega esa presentación</strong>; la que ya tiene
+                    <strong>se omite</strong>: importar dos veces no duplica el catálogo ni pisa precios.
                 </p>
 
                 <div class="rounded-md bg-gray-50 p-3 text-xs text-gray-600">

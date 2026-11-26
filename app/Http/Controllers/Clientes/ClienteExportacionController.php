@@ -6,11 +6,7 @@ use App\Enums\TipoCliente;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\ExportacionCliente;
-use App\Models\ExportacionClienteProducto;
-use App\Services\Exportaciones\ListaPreciosExportacion;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -30,11 +26,13 @@ use Illuminate\Validation\ValidationException;
  * HABILITAR / DESHABILITAR no crea ni borra clientes: enciende y apaga el flag
  * `activo` del perfil. Deshabilitar conserva precios e histórico, así que volver a
  * habilitarlo no obliga a recargar nada.
+ *
+ * La lista de precios se ve en la ficha, pero se asigna en Productos › «De
+ * exportación» (botón «Clientes») y al finalizar cada lista de empaque. Sus rutas
+ * de escritura de esta ficha responden 409 (routes/web.php).
  */
 class ClienteExportacionController extends Controller
 {
-    public function __construct(private readonly ListaPreciosExportacion $precios) {}
-
     /**
      * Habilita al cliente para exportación creando su perfil, o reactivando el que
      * ya tenía. Nunca crea un segundo perfil para el mismo cliente.
@@ -75,102 +73,6 @@ class ClienteExportacionController extends Controller
         return $this->volver($cliente, 'Cliente deshabilitado para exportación. No se borró ningún precio: volver a habilitarlo lo deja como estaba.');
     }
 
-    // ------------------------------------------------------------ lista de precios
-
-    public function agregarProducto(Request $request, Cliente $cliente): RedirectResponse
-    {
-        $this->autorizarGestion();
-        $perfil = $this->perfil($cliente);
-
-        $datos = $request->validate([
-            'exportacion_producto_id' => ['required', 'integer', Rule::exists('exportacion_productos', 'id')],
-            'precio_caja' => ['required', 'numeric', 'min:0'],
-        ], [], ['exportacion_producto_id' => 'producto', 'precio_caja' => 'precio por caja']);
-
-        $this->precios->asignar(
-            $perfil,
-            (int) $datos['exportacion_producto_id'],
-            (float) $datos['precio_caja'],
-            $request->boolean('confirmar_cero'),
-        );
-
-        return $this->volver($cliente, 'Producto agregado a la lista de precios del cliente.');
-    }
-
-    public function actualizarProducto(Request $request, Cliente $cliente, ExportacionClienteProducto $asignacion): RedirectResponse
-    {
-        $this->autorizarGestion();
-        $perfil = $this->perfil($cliente);
-        $this->exigirPertenencia($perfil, $asignacion);
-
-        if ($request->has('toggle_activo')) {
-            $this->precios->alternarActivo($asignacion);
-
-            return $this->volver($cliente, $asignacion->refresh()->activo
-                ? 'Producto habilitado para este cliente.'
-                : 'Producto deshabilitado para este cliente.');
-        }
-
-        $datos = $request->validate([
-            'precio_caja' => ['required', 'numeric', 'min:0'],
-        ], [], ['precio_caja' => 'precio por caja']);
-
-        $this->precios->actualizarPrecio($asignacion, (float) $datos['precio_caja'], $request->boolean('confirmar_cero'));
-
-        return $this->volver($cliente, 'Precio actualizado. Las listas de empaque ya creadas no cambian: guardan su propio snapshot.');
-    }
-
-    public function quitarProducto(Cliente $cliente, ExportacionClienteProducto $asignacion): RedirectResponse
-    {
-        $this->autorizarGestion();
-        $perfil = $this->perfil($cliente);
-        $this->exigirPertenencia($perfil, $asignacion);
-
-        $this->precios->quitar($asignacion);
-
-        return $this->volver($cliente, 'Producto quitado de la lista de precios del cliente.');
-    }
-
-    public function asignarCatalogo(Cliente $cliente): RedirectResponse
-    {
-        $this->autorizarGestion();
-        $perfil = $this->perfil($cliente);
-
-        $resumen = $this->precios->asignarCatalogoCompleto($perfil);
-
-        $mensaje = "Catálogo asignado: {$resumen['agregados']} producto(s) agregados con su precio base.";
-
-        if ($resumen['sin_precio_base'] > 0) {
-            $mensaje .= " {$resumen['sin_precio_base']} quedaron fuera por no tener precio base (o tenerlo en \$0): asignalos a mano con su precio.";
-        }
-
-        return $this->volver($cliente, $mensaje);
-    }
-
-    public function copiarPrecios(Request $request, Cliente $cliente): RedirectResponse
-    {
-        $this->autorizarGestion();
-        $perfil = $this->perfil($cliente);
-
-        $datos = $request->validate([
-            'origen_id' => ['required', 'integer', Rule::exists('exportacion_clientes', 'id'), Rule::notIn([$perfil->id])],
-            'modo' => ['required', Rule::in(['conservar', 'sobrescribir'])],
-        ], [
-            'origen_id.not_in' => 'El cliente origen debe ser distinto al destino.',
-        ], ['origen_id' => 'cliente origen', 'modo' => 'modo de copia']);
-
-        $origen = ExportacionCliente::findOrFail($datos['origen_id']);
-        $resumen = $this->precios->copiarDesde($perfil, $origen, $datos['modo']);
-
-        $mensaje = "Precios copiados desde «{$origen->nombreLegal()}»: {$resumen['copiados']} nuevos";
-        $mensaje .= $datos['modo'] === 'sobrescribir'
-            ? ", {$resumen['sobrescritos']} sobrescritos."
-            : ", {$resumen['omitidos']} ya existían y se conservaron.";
-        $mensaje .= ' Las listas de empaque ya creadas no cambian.';
-
-        return $this->volver($cliente, $mensaje);
-    }
-
     // ---------------------------------------------------------------------- interno
 
     /**
@@ -200,12 +102,6 @@ class ClienteExportacionController extends Controller
         abort_if($perfil === null, 404, 'Este cliente no está habilitado para exportación.');
 
         return $perfil;
-    }
-
-    /** El precio pertenece a ESTE cliente, o 404. Nunca se edita el precio de otro. */
-    private function exigirPertenencia(ExportacionCliente $perfil, ExportacionClienteProducto $asignacion): void
-    {
-        abort_unless($asignacion->exportacion_cliente_id === $perfil->id, 404);
     }
 
     private function volver(Cliente $cliente, string $mensaje): RedirectResponse

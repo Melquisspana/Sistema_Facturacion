@@ -16,11 +16,12 @@
 
                 <x-productos.selector activo="exportacion" />
 
+                {{-- whitespace-pre-line: el resumen de la importación trae una línea por cada presentación agregada. --}}
                 @if (session('status'))
-                    <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
+                    <div class="mb-4 whitespace-pre-line rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
                 @endif
                 @if (session('error'))
-                    <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
+                    <div class="mb-4 whitespace-pre-line rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
                 @endif
 
                 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
