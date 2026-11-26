@@ -26,7 +26,7 @@ use Tests\TestCase;
 /**
  * Bitácora de los precios y del catálogo de exportación, por las rutas que usa la
  * oficina. Igual que en los precios nacionales, cada cambio queda con quién lo hizo
- * y qué valor había antes: quitar el precio de un cliente, cambiar el precio base,
+ * y qué valor había antes: dejar de venderle a un cliente, cambiar el precio base,
  * finalizar una lista que cambia el precio del cliente, importar el Excel y archivar
  * un producto. Datos ficticios.
  */
@@ -84,22 +84,35 @@ class BitacoraPreciosExportacionTest extends TestCase
         return $registro;
     }
 
-    public function test_quitar_el_precio_de_un_cliente_queda_con_el_precio_que_tenia(): void
+    /**
+     * Quitar el precio desde la ficha del cliente se retiró (409): ya no se borra nada.
+     * Dejar de venderle se hace desmarcándolo en Productos, y eso queda en la bitácora
+     * con quién lo hizo y el estado anterior; el precio sigue guardado.
+     */
+    public function test_dejar_de_venderle_a_un_cliente_queda_con_el_estado_anterior_y_la_ruta_vieja_no_borra(): void
     {
         ['cliente' => $cliente, 'perfil' => $perfil] = $this->clienteHabilitado();
+        $presentacion = $this->presentacion();
         $asignacion = ExportacionClienteProducto::create([
-            'exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $this->presentacion()->id,
+            'exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $presentacion->id,
             'precio_caja' => 150.00, 'activo' => true,
         ]);
 
         $this->actingAs($this->usuario)
             ->delete(route('clientes.exportacion.productos.destroy', [$cliente, $asignacion]))
+            ->assertStatus(409);
+        $this->assertModelExists($asignacion);
+        $this->assertFalse(Activity::query()->where('log_name', 'precio_exportacion')->where('event', 'deleted')->exists());
+
+        $this->actingAs($this->usuario)
+            ->put(route('productos.exportacion.clientes', $presentacion), ['clientes' => [$perfil->id => ['activo' => '0']]])
             ->assertSessionHas('status');
 
-        $registro = $this->registro('precio_exportacion', $asignacion, 'deleted');
-        $this->assertSame('eliminó un precio de exportación', $registro->description);
-        $this->assertEquals(150.00, (float) $registro->properties['old']['precio_caja']);
-        $this->assertEquals($perfil->id, $registro->properties['old']['exportacion_cliente_id']);
+        $registro = $this->registro('precio_exportacion', $asignacion, 'updated');
+        $this->assertSame('actualizó un precio de exportación', $registro->description);
+        $this->assertEquals(['activo' => true], $registro->properties['old']);
+        $this->assertEquals(['activo' => false], $registro->properties['attributes']);
+        $this->assertEquals(150.00, (float) $asignacion->fresh()->precio_caja);
     }
 
     public function test_cambiar_el_precio_base_de_una_presentacion_queda_con_el_valor_anterior(): void

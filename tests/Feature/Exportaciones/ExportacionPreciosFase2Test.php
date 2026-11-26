@@ -14,9 +14,10 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Fase 2 del módulo Exportaciones: precio por unidad calculado, copia de
- * precios entre clientes (conservar/sobrescribir), asignación de catálogo sin
- * ceros silenciosos y confirmación de precio $0. NO toca emisión DTE.
+ * Fase 2 del módulo Exportaciones: precio por unidad calculado. La copia de precios
+ * entre clientes, la asignación del catálogo completo y el precio $0 confirmado eran
+ * rutas de la ficha del cliente que ningún botón usaba; se retiraron (409) y acá se
+ * prueba que ya no cambian precios ni listas. NO toca emisión DTE.
  */
 class ExportacionPreciosFase2Test extends TestCase
 {
@@ -57,11 +58,7 @@ class ExportacionPreciosFase2Test extends TestCase
         ]);
     }
 
-    /**
-     * Perfil de exportación colgando de un cliente REAL del directorio. Es la única
-     * forma que existe ahora: las acciones viven bajo /clientes/{cliente}/exportacion,
-     * así que un perfil sin cliente no tendría pantalla desde la que administrarse.
-     */
+    /** Perfil de exportación colgando de un cliente REAL del directorio. */
     private function cliente(string $nombre): ExportacionCliente
     {
         $clienteDte = Cliente::factory()->exportacion()->create(['nombre' => $nombre]);
@@ -108,75 +105,20 @@ class ExportacionPreciosFase2Test extends TestCase
         $this->assertNull($sinPrecio->precioPorUnidad());
     }
 
-    // ---------- 3) copiar precios entre clientes ----------
+    // ---------- 3, 4 y 5) copiar, asignar el catálogo y precio $0: retiradas ----------
 
-    public function test_copiar_precios_sin_sobrescribir_existentes(): void
-    {
-        $comun = $this->producto();
-        $soloOrigen = $this->producto();
-        $origen = $this->cliente('ORIGEN');
-        $destino = $this->cliente('DESTINO');
-        $origen->productos()->create(['exportacion_producto_id' => $comun->id, 'precio_caja' => 100.00, 'activo' => true]);
-        $origen->productos()->create(['exportacion_producto_id' => $soloOrigen->id, 'precio_caja' => 200.00, 'activo' => true]);
-        // Una asignación INACTIVA en el origen no debe copiarse.
-        $inactivo = $this->producto();
-        $origen->productos()->create(['exportacion_producto_id' => $inactivo->id, 'precio_caja' => 999.00, 'activo' => false]);
-        // El destino ya tiene el producto común con SU precio.
-        $destino->productos()->create(['exportacion_producto_id' => $comun->id, 'precio_caja' => 150.00, 'activo' => true]);
-
-        $respuesta = $this->actingAs($this->usuario())->post(
-            route('clientes.exportacion.productos.copiar', $destino->cliente_id),
-            ['origen_id' => $origen->id, 'modo' => 'conservar'],
-        );
-
-        $respuesta->assertRedirect(route('clientes.show', $destino->cliente_id));
-        // El existente CONSERVA su precio; el nuevo se copia; el inactivo no viaja.
-        $this->assertSame('150.00', $destino->productos()->where('exportacion_producto_id', $comun->id)->firstOrFail()->precio_caja);
-        $this->assertSame('200.00', $destino->productos()->where('exportacion_producto_id', $soloOrigen->id)->firstOrFail()->precio_caja);
-        $this->assertSame(2, $destino->productos()->count());
-    }
-
-    public function test_copiar_precios_sobrescribiendo_existentes(): void
-    {
-        $comun = $this->producto();
-        $origen = $this->cliente('ORIGEN');
-        $destino = $this->cliente('DESTINO');
-        $origen->productos()->create(['exportacion_producto_id' => $comun->id, 'precio_caja' => 100.00, 'activo' => true]);
-        $destino->productos()->create(['exportacion_producto_id' => $comun->id, 'precio_caja' => 150.00, 'activo' => true]);
-
-        $this->actingAs($this->usuario())->post(
-            route('clientes.exportacion.productos.copiar', $destino->cliente_id),
-            ['origen_id' => $origen->id, 'modo' => 'sobrescribir'],
-        );
-
-        $this->assertSame('100.00', $destino->productos()->where('exportacion_producto_id', $comun->id)->firstOrFail()->precio_caja);
-        // Sigue habiendo UNA sola asignación (unique cliente+producto respetado).
-        $this->assertSame(1, $destino->productos()->count());
-    }
-
-    public function test_copiar_no_permite_origen_igual_a_destino(): void
-    {
-        $cliente = $this->cliente('MISMO');
-
-        $respuesta = $this->actingAs($this->usuario())->post(
-            route('clientes.exportacion.productos.copiar', $cliente->cliente_id),
-            ['origen_id' => $cliente->id, 'modo' => 'conservar'],
-        );
-
-        $respuesta->assertSessionHasErrors('origen_id');
-    }
-
-    // ---------- 6) snapshots de exportaciones viejas no cambian ----------
-
-    public function test_copiar_y_sobrescribir_precios_no_toca_snapshots_viejos(): void
+    public function test_copiar_asignar_catalogo_y_precio_cero_ya_no_cambian_precios_ni_listas(): void
     {
         $producto = $this->producto();
+        $soloOrigen = $this->producto();
+        $this->producto(['precio_caja' => 270.00]); // uno del catálogo que el destino no tiene
         $origen = $this->cliente('ORIGEN');
         $destino = $this->cliente('DESTINO');
         $origen->productos()->create(['exportacion_producto_id' => $producto->id, 'precio_caja' => 100.00, 'activo' => true]);
-        $destino->productos()->create(['exportacion_producto_id' => $producto->id, 'precio_caja' => 150.00, 'activo' => true]);
+        $origen->productos()->create(['exportacion_producto_id' => $soloOrigen->id, 'precio_caja' => 200.00, 'activo' => true]);
+        $asignacion = $destino->productos()->create(['exportacion_producto_id' => $producto->id, 'precio_caja' => 150.00, 'activo' => true]);
 
-        // Exportación vieja del destino con el precio de aquel momento (150).
+        // Lista del destino con el precio de aquel momento (150).
         $this->actingAs($this->usuario())->post(route('facturacion.listas.store'), [
             'exportacion_cliente_id' => $destino->id,
             'cliente_nombre' => $destino->nombre,
@@ -187,74 +129,24 @@ class ExportacionPreciosFase2Test extends TestCase
         $item = ExportacionItem::firstOrFail();
         $this->assertSame('150.00', $item->precio_caja);
 
-        // Sobrescribir la lista de precios del destino desde el origen.
-        $this->actingAs($this->usuario())->post(
-            route('clientes.exportacion.productos.copiar', $destino->cliente_id),
-            ['origen_id' => $origen->id, 'modo' => 'sobrescribir'],
-        );
+        $cliente = $destino->cliente_id;
+        foreach ([
+            ['post', route('clientes.exportacion.productos.copiar', $cliente), ['origen_id' => $origen->id, 'modo' => 'conservar']],
+            ['post', route('clientes.exportacion.productos.copiar', $cliente), ['origen_id' => $origen->id, 'modo' => 'sobrescribir']],
+            ['post', route('clientes.exportacion.productos.copiar', $cliente), ['origen_id' => $destino->id, 'modo' => 'conservar']],
+            ['post', route('clientes.exportacion.productos.asignar-catalogo', $cliente), []],
+            ['post', route('clientes.exportacion.productos.store', $cliente), ['exportacion_producto_id' => $soloOrigen->id, 'precio_caja' => 0, 'confirmar_cero' => 1]],
+            ['patch', route('clientes.exportacion.productos.update', [$cliente, $asignacion]), ['precio_caja' => 0, 'confirmar_cero' => 1]],
+            ['patch', route('clientes.exportacion.productos.update', [$cliente, $asignacion]), ['precio_caja' => -5]],
+        ] as [$metodo, $url, $datos]) {
+            $this->actingAs($this->usuario())->{$metodo}($url, $datos)->assertStatus(409);
+        }
 
-        // La lista cambió (150 → 100) pero el snapshot del item NO.
-        $this->assertSame('100.00', $destino->productos()->firstOrFail()->precio_caja);
+        // El destino sigue con su único precio, el origen con los suyos y la lista con su copia.
+        $this->assertSame(1, $destino->productos()->count());
+        $this->assertSame('150.00', $asignacion->refresh()->precio_caja);
+        $this->assertSame(2, $origen->productos()->count());
         $this->assertSame('150.00', $item->refresh()->precio_caja);
-        // El precio por unidad del item también sale del snapshot: 150 / 216 = 0.69.
         $this->assertSame(0.69, $item->precioPorUnidad());
-    }
-
-    // ---------- 4) asignar catálogo sin ceros silenciosos ----------
-
-    public function test_asignar_catalogo_omite_productos_sin_precio_base_o_en_cero(): void
-    {
-        $conPrecio = $this->producto(['precio_caja' => 270.00]);
-        $sinPrecio = $this->producto(['precio_caja' => null]);
-        $enCero = $this->producto(['precio_caja' => 0]);
-        $cliente = $this->cliente('CLIENTE');
-
-        $this->actingAs($this->usuario())->post(route('clientes.exportacion.productos.asignar-catalogo', $cliente->cliente_id));
-
-        // Solo se asignó el que tiene precio base > 0; nada quedó en $0 silenciosamente.
-        $this->assertSame(1, $cliente->productos()->count());
-        $this->assertSame($conPrecio->id, $cliente->productos()->firstOrFail()->exportacion_producto_id);
-    }
-
-    // ---------- 5) precio cero con confirmación ----------
-
-    public function test_precio_cero_requiere_confirmacion_explicita(): void
-    {
-        $producto = $this->producto();
-        $cliente = $this->cliente('CLIENTE');
-
-        // Sin confirmación: bloqueado.
-        $respuesta = $this->actingAs($this->usuario())->post(
-            route('clientes.exportacion.productos.store', $cliente->cliente_id),
-            ['exportacion_producto_id' => $producto->id, 'precio_caja' => 0],
-        );
-        $respuesta->assertSessionHasErrors('precio_caja');
-        $this->assertSame(0, $cliente->productos()->count());
-
-        // Con confirmación: pasa.
-        $this->actingAs($this->usuario())->post(
-            route('clientes.exportacion.productos.store', $cliente->cliente_id),
-            ['exportacion_producto_id' => $producto->id, 'precio_caja' => 0, 'confirmar_cero' => 1],
-        );
-        $this->assertSame('0.00', $cliente->productos()->firstOrFail()->precio_caja);
-
-        // Editar a $0 sin confirmar también se bloquea; el precio no cambia... (ya está en 0)
-        // Caso real: asignación con precio > 0 que se intenta dejar en 0 sin confirmar.
-        $otro = $this->producto();
-        $asignacion = $cliente->productos()->create(['exportacion_producto_id' => $otro->id, 'precio_caja' => 50.00, 'activo' => true]);
-        $respuesta = $this->actingAs($this->usuario())->patch(
-            route('clientes.exportacion.productos.update', [$cliente->cliente_id, $asignacion]),
-            ['precio_caja' => 0],
-        );
-        $respuesta->assertSessionHasErrors('precio_caja');
-        $this->assertSame('50.00', $asignacion->refresh()->precio_caja);
-
-        // Negativo: bloqueado por min:0.
-        $respuesta = $this->actingAs($this->usuario())->patch(
-            route('clientes.exportacion.productos.update', [$cliente->cliente_id, $asignacion]),
-            ['precio_caja' => -5],
-        );
-        $respuesta->assertSessionHasErrors('precio_caja');
-        $this->assertSame('50.00', $asignacion->refresh()->precio_caja);
     }
 }

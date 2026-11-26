@@ -118,18 +118,39 @@ Route::middleware('auth')->group(function () {
     | Van ANTES del resource, o `clientes/{cliente}` capturaría el segmento literal.
     | Permiso: exportaciones.gestionar, el mismo que protegía estas acciones en la
     | pantalla anterior; lo refuerza además el propio controlador.
+    |
+    | La lista de precios del cliente (productos.*) ya no se escribe desde acá:
+    | ningún botón la usaba. Responde 409 como las rutas viejas de /exportaciones
+    | (ver $retirada) y dice dónde se hace eso ahora.
     */
+
+    /**
+     * Respuesta de una ruta antigua de escritura: dice qué se hacía acá, dónde se
+     * hace ahora y por qué ya no funciona. 409 Conflict —no 404— porque la URL
+     * existe y el recurso también; lo que ya no es válido es la operación.
+     */
+    $retirada = function (string $equivalente) {
+        return function () use ($equivalente) {
+            abort(409, 'Esta dirección pertenece al flujo anterior de Exportaciones y ya no realiza cambios. '
+                .$equivalente.' Las reglas de revisión, finalización, vínculo con la factura y permisos '
+                .'viven ahora en un solo sitio, y mantener esta vía en paralelo permitía saltárselas.');
+        };
+    };
+
     Route::prefix('clientes/{cliente}/exportacion')->name('clientes.exportacion.')
         ->middleware('permission:exportaciones.gestionar')
-        ->group(function () {
+        ->group(function () use ($retirada) {
             Route::post('habilitar', [ClienteExportacionController::class, 'habilitar'])->name('habilitar');
             Route::post('deshabilitar', [ClienteExportacionController::class, 'deshabilitar'])->name('deshabilitar');
 
-            Route::post('productos', [ClienteExportacionController::class, 'agregarProducto'])->name('productos.store');
-            Route::post('productos/asignar-catalogo', [ClienteExportacionController::class, 'asignarCatalogo'])->name('productos.asignar-catalogo');
-            Route::post('productos/copiar', [ClienteExportacionController::class, 'copiarPrecios'])->name('productos.copiar');
-            Route::patch('productos/{asignacion}', [ClienteExportacionController::class, 'actualizarProducto'])->name('productos.update');
-            Route::delete('productos/{asignacion}', [ClienteExportacionController::class, 'quitarProducto'])->name('productos.destroy');
+            $aPrecios = 'Los productos y precios de cada cliente se asignan en Productos → pestaña «De exportación», con el botón '
+                .'«Clientes» de cada presentación, y cada precio se actualiza solo al finalizar una lista de empaque.';
+            Route::post('productos', $retirada($aPrecios))->name('productos.store');
+            Route::post('productos/asignar-catalogo', $retirada($aPrecios))->name('productos.asignar-catalogo');
+            Route::post('productos/copiar', $retirada($aPrecios))->name('productos.copiar');
+            Route::patch('productos/{asignacion}', $retirada($aPrecios))->name('productos.update');
+            Route::delete('productos/{asignacion}', $retirada('Para dejar de venderle una presentación, desmarcá al cliente con el botón '
+                .'«Clientes» de esa presentación en Productos → pestaña «De exportación»: queda apagada y su precio guardado.'))->name('productos.destroy');
         });
 
     Route::resource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);
@@ -689,21 +710,11 @@ Route::middleware('auth')->group(function () {
     | Los controladores y las vistas del flujo anterior se retiraron. Estas rutas
     | de compatibilidad conservan sus redirecciones y respuestas 409.
     */
-    Route::prefix('exportaciones')->name('exportaciones.')->middleware('permission:exportaciones.ver')->group(function () {
+    Route::prefix('exportaciones')->name('exportaciones.')->middleware('permission:exportaciones.ver')->group(function () use ($retirada) {
         $gestionar = 'permission:exportaciones.gestionar';
 
-        /**
-         * Respuesta de una ruta antigua de escritura: dice qué se hacía acá, dónde se
-         * hace ahora y por qué ya no funciona. 409 Conflict —no 404— porque la URL
-         * existe y el recurso también; lo que ya no es válido es la operación.
-         */
-        $retirada = function (string $equivalente) {
-            return function () use ($equivalente) {
-                abort(409, 'Esta dirección pertenece al flujo anterior de Exportaciones y ya no realiza cambios. '
-                    .$equivalente.' Las reglas de revisión, finalización, vínculo con la factura y permisos '
-                    .'viven ahora en un solo sitio, y mantener esta vía en paralelo permitía saltárselas.');
-            };
-        };
+        // $retirada: la respuesta 409 de una ruta antigua de escritura (definida arriba,
+        // junto al perfil de exportación del cliente, que también la usa).
 
         // --- Catálogo de productos: ahora es la pestaña «De exportación» de Productos.
         Route::get('productos', fn () => redirect()->route('productos.exportacion.index'))->name('productos.index');

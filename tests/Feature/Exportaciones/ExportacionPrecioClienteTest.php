@@ -191,6 +191,7 @@ class ExportacionPrecioClienteTest extends TestCase
         $this->assertSame('40.00', $nuevo->precio_caja);
     }
 
+    /** La ruta vieja de asignar desde la ficha del cliente se retiró: 409 y no duplica nada. */
     public function test_no_se_puede_asignar_dos_veces_el_mismo_producto_al_cliente(): void
     {
         $producto = $this->producto();
@@ -206,8 +207,9 @@ class ExportacionPrecioClienteTest extends TestCase
             ['exportacion_producto_id' => $producto->id, 'precio_caja' => 310.00],
         );
 
-        $respuesta->assertSessionHasErrors('exportacion_producto_id');
+        $respuesta->assertStatus(409);
         $this->assertSame(1, $cliente->productos()->count());
+        $this->assertSame('300.00', $cliente->productos()->sole()->precio_caja);
     }
 
     public function test_jefatura_lee_pero_no_gestiona_el_modulo(): void
