@@ -16,6 +16,28 @@
 
     $variable = $f->monto_modo === 'variable';
     $esPasada = $tipo === 'pasada';
+
+    // «Registrar pago» que volvió con error: se reabre como «Saltar», con lo escrito, el
+    // aviso debajo de su campo y el foco en el primero que falló. Solo esta fila.
+    $visibles = $variable ? ['importe', 'fecha', 'metodo', 'referencia'] : ['fecha', 'metodo', 'referencia'];
+    // Lo escrito (old) solo vuelve cuando el envío se rechazó: por validación o por la
+    // sesión vencida (419, con el aviso en session('error') y sin $errors).
+    $volvio = old('panel') === $panel;
+    $escrito = fn (string $campo, string $siNo = '') => $volvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
+    $foco = $volvio ? (collect($visibles)->first(fn ($c) => $errors->has($c)) ?? $visibles[0]) : null;
+    // Lo que no es de un campo a la vista (período, clave, pago, la sesión vencida…) se lee
+    // igual acá adentro.
+    $otrosErrores = $volvio
+        ? collect($errors->getMessages())->except($visibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
+        : collect();
+    // El aviso queda enlazado a su campo: al llegar el foco, el lector de pantalla dice que
+    // está mal y lee el aviso (el aviso lleva el id del campo más «-error»).
+    $conAviso = fn (string $campo, string $id) => $volvio && $errors->has($campo)
+        ? new \Illuminate\Support\HtmlString('aria-invalid="true" aria-describedby="'.e($id).'-error"')
+        : '';
+    // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
+    // (doble clic), reenviarlo no registra otro pago; si no, la clave sigue libre.
+    $clave = $volvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : (string) \Illuminate\Support\Str::uuid();
 @endphp
 
 {{-- Una fila PROGRAMADA: un período que la regla producirá (o ya debió producir) y que
@@ -129,7 +151,8 @@
     <div id="{{ $panel }}" x-show="abierto === '{{ $panel }}'" x-cloak class="border-t border-gray-100 bg-gray-50 px-4 py-4">
         <form method="POST" action="{{ route('gastos.panel.programado.pagar', $f->regla_id) }}" class="space-y-3">
             @csrf
-            <input type="hidden" name="clave" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+            <input type="hidden" name="clave" value="{{ $clave }}">
+            <input type="hidden" name="panel" value="{{ $panel }}">
             {{-- El período viaja acá, y el servidor lo revalida contra el calendario de
                  la regla: un valor inventado no pasa. --}}
             <input type="hidden" name="periodo" value="{{ $f->periodo }}">
@@ -138,29 +161,48 @@
                 Pagar <span class="font-semibold">{{ $f->beneficiario }}</span> · {{ $f->concepto }}
                 · período {{ $f->periodo }}, con vencimiento {{ $vence }}.
             </p>
+            @foreach ($otrosErrores as $mensaje)
+                <p class="text-sm text-red-600">{{ $mensaje }}</p>
+            @endforeach
 
             <div class="grid gap-3 sm:grid-cols-3">
                 @if ($variable)
                     <div>
                         <label class="{{ $etiqueta }}" for="pg-imp-{{ $panel }}">Importe del recibo</label>
-                        <input id="pg-imp-{{ $panel }}" name="importe" required inputmode="decimal" class="{{ $campo }}" placeholder="0.00">
+                        <input id="pg-imp-{{ $panel }}" name="importe" required inputmode="decimal" value="{{ $escrito('importe') }}"
+                               {{ $conAviso('importe', 'pg-imp-'.$panel) }} @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                        @if ($volvio)
+                            @error('importe')<p id="pg-imp-{{ $panel }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                 @endif
                 <div>
                     <label class="{{ $etiqueta }}" for="pg-fecha-{{ $panel }}">Cuándo pagaste</label>
-                    <input id="pg-fecha-{{ $panel }}" name="fecha" type="date" required value="{{ $hoy }}" max="{{ $hoy }}" class="{{ $campo }}">
+                    <input id="pg-fecha-{{ $panel }}" name="fecha" type="date" required value="{{ $escrito('fecha', $hoy) }}" max="{{ $hoy }}"
+                           {{ $conAviso('fecha', 'pg-fecha-'.$panel) }} @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                    @if ($volvio)
+                        @error('fecha')<p id="pg-fecha-{{ $panel }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    @endif
                 </div>
                 <div>
                     <label class="{{ $etiqueta }}" for="pg-metodo-{{ $panel }}">Cómo</label>
-                    <select id="pg-metodo-{{ $panel }}" name="metodo" class="{{ $campo }}">
+                    <select id="pg-metodo-{{ $panel }}" name="metodo"
+                            {{ $conAviso('metodo', 'pg-metodo-'.$panel) }} @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                         @foreach ($metodos as $valor => $texto)
-                            <option value="{{ $valor }}">{{ $texto }}</option>
+                            <option value="{{ $valor }}" @selected($volvio && old('metodo') === $valor)>{{ $texto }}</option>
                         @endforeach
                     </select>
+                    @if ($volvio)
+                        @error('metodo')<p id="pg-metodo-{{ $panel }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    @endif
                 </div>
                 <div>
                     <label class="{{ $etiqueta }}" for="pg-ref-{{ $panel }}">Referencia</label>
-                    <input id="pg-ref-{{ $panel }}" name="referencia" maxlength="180" class="{{ $campo }}" placeholder="Opcional">
+                    <input id="pg-ref-{{ $panel }}" name="referencia" maxlength="180" value="{{ $escrito('referencia') }}"
+                           {{ $conAviso('referencia', 'pg-ref-'.$panel) }} @if ($foco === 'referencia') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
+                    @if ($volvio)
+                        @error('referencia')<p id="pg-ref-{{ $panel }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    @endif
                 </div>
             </div>
 

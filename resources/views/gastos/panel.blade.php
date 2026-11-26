@@ -5,7 +5,7 @@
 
     $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
     $botonAccion = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-500';
-    $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
+    $campo = 'mt-1 min-h-11 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
     // Cada fila lleva su ámbito como una marca discreta. Es informativa: el candado de
@@ -18,6 +18,29 @@
     // «Fecha pasada» puede traer meses de más de un año: sin el año, enero de 2025 y
     // enero de 2026 se leían igual.
     $fechaConAnio = fn (?string $iso) => $iso ? \Carbon\CarbonImmutable::parse($iso)->format('d/m/Y') : null;
+
+    // «Compré y pagué» que volvió con error: se reabre con lo escrito, el aviso debajo de
+    // su campo y el foco en el primero que falló, como «Saltar». Las filas de abajo usan
+    // los mismos nombres de campo y no reciben nada de esto.
+    $compraVisibles = ['concepto', 'importe', 'beneficiario', 'fecha', 'metodo', 'ambito'];
+    // Lo escrito (old) solo vuelve cuando el envío se rechazó: por validación o por la
+    // sesión vencida (419, con el aviso en session('error') y sin $errors).
+    $compraVolvio = old('panel') === 'compra';
+    $compraEscrito = fn (string $campo, string $siNo = '') => $compraVolvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
+    $compraFoco = $compraVolvio ? (collect($compraVisibles)->first(fn ($c) => $errors->has($c)) ?? $compraVisibles[0]) : null;
+    // Lo que no es de un campo a la vista (clave, moneda, pago, la sesión vencida…) se lee
+    // igual adentro.
+    $compraOtrosErrores = $compraVolvio
+        ? collect($errors->getMessages())->except($compraVisibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
+        : collect();
+    // El aviso queda enlazado a su campo: al llegar el foco, el lector de pantalla dice que
+    // está mal y lee el aviso (el aviso lleva el id del campo más «-error»).
+    $compraConAviso = fn (string $campo) => $compraVolvio && $errors->has($campo)
+        ? new \Illuminate\Support\HtmlString('aria-invalid="true" aria-describedby="c-'.e($campo).'-error"')
+        : '';
+    // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
+    // (doble clic), reenviarlo no registra otra compra; si no, la clave sigue libre.
+    $compraClave = $compraVolvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : $clave;
 @endphp
 
 {{-- LA PANTALLA PRINCIPAL DE GASTOS Y PAGOS
@@ -70,7 +93,7 @@
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6"
-         x-data="{ abierto: @js($errors->any() && is_string(old('panel')) ? old('panel') : null), abrir(id) { this.abierto = this.abierto === id ? null : id } }">
+         x-data="{ abierto: @js(is_string(old('panel')) ? old('panel') : null), abrir(id) { this.abierto = this.abierto === id ? null : id } }">
         <div class="mx-auto max-w-4xl space-y-4">
 
             {{-- El aviso puede traer un enlace al registro que se acaba de crear. Volver
@@ -85,6 +108,12 @@
                         </a>
                     @endif
                 </div>
+            @endif
+
+            {{-- La sesión había vencido (419): vuelve con lo escrito y este aviso, sin $errors.
+                 El layout no lo dibuja; sin esto parecía guardado. --}}
+            @if (session('error'))
+                <div class="rounded-md border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-800" role="alert">{{ session('error') }}</div>
             @endif
 
             @if ($errors->any())
@@ -150,7 +179,8 @@
             <div class="flex flex-wrap gap-2">
                 @can('gastos.registrar')
                     @can('gastos.pagos.registrar')
-                        <button type="button" @click="abrir('compra')" class="{{ $botonAccion }}">Compré y pagué</button>
+                        <button type="button" @click="abrir('compra')" class="{{ $botonAccion }}"
+                                :aria-expanded="abierto === 'compra' ? 'true' : 'false'" aria-expanded="false" aria-controls="compra">Compré y pagué</button>
                     @endcan
                     <a href="{{ route('gastos.create') }}" class="{{ $boton }}">Anotar un gasto</a>
                     <a href="{{ route('gastos.cuentas') }}" class="{{ $boton }}">Agregar compra a cuenta</a>
@@ -160,46 +190,74 @@
             {{-- Compré y pagué: el gasto y el pago nacen juntos. Nunca existe la deuda. --}}
             @can('gastos.registrar')
                 @can('gastos.pagos.registrar')
-                    <div x-show="abierto === 'compra'" x-cloak class="rounded-lg border border-indigo-200 bg-white p-4 shadow-sm">
+                    <div id="compra" x-show="abierto === 'compra'" x-cloak class="rounded-lg border border-indigo-200 bg-white p-4 shadow-sm">
                         <form method="POST" action="{{ route('gastos.panel.compras') }}" class="space-y-3">
                             @csrf
-                            <input type="hidden" name="clave" value="{{ $clave }}">
+                            <input type="hidden" name="clave" value="{{ $compraClave }}">
+                            <input type="hidden" name="panel" value="compra">
                             <input type="hidden" name="moneda" value="USD">
                             <p class="font-semibold text-gray-900">Compré y pagué</p>
                             <p class="text-xs text-gray-500">Gasto y pago en una sola operación. No queda ninguna deuda abierta.</p>
+                            @foreach ($compraOtrosErrores as $mensaje)
+                                <p class="text-sm text-red-600">{{ $mensaje }}</p>
+                            @endforeach
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div class="sm:col-span-2">
                                     <label class="{{ $etiqueta }}" for="c-concepto">Qué compraste</label>
-                                    <input id="c-concepto" name="concepto" required maxlength="200" class="{{ $campo }}" placeholder="Bolsas para empaque">
+                                    <input id="c-concepto" name="concepto" required maxlength="200" value="{{ $compraEscrito('concepto') }}"
+                                           {{ $compraConAviso('concepto') }} @if ($compraFoco === 'concepto') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Bolsas para empaque">
+                                    @if ($compraVolvio)
+                                        @error('concepto')<p id="c-concepto-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-importe">Cuánto</label>
-                                    <input id="c-importe" name="importe" required inputmode="decimal" class="{{ $campo }}" placeholder="0.00">
+                                    <input id="c-importe" name="importe" required inputmode="decimal" value="{{ $compraEscrito('importe') }}"
+                                           {{ $compraConAviso('importe') }} @if ($compraFoco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                                    @if ($compraVolvio)
+                                        @error('importe')<p id="c-importe-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-beneficiario">A quién</label>
-                                    <input id="c-beneficiario" name="beneficiario" maxlength="180" class="{{ $campo }}" placeholder="Opcional">
+                                    <input id="c-beneficiario" name="beneficiario" maxlength="180" value="{{ $compraEscrito('beneficiario') }}"
+                                           {{ $compraConAviso('beneficiario') }} @if ($compraFoco === 'beneficiario') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
+                                    @if ($compraVolvio)
+                                        @error('beneficiario')<p id="c-beneficiario-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-fecha">Cuándo</label>
-                                    <input id="c-fecha" name="fecha" type="date" required value="{{ $hoy }}" max="{{ $hoy }}" class="{{ $campo }}">
+                                    <input id="c-fecha" name="fecha" type="date" required value="{{ $compraEscrito('fecha', $hoy) }}" max="{{ $hoy }}"
+                                           {{ $compraConAviso('fecha') }} @if ($compraFoco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                    @if ($compraVolvio)
+                                        @error('fecha')<p id="c-fecha-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-metodo">Cómo pagaste</label>
-                                    <select id="c-metodo" name="metodo" class="{{ $campo }}">
+                                    <select id="c-metodo" name="metodo"
+                                            {{ $compraConAviso('metodo') }} @if ($compraFoco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                         @foreach ($metodos as $valor => $texto)
-                                            <option value="{{ $valor }}">{{ $texto }}</option>
+                                            <option value="{{ $valor }}" @selected($compraVolvio && old('metodo') === $valor)>{{ $texto }}</option>
                                         @endforeach
                                     </select>
+                                    @if ($compraVolvio)
+                                        @error('metodo')<p id="c-metodo-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-ambito">De quién es</label>
-                                    <select id="c-ambito" name="ambito" class="{{ $campo }}">
+                                    <select id="c-ambito" name="ambito"
+                                            {{ $compraConAviso('ambito') }} @if ($compraFoco === 'ambito') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                         <option value="empresarial">De la empresa</option>
                                         @can('gastos.personales')
-                                            <option value="personal">Personal</option>
+                                            <option value="personal" @selected($compraVolvio && old('ambito') === 'personal')>Personal</option>
                                         @endcan
                                     </select>
+                                    @if ($compraVolvio)
+                                        @error('ambito')<p id="c-ambito-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                             </div>
                             <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">

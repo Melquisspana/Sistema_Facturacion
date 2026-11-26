@@ -383,6 +383,28 @@ class PanelTest extends TestCase
         $this->assertSame(0, (int) $this->panel($u)['se_debe']);
     }
 
+    /**
+     * Doble clic en «Registrar el pago», o pagar desde una pestaña vieja: el segundo envío
+     * encuentra la obligación ya saldada. Vuelve al panel y lo dice, como las filas
+     * programadas, en vez de una página de error suelta que no deja ver que el pago quedó.
+     */
+    public function test_pagar_otra_vez_una_obligacion_ya_saldada_vuelve_al_panel_y_lo_avisa(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->cuentaAbierta($u, 'Proveedor de prueba', '48.00');
+        $datos = ['clave' => (string) Str::uuid(), 'fecha' => '2026-09-15', 'metodo' => 'transferencia'];
+        $this->actingAs($u)->post(route('gastos.panel.pagar', $gasto), $datos)->assertRedirect(route('gastos.panel'));
+
+        // La misma clave (doble clic) y otra clave (pestaña vieja).
+        foreach ([$datos, array_replace($datos, ['clave' => (string) Str::uuid()])] as $otraVez) {
+            $this->actingAs($u)->from(route('gastos.panel'))->post(route('gastos.panel.pagar', $gasto), $otraVez)
+                ->assertRedirect(route('gastos.panel'))
+                ->assertSessionHas('gastos.aviso', fn (string $m) => str_contains($m, 'Proveedor de prueba') && str_contains($m, 'ya estaba saldada'));
+        }
+
+        $this->assertSame(1, DB::table('gastos_pagos')->whereNull('revertido_at')->count(), 'Un solo pago.');
+    }
+
     public function test_abonar_desde_la_pantalla_baja_el_saldo_sin_cancelarlo(): void
     {
         $u = $this->operador();
