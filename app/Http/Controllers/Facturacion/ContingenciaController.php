@@ -34,7 +34,7 @@ class ContingenciaController extends Controller
             'paraRevision' => app(ContingenciaService::class)->documentosParaRevision()
                 ->with('cliente')->orderBy('fecha_emision')->orderBy('hora_emision')->paginate(50, ['*'], 'revision'),
             'documentos' => Schema::hasTable('lotes_dte')
-                ? Dte::whereNotNull('contingencia_id')->with(['cliente', 'contingencia', 'contingenciaEvento', 'loteDte'])->orderByDesc('id')->paginate(50)
+                ? Dte::whereNotNull('contingencia_id')->with(['cliente', 'contingencia', 'contingenciaEvento', 'loteDte', 'envios'])->orderByDesc('id')->paginate(50)
                 : collect(),
             // Los rechazos siguen visibles aunque sus documentos ya hayan sido liberados.
             'lotesConError' => Schema::hasTable('lotes_dte')

@@ -336,6 +336,54 @@ class ContingenciaCorreoClienteTest extends TestCase
         Queue::assertPushed(EnviarDteCorreo::class, 1);
     }
 
+    /**
+     * Si el provisional no salió, la ficha deja mandarlo a mano, y ya no dice que el
+     * correo se habilita al aceptarse: el sistema ya lo mandó o lo intentó.
+     */
+    public function test_a_la_ficha_deja_mandar_el_provisional_a_mano(): void
+    {
+        $dte = $this->emitirEnContingenciaManual();
+        $fallido = $this->correrSinSalida($this->enviosAlCliente($dte)->sole());
+
+        $this->get(route('facturacion.show', $dte))->assertOk()
+            ->assertDontSee('El correo al cliente se habilita cuando el DTE esté aceptado por Hacienda.')
+            ->assertSee('Emitido en contingencia, todavía sin sello: el correo lleva el PDF provisional y el JSON firmado.')
+            ->assertSee('El completo le sale solo cuando Hacienda lo selle.')
+            ->assertSee('name="destinatarios"', false)
+            ->assertSee(route('facturacion.correo.reenviar', [$dte, $fallido]), false);
+
+        $this->post(route('facturacion.correo.reenviar', [$dte, $fallido]))->assertRedirect()
+            ->assertSessionHas('status', 'Reenvío encolado para: '.self::CORREO.'.');
+        $this->assertCount(2, $this->enviosAlCliente($dte));
+        $this->assertSame($this->usuario->id, $this->enviosAlCliente($dte)->last()->user_id);
+
+        // Con el envío automático apagado, el completo hay que mandarlo a mano.
+        Ajustes::guardarComoSistema('correo.auto_envio', false);
+        $this->get(route('facturacion.show', $dte))->assertOk()
+            ->assertSee('Cuando Hacienda lo selle, mandale el completo desde aquí.');
+    }
+
+    /** La bandeja de pendientes avisa el provisional que no salió y deja mandarlo. */
+    public function test_a_pendientes_avisa_el_provisional_que_no_salio_y_deja_mandarlo(): void
+    {
+        $salio = $this->emitirEnContingenciaManual();
+        $this->correr($this->enviosAlCliente($salio)->sole());
+        $fallo = $this->emitirEnContingenciaManualSinActivar();
+        $this->correrSinSalida($this->enviosAlCliente($fallo)->sole());
+
+        $this->actingAs(User::factory()->create()->assignRole('administrador'));
+        $html = $this->get(route('facturacion.contingencia.pendientes'))->assertOk()->getContent();
+        $this->assertSame(1, substr_count($html, 'El correo provisional al cliente no salió.'));
+        $this->assertStringContainsString(route('facturacion.correo.cliente', $fallo), $html);
+        $this->assertStringContainsString(route('facturacion.correo.cliente', $salio), $html);
+
+        $this->post(route('facturacion.correo.cliente', $fallo))->assertRedirect()
+            ->assertSessionHas('status', 'Documento encolado para envío por correo a '.self::CORREO.'.');
+        $this->assertCount(2, $this->enviosAlCliente($fallo));
+        $this->assertStringNotContainsString('El correo provisional al cliente no salió.',
+            $this->get(route('facturacion.contingencia.pendientes'))->getContent());
+    }
+
     public function test_b_al_regularizarse_sale_el_completo_aunque_ya_salio_el_provisional(): void
     {
         $dte = $this->emitirEnContingenciaManual();

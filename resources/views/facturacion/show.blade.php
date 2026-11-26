@@ -239,8 +239,10 @@
 
             {{-- Envío por correo al cliente (manual): destinatario editable + historial.
                  Presentación condicionada al estado: solo se ofrece la acción de enviar/reenviar
-                 cuando el DTE está ACEPTADO por Hacienda; en cualquier otro estado se muestra un
-                 aviso (la política enviarCorreo sigue igual, esto es solo visibilidad en la UI). --}}
+                 cuando el DTE está ACEPTADO por Hacienda o es el provisional de una contingencia
+                 (firmado, sin sello: la norma pide entregarlo, y sin internet el automático pudo
+                 no salir; simulacro del 17/11, F8). En cualquier otro estado se muestra un aviso
+                 (la política enviarCorreo sigue igual, esto es solo visibilidad en la UI). --}}
             @can('enviarCorreo', $dte)
                 @php
                     // Misma regla sala → cliente que usa el envío y que imprime el PDF.
@@ -260,6 +262,8 @@
                     $mailerDriver = config('mail.default');
                     $mailerReal = ! in_array(config("mail.mailers.$mailerDriver.transport", $mailerDriver), ['log', 'array'], true);
                     $dteAceptado = $dte->estado === \App\Enums\EstadoDte::Aceptado;
+                    $provisional = $dte->esTransitorio();
+                    $puedeEnviarCorreo = $dteAceptado || $provisional;
                 @endphp
                 {{-- El id lo usa el acceso rápido "Enviar correo" de «Acciones del documento»:
                      lleva a ESTE formulario en vez de duplicarlo arriba. --}}
@@ -274,12 +278,18 @@
                     </div>
 
                     <div class="p-5 space-y-4">
-                        @unless ($dteAceptado)
+                        @unless ($puedeEnviarCorreo)
                             {{-- No aceptado todavía: se oculta la acción de enviar, solo aviso. --}}
                             <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                                 El correo al cliente se habilita cuando el DTE esté aceptado por Hacienda.
                             </div>
                         @else
+                            @if ($provisional)
+                                <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    Emitido en contingencia, todavía sin sello: el correo lleva el PDF provisional y el JSON firmado.
+                                    {{ \App\Facades\Ajustes::bool('correo.auto_envio', false) ? 'El completo le sale solo cuando Hacienda lo selle.' : 'Cuando Hacienda lo selle, mandale el completo desde aquí.' }}
+                                </div>
+                            @endif
                             @unless ($mailerReal)
                                 <div class="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
                                     <strong>Modo prueba (MAIL_MAILER={{ $mailerDriver }}):</strong> el correo <strong>no se envía realmente</strong>; se escribe en <code>storage/logs/laravel.log</code> y queda como <em>Simulado</em>.
@@ -365,8 +375,8 @@
                                                     </td>
                                                     <td class="py-1.5 pr-3 text-gray-500"><span class="md:hidden block text-xs">Adjuntos</span>{{ $e->adjuntos ?? '—' }}</td>
                                                     <td class="py-1.5 pr-3 text-gray-500"><span class="md:hidden block text-xs">Por</span>{{ $e->usuario?->name ?? 'Automático' }}</td>
-                                                    <td @class(['py-1.5 pr-3 md:text-right', 'col-span-2' => $dteAceptado, 'hidden md:table-cell' => ! $dteAceptado])>
-                                                        @if ($dteAceptado)
+                                                    <td @class(['py-1.5 pr-3 md:text-right', 'col-span-2' => $puedeEnviarCorreo, 'hidden md:table-cell' => ! $puedeEnviarCorreo])>
+                                                        @if ($puedeEnviarCorreo)
                                                             <form method="POST" action="{{ route('facturacion.correo.reenviar', [$dte, $e]) }}">
                                                                 @csrf
                                                                 <button class="inline-flex min-h-11 sm:min-h-0 items-center text-indigo-600 hover:underline text-xs">Reenviar</button>
