@@ -9,6 +9,7 @@ use App\Http\Requests\Exportaciones\ExportacionRequest;
 use App\Models\Dte;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
+use App\Models\ExportacionClienteProducto;
 use App\Models\ExportacionItem;
 use App\Models\ExportacionProducto;
 use App\Services\Exportaciones\CrearFexDesdeExportacionService;
@@ -118,9 +119,12 @@ class ListaEmpaqueController extends Controller
         $avisos = [];
 
         $lista = DB::transaction(function () use ($datos, &$avisos) {
-            $lista = Exportacion::create(
-                collect($datos)->except('items')->all() + ['estado' => Exportacion::ESTADO_BORRADOR]
-            );
+            // El FDA es el de Configuración, nunca el del campo oculto, y el número de
+            // factura nace vacío: sale de las FEX que se vinculen.
+            $lista = Exportacion::create(collect($datos)->except(['items', 'factura', 'fda_reg_number'])->all() + [
+                'estado' => Exportacion::ESTADO_BORRADOR,
+                'fda_reg_number' => $this->exportador->fdaRegNumber(),
+            ]);
             $avisos = $this->crearItems($lista, $datos['items']);
 
             return $lista;
@@ -159,7 +163,9 @@ class ListaEmpaqueController extends Controller
         return view('facturacion.listas.edit', [
             'lista' => $lista,
             'productos' => $this->productosParaFormulario(),
-            'clientes' => $this->clientesParaFormulario(),
+            // Con su cliente aunque esté deshabilitado: sin él, el selector obligaba a
+            // elegir otro para poder guardar.
+            'clientes' => $this->clientesParaFormulario($lista->exportacion_cliente_id),
         ]);
     }
 
@@ -171,8 +177,55 @@ class ListaEmpaqueController extends Controller
         $datos = $request->validated();
         $avisos = [];
 
+        // Una línea con id tiene que ser de ESTA lista. Con la de otra se borraban todas
+        // las suyas, la ajena no se tocaba y la lista quedaba sin productos.
+        $ajenas = collect($datos['items'])->pluck('id')->filter()->map(fn ($id) => (int) $id)
+            ->diff($lista->items()->pluck('id')->map(fn ($id) => (int) $id));
+        if ($ajenas->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'Una de las líneas no es de esta lista. Recargá la página y volvé a guardar.',
+            ]);
+        }
+
+        $clienteAntes = $lista->exportacion_cliente_id;
+        $cambiaCliente = (int) $datos['exportacion_cliente_id'] !== (int) $clienteAntes;
+
+        if ($cambiaCliente) {
+            // Una FEX emitida a otro cliente del directorio: la lista diría un cliente y
+            // saldría impresa con la factura del otro. Una emitida a ESTE sí deja ponérselo
+            // (lista heredada sin cliente que ya tenía su factura).
+            $receptor = ExportacionCliente::find((int) $datos['exportacion_cliente_id'])?->cliente_id;
+            if ($lista->facturas()->contains(fn (Dte $fex) => $receptor === null || (int) $fex->cliente_id !== (int) $receptor)) {
+                throw ValidationException::withMessages([
+                    'exportacion_cliente_id' => 'No se puede poner este cliente: la lista tiene factura(s) de exportación emitidas a otro cliente. Desvinculalas primero o armá una lista nueva.',
+                ]);
+            }
+
+            // De un cliente a otro, las líneas guardadas llevan el precio del anterior y al
+            // finalizar quedaría como el del nuevo. Se vuelven a cargar como nuevas, con el
+            // precio del nuevo cliente; solo se respeta uno escrito distinto del guardado.
+            // Sin cliente antes no hay precio ajeno que cuidar: se conservan y se avisa.
+            if ($clienteAntes !== null) {
+                $guardadas = $lista->items()->get()->keyBy('id');
+                $datos['items'] = collect($datos['items'])->map(function (array $item) use ($guardadas) {
+                    $linea = empty($item['id']) ? null : $guardadas->get((int) $item['id']);
+                    if ($linea === null || $linea->exportacion_producto_id === null) {
+                        return $item;
+                    }
+                    $precio = isset($item['precio_caja']) && $item['precio_caja'] !== '' ? round((float) $item['precio_caja'], 2) : null;
+
+                    return [
+                        'exportacion_producto_id' => $linea->exportacion_producto_id,
+                        'cantidad_cajas' => $item['cantidad_cajas'],
+                        'precio_caja' => $precio !== null && $precio !== round((float) $linea->precio_caja, 2) ? $precio : '',
+                    ];
+                })->all();
+            }
+        }
+
         DB::transaction(function () use ($lista, $datos, &$avisos) {
-            $lista->update(collect($datos)->except('items')->all());
+            // La lista conserva su FDA y su texto de factura históricos.
+            $lista->update(collect($datos)->except(['items', 'factura', 'fda_reg_number'])->all());
 
             // Items existentes (traen id): solo cambia la cantidad y se CONSERVA el
             // snapshot. Items nuevos: snapshot del catálogo de hoy. Los no enviados se quitan.
@@ -195,10 +248,16 @@ class ListaEmpaqueController extends Controller
             $avisos = $this->crearItems($lista, $nuevos);
         });
 
+        $aviso = $this->mensajeAvisoPrecios($avisos);
+        if ($cambiaCliente && $clienteAntes === null) {
+            $aviso = collect([$aviso, $this->avisoLineasConOtroPrecio($lista, 'Ojo: la lista no tenía cliente y estas líneas no llevan su precio actual')])
+                ->filter()->implode(' ') ?: null;
+        }
+
         return redirect()
             ->route('facturacion.listas.show', $lista)
             ->with('status', 'Lista de empaque actualizada.')
-            ->with('aviso_precios', $this->mensajeAvisoPrecios($avisos));
+            ->with('aviso_precios', $aviso);
     }
 
     /**
@@ -221,6 +280,12 @@ class ListaEmpaqueController extends Controller
             return $this->error($lista, 'No se puede eliminar: esta lista ya tiene factura(s) de exportación vinculada(s). Quitá primero el vínculo si corresponde, o conservá ambos documentos.');
         }
 
+        // La ficha no ofrece «Eliminar» para una archivada: quedó fuera del flujo y la
+        // bitácora no guarda sus líneas, así que borrada no se podría recuperar.
+        if ($lista->archivada) {
+            return $this->error($lista, 'No se puede eliminar una lista archivada: quedó fuera del flujo de trabajo y se conserva como histórico. Si hay que retomarla, duplicala.');
+        }
+
         $lista->delete();
 
         return redirect()
@@ -228,12 +293,25 @@ class ListaEmpaqueController extends Controller
             ->with('status', 'Lista de empaque eliminada.');
     }
 
-    /** Copia con los mismos productos (snapshot tal cual) y fecha de hoy, en borrador. */
+    /**
+     * Copia con los mismos productos (snapshot tal cual) y fecha de hoy, en borrador.
+     * Cada línea del catálogo toma el precio ACTUAL del cliente: al finalizar, el precio
+     * de la lista pasa a ser el del cliente, y uno viejo se lo bajaba. Sin precio del
+     * cliente, la línea conserva el de la lista vieja y se avisa.
+     */
     public function duplicar(Exportacion $lista): RedirectResponse
     {
         $this->autorizarGestion();
 
-        $copia = DB::transaction(function () use ($lista) {
+        // Congelada hasta que un administrador la clasifique: la ficha no ofrece
+        // «Duplicar» y por la ruta tampoco se copia.
+        if ($lista->requiereRevision()) {
+            return $this->error($lista, 'No se puede duplicar: la lista viene del flujo anterior y está pendiente de clasificar. Un administrador tiene que resolverla primero.');
+        }
+
+        $cambiados = $otraPresentacion = $apagadas = $sinPrecioDelCliente = [];
+
+        $copia = DB::transaction(function () use ($lista, &$cambiados, &$otraPresentacion, &$apagadas, &$sinPrecioDelCliente) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
             $copia->fecha = HoraNegocio::fechaHoy();
             $copia->estado = Exportacion::ESTADO_BORRADOR;
@@ -242,24 +320,128 @@ class ListaEmpaqueController extends Controller
             $copia->finalizada_por_user_id = null;
             $copia->requiere_revision = false;
             $copia->revision_motivo = null;
+            // Es una lista nueva: no hereda la marca de archivada ni la clasificación de
+            // la revisión de la original. Con ellas nacía escondida de «Abiertas» y sin
+            // poder editarse.
+            $copia->archivada = false;
+            $copia->archivada_en = null;
+            $copia->revision_estado_original = null;
+            $copia->revision_resuelta_en = null;
+            $copia->revision_resuelta_por_user_id = null;
+            $copia->revision_resolucion = null;
+            // El FDA es de la empresa y en la lista no se escribe: la copia lleva el que
+            // está configurado hoy, no el de la lista vieja. Sin nada configurado, el suyo.
+            $copia->fda_reg_number = $this->exportador->fdaRegNumber() ?? $lista->fda_reg_number;
             // El número de factura ya no se copia: se deriva de las FEX que se vinculen
             // a la copia, y copiar el de otra lista es exactamente el error que se quiso
             // eliminar al dejar de teclearlo.
             $copia->factura = null;
             $copia->save();
 
-            foreach ($lista->items as $item) {
+            $cliente = $lista->exportacion_cliente_id !== null
+                ? ExportacionCliente::with('productos')->find($lista->exportacion_cliente_id)
+                : null;
+            $dinero = fn (float $valor) => '$'.number_format($valor, 2);
+
+            foreach ($lista->items()->with('producto')->get() as $item) {
                 $nuevo = $item->replicate();
                 $nuevo->exportacion_id = $copia->id;
+
+                // Solo cambia el precio. Sin cliente o sin producto del catálogo, la línea
+                // no tiene precio del cliente que tomar y al finalizar no toca ninguno.
+                if ($cliente !== null && $item->exportacion_producto_id !== null) {
+                    $actual = $cliente->precioPara((int) $item->exportacion_producto_id);
+                    $antes = round((float) $item->precio_caja, 2);
+                    $linea = trim($item->nombre_es.' '.$item->unidades_por_caja.' u');
+                    // Las unidades y los gramos son la presentación (CatalogoExportacion::exigirUnica).
+                    // Si se editaron en Productos, el precio del cliente es el de otra caja.
+                    $producto = $item->producto;
+                    $otrosGramos = $producto !== null
+                        && round((float) $producto->gramos_por_unidad, 2) !== round((float) $item->gramos_por_unidad, 2);
+
+                    if ($producto !== null && ($otrosGramos || (int) $producto->unidades_por_caja !== (int) $item->unidades_por_caja)) {
+                        $otraPresentacion[] = $linea.' '.$dinero($antes).' (ahora '.$producto->unidades_por_caja.' u'
+                            .($otrosGramos ? ' de '.(float) $producto->gramos_por_unidad.' g' : '').')';
+                    } elseif ($actual === null && $cliente->productos->contains(fn (ExportacionClienteProducto $a) => (int) $a->exportacion_producto_id === (int) $item->exportacion_producto_id)) {
+                        // Apagado en Productos: tiene precio guardado, pero al finalizar se le vuelve a habilitar.
+                        $apagadas[] = $linea.' '.$dinero($antes);
+                    } elseif ($actual === null || $actual <= 0) {
+                        // Un precio del cliente en $0.00 no se copia: nunca se factura a cero.
+                        $sinPrecioDelCliente[] = $linea.' '.$dinero($antes);
+                    } elseif (round($actual, 2) !== $antes) {
+                        $nuevo->precio_caja = $actual;
+                        $cambiados[] = $linea.' '.$dinero($antes).' → '.$dinero($actual);
+                    }
+                }
+
                 $nuevo->save();
             }
 
             return $copia;
         });
 
+        $aviso = collect([
+            $cambiados !== [] ? 'Se pusieron los precios actuales del cliente: '.$this->enumerarLineas($cambiados).'.' : null,
+            $otraPresentacion !== [] ? "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio de la lista #{$lista->id}: "
+                .$this->enumerarLineas($otraPresentacion).'. Quitalas en Editar y volvé a agregarlas antes de facturar.' : null,
+            $apagadas !== [] ? "Ojo: estas líneas están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$lista->id}: "
+                .$this->enumerarLineas($apagadas).'. Si finalizás con ellas, se le vuelven a habilitar a ese precio. Si ya no se le venden, quitalas en Editar.' : null,
+            $sinPrecioDelCliente !== [] ? "Ojo: estas líneas quedaron con el precio de la lista #{$lista->id} porque el cliente no tiene precio para ellas: "
+                .$this->enumerarLineas($sinPrecioDelCliente).'. Al finalizar, ese pasa a ser su precio. Revisalo en Editar antes de facturar.' : null,
+        ])->filter()->implode(' ');
+
         return redirect()
             ->route('facturacion.listas.show', $copia)
-            ->with('status', "Lista duplicada desde la #{$lista->id}. Revisá la fecha y volvé a facturarla.");
+            ->with('status', "Lista duplicada desde la #{$lista->id}. Revisá la fecha y volvé a facturarla.")
+            ->with('aviso_precios', $aviso !== '' ? $aviso : null);
+    }
+
+    /** @param  list<string>  $lineas */
+    private function enumerarLineas(array $lineas): string
+    {
+        $resto = count($lineas) > 6 ? ' y '.(count($lineas) - 6).' más' : '';
+
+        return implode('; ', array_slice($lineas, 0, 6)).$resto;
+    }
+
+    /**
+     * Líneas que no llevan el precio que el cliente de la lista tiene hoy, en una lista
+     * que recibe cliente por primera vez. Se avisa antes de facturar: al finalizar, el
+     * precio de la lista pasaría a ser el del cliente aunque el actual se haya puesto
+     * después.
+     */
+    private function avisoLineasConOtroPrecio(Exportacion $lista, string $inicio): ?string
+    {
+        $cliente = $lista->exportacion_cliente_id !== null
+            ? ExportacionCliente::with('productos')->find($lista->exportacion_cliente_id)
+            : null;
+
+        if ($cliente === null) {
+            return null;
+        }
+
+        $dinero = fn (float $valor) => '$'.number_format($valor, 2);
+        $distintas = $lista->items()->whereNotNull('exportacion_producto_id')->orderBy('id')->get()
+            ->map(function (ExportacionItem $item) use ($cliente, $dinero) {
+                $actual = $cliente->precioPara((int) $item->exportacion_producto_id);
+                $precio = round((float) $item->precio_caja, 2);
+
+                return $actual !== null && round($actual, 2) !== $precio
+                    ? trim($item->nombre_es.' '.$item->unidades_por_caja.' u').' '.$dinero($precio).' (actual '.$dinero($actual).')'
+                    : null;
+            })
+            ->filter()
+            ->values();
+
+        if ($distintas->isEmpty()) {
+            return null;
+        }
+
+        $resto = $distintas->count() > 6 ? ' y '.($distintas->count() - 6).' más' : '';
+
+        return $inicio.': '
+            .$distintas->take(6)->implode('; ').$resto
+            .'. Al finalizar, el precio de la lista pasa a ser el del cliente. Corregilo en Editar antes de facturar.';
     }
 
     // ------------------------------------------------------------------ facturas
@@ -717,9 +899,10 @@ class ListaEmpaqueController extends Controller
             ->get(['id', 'exportacion_producto_base_id', 'nombre_es', 'nombre_en', 'unidad', 'unidades_por_caja', 'gramos_por_unidad', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
     }
 
-    private function clientesParaFormulario(): Collection
+    private function clientesParaFormulario(?int $incluir = null): Collection
     {
-        return ExportacionCliente::where('activo', true)
+        return ExportacionCliente::where(fn ($q) => $q->where('activo', true)
+            ->when($incluir !== null, fn ($q) => $q->orWhere('id', $incluir)))
             ->with(['cliente:id,nombre,direccion', 'productos' => fn ($q) => $q->where('activo', true)])
             ->get()
             ->sortBy(fn (ExportacionCliente $c) => $c->nombreLegal())

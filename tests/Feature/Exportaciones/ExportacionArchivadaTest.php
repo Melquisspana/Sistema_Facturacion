@@ -5,8 +5,8 @@ namespace Tests\Feature\Exportaciones;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
 use App\Models\Dte;
-use App\Models\Establecimiento;
 use App\Models\Empresa;
+use App\Models\Establecimiento;
 use App\Models\Exportacion;
 use App\Models\PuntoVenta;
 use App\Models\User;
@@ -236,6 +236,41 @@ class ExportacionArchivadaTest extends TestCase
 
         $this->assertNotNull(Exportacion::find($lista->id));
         $this->assertNotNull(Dte::find($dte->id));
+    }
+
+    /**
+     * Una lista heredada que un administrador clasificó como archivada, sin FEX: la ficha
+     * no ofrece «Eliminar» y por la ruta tampoco se borra. Es un documento histórico y la
+     * bitácora no guarda sus líneas, así que no se podría recuperar.
+     */
+    public function test_una_lista_archivada_sin_fex_no_se_borra_por_la_ruta(): void
+    {
+        $lista = $this->lista([
+            'cliente_nombre' => 'Cliente de prueba',
+            'exportador_nombre' => 'Exportador de prueba',
+            'archivada' => true,
+            'archivada_en' => now(),
+            'requiere_revision' => false,
+            'revision_estado_original' => 'aprobada',
+            'revision_resolucion' => 'archivada',
+        ]);
+        $lista->items()->create([
+            'nombre_es' => 'Producto de prueba', 'nombre_en' => 'Test product', 'unidad' => 'Bolsa',
+            'unidades_por_caja' => 144, 'cantidad_cajas' => 10, 'precio_caja' => 140.00,
+            'gramos_por_unidad' => 85, 'onzas_por_unidad' => 3,
+            'peso_neto_caja_kg' => 13, 'peso_bruto_caja_kg' => 14,
+            'peso_neto_caja_lb' => 28.66, 'peso_bruto_caja_lb' => 30.86,
+        ]);
+        $usuario = $this->usuario('facturacion');
+        $this->assertTrue($usuario->can('exportaciones.gestionar'));
+
+        $this->actingAs($usuario)
+            ->delete(route('facturacion.listas.destroy', $lista))
+            ->assertRedirect(route('facturacion.listas.show', $lista))
+            ->assertSessionHas('error');
+
+        $this->assertNotNull(Exportacion::find($lista->id));
+        $this->assertSame(1, $lista->items()->count());
     }
 
     // ---------- Rutas principales siguen cargando ----------
