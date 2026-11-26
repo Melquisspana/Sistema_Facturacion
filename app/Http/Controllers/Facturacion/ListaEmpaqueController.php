@@ -293,8 +293,10 @@ class ListaEmpaqueController extends Controller
     }
 
     /**
-     * Copia con los mismos productos (snapshot tal cual, también el precio) y fecha de
-     * hoy, en borrador. Avisa qué líneas no llevan el precio actual del cliente.
+     * Copia con los mismos productos (snapshot tal cual) y fecha de hoy, en borrador.
+     * Cada línea del catálogo toma el precio ACTUAL del cliente: al finalizar, el precio
+     * de la lista pasa a ser el del cliente, y uno viejo se lo bajaba. Sin precio del
+     * cliente, la línea conserva el de la lista vieja y se avisa.
      */
     public function duplicar(Exportacion $lista): RedirectResponse
     {
@@ -306,7 +308,9 @@ class ListaEmpaqueController extends Controller
             return $this->error($lista, 'No se puede duplicar: la lista viene del flujo anterior y está pendiente de clasificar. Un administrador tiene que resolverla primero.');
         }
 
-        $copia = DB::transaction(function () use ($lista) {
+        $cambiados = $sinPrecioDelCliente = [];
+
+        $copia = DB::transaction(function () use ($lista, &$cambiados, &$sinPrecioDelCliente) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
             $copia->fecha = HoraNegocio::fechaHoy();
             $copia->estado = Exportacion::ESTADO_BORRADOR;
@@ -333,26 +337,62 @@ class ListaEmpaqueController extends Controller
             $copia->factura = null;
             $copia->save();
 
+            $cliente = $lista->exportacion_cliente_id !== null
+                ? ExportacionCliente::with('productos')->find($lista->exportacion_cliente_id)
+                : null;
+            $dinero = fn (float $valor) => '$'.number_format($valor, 2);
+
             foreach ($lista->items as $item) {
                 $nuevo = $item->replicate();
                 $nuevo->exportacion_id = $copia->id;
+
+                // Solo cambia el precio. Sin cliente o sin producto del catálogo, la línea
+                // no tiene precio del cliente que tomar y al finalizar no toca ninguno.
+                if ($cliente !== null && $item->exportacion_producto_id !== null) {
+                    $actual = $cliente->precioPara((int) $item->exportacion_producto_id);
+                    $antes = round((float) $item->precio_caja, 2);
+                    $linea = trim($item->nombre_es.' '.$item->unidades_por_caja.' u');
+
+                    // Un precio del cliente en $0.00 no se copia: nunca se factura a cero.
+                    if ($actual === null || $actual <= 0) {
+                        $sinPrecioDelCliente[] = $linea.' '.$dinero($antes);
+                    } elseif (round($actual, 2) !== $antes) {
+                        $nuevo->precio_caja = $actual;
+                        $cambiados[] = $linea.' '.$dinero($antes).' → '.$dinero($actual);
+                    }
+                }
+
                 $nuevo->save();
             }
 
             return $copia;
         });
 
+        $aviso = collect([
+            $cambiados !== [] ? 'Se pusieron los precios actuales del cliente: '.$this->enumerarLineas($cambiados).'.' : null,
+            $sinPrecioDelCliente !== [] ? "Ojo: estas líneas quedaron con el precio de la lista #{$lista->id} porque el cliente no tiene precio para ellas: "
+                .$this->enumerarLineas($sinPrecioDelCliente).'. Al finalizar, ese pasa a ser su precio. Revisalo en Editar antes de facturar.' : null,
+        ])->filter()->implode(' ');
+
         return redirect()
             ->route('facturacion.listas.show', $copia)
             ->with('status', "Lista duplicada desde la #{$lista->id}. Revisá la fecha y volvé a facturarla.")
-            ->with('aviso_precios', $this->avisoLineasConOtroPrecio($copia, "Ojo: estas líneas llevan el precio de la lista #{$lista->id} y no el precio actual del cliente"));
+            ->with('aviso_precios', $aviso !== '' ? $aviso : null);
+    }
+
+    /** @param  list<string>  $lineas */
+    private function enumerarLineas(array $lineas): string
+    {
+        $resto = count($lineas) > 6 ? ' y '.(count($lineas) - 6).' más' : '';
+
+        return implode('; ', array_slice($lineas, 0, 6)).$resto;
     }
 
     /**
-     * Líneas que no llevan el precio que el cliente de la lista tiene hoy: la copia de
-     * otra lista, o una lista que recibe cliente por primera vez. Se avisa antes de
-     * facturar: al finalizar, el precio de la lista pasaría a ser el del cliente aunque
-     * el actual se haya puesto después.
+     * Líneas que no llevan el precio que el cliente de la lista tiene hoy, en una lista
+     * que recibe cliente por primera vez. Se avisa antes de facturar: al finalizar, el
+     * precio de la lista pasaría a ser el del cliente aunque el actual se haya puesto
+     * después.
      */
     private function avisoLineasConOtroPrecio(Exportacion $lista, string $inicio): ?string
     {
