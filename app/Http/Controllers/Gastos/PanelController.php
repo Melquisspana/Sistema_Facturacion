@@ -105,7 +105,12 @@ class PanelController extends Controller
                 $total += $pendiente;
             }
 
-            abort_if($aplicaciones === [], 422, 'Esta obligación ya no tiene saldo.');
+            // Ya estaba saldada: un doble clic o un pago desde otra pestaña. No se registra
+            // nada y se dice en el panel, como en pagarProgramado(), en vez de una página
+            // de error suelta que no deja ver que el pago sí quedó.
+            if ($aplicaciones === []) {
+                return null;
+            }
 
             return $pagos->registrar($request->user(), [
                 'clave' => $datos['clave'],
@@ -117,6 +122,11 @@ class PanelController extends Controller
                 'sin_comprobante' => $datos['sin_comprobante'] ?? null,
             ], $aplicaciones);
         });
+
+        if ($pago === null) {
+            return redirect()->route('gastos.panel')->with('gastos.aviso',
+                'La obligación de '.$gasto->beneficiario.' ya estaba saldada. No se registró otro pago.');
+        }
 
         return redirect()->route('gastos.panel')->with('gastos.aviso',
             'Pagado: '.$gasto->beneficiario.' · '.$pago->moneda.' '.$pago->importe
