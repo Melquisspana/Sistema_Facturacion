@@ -99,13 +99,32 @@ class SecretoController extends Controller
             'confirmacion.accepted' => 'Confirmá que querés volver al valor del archivo de configuración.',
         ]);
 
-        Ajustes::quitarOverride($definicion->clave);
+        // El servicio comprueba el permiso primero y, si no había nada guardado (doble
+        // clic o pantalla vieja), devuelve false sin dejar otra línea de auditoría.
+        $quitado = Ajustes::quitarOverride($definicion->clave);
 
         return redirect($this->volver($request))
-            ->with('status', $definicion->etiqueta.': se quitó el valor guardado en la aplicación y vuelve a usarse el del archivo de configuración.');
+            ->with('status', $this->avisoQuitado($definicion, $quitado));
     }
 
     // ---------------------------------------------------------------- interno
+
+    /**
+     * Qué quedó después de quitar el valor guardado. Si el archivo del servidor no
+     * trae uno (la tienda web no tiene, o el .env está vacío), el secreto queda sin
+     * configurar y hay que decirlo: «vuelve al del archivo» haría creer que sigue
+     * funcionando.
+     */
+    private function avisoQuitado(DefinicionAjuste $definicion, bool $quitado): string
+    {
+        if (Ajustes::fuente($definicion->clave) !== FuenteAjuste::Configuracion) {
+            return $definicion->etiqueta.': no tiene ningún valor, ni guardado ni en el archivo del servidor. Queda sin configurar hasta que cargues uno nuevo.';
+        }
+
+        return $quitado
+            ? $definicion->etiqueta.': se quitó el valor guardado en la aplicación y vuelve a usarse el del archivo de configuración.'
+            : $definicion->etiqueta.': ya usa el valor del archivo de configuración.';
+    }
 
     /**
      * Definición del secreto que administra ESTA ruta.

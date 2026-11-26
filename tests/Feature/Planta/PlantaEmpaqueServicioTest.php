@@ -331,6 +331,54 @@ class PlantaEmpaqueServicioTest extends TestCase
         return $config->fresh();
     }
 
+    /**
+     * La regla mira cómo queda la fila, no lo que trae la petición: al actualizar sin
+     * la clave `activo`, la configuración sigue inactiva y no puede pasar a ser la
+     * predeterminada.
+     */
+    public function test_actualizar_sin_activo_no_deja_una_inactiva_como_predeterminada(): void
+    {
+        $config = $this->configuracionInactiva();
+
+        $this->actualizarComoPredeterminadaSinActivo($config);
+
+        $fila = $config->fresh();
+        $this->assertEquals(
+            ['activo' => false, 'es_predeterminada' => false, 'predeterminada_key' => null],
+            ['activo' => $fila->activo, 'es_predeterminada' => $fila->es_predeterminada, 'predeterminada_key' => $fila->predeterminada_key],
+        );
+    }
+
+    /** Y la predeterminada que ya había en el mismo mercado no pierde la marca. */
+    public function test_actualizar_sin_activo_no_le_quita_la_marca_a_la_predeterminada_vigente(): void
+    {
+        $vigente = $this->servicio->crear($this->datos(['marca' => 'A', 'es_predeterminada' => true]));
+        $config = $this->configuracionInactiva();
+
+        $this->actualizarComoPredeterminadaSinActivo($config);
+
+        $this->assertTrue($vigente->fresh()->es_predeterminada);
+        $this->assertSame(MercadoPlanta::Nacional->value, $vigente->fresh()->predeterminada_key);
+        $this->assertFalse($config->fresh()->es_predeterminada);
+        $this->assertSame(1, PlantaEmpaqueConfig::where('es_predeterminada', true)->count());
+    }
+
+    private function actualizarComoPredeterminadaSinActivo(PlantaEmpaqueConfig $config): void
+    {
+        $datos = $this->datos([
+            'planta_insumo_vinieta_id' => $this->vinieta->id,
+            'es_predeterminada' => true,
+        ]);
+        unset($datos['activo']);
+
+        try {
+            $this->servicio->actualizar($config, $datos);
+            $this->fail('Una configuración inactiva no debió quedar como predeterminada.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('es_predeterminada', $e->errors());
+        }
+    }
+
     public function test_no_se_reactiva_con_la_presentacion_inactiva(): void
     {
         $config = $this->configuracionInactiva();

@@ -297,8 +297,10 @@ class ConversorValor
             );
         }
 
+        // $m[1] y $m[3] son las dos horas enteras («08:00», «08:45»); $m[2] y $m[4] solo
+        // su parte de la hora, y compararlas rechazaba un horario dentro de la misma hora.
         if (in_array('rango_horas', $definicion->reglas, true)
-            && (preg_match('/^('.$hora.')-('.$hora.')$/', $texto, $m) !== 1 || $m[1] >= $m[4])) {
+            && (preg_match('/^('.$hora.')-('.$hora.')$/', $texto, $m) !== 1 || $m[1] >= $m[3])) {
             throw ValorAjusteInvalidoException::con(
                 $definicion->clave,
                 "«{$definicion->etiqueta}» debe ser un horario «desde-hasta» en formato HH:MM-HH:MM, con la hora de cierre después de la de apertura (por ejemplo 08:00-17:00)."

@@ -6,9 +6,11 @@ use App\Ajustes\Ajustes;
 use App\Models\RespaldoEjecucion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -35,13 +37,56 @@ class BackupMysqlDiarioCommand extends Command
 
     protected $description = 'Backup diario de MySQL verificado (mysqldump + SHA-256 + registro en BD). No reemplaza a spatie/laravel-backup.';
 
+    /**
+     * Candado de «una corrida a la vez». `withoutOverlapping()` solo cubre la tarea
+     * programada; el botón «Generar respaldo ahora» llama al comando directo.
+     */
+    private const CANDADO = 'backup:mysql-diario';
+
+    /** Más que el peor caso: 3 intentos de 300 s cada uno, más las esperas. */
+    private const CANDADO_SEGUNDOS = 1200;
+
+    /**
+     * Código de salida de una corrida manual que no arrancó porque ya había otra. No es
+     * un fallo: el botón lo usa para decir «esperá» en vez de «no se pudo».
+     */
+    public const EN_CURSO = 2;
+
     public function handle(): int
     {
         $origen = $this->option('origen') === 'manual' ? 'manual' : 'automatico';
         $iniciadoEn = Carbon::now(config('app.timezone'));
 
+        // Doble clic, o el botón mientras corre la tarea de las 02:00: si dos corridas
+        // vuelcan a la vez, una puede borrar el archivo que la otra está escribiendo y
+        // quedarse sin ningún respaldo. La segunda no hace nada.
+        $candado = Cache::lock(self::CANDADO, self::CANDADO_SEGUNDOS);
+
+        if (! $candado->get()) {
+            // No se anota en respaldo_ejecuciones: la corrida en curso deja su propio
+            // resultado, y una fila «fallida» posterior a ella abriría el aviso de
+            // respaldo fallido aunque la otra saliera bien. Si el candado quedó colgado
+            // y no hay respaldo, el aviso «No hay respaldo de hoy» lo cubre.
+            // La tarea programada termina sin error: un código distinto de 0 la anotaría
+            // como tarea que falla y llegaría otro aviso falso.
+            $this->warn('Ya hay un respaldo en curso; esperá a que termine.');
+
+            return $origen === 'manual' ? self::EN_CURSO : self::SUCCESS;
+        }
+
+        try {
+            return $this->respaldar($origen, $iniciadoEn);
+        } finally {
+            $candado->release();
+        }
+    }
+
+    private function respaldar(string $origen, Carbon $iniciadoEn): int
+    {
         $prefijo = (string) config('backup_diario.prefijo_automatico', 'auto-');
-        $nombre = $prefijo.$iniciadoEn->format('Y-m-d_His').'.sql';
+        // Sufijo al azar: dos corridas en el mismo segundo nunca comparten archivo. La
+        // retención solo mira el prefijo y el `.sql`, así que no le afecta.
+        $nombre = $prefijo.$iniciadoEn->format('Y-m-d_His').'_'.Str::lower(Str::random(6)).'.sql';
 
         $this->line('Iniciando backup de BD ('.$origen.')...');
 
@@ -91,13 +136,22 @@ class BackupMysqlDiarioCommand extends Command
         }
 
         $salida = $resultado->output();
-        Storage::disk('backups')->put($nombre, $salida);
+        // `put` da false si el disco no pudo guardarlo (lleno, sin permiso) y puede dejar
+        // un pedazo: la marca se busca en la salida, así que sin esta comprobación un
+        // archivo cortado quedaría registrado como respaldo bueno.
+        $guardado = Storage::disk('backups')->put($nombre, $salida);
 
-        $tamano = (int) Storage::disk('backups')->size($nombre);
+        $tamano = $guardado ? (int) Storage::disk('backups')->size($nombre) : 0;
         $marcaOk = $this->terminaEnDumpCompleted($salida);
 
-        if ($tamano <= 0 || ! $marcaOk) {
-            $motivo = $tamano <= 0 ? 'el archivo generado está vacío' : 'no se encontró la marca "Dump completed" al final de la salida';
+        $motivo = match (true) {
+            ! $guardado || $tamano !== strlen($salida) => 'el archivo no quedó entero en la carpeta de respaldos (¿disco lleno?)',
+            $tamano <= 0 => 'el archivo generado está vacío',
+            ! $marcaOk => 'no se encontró la marca "Dump completed" al final de la salida',
+            default => null,
+        };
+
+        if ($motivo !== null) {
             Storage::disk('backups')->delete($nombre); // nunca dejar un dump parcial/corrupto en backups/
             $this->registrar($iniciadoEn, false, null, null, null, 'Backup inválido: '.$motivo.'.', $origen);
             $this->error('Falló la verificación del backup: '.$motivo.'. Se eliminó el archivo parcial.');

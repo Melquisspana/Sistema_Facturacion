@@ -113,6 +113,34 @@ class AuditoriaAjustes
     }
 
     /**
+     * Alguien apretó «Generar respaldo ahora». Queda quién y cómo terminó, porque la
+     * misma corrida puede borrar respaldos vencidos por la retención.
+     *
+     * `$resultado`: `exito`, `fallo` o `en_curso` (ya había otro respaldo corriendo y
+     * este no arrancó; no es un fallo).
+     *
+     * Nunca rutas, nombres de archivo, el mensaje de una excepción ni la salida del
+     * comando: pueden traer el usuario y el servidor de la base. El motivo de un fallo
+     * ya queda en `respaldo_ejecuciones`.
+     */
+    public function respaldoManual(string $resultado, ?int $codigo = null): void
+    {
+        $this->escribir(
+            match ($resultado) {
+                'exito' => 'generó un respaldo manual: éxito',
+                'en_curso' => 'intentó un respaldo manual: ya había uno en curso',
+                default => 'intentó un respaldo manual: error',
+            },
+            array_filter([
+                'accion' => 'respaldo_manual',
+                'resultado' => in_array($resultado, ['exito', 'en_curso'], true) ? $resultado : 'fallo',
+                'codigo' => $codigo,
+                'ip' => $this->ip(),
+            ], static fn ($v) => $v !== null),
+        );
+    }
+
+    /**
      * Se conectó una integración externa: qué cuenta quedó con acceso y quién la autorizó.
      * Al reconectar, la fila de la cuenta se pisa; esto es lo que queda de la anterior.
      * Nunca los tokens, como al desconectar.

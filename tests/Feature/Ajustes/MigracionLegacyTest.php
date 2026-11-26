@@ -368,6 +368,22 @@ class MigracionLegacyTest extends TestCase
         $this->assertTrue(Configuracion::getBool('correo.auto_envio'));
     }
 
+    /**
+     * Quitar en la tabla anterior dice si había un valor: con eso el servicio no deja
+     * en la auditoría un segundo «quitó el valor guardado» cuando no había nada.
+     */
+    public function test_quitar_en_la_tabla_anterior_dice_si_habia_un_valor(): void
+    {
+        Configuracion::set('contabilidad.correo', 'conta@ejemplo.com');
+        $adaptador = app(AdaptadorConfiguraciones::class);
+
+        $this->assertTrue($adaptador->eliminar('contabilidad.correo'));
+        $this->assertNull($adaptador->valor('contabilidad.correo'));
+        $this->assertFalse($adaptador->eliminar('contabilidad.correo'));
+        $this->assertFalse($adaptador->eliminar('clave.que.nunca.se.guardo'));
+        $this->assertDatabaseMissing('configuraciones', ['clave' => 'clave.que.nunca.se.guardo']);
+    }
+
     // ---------------------------------------------------------------- ayuda
 
     /** Resolver independiente: memoria propia, caché compartida. */

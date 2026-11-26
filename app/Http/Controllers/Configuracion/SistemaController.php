@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Configuracion;
 
 use App\Ajustes\Ajustes as ServicioAjustes;
+use App\Ajustes\AuditoriaAjustes;
 use App\Ajustes\Ceremonias\ConfirmacionN2;
 use App\Ajustes\EstadoAjuste;
 use App\Ajustes\Sistema\PanelSistema;
+use App\Console\Commands\BackupMysqlDiarioCommand;
 use App\Http\Controllers\Configuracion\Concerns\GuardaConConfirmacionN2;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -85,24 +87,37 @@ class SistemaController extends Controller
      *
      * Reutiliza el comando existente, que hace dump, verifica el SHA-256 y deja el
      * registro en `respaldo_ejecuciones`. Es una operación de solo lectura sobre
-     * los datos: no altera ninguna tabla del negocio.
+     * los datos: no altera ninguna tabla del negocio. Sí puede borrar respaldos
+     * vencidos (retención), así que queda en la auditoría quién lo apretó.
      */
-    public function respaldar(Request $request): RedirectResponse
+    public function respaldar(Request $request, AuditoriaAjustes $auditoria): RedirectResponse
     {
         abort_unless($request->user()?->can('respaldos.ejecutar'), 403);
 
         try {
             $codigo = Artisan::call('backup:mysql-diario', ['--origen' => 'manual']);
         } catch (Throwable $e) {
+            $auditoria->respaldoManual('fallo');
+
             return redirect()->route('configuracion.sistema')
                 ->with('error', 'No se pudo generar el respaldo: '.$this->corto($e->getMessage()));
         }
 
+        $resultado = match ($codigo) {
+            0 => 'exito',
+            BackupMysqlDiarioCommand::EN_CURSO => 'en_curso',
+            default => 'fallo',
+        };
+        $auditoria->respaldoManual($resultado, $codigo);
+
+        // El motivo de un fallo se ve en la misma pantalla, en «Última ejecución».
         return redirect()->route('configuracion.sistema')->with(
-            $codigo === 0 ? 'status' : 'error',
-            $codigo === 0
-                ? 'Respaldo generado y verificado. Revisá «último respaldo válido» abajo.'
-                : 'El respaldo terminó con código '.$codigo.'. Revisá el registro del servidor.',
+            $resultado === 'fallo' ? 'error' : 'status',
+            match ($resultado) {
+                'exito' => 'Respaldo generado y verificado. Revisá «último respaldo válido» abajo.',
+                'en_curso' => 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.',
+                default => 'No se pudo generar el respaldo. El motivo quedó anotado abajo, en «Última ejecución».',
+            },
         );
     }
 

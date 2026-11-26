@@ -39,7 +39,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static void guardar(string $clave, mixed $valor, ?\Illuminate\Support\Carbon $vistoEn = null)
  * @method static void guardarComoSistema(string $clave, mixed $valor)
  * @method static void guardarVarios(array $valores, array $vistosEn = [])
- * @method static void quitarOverride(string $clave)
+ * @method static bool quitarOverride(string $clave)
  * @method static ValorAjuste valorDelServidor(string $clave)
  * @method static bool puedeEditar(?\Illuminate\Contracts\Auth\Access\Authorizable $usuario, string $clave)
  * @method static NivelConfirmacion nivel(string $clave)
