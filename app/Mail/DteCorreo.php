@@ -70,6 +70,8 @@ class DteCorreo extends Mailable
             'dte' => $this->dte,
             'cuerpo' => PlantillaCorreo::render($this->plantilla, $this->dte),
             'aceptado' => $this->dte->estado === EstadoDte::Aceptado,
+            // Emitido en contingencia y sin sello: el cliente sabe que el definitivo llega después.
+            'provisional' => $this->dte->esTransitorio(),
         ]);
     }
 

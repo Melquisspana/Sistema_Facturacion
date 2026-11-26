@@ -593,19 +593,30 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame(EstadoDte::Generado, $dte->estado);
     }
 
-    public function test_sello_no_envia_correo_y_boton_reutiliza_pipeline(): void
+    /**
+     * Antes el regularizado no salía solo (había que apretar «Reenviar al cliente»). Desde
+     * el 26/11 (simulacro, F8) el completo sale solo al sellarse, y el botón sigue andando.
+     */
+    public function test_sello_envia_el_completo_y_el_boton_reutiliza_pipeline(): void
     {
         app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
         $dte = $this->documento();
         Ajustes::guardarComoSistema('correo.auto_envio', true);
         $dte->update(['estado' => EstadoDte::Aceptado, 'sello_recepcion' => 'SELLO-INVENTADO']);
-        Queue::assertNothingPushed();
-        $this->assertDatabaseCount('dte_envios', 0);
+        Queue::assertPushed(EnviarDteCorreo::class, 1);
+        $this->assertDatabaseHas('dte_envios', ['dte_id' => $dte->id, 'destinatario' => 'cliente@example.test',
+            'estado' => 'pendiente', 'user_id' => null]);
         $this->actingAs(User::factory()->create()->assignRole('administrador'));
         $this->get(route('facturacion.contingencia.pendientes'))->assertOk()->assertSee('Reenviar al cliente');
-        $this->post(route('facturacion.correo.cliente', $dte))->assertRedirect()->assertSessionHas('status');
+        // Con el automático todavía en cola, el botón no lo duplica.
+        $this->post(route('facturacion.correo.cliente', $dte))->assertRedirect()
+            ->assertSessionHas('status', 'Ya hay un envío pendiente para cliente@example.test; no se duplicó.');
         Queue::assertPushed(EnviarDteCorreo::class, 1);
-        $this->assertDatabaseHas('dte_envios', ['dte_id' => $dte->id, 'destinatario' => 'cliente@example.test']);
+        // Ya salido, el botón lo vuelve a mandar a mano.
+        $dte->envios()->update(['estado' => 'enviado', 'adjuntos' => 'PDF, JSON']);
+        $this->post(route('facturacion.correo.cliente', $dte))->assertRedirect()->assertSessionHas('status');
+        Queue::assertPushed(EnviarDteCorreo::class, 2);
+        $this->assertSame(2, $dte->envios()->count());
     }
 
     public function test_planificador_cada_15_minutos_con_interruptor_y_solapamiento(): void

@@ -97,7 +97,9 @@ class EnviarDteCorreo implements ShouldQueue
 
             $envio->update([
                 'estado' => $simular ? 'simulado' : 'enviado',
-                'adjuntos' => implode(', ', array_merge(['PDF'], $nombres)),
+                // Qué PDF viajó (completo, provisional o preliminar), del mismo documento con
+                // que se armó: el envío automático al aceptarse lo necesita para no repetirse.
+                'adjuntos' => implode(', ', array_merge([DteEnvio::etiquetaPdf($dte)], $nombres)),
                 'error' => $simular ? implode(' · ', array_filter([$candado->motivo(), $aviso])) : $aviso,
             ]);
             $this->auditar($envio, $bccContabilidad);

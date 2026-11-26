@@ -4,11 +4,14 @@ namespace Tests\Feature\Dte;
 
 use App\Enums\EstadoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
+use App\Facades\Ajustes;
+use App\Jobs\EnviarDteCorreo;
 use App\Models\Cliente;
 use App\Models\Contingencia;
 use App\Models\ContingenciaEvento;
 use App\Models\Correlativo;
 use App\Models\Dte;
+use App\Models\DteEnvio;
 use App\Models\LoteDte;
 use App\Models\Producto;
 use App\Models\User;
@@ -23,6 +26,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -115,6 +119,36 @@ class ContingenciaLotesTest extends TestCase
         $this->service()->enviar($this->evento);
         $this->assertSame(3, LoteDte::count());
         Http::assertSentCount(3);
+    }
+
+    /**
+     * Simulacro del 17/11 (F8): al regularizarse por el lote, el cliente recibe solo el
+     * documento completo, aunque ya le haya llegado el provisional. Al rechazado, nada.
+     */
+    public function test_al_regularizarse_por_el_lote_se_encola_el_completo_al_cliente(): void
+    {
+        Queue::fake();
+        Ajustes::guardarComoSistema('correo.auto_envio', true);
+        $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente de prueba', 'correo' => 'cliente@example.test']);
+        $a = $this->documento();
+        $r = $this->documento();
+        foreach ([$a, $r] as $dte) {
+            Dte::whereKey($dte->id)->update(['cliente_id' => $cliente->id]);
+            $dte->envios()->create(['destinatario' => 'cliente@example.test', 'destinatarios' => ['cliente@example.test'],
+                'canal' => DteEnvio::CANAL_CLIENTE, 'estado' => 'enviado', 'adjuntos' => DteEnvio::PDF_PROVISIONAL.', JSON']);
+        }
+        $this->service()->enviar($this->evento);
+        $this->simular(['procesados' => [['codigoGeneracion' => $a->codigo_generacion, 'selloRecibido' => 'SELLO-INVENTADO-A',
+            'fhProcesamiento' => '13/10/2026 11:05:00']],
+            'rechazados' => [['codigoGeneracion' => $r->codigo_generacion, 'observaciones' => ['Motivo inventado']]]]);
+
+        $this->service()->consultar(LoteDte::first());
+
+        $this->assertSame(EstadoDte::Aceptado, $a->refresh()->estado);
+        $this->assertSame(EstadoDte::Rechazado, $r->refresh()->estado);
+        Queue::assertPushed(EnviarDteCorreo::class, 1);
+        $this->assertSame(['enviado', 'pendiente'], $a->envios()->reorder('id')->pluck('estado')->all());
+        $this->assertSame(1, $r->envios()->count());
     }
 
     public function test_consulta_mixta_por_codigo_no_index_y_regulariza(): void
