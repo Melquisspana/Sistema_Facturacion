@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Ajustes;
 
+use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\Definicion\FuenteAjuste;
 use App\Facades\Ajustes;
 use App\Models\Configuracion;
@@ -67,6 +68,23 @@ class CorreoSmtpTest extends TestCase
             ->assertSee('Servidor de correo (SMTP)')
             ->assertSee('Documentos fiscales')
             ->assertSee('Contabilidad');
+    }
+
+    /**
+     * El envío automático también manda el provisional al emitirse en contingencia
+     * (simulacro del 17/11, F8): la casilla y su descripción lo dicen.
+     */
+    public function test_el_envio_automatico_dice_que_tambien_manda_el_provisional_en_contingencia(): void
+    {
+        $this->actingAs($this->admin())
+            ->get(route('configuracion.correo.edit'))
+            ->assertOk()
+            ->assertDontSee('al ser aceptado por Hacienda')
+            ->assertSee('Enviar automáticamente el documento al cliente')
+            ->assertSee('Si se emitió en contingencia, le sale además el provisional al emitirse');
+
+        $descripcion = app(CatalogoAjustes::class)->definicion('correo.auto_envio')->descripcion;
+        $this->assertStringContainsString('en contingencia, también el provisional al emitirse', $descripcion);
     }
 
     /** Nombres humanos en pantalla; la clave técnica queda como apoyo, no como título. */

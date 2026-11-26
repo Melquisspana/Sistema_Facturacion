@@ -137,7 +137,7 @@
         {{-- ============================================ DOCUMENTOS FISCALES --}}
         <x-configuracion.seccion
             titulo="Documentos fiscales"
-            descripcion="Qué se envía al cliente cuando se acepta un documento, y con qué texto.">
+            descripcion="Qué se envía al cliente cuando Hacienda acepta un documento o cuando se emite en contingencia, y con qué texto.">
 
             <form method="POST" action="{{ route('configuracion.correo.update') }}" class="space-y-5">
                 @csrf
@@ -146,8 +146,8 @@
                 <label class="flex items-start gap-3">
                     <input type="checkbox" name="auto_envio" value="1" @checked($autoEnvio) class="mt-1 rounded border-gray-300 text-indigo-600">
                     <span>
-                        <span class="block text-sm font-medium text-gray-800">Enviar automáticamente el documento al cliente al ser aceptado por Hacienda</span>
-                        <span class="block text-xs text-gray-500">Si está desactivado, el envío es manual desde la pantalla del documento.</span>
+                        <span class="block text-sm font-medium text-gray-800">Enviar automáticamente el documento al cliente</span>
+                        <span class="block text-xs text-gray-500">Sale cuando Hacienda lo acepta. Si se emitió en contingencia, le sale además el provisional al emitirse, y el completo cuando Hacienda lo sella. Si está desactivado, el envío es manual desde la pantalla del documento.</span>
                     </span>
                 </label>
 
