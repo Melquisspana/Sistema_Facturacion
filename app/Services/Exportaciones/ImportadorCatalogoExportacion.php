@@ -4,6 +4,7 @@ namespace App\Services\Exportaciones;
 
 use App\Http\Requests\Exportaciones\PresentacionExportacionRequest;
 use App\Models\ExportacionProducto;
+use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
@@ -16,12 +17,15 @@ use Throwable;
  * Lee las filas de productos (desde la fila 9 hasta la fila de totales). De los
  * pesos toma solo gramos, neto y bruto en kilos; onzas y libras las calcula
  * {@see CatalogoExportacion::pesos()}, como el formulario, y no las lee del Excel.
- * No re-importa productos existentes (mismo nombre_es): los omite.
+ *
+ * Un producto que ya existe (mismo nombre_es) no se crea otra vez: si la fila trae
+ * una presentación que no tiene (otras unidades por caja u otros gramos), se le
+ * agrega; si ya la tiene, se omite y no se pisa.
  */
 class ImportadorCatalogoExportacion
 {
     /**
-     * @return array{creados: int, omitidos: int, errores: list<string>}
+     * @return array{creados: int, omitidos: int, agregadas: list<string>, errores: list<string>}
      */
     public function importar(?string $rutaXlsx = null): array
     {
@@ -39,7 +43,7 @@ class ImportadorCatalogoExportacion
             throw new RuntimeException('No se pudo leer el Excel: está dañado o no es la lista de empaque. Abrilo en Excel, guardalo de nuevo y volvé a subirlo. No se importó nada.');
         }
 
-        $resumen = ['creados' => 0, 'omitidos' => 0, 'errores' => []];
+        $resumen = ['creados' => 0, 'omitidos' => 0, 'agregadas' => [], 'errores' => []];
 
         $filaInicio = $this->filaPrimerProducto($hoja);
         $ultimaFila = $hoja->getHighestRow();
@@ -69,13 +73,18 @@ class ImportadorCatalogoExportacion
     {
         [$nombreEs, $nombreEn] = $this->separarDescripcion($descripcion);
 
-        if (ExportacionProducto::where('nombre_es', $nombreEs)->exists()) {
+        $existentes = ExportacionProducto::where('nombre_es', $nombreEs)->orderBy('id')->get();
+        $num = fn (string $col): float => round((float) $hoja->getCell($col.$fila)->getCalculatedValue(), 2);
+
+        // Mismas unidades por caja y mismos gramos es la misma presentación
+        // (CatalogoExportacion::exigirUnica): esa ya existe y no se pisa.
+        $unidades = (int) $hoja->getCell('E'.$fila)->getCalculatedValue();
+        if ($existentes->contains(fn (ExportacionProducto $p) => (int) $p->unidades_por_caja === $unidades
+            && round((float) $p->gramos_por_unidad, 2) === $num('F'))) {
             $resumen['omitidos']++;
 
             return;
         }
-
-        $num = fn (string $col): float => round((float) $hoja->getCell($col.$fila)->getCalculatedValue(), 2);
 
         // Onzas y libras se calculan igual que en el formulario; las columnas H, Q y R
         // del Excel no se leen. Sin peso bruto, la caja pesa neto + 1 kg.
@@ -85,7 +94,7 @@ class ImportadorCatalogoExportacion
             'nombre_es' => $nombreEs,
             'nombre_en' => $nombreEn,
             'unidad' => trim((string) $hoja->getCell('D'.$fila)->getValue()) ?: null,
-            'unidades_por_caja' => (int) $hoja->getCell('E'.$fila)->getCalculatedValue(),
+            'unidades_por_caja' => $unidades,
             'gramos_por_unidad' => $num('F'),
             'onzas_por_unidad' => $pesos['onzas'],
             'precio_caja' => $num('J'),
@@ -98,9 +107,36 @@ class ImportadorCatalogoExportacion
 
         $this->exigirDatosPosibles($datos);
 
-        ExportacionProducto::create($datos);
+        if ($existentes->isEmpty()) {
+            ExportacionProducto::create($datos);
+            $resumen['creados']++;
 
-        $resumen['creados']++;
+            return;
+        }
+
+        // El producto ya existe con otra presentación: se le agrega, sin crear otro.
+        $nueva = $this->agregarPresentacion($existentes, $datos);
+        $resumen['agregadas'][] = "Fila {$fila}: se agregó la presentación {$nueva->etiquetaEmpaque()}, "
+            .(float) $nueva->gramos_por_unidad." g a «{$nombreEs}».";
+    }
+
+    /**
+     * Con producto base, la presentación cuelga de él por el mismo camino que el
+     * formulario ({@see CatalogoExportacion::agregarPresentacion()}: sus nombres, sin
+     * repetir presentación y los pesos de {@see CatalogoExportacion::pesos()}). Un
+     * producto sin agrupar no tiene base: la presentación queda con su mismo nombre.
+     *
+     * @param  Collection<int, ExportacionProducto>  $existentes
+     */
+    private function agregarPresentacion(Collection $existentes, array $datos): ExportacionProducto
+    {
+        $base = $existentes->first(fn (ExportacionProducto $p) => $p->exportacion_producto_base_id !== null)?->base;
+
+        if ($base !== null) {
+            return app(CatalogoExportacion::class)->agregarPresentacion($base, $datos);
+        }
+
+        return ExportacionProducto::create(['nombre_en' => $existentes->first()->nombre_en] + $datos);
     }
 
     /**

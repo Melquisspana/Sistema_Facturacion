@@ -240,9 +240,12 @@ class ProductosExportacionRutasTest extends TestCase
         $existente = $this->base('Producto existente de prueba')->presentaciones()->sole();
         $antes = $this->datosDe($existente);
         $usuario = $this->usuario();
+        // El existente viene con la presentación que ya tiene (144 u de 85 g) y otro precio
+        // y otros pesos: se omite sin pisarlo. Con otra presentación se le agregaría
+        // (ImportarCatalogoExportacionBordesTest).
         $filas = [
             ['Producto nuevo de prueba \\ New test product', 144, 85, 136.80, 13],
-            ['Producto existente de prueba \\ Existing test product', 50, 40, 999.00, 5],
+            ['Producto existente de prueba \\ Existing test product', 144, 85, 999.00, 5],
         ];
 
         $this->actingAs($usuario)->post(route('productos.exportacion.importar.run'), ['archivo' => $this->excel($filas)])

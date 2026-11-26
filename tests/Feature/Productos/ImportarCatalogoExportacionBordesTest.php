@@ -3,19 +3,23 @@
 namespace Tests\Feature\Productos;
 
 use App\Models\ExportacionProducto;
+use App\Models\ExportacionProductoBase;
 use App\Models\User;
+use App\Services\Exportaciones\CatalogoExportacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 use ZipArchive;
 
 /**
  * Productos › «De exportación» › Importar Excel: los bordes que la oficina puede
  * provocar sin querer. Un peso bruto menor que el neto (el formulario no lo deja), el
- * mismo producto dos veces en el archivo y un Excel dañado que igual se llama .xlsx.
- * En ningún caso se crea algo a medias ni se pisa lo que había. Datos ficticios.
+ * mismo producto dos veces en el archivo —con la misma presentación o con otra— y un
+ * Excel dañado que igual se llama .xlsx. En ningún caso se crea algo a medias ni se
+ * pisa lo que había. Datos ficticios.
  */
 class ImportarCatalogoExportacionBordesTest extends TestCase
 {
@@ -150,12 +154,15 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
         $this->assertStringContainsString('empaque', $mensaje);
     }
 
-    /** El mismo producto dos veces en el archivo: entra el primero y el segundo no lo pisa. */
-    public function test_el_mismo_producto_dos_veces_en_el_archivo_entra_una_sola_vez_sin_pisarse(): void
+    /**
+     * La misma presentación dos veces en el archivo (mismas unidades por caja y mismos
+     * gramos): entra la primera y la segunda no la pisa.
+     */
+    public function test_la_misma_presentacion_dos_veces_en_el_archivo_entra_una_sola_vez_sin_pisarse(): void
     {
         $ruta = $this->rutaExcel([
             ['Producto de prueba \\ Test product', 144, 85, 136.80, 13, 14],
-            ['Producto de prueba \\ Test product', 24, 40, 99.00, 5, 6],
+            ['Producto de prueba \\ Test product', 144, 85, 99.00, 5, 6],
         ]);
 
         $this->actingAs($this->usuario())->post(route('productos.exportacion.importar.run'), ['archivo' => $this->subir($ruta)])
@@ -164,6 +171,92 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
         $producto = ExportacionProducto::query()->sole();
         $this->assertSame(144, (int) $producto->unidades_por_caja);
         $this->assertEquals(136.80, (float) $producto->precio_caja);
+        $this->assertEquals(13.00, (float) $producto->peso_neto_caja_kg);
+    }
+
+    /**
+     * Decisión de Melqui: el mismo producto con otra presentación (otras unidades por
+     * caja u otros gramos) se le agrega como presentación, sin crear otro producto y
+     * sin pisar la que ya tenía. Onzas y libras salen de gramos y kilos, como siempre.
+     * El resumen lo dice en una línea por fila.
+     */
+    public function test_el_mismo_producto_con_otra_presentacion_se_le_agrega_y_el_resumen_lo_dice(): void
+    {
+        $ruta = $this->rutaExcel([
+            ['Producto de prueba \\ Test product', 144, 85, 136.80, 13, 14],
+            ['Producto de prueba \\ Test product', 24, 40, 99.00, 5, 0, ['M' => null]],
+            ['Producto de prueba \\ Test product', 144, 90, 140.00, 14, 15],
+            ['Producto de prueba \\ Test product', 144, 85, 150.00, 20, 21],
+        ]);
+
+        $this->actingAs($this->usuario())->post(route('productos.exportacion.importar.run'), ['archivo' => $this->subir($ruta)])
+            ->assertSessionHas('status', "Importación completada: 1 creados, 1 omitidos (ya existían).\n"
+                ."Fila 10: se agregó la presentación Bolsa de prueba · 24 u, 40 g a «Producto de prueba».\n"
+                .'Fila 11: se agregó la presentación Bolsa de prueba · 144 u, 90 g a «Producto de prueba».');
+
+        $presentaciones = ExportacionProducto::query()->orderBy('id')->get();
+        $this->assertSame(['Producto de prueba', 'Producto de prueba', 'Producto de prueba'], $presentaciones->pluck('nombre_es')->all());
+        $this->assertSame([144, 24, 144], $presentaciones->pluck('unidades_por_caja')->all());
+        // La fila 12 repite la primera presentación: no la pisa.
+        $this->assertEquals(136.80, (float) $presentaciones[0]->precio_caja);
+
+        $nueva = $presentaciones[1];
+        $this->assertEquals(40.00, (float) $nueva->gramos_por_unidad);
+        $this->assertEquals(1.41, (float) $nueva->onzas_por_unidad);
+        $this->assertEquals(5.00, (float) $nueva->peso_neto_caja_kg);
+        $this->assertEquals(6.00, (float) $nueva->peso_bruto_caja_kg);
+        $this->assertEquals(11.02, (float) $nueva->peso_neto_caja_lb);
+        $this->assertEquals(13.23, (float) $nueva->peso_bruto_caja_lb);
+        $this->assertEquals(99.00, (float) $nueva->precio_caja);
+    }
+
+    /**
+     * Un producto del catálogo, ya con su producto base: la presentación nueva cuelga de
+     * ese mismo producto (no se crea otro), lleva sus nombres y queda en la bitácora con
+     * quién la importó, igual que un alta.
+     */
+    public function test_la_presentacion_nueva_de_un_producto_del_catalogo_cuelga_de_el_y_queda_en_la_bitacora(): void
+    {
+        $base = app(CatalogoExportacion::class)->crearProducto(
+            ['nombre_es' => 'Producto de prueba', 'nombre_en' => 'Test product', 'categoria' => null],
+            ['unidad' => 'Bolsa de prueba', 'unidades_por_caja' => 144, 'gramos_por_unidad' => 85, 'peso_neto_caja_kg' => 13, 'precio_caja' => 136.80],
+        );
+        $usuario = $this->usuario();
+        $ruta = $this->rutaExcel([['Producto de prueba \\ Otro nombre en inglés', 216, 85, 200.00, 19, 20]]);
+
+        $this->actingAs($usuario)->post(route('productos.exportacion.importar.run'), ['archivo' => $this->subir($ruta)])
+            ->assertSessionHas('status', "Importación completada: 0 creados, 0 omitidos (ya existían).\n"
+                .'Fila 9: se agregó la presentación Bolsa de prueba · 216 u, 85 g a «Producto de prueba».');
+
+        $this->assertSame(1, ExportacionProductoBase::count());
+        $nueva = ExportacionProducto::query()->where('unidades_por_caja', 216)->sole();
+        $this->assertSame($base->id, (int) $nueva->exportacion_producto_base_id);
+        $this->assertSame('Test product', $nueva->nombre_en);
+        $this->assertEquals(41.89, (float) $nueva->peso_neto_caja_lb);
+
+        $registro = Activity::query()->where('log_name', 'producto_exportacion')
+            ->where('subject_type', ExportacionProducto::class)->where('subject_id', $nueva->id)->where('event', 'created')->sole();
+        $this->assertSame($usuario->id, (int) $registro->causer_id);
+        $this->assertSame('creó una presentación de exportación', $registro->description);
+    }
+
+    /** La presentación nueva pasa por las mismas reglas que un alta: con un dato imposible no se crea y se informa. */
+    public function test_una_presentacion_nueva_con_datos_imposibles_no_se_agrega_y_se_informa(): void
+    {
+        $ruta = $this->rutaExcel([
+            ['Producto de prueba \\ Test product', 144, 85, 136.80, 13, 14],
+            ['Producto de prueba \\ Test product', 24, 40, 99.00, 5, 3],
+        ]);
+
+        $this->actingAs($this->usuario())->post(route('productos.exportacion.importar.run'), ['archivo' => $this->subir($ruta)])
+            ->assertSessionHas('error');
+
+        $this->assertSame([144], ExportacionProducto::query()->pluck('unidades_por_caja')->all());
+        $mensaje = (string) session('error');
+        $this->assertStringContainsString('Importación completada: 1 creados, 0 omitidos', $mensaje);
+        $this->assertStringContainsString('Fila 10', $mensaje);
+        $this->assertStringContainsString('peso bruto', $mensaje);
+        $this->assertStringNotContainsString('se agregó', $mensaje);
     }
 
     /**

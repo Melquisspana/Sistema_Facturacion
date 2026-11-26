@@ -278,6 +278,11 @@ class ExportacionProductoController extends Controller
 
         $mensaje = "Importación completada: {$resumen['creados']} creados, {$resumen['omitidos']} omitidos (ya existían).";
 
+        // Una línea por fila que le agregó una presentación a un producto existente.
+        if ($resumen['agregadas'] !== []) {
+            $mensaje .= "\n".implode("\n", $resumen['agregadas']);
+        }
+
         if ($resumen['errores'] !== []) {
             $mensaje .= ' Errores: '.implode(' | ', $resumen['errores']);
         }
