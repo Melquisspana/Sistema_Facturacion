@@ -10,6 +10,24 @@
     $metodos = config('gastos.metodos');
     $hoy = now()->toDateString();
     $vence = $g->proxima ? \Carbon\CarbonImmutable::parse(substr((string) $g->proxima, 0, 10)) : null;
+
+    // Si este formulario volvió con error, se reabre con lo escrito, el aviso debajo de su
+    // campo y el foco en el primero que falló (como «Saltar»). Todas las filas usan los
+    // mismos nombres de campo: sin esta condición lo escrito aparecería en todas.
+    $visibles = match ($accion) {
+        'pagar' => ['fecha', 'metodo', 'referencia'],
+        'abonar' => ['importe', 'fecha', 'metodo'],
+        'completar' => ['importe', 'vence'],
+        default => [],
+    };
+    $volvio = $errors->any() && old('panel') === $panel;
+    $escrito = fn (string $campo, string $siNo = '') => $volvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
+    $foco = $volvio ? (collect($visibles)->first(fn ($c) => $errors->has($c)) ?? ($visibles[0] ?? null)) : null;
+    // Lo que no es de un campo a la vista (clave, pago, beneficiario…) se lee igual acá adentro.
+    $otrosErrores = $volvio ? collect($errors->getMessages())->except($visibles)->flatten() : collect();
+    // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
+    // (doble clic), reenviarlo no registra otro pago; si no, la clave sigue libre.
+    $clave = $volvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : (string) \Illuminate\Support\Str::uuid();
 @endphp
 
 {{-- Una obligación REAL en la pantalla principal, con la acción que le corresponde.
@@ -72,27 +90,43 @@
             {{-- Pagar: el sistema ya sabe a quién, qué y cuánto. Solo falta cuándo y cómo. --}}
             <form method="POST" action="{{ route('gastos.panel.pagar', $g) }}" class="space-y-3">
                 @csrf
-                <input type="hidden" name="clave" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                <input type="hidden" name="clave" value="{{ $clave }}">
+                <input type="hidden" name="panel" value="{{ $panel }}">
                 <p class="text-sm text-gray-700">
                     Pagar <span class="font-semibold">${{ Dinero::mostrar((int) $g->pendiente) }}</span>
                     a {{ $g->beneficiario }}. Se salda el total pendiente de esta obligación.
                 </p>
+                @foreach ($otrosErrores as $mensaje)
+                    <p class="text-sm text-red-600">{{ $mensaje }}</p>
+                @endforeach
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="{{ $etiqueta }}" for="p-fecha-{{ $g->id }}">Cuándo pagaste</label>
-                        <input id="p-fecha-{{ $g->id }}" name="fecha" type="date" required value="{{ $hoy }}" max="{{ $hoy }}" class="{{ $campo }}">
+                        <input id="p-fecha-{{ $g->id }}" name="fecha" type="date" required value="{{ $escrito('fecha', $hoy) }}" max="{{ $hoy }}"
+                               @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                        @if ($volvio)
+                            @error('fecha')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="p-metodo-{{ $g->id }}">Cómo</label>
-                        <select id="p-metodo-{{ $g->id }}" name="metodo" class="{{ $campo }}">
+                        <select id="p-metodo-{{ $g->id }}" name="metodo"
+                                @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                             @foreach ($metodos as $valor => $texto)
-                                <option value="{{ $valor }}">{{ $texto }}</option>
+                                <option value="{{ $valor }}" @selected($volvio && old('metodo') === $valor)>{{ $texto }}</option>
                             @endforeach
                         </select>
+                        @if ($volvio)
+                            @error('metodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="p-ref-{{ $g->id }}">Referencia</label>
-                        <input id="p-ref-{{ $g->id }}" name="referencia" maxlength="180" class="{{ $campo }}" placeholder="Opcional">
+                        <input id="p-ref-{{ $g->id }}" name="referencia" maxlength="180" value="{{ $escrito('referencia') }}"
+                               @if ($foco === 'referencia') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
+                        @if ($volvio)
+                            @error('referencia')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -113,7 +147,8 @@
                  cuenta, donde el reparto se edita línea por línea. --}}
             <form method="POST" action="{{ route('gastos.panel.abonos') }}" class="space-y-3">
                 @csrf
-                <input type="hidden" name="clave" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                <input type="hidden" name="clave" value="{{ $clave }}">
+                <input type="hidden" name="panel" value="{{ $panel }}">
                 {{-- De dónde salió este abono. Es una palabra de una lista cerrada, no
                      una dirección: el servidor la traduce a una ruta nuestra. --}}
                 <input type="hidden" name="origen" value="panel">
@@ -123,22 +158,37 @@
                     Abonar a {{ $g->beneficiario }}. Debe
                     <span class="font-semibold">${{ Dinero::mostrar((int) $g->pendiente) }}</span>.
                 </p>
+                @foreach ($otrosErrores as $mensaje)
+                    <p class="text-sm text-red-600">{{ $mensaje }}</p>
+                @endforeach
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label class="{{ $etiqueta }}" for="a-importe-{{ $g->id }}">Cuánto abonás</label>
-                        <input id="a-importe-{{ $g->id }}" name="importe" required inputmode="decimal" class="{{ $campo }}" placeholder="0.00">
+                        <input id="a-importe-{{ $g->id }}" name="importe" required inputmode="decimal" value="{{ $escrito('importe') }}"
+                               @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                        @if ($volvio)
+                            @error('importe')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="a-fecha-{{ $g->id }}">Cuándo</label>
-                        <input id="a-fecha-{{ $g->id }}" name="fecha" type="date" required value="{{ $hoy }}" max="{{ $hoy }}" class="{{ $campo }}">
+                        <input id="a-fecha-{{ $g->id }}" name="fecha" type="date" required value="{{ $escrito('fecha', $hoy) }}" max="{{ $hoy }}"
+                               @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                        @if ($volvio)
+                            @error('fecha')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="a-metodo-{{ $g->id }}">Cómo</label>
-                        <select id="a-metodo-{{ $g->id }}" name="metodo" class="{{ $campo }}">
+                        <select id="a-metodo-{{ $g->id }}" name="metodo"
+                                @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                             @foreach ($metodos as $valor => $texto)
-                                <option value="{{ $valor }}">{{ $texto }}</option>
+                                <option value="{{ $valor }}" @selected($volvio && old('metodo') === $valor)>{{ $texto }}</option>
                             @endforeach
                         </select>
+                        @if ($volvio)
+                            @error('metodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -162,17 +212,29 @@
                  se queda sin fecha. No se inventa ninguna. --}}
             <form method="POST" action="{{ route('gastos.panel.completar', $g) }}" class="space-y-3">
                 @csrf
+                <input type="hidden" name="panel" value="{{ $panel }}">
                 <p class="text-sm text-gray-700">
                     Anotar lo que dice el recibo de {{ $g->beneficiario }} · {{ $g->concepto }}.
                 </p>
+                @foreach ($otrosErrores as $mensaje)
+                    <p class="text-sm text-red-600">{{ $mensaje }}</p>
+                @endforeach
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label class="{{ $etiqueta }}" for="r-importe-{{ $g->id }}">Importe del recibo</label>
-                        <input id="r-importe-{{ $g->id }}" name="importe" required inputmode="decimal" class="{{ $campo }}" placeholder="0.00">
+                        <input id="r-importe-{{ $g->id }}" name="importe" required inputmode="decimal" value="{{ $escrito('importe') }}"
+                               @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                        @if ($volvio)
+                            @error('importe')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="r-vence-{{ $g->id }}">Vence el (opcional)</label>
-                        <input id="r-vence-{{ $g->id }}" name="vence" type="date" class="{{ $campo }}">
+                        <input id="r-vence-{{ $g->id }}" name="vence" type="date" value="{{ $escrito('vence') }}"
+                               @if ($foco === 'vence') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                        @if ($volvio)
+                            @error('vence')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        @endif
                         <p class="mt-1 text-xs text-gray-500">La fecha que trae el papel. Si no la ponés, queda sin vencimiento.</p>
                     </div>
                 </div>
