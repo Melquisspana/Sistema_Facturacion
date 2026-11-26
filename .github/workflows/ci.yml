@@ -194,6 +194,42 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm audit --package-lock-only --omit=dev --audit-level=high
 
+  analisis-estatico:
+    name: Análisis estático (Larastan)
+    # Misma condición que los otros jobs: los PR internos ya se verifican por push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    # En una PC de 16 núcleos tarda medio minuto sin caché; el runner tiene 4, más la
+    # instalación de Composer. 15 minutos de tope deja holgura sin esconder cuelgues.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          # Composer verifica los requisitos de toda la aplicación, incluso para Larastan.
+          extensions: mbstring, dom, fileinfo, gd, zip, intl, bcmath, pdo_sqlite, sqlite3, xml, xmlreader, xmlwriter, simplexml, libxml, iconv, openssl, tokenizer, ctype
+
+      - name: Localizar caché de Composer
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
+
+      - name: Instalar dependencias PHP
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      # phpstan.neon fija nivel 5 sobre app/ y routes/. Los errores que ya existían están
+      # en phpstan-baseline.neon y no frenan: solo se exige el código nuevo o cambiado.
+      # El formato github marca cada error en la línea del archivo dentro del PR.
+      - name: Analizar con Larastan
+        run: vendor/bin/phpstan analyse --memory-limit=2G --no-progress --error-format=github
+
   pruebas-mysql:
     # El total sale de la matriz: los checks se llaman «PHPUnit (MySQL estricto) (1/4)»
     # hasta «(4/4)».

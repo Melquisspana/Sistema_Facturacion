@@ -1,0 +1,16 @@
+# Análisis estático con Larastan (PHPStan para Laravel). Lo corre la CI en cada push.
+# Los errores que ya existían quedan en phpstan-baseline.neon para que no frenen:
+# solo se exige el código nuevo o cambiado. Cuando alguien arregla errores viejos,
+# se regenera la línea base con:
+#   vendor/bin/phpstan analyse --memory-limit=2G --generate-baseline
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/nesbot/carbon/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    paths:
+        - app/
+        - routes/
+    # Nivel 5 de 10: tipos de argumentos y retornos sin exigir anotaciones en todo.
+    level: 5
