@@ -6,7 +6,10 @@
     $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
-    $panel = 'fila-'.$g->id;
+    // El panel es de la acción, no solo del gasto: si «Anotar el monto» vuelve con error
+    // porque otro envío ya lo anotó, la fila ya ofrece Pagar o Abonar y no se abre ese
+    // otro formulario con el error y la cifra escrita para el recibo.
+    $panel = 'fila-'.$accion.'-'.$g->id;
     $metodos = config('gastos.metodos');
     $hoy = now()->toDateString();
     $vence = $g->proxima ? \Carbon\CarbonImmutable::parse(substr((string) $g->proxima, 0, 10)) : null;

@@ -81,6 +81,25 @@ class PanelConservaLoEscritoTest extends TestCase
         return $gasto->fresh();
     }
 
+    /** Una obligación que espera su recibo: existe, pero todavía sin importe ni cuotas. */
+    private function sinMonto(User $u, string $proveedor, string $naturaleza): Gasto
+    {
+        return Gasto::create([
+            'clave' => (string) Str::uuid(),
+            'huella_peticion' => hash('sha256', $proveedor.$naturaleza),
+            'beneficiario' => $proveedor,
+            'concepto' => 'Recibo de prueba',
+            'categoria' => 'Servicios',
+            'ambito' => 'empresarial',
+            'naturaleza' => $naturaleza,
+            'moneda' => 'USD',
+            'importe' => null,
+            'documentacion' => 'pendiente',
+            'responsable_id' => $u->id,
+            'registrado_por' => $u->id,
+        ])->fresh();
+    }
+
     /** Una regla de monto variable que vence el 28: sin generar es una fila programada. */
     private function reglaVariable(User $u, string $proveedor): Regla
     {
@@ -117,12 +136,27 @@ class PanelConservaLoEscritoTest extends TestCase
     /** El HTML del formulario que lleva el campo oculto de ese panel. */
     private function formularioDe(string $html, string $panel): string
     {
-        $marca = strpos($html, 'name="panel" value="'.$panel.'"');
-        $this->assertNotFalse($marca, 'El formulario de «'.$panel.'» no avisa qué panel reabrir.');
+        return $this->formularioCon($html, 'name="panel" value="'.$panel.'"', 'El formulario de «'.$panel.'» no avisa qué panel reabrir.');
+    }
+
+    /** El HTML del formulario que contiene ese fragmento. */
+    private function formularioCon(string $html, string $fragmento, string $siFalta = ''): string
+    {
+        $marca = strpos($html, $fragmento);
+        $this->assertNotFalse($marca, $siFalta ?: 'Ningún formulario contiene: '.$fragmento);
         $inicio = strrpos(substr($html, 0, $marca), '<form');
         $fin = strpos($html, '</form>', $marca);
 
         return substr($html, $inicio, $fin - $inicio);
+    }
+
+    /** Lo que el navegador manda en «panel» desde el formulario con esa dirección. */
+    private function panelQueManda(string $html, string $accion): string
+    {
+        $formulario = $this->formularioCon($html, 'action="'.$accion.'"');
+        $this->assertSame(1, preg_match('/name="panel" value="([^"]+)"/', $formulario, $m));
+
+        return $m[1];
     }
 
     /** Vuelve abierto ese panel y un solo campo de toda la página recibe el foco: el indicado. */
@@ -169,7 +203,7 @@ class PanelConservaLoEscritoTest extends TestCase
 
         // Las filas de abajo usan los mismos nombres (importe, fecha, metodo) y siguen igual.
         foreach ([$a, $b] as $fila) {
-            $otra = $this->formularioDe($html, 'fila-'.$fila->id);
+            $otra = $this->formularioDe($html, 'fila-'.($fila->naturaleza === 'compra' ? 'abonar' : 'pagar').'-'.$fila->id);
             $this->assertStringContainsString('value="'.self::HOY.'"', $otra);
             $this->assertStringNotContainsString('selected', $otra);
             $this->assertStringNotContainsString('text-red-600', $otra);
@@ -182,7 +216,7 @@ class PanelConservaLoEscritoTest extends TestCase
         $u = $this->operador();
         $a = $this->deuda($u, 'Proveedor de prueba A', '48.00', 'operativo');
         $b = $this->deuda($u, 'Proveedor de prueba B', '60.00', 'operativo');
-        $panel = 'fila-'.$a->id;
+        $panel = 'fila-pagar-'.$a->id;
         $clave = (string) Str::uuid();
 
         $html = $this->volverConError($u, route('gastos.panel.pagar', $a), [
@@ -197,7 +231,7 @@ class PanelConservaLoEscritoTest extends TestCase
             $this->assertUnaVezEn($html, $form, $escrito);
         }
 
-        $otra = $this->formularioDe($html, 'fila-'.$b->id);
+        $otra = $this->formularioDe($html, 'fila-pagar-'.$b->id);
         $this->assertStringContainsString('value="'.self::HOY.'"', $otra);
         $this->assertStringNotContainsString('selected', $otra);
         $this->assertStringNotContainsString('text-red-600', $otra);
@@ -209,7 +243,7 @@ class PanelConservaLoEscritoTest extends TestCase
         $u = $this->operador();
         $a = $this->deuda($u, 'Proveedor de prueba A', '300.00', 'compra');
         $b = $this->deuda($u, 'Proveedor de prueba B', '500.00', 'compra');
-        $panel = 'fila-'.$a->id;
+        $panel = 'fila-abonar-'.$a->id;
         $clave = (string) Str::uuid();
         $datos = [
             'clave' => $clave, 'panel' => $panel, 'origen' => 'panel',
@@ -228,7 +262,7 @@ class PanelConservaLoEscritoTest extends TestCase
             $this->assertUnaVezEn($html, $form, $escrito);
         }
 
-        $otra = $this->formularioDe($html, 'fila-'.$b->id);
+        $otra = $this->formularioDe($html, 'fila-abonar-'.$b->id);
         $this->assertStringContainsString('value="'.self::HOY.'"', $otra);
         $this->assertStringNotContainsString('selected', $otra);
         $this->assertStringNotContainsString('El abono supera', $otra);
@@ -252,7 +286,7 @@ class PanelConservaLoEscritoTest extends TestCase
         }
         $a = Gasto::where('beneficiario', 'Proveedor de prueba A')->sole();
         $b = Gasto::where('beneficiario', 'Proveedor de prueba B')->sole();
-        $panel = 'fila-'.$a->id;
+        $panel = 'fila-completar-'.$a->id;
 
         $html = $this->volverConError($u, route('gastos.panel.completar', $a), [
             'panel' => $panel, 'importe' => '12,50', 'vence' => '2026-10-05',
@@ -264,9 +298,42 @@ class PanelConservaLoEscritoTest extends TestCase
         $this->assertUnaVezEn($html, $form, 'value="12,50"');
         $this->assertUnaVezEn($html, $form, 'value="2026-10-05"');
 
-        $otra = $this->formularioDe($html, 'fila-'.$b->id);
+        $otra = $this->formularioDe($html, 'fila-completar-'.$b->id);
         $this->assertStringNotContainsString('text-red-600', $otra);
         $this->assertNull($a->fresh()->importe, 'No se anotó nada.');
+    }
+
+    /**
+     * Doble clic en «Guardar el monto» (o dos personas con el mismo recibo): el primero lo
+     * anota y el segundo choca con «ya tiene importe». Para entonces esa fila ya ofrece
+     * Pagar (o Abonar, si es una compra). No se abre ese otro formulario con el error y
+     * con la cifra escrita para el recibo: el aviso se lee arriba y la fila queda cerrada.
+     */
+    public function test_el_doble_clic_en_guardar_el_monto_no_abre_el_pago_ni_el_abono_de_esa_fila(): void
+    {
+        $u = $this->operador();
+        $operativo = $this->sinMonto($u, 'Proveedor de prueba A', 'operativo');
+        $compra = $this->sinMonto($u, 'Proveedor de prueba B', 'compra');
+        $antes = $this->actingAs($u)->get(route('gastos.panel'))->assertOk()->getContent();
+
+        // Operativo: después del monto la fila se paga. Compra: se abona.
+        foreach ([['p', $operativo], ['a', $compra]] as [$prefijo, $gasto]) {
+            $url = route('gastos.panel.completar', $gasto);
+            $datos = ['panel' => $this->panelQueManda($antes, $url), 'importe' => '50.00', 'vence' => ''];
+            $this->actingAs($u)->from(route('gastos.panel'))->post($url, $datos)->assertSessionHasNoErrors();
+            $html = $this->volverConError($u, $url, $datos);
+
+            $this->assertStringContainsString('Este gasto ya tiene importe', $html, 'El aviso se lee arriba.');
+            $this->assertSame(0, substr_count($html, self::FOCO), 'Ningún formulario se abrió solo.');
+            $this->assertStringNotContainsString('value="50.00"', $html, 'La cifra del recibo no pasa a otro formulario.');
+            $otra = $this->formularioCon($html, 'id="'.$prefijo.'-fecha-'.$gasto->id.'"');
+            $this->assertStringContainsString('value="'.self::HOY.'"', $otra);
+            $this->assertStringNotContainsString('text-red-600', $otra);
+            $this->assertStringNotContainsString('ya tiene importe', $otra);
+        }
+
+        $this->assertSame('50.00', $operativo->fresh()->importe);
+        $this->assertSame(1, $compra->fresh()->cuotas()->count(), 'Se anotó una sola vez.');
     }
 
     public function test_registrar_pago_de_una_fila_programada_vuelve_abierto_con_lo_escrito(): void
@@ -308,7 +375,7 @@ class PanelConservaLoEscritoTest extends TestCase
         $u = $this->operador();
         $a = $this->deuda($u, 'Proveedor de prueba A', '48.00', 'operativo');
         $b = $this->deuda($u, 'Proveedor de prueba B', '60.00', 'operativo');
-        $panel = 'fila-'.$a->id;
+        $panel = 'fila-pagar-'.$a->id;
 
         $html = $this->volverConError($u, route('gastos.panel.pagar', $a), [
             'clave' => 'no-es-una-clave', 'panel' => $panel,
@@ -321,7 +388,7 @@ class PanelConservaLoEscritoTest extends TestCase
         $this->assertStringNotContainsString('no-es-una-clave', $html);
         $this->assertMatchesRegularExpression('/name="clave" value="[0-9a-f-]{36}"/', $form);
         $this->assertUnaVezEn($html, $form, 'value="Ref de prueba 78"');
-        $this->assertStringNotContainsString('text-red-600', $this->formularioDe($html, 'fila-'.$b->id));
+        $this->assertStringNotContainsString('text-red-600', $this->formularioDe($html, 'fila-pagar-'.$b->id));
     }
 
     /**
@@ -334,7 +401,7 @@ class PanelConservaLoEscritoTest extends TestCase
         $u = $this->operador();
         $a = $this->deuda($u, 'Proveedor de prueba A', '300.00', 'compra');
         $this->deuda($u, 'Proveedor de prueba B', '500.00', 'compra');
-        $panel = 'fila-'.$a->id;
+        $panel = 'fila-abonar-'.$a->id;
         $clave = (string) Str::uuid();
         $datos = [
             'clave' => $clave, 'panel' => $panel, 'origen' => 'panel',
