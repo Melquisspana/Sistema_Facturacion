@@ -4,6 +4,7 @@ namespace App\Services\Rutas;
 
 use App\Enums\EstadoPedidoSala;
 use App\Enums\ResultadoEntrega;
+use App\Models\Dte;
 use App\Models\PedidoSala;
 use App\Models\SalidaRutaEntrega;
 use App\Support\HoraNegocio;
@@ -94,7 +95,7 @@ class PedidosYEntregas
                 $lista[] = ['numero' => $pedido['numero'], 'sala' => $this->nombre($nombre), 'vendedor' => $pedido['vendedor']];
             }
         }
-        $estados = PedidoSala::query()->whereKey(array_column($lista, 'numero'))->get(['id', 'estado'])->pluck('estado', 'id');
+        $estados = PedidoSala::query()->whereKey(array_column($lista, 'numero'))->pluck('estado', 'id');
         $porEstado = [];
         foreach (EstadoPedidoSala::cases() as $estado) {
             if ($estado !== EstadoPedidoSala::Anulado) {
@@ -160,21 +161,22 @@ class PedidosYEntregas
 
         $zonas = [];
         foreach ($entregas as $entrega) {
+            $dte = $entrega->dte instanceof Dte ? $entrega->dte : null;
             // El pedido web no tiene sala: va en la zona de su pedido.
             $zona = $entrega->sala
                 ? $this->propuesta->zonaDe($entrega->sala->ruta_id, $entrega->sala->distrito_id, $entrega->sala->departamento_id)
-                : $this->propuesta->zonaDe($entrega->dte?->pedidoWeb?->pedidoSala?->ruta_id, null, null);
-            $clave = $zona?->id ?? 0;
-            $zonas[$clave] ??= ['nombre' => $zona?->nombre ?? 'Sin zona', 'entregadas' => 0, 'no_se_pudo' => 0, 'lista' => []];
+                : $this->propuesta->zonaDe($dte?->pedidoWeb?->pedidoSala?->ruta_id, null, null);
+            $clave = $zona->id ?? 0;
+            $zonas[$clave] ??= ['nombre' => $zona->nombre ?? 'Sin zona', 'entregadas' => 0, 'no_se_pudo' => 0, 'lista' => []];
             $entregado = $entrega->resultado === ResultadoEntrega::Entregado;
             $zonas[$clave][$entregado ? 'entregadas' : 'no_se_pudo']++;
             $zonas[$clave]['lista'][] = [
                 'sala' => $entrega->nombreDestino(),
-                'documento' => $entrega->dte?->numero_control,
+                'documento' => $dte?->numero_control,
                 // El pedido web se entrega con su Factura; las salas, con el CCF.
-                'tipo' => $entrega->dte?->tipo_dte === '01' ? 'Factura' : 'CCF',
+                'tipo' => $dte?->tipo_dte === '01' ? 'Factura' : 'CCF',
                 // Un «No se pudo» de antes, sin quién fue, es de quien lo anotó.
-                'quien' => $entrega->entregadoPor?->nombre ?? $entrega->registradoPor?->name,
+                'quien' => $entrega->entregadoPor->nombre ?? $entrega->registradoPor?->name,
                 'hora' => HoraNegocio::aLocal($entrega->fecha_resultado)->format($unDia ? 'H:i' : 'd/m H:i'),
                 'entregado' => $entregado,
             ];

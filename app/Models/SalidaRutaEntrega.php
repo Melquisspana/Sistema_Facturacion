@@ -11,12 +11,16 @@ use App\Services\Rutas\DiaVendedor;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Un CCF que viajó en una salida y qué pasó con él. Un intento por fila: si sobró, en la
  * próxima salida es otra fila. Ver la migración para el porqué de cada columna.
+ *
+ * @property ResultadoEntrega|null $resultado
+ * @property Carbon|null $fecha_resultado
  */
 class SalidaRutaEntrega extends Model
 {
@@ -89,16 +93,19 @@ class SalidaRutaEntrega extends Model
         return $this->belongsTo(Dte::class, 'dte_id');
     }
 
+    /** @return BelongsTo<ClienteSucursal, $this> */
     public function sala(): BelongsTo
     {
         return $this->belongsTo(ClienteSucursal::class, 'cliente_sucursal_id');
     }
 
+    /** @return BelongsTo<PersonalRuta, $this> */
     public function entregadoPor(): BelongsTo
     {
         return $this->belongsTo(PersonalRuta::class, 'entregado_por_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function registradoPor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'registrado_por');

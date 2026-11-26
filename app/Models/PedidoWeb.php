@@ -69,6 +69,7 @@ class PedidoWeb extends Model
                 ->where('updated_at', '<', $trabado)));
     }
 
+    /** @return BelongsTo<PedidoSala, $this> */
     public function pedidoSala(): BelongsTo
     {
         return $this->belongsTo(PedidoSala::class);
