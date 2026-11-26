@@ -46,6 +46,12 @@ class BackupMysqlDiarioCommand extends Command
     /** Más que el peor caso: 3 intentos de 300 s cada uno, más las esperas. */
     private const CANDADO_SEGUNDOS = 1200;
 
+    /**
+     * Código de salida de una corrida manual que no arrancó porque ya había otra. No es
+     * un fallo: el botón lo usa para decir «esperá» en vez de «no se pudo».
+     */
+    public const EN_CURSO = 2;
+
     public function handle(): int
     {
         $origen = $this->option('origen') === 'manual' ? 'manual' : 'automatico';
@@ -53,15 +59,19 @@ class BackupMysqlDiarioCommand extends Command
 
         // Doble clic, o el botón mientras corre la tarea de las 02:00: si dos corridas
         // vuelcan a la vez, una puede borrar el archivo que la otra está escribiendo y
-        // quedarse sin ningún respaldo. La segunda no hace nada y lo deja anotado.
+        // quedarse sin ningún respaldo. La segunda no hace nada.
         $candado = Cache::lock(self::CANDADO, self::CANDADO_SEGUNDOS);
 
         if (! $candado->get()) {
-            $mensaje = 'Ya hay un respaldo en curso; esperá a que termine.';
-            $this->registrar($iniciadoEn, false, null, null, null, $mensaje, $origen);
-            $this->error($mensaje);
+            // No se anota en respaldo_ejecuciones: la corrida en curso deja su propio
+            // resultado, y una fila «fallida» posterior a ella abriría el aviso de
+            // respaldo fallido aunque la otra saliera bien. Si el candado quedó colgado
+            // y no hay respaldo, el aviso «No hay respaldo de hoy» lo cubre.
+            // La tarea programada termina sin error: un código distinto de 0 la anotaría
+            // como tarea que falla y llegaría otro aviso falso.
+            $this->warn('Ya hay un respaldo en curso; esperá a que termine.');
 
-            return self::FAILURE;
+            return $origen === 'manual' ? self::EN_CURSO : self::SUCCESS;
         }
 
         try {

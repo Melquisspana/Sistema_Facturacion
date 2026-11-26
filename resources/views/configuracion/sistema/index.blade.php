@@ -119,9 +119,11 @@
                     </dl>
 
                     @if ($puedeRespaldar)
-                        <form method="POST" action="{{ route('configuracion.sistema.respaldar') }}" class="shrink-0">
+                        {{-- El respaldo tarda: el botón se apaga al enviar para que un segundo clic no lance otro. --}}
+                        <form method="POST" action="{{ route('configuracion.sistema.respaldar') }}" class="shrink-0"
+                              x-data="{ enviando: false }" @submit="enviando = true">
                             @csrf
-                            <button type="submit" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            <button type="submit" :disabled="enviando" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                                 Generar respaldo ahora
                             </button>
                         </form>

@@ -4,8 +4,11 @@ namespace Tests\Feature\Console;
 
 use App\Facades\Ajustes;
 use App\Models\RespaldoEjecucion;
+use App\Services\Alertas\Detectores\RespaldoFallido;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
@@ -185,8 +188,10 @@ class BackupMysqlDiarioCommandTest extends TestCase
 
     /**
      * Doble clic en «Generar respaldo ahora», o el botón mientras corre la tarea de las
-     * 02:00: la segunda corrida no vuelca nada ni toca la carpeta. Queda anotada como
-     * fallida con el motivo real.
+     * 02:00: la segunda corrida no vuelca nada, no toca la carpeta y no se anota, porque
+     * la que está en curso deja su propio resultado. El botón la reconoce por su código
+     * (2); la tarea programada termina sin error, para que no llegue el aviso de «tareas
+     * que fallan» por algo que no falló.
      */
     public function test_si_ya_hay_un_respaldo_en_curso_no_corre_otro(): void
     {
@@ -194,17 +199,41 @@ class BackupMysqlDiarioCommandTest extends TestCase
         $enCurso = Cache::lock('backup:mysql-diario', 600);
         $this->assertTrue($enCurso->get());
 
-        $this->artisan('backup:mysql-diario', ['--origen' => 'manual'])->assertExitCode(1);
+        $this->artisan('backup:mysql-diario', ['--origen' => 'manual'])
+            ->expectsOutputToContain('Ya hay un respaldo en curso')
+            ->assertExitCode(2);
+        $this->artisan('backup:mysql-diario')
+            ->expectsOutputToContain('Ya hay un respaldo en curso')
+            ->assertExitCode(0);
 
         Process::assertNothingRan();
-        $r = RespaldoEjecucion::query()->sole();
-        $this->assertFalse($r->exitoso);
-        $this->assertSame('manual', $r->origen);
-        $this->assertSame('Ya hay un respaldo en curso; esperá a que termine.', $r->mensaje);
-        $this->assertNull($r->archivo_ruta);
+        $this->assertSame(0, RespaldoEjecucion::count());
         $this->assertSame([], Storage::disk('backups')->allFiles());
 
         $enCurso->release();
+    }
+
+    /**
+     * Las dos corridas se pisan de verdad: el segundo clic llega quince segundos después,
+     * con la primera todavía volcando. La primera termina bien y es la única anotada, así
+     * que «El respaldo de la base de datos falló» no se abre.
+     */
+    public function test_una_corrida_frenada_por_otra_en_curso_no_abre_el_aviso_de_respaldo_fallido(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 22:10:05', 'America/El_Salvador'));
+        $frenada = null;
+        Process::fake(function () use (&$frenada) {
+            $this->travel(15)->seconds();
+            $frenada = Artisan::call('backup:mysql-diario', ['--origen' => 'manual']);
+
+            return Process::result(output: $this->dumpValido());
+        });
+
+        $this->artisan('backup:mysql-diario', ['--origen' => 'manual'])->assertExitCode(0);
+
+        $this->assertNull(app(RespaldoFallido::class)->revisar()?->titulo);
+        $this->assertSame(2, $frenada);
+        $this->assertTrue(RespaldoEjecucion::query()->sole()->exitoso);
     }
 
     /**

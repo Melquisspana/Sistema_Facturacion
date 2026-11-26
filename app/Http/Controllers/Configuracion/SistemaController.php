@@ -7,6 +7,7 @@ use App\Ajustes\AuditoriaAjustes;
 use App\Ajustes\Ceremonias\ConfirmacionN2;
 use App\Ajustes\EstadoAjuste;
 use App\Ajustes\Sistema\PanelSistema;
+use App\Console\Commands\BackupMysqlDiarioCommand;
 use App\Http\Controllers\Configuracion\Concerns\GuardaConConfirmacionN2;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -96,20 +97,27 @@ class SistemaController extends Controller
         try {
             $codigo = Artisan::call('backup:mysql-diario', ['--origen' => 'manual']);
         } catch (Throwable $e) {
-            $auditoria->respaldoManual(false);
+            $auditoria->respaldoManual('fallo');
 
             return redirect()->route('configuracion.sistema')
                 ->with('error', 'No se pudo generar el respaldo: '.$this->corto($e->getMessage()));
         }
 
-        $auditoria->respaldoManual($codigo === 0, $codigo);
+        $resultado = match ($codigo) {
+            0 => 'exito',
+            BackupMysqlDiarioCommand::EN_CURSO => 'en_curso',
+            default => 'fallo',
+        };
+        $auditoria->respaldoManual($resultado, $codigo);
 
         // El motivo de un fallo se ve en la misma pantalla, en «Última ejecución».
         return redirect()->route('configuracion.sistema')->with(
-            $codigo === 0 ? 'status' : 'error',
-            $codigo === 0
-                ? 'Respaldo generado y verificado. Revisá «último respaldo válido» abajo.'
-                : 'No se pudo generar el respaldo. El motivo quedó anotado abajo, en «Última ejecución».',
+            $resultado === 'fallo' ? 'error' : 'status',
+            match ($resultado) {
+                'exito' => 'Respaldo generado y verificado. Revisá «último respaldo válido» abajo.',
+                'en_curso' => 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.',
+                default => 'No se pudo generar el respaldo. El motivo quedó anotado abajo, en «Última ejecución».',
+            },
         );
     }
 

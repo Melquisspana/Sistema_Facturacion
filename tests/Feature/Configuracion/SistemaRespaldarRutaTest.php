@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
@@ -168,6 +169,35 @@ class SistemaRespaldarRutaTest extends TestCase
         $this->assertNull($respaldo->sha256);
         $this->assertStringContainsString('no quedó entero', $respaldo->mensaje);
         $this->assertSame([], Storage::disk('backups')->allFiles());
+    }
+
+    /**
+     * Segundo clic con el primer respaldo todavía corriendo: no es un fallo. El aviso lo
+     * dice así, la auditoría lo deja como «en curso» y no queda ninguna ejecución fallida
+     * que abra el aviso por correo.
+     */
+    public function test_si_ya_hay_un_respaldo_en_curso_avisa_que_espere_sin_anotar_un_fallo(): void
+    {
+        Process::fake();
+        $enCurso = Cache::lock('backup:mysql-diario', 600);
+        $this->assertTrue($enCurso->get());
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->post(route('configuracion.sistema.respaldar'))
+            ->assertRedirect(route('configuracion.sistema'))
+            ->assertSessionHas('status', 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.')
+            ->assertSessionMissing('error');
+
+        $linea = $this->assertAuditado($admin, 'en_curso');
+        $this->assertSame(2, $linea->getExtraProperty('codigo'));
+        $this->assertSame('intentó un respaldo manual: ya había uno en curso', $linea->description);
+
+        Process::assertNothingRan();
+        $this->assertDatabaseCount('respaldo_ejecuciones', 0);
+        $this->assertSame([], Storage::disk('backups')->allFiles());
+
+        $enCurso->release();
     }
 
     public function test_sin_respaldos_ejecutar_da_403_y_no_corre_nada(): void
