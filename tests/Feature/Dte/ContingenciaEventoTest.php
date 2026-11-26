@@ -497,11 +497,11 @@ class ContingenciaEventoTest extends TestCase
         $this->get(route('facturacion.contingencia.show', $this->contingencia))->assertOk()
             ->assertSee('YA EXISTE UN REGISTRO CON ESE VALOR')->assertSee('Ya verifiqué en Hacienda');
 
-        // Tampoco el envío automático de las 12 horas.
+        // Tampoco el envío automático de las 2 horas.
         Carbon::setTestNow(Carbon::parse('2026-10-10 22:16:00', 'America/El_Salvador'));
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertDatabaseCount('contingencia_eventos', 1);
-        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 12 horas del cese']);
+        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 2 horas del cese']);
         Http::assertNothingSent();
     }
 

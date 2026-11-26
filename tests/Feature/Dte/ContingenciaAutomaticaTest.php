@@ -349,22 +349,75 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame('activa', $manual->refresh()->estado);
     }
 
-    public function test_evento_automatico_desde_12_horas_y_una_sola_vez(): void
+    /** Simulacro del 17/11 (F13): Melqui bajó el envío automático de 12 a 2 horas (26/11). */
+    public function test_evento_automatico_desde_2_horas_y_una_sola_vez(): void
     {
+        $this->assertSame(2, config('dte.contingencia.envio_automatico_horas'));
         $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
         $this->documento();
         app(ContingenciaService::class)->terminar(null);
-        Carbon::setTestNow(now()->addHours(12)->subSecond());
+        $cese = $activa->refresh()->cese->copy();
+        Carbon::setTestNow($cese->copy()->addHour()->addMinutes(59));
         $this->simular();
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         Http::assertNothingSent();
-        Carbon::setTestNow(now()->addSecond());
+        Carbon::setTestNow($cese->copy()->addHours(2));
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertSame('informada', $activa->refresh()->estado);
         $this->assertDatabaseCount('contingencia_eventos', 1);
-        $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 12 horas del cese']);
+        $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 2 horas del cese']);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         Http::assertSentCount(3);
+    }
+
+    /** Un error de configuración (0 o negativo) no lo manda al instante: el mínimo es 1 hora. */
+    public function test_evento_automatico_nunca_antes_de_1_hora(): void
+    {
+        config(['dte.contingencia.envio_automatico_horas' => 0]);
+        $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
+        $this->documento();
+        app(ContingenciaService::class)->terminar(null);
+        $cese = $activa->refresh()->cese->copy();
+        Carbon::setTestNow($cese->copy()->addMinutes(59));
+        $this->simular();
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        Http::assertNothingSent();
+        $this->assertSame('cerrada', $activa->refresh()->estado);
+        Carbon::setTestNow($cese->copy()->addHour());
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('informada', $activa->refresh()->estado);
+        $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 1 hora del cese']);
+    }
+
+    /** A las 2 horas sigue igual lo demás: una parte rechazada o en duda espera a una persona. */
+    public function test_a_las_2_horas_no_sale_con_una_parte_rechazada_o_en_duda(): void
+    {
+        foreach (['rechazado', 'incierto'] as $i => $estado) {
+            $contingencia = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
+            $this->documento();
+            app(ContingenciaService::class)->terminar(null);
+            $contingencia->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-00000000000'.($i + 1),
+                'estado' => $estado, 'fecha_transmision' => now()]);
+            Carbon::setTestNow($contingencia->refresh()->cese->copy()->addHours(2));
+            $this->simular();
+            $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+            Http::assertNothingSent();
+            $this->assertSame('cerrada', $contingencia->refresh()->estado, $estado);
+            $this->assertSame(1, $contingencia->eventos()->count(), $estado);
+            Carbon::setTestNow(now()->addMinutes(5));
+        }
+        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 2 horas del cese']);
+    }
+
+    public function test_a_las_2_horas_la_manual_no_se_cierra_sola(): void
+    {
+        $manual = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
+        Carbon::setTestNow(now()->addHours(2));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('activa', $manual->refresh()->estado);
+        $this->assertNull($manual->cese);
+        $this->assertDatabaseCount('contingencia_eventos', 0);
     }
 
     /**

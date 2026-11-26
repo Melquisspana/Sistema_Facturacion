@@ -157,7 +157,7 @@ Cada parte tiene su issue con el encargo completo (archivos, criterios de acepta
 ### Decisiones de Melqui (07/10/2026)
 
 - **Entrada**: enseguida, al primer documento que no entra después de la política de reintentos. Sin espera adicional.
-- **Aviso a Hacienda al volver la conexión**: lo envía una persona con el botón; si nadie lo hace en **12 horas** desde el cese, el sistema lo envía solo (queda la mitad del plazo de 24 horas para corregir un rechazo).
+- **Aviso a Hacienda al volver la conexión**: lo envía una persona con el botón; si nadie lo hace en **2 horas** desde el cese, el sistema lo envía solo y quedan 22 de las 24 horas para corregir un rechazo. Eran 12 horas hasta el 26/11/2026: tras el simulacro (falla F13), Melqui lo bajó a 2. El mínimo es 1 hora, para que un error de configuración no lo mande apenas vuelve la conexión.
 - **Permiso** `dte.contingencia` (activar, terminar y enviar el aviso a mano): solo administradores, como la invalidación. La entrada automática no depende del usuario.
 
 ## Consecuencias

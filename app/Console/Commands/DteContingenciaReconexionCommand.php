@@ -23,7 +23,7 @@ class DteContingenciaReconexionCommand extends Command
 {
     protected $signature = 'dte:contingencia-reconexion';
 
-    protected $description = 'Detecta la reconexión del MH y envía avisos pendientes desde las 12 horas del cese';
+    protected $description = 'Detecta la reconexión del MH y envía los avisos que nadie mandó a las 2 horas del cese';
 
     public function handle(DteTransmisionAuthService $auth, ContingenciaEventoService $eventos, ContingenciaTransporte $transporte, DteTransmisionService $transmision, ContingenciaService $contingencias): int
     {
@@ -75,8 +75,10 @@ class DteContingenciaReconexionCommand extends Command
                     $this->warn($e->getMessage());
                 }
             }
+            // Mínimo 1 hora: un error de configuración no manda el aviso apenas vuelve la conexión.
+            $horas = max(1, (int) config('dte.contingencia.envio_automatico_horas', 2));
             foreach (Contingencia::where('estado', 'cerrada')->whereNotNull('cese')
-                ->where('cese', '<=', HoraNegocio::ahora()->subHours(max(12, (int) config('dte.contingencia.envio_automatico_horas', 12))))->get() as $pendiente) {
+                ->where('cese', '<=', HoraNegocio::ahora()->subHours($horas))->get() as $pendiente) {
                 try {
                     // Un rechazo o una parte en duda vigentes exigen revisión humana. Una ya
                     // reemplazada no: esa revisión se hizo. Las partes recibidas se omiten en
@@ -89,7 +91,7 @@ class DteContingenciaReconexionCommand extends Command
                         app(LoteDteService::class)->actualizarEstado($pendiente->refresh());
                     }
                     activity('dte_contingencia')->performedOn($pendiente)->withProperties(['resultados' => $resultados])
-                        ->log('Envío automático del evento tras 12 horas del cese');
+                        ->log('Envío automático del evento tras '.($horas === 1 ? '1 hora' : $horas.' horas').' del cese');
                 } catch (Throwable $e) {
                     report($e);
                     $this->warn('No se pudo enviar el aviso de contingencia #'.$pendiente->id.'. Revisá su plazo y configuración.');

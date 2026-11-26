@@ -43,7 +43,9 @@ return [
         'url_local' => env('CONTINGENCIA_URL_LOCAL', ''),
         'sonda_internet_url' => env('DTE_CONTINGENCIA_SONDA_URL', 'https://www.gstatic.com/generate_204'),
         'reconexion_minutos' => 15,
-        'envio_automatico_horas' => 12,
+        // Si nadie aprieta «Enviar aviso de contingencia», el aviso sale solo a estas horas
+        // del cese (plazo de Hacienda: 24 h). Mínimo 1 h, aunque acá diga menos.
+        'envio_automatico_horas' => 2,
         // Cuánto puede retroceder el inicio hasta la emisión del documento que dispara la
         // entrada automática. Más allá, revisión manual (no se declara contingencia por
         // horas en que Hacienda respondía).
