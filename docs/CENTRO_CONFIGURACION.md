@@ -144,6 +144,22 @@ La garantía es **estructural**, no una convención:
 
 De un secreto se publica: si está configurado y desde dónde sale. Nada más.
 
+### Un secreto viaja solo a su servidor (25/11/2026)
+
+La contraseña SMTP, las de los dos buzones y el secreto de la tienda declaran en el
+catálogo a qué dirección viajan (`servidor:` → `mail.smtp.host`, `documentos_recibidos.host`,
+`documentos_recibidos.buzon_adicional.host`, `tienda.url`). Si esa dirección cambia, el
+secreto no sale hacia la nueva hasta que alguien lo cargue otra vez:
+
+- El **guardado** en la aplicación se borra en la misma transacción que el cambio de
+  dirección (formulario o «Usar el valor del servidor»). Queda en la auditoría como
+  «quitó el valor guardado», sin el valor. El aviso dice dónde se carga de nuevo.
+- El del **.env** solo viaja a la dirección del .env: si la aplicación tiene guardada
+  otra dirección (sin distinguir mayúsculas, espacios ni la barra final), el secreto se
+  resuelve como «sin configurar».
+
+Gmail no entra: el secreto de cliente va siempre a Google, cambie lo que cambie.
+
 ---
 
 ## 7. Cifrado y APP_KEY

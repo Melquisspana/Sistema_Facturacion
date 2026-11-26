@@ -118,6 +118,12 @@ class SecretoController extends Controller
     private function avisoQuitado(DefinicionAjuste $definicion, bool $quitado): string
     {
         if (Ajustes::fuente($definicion->clave) !== FuenteAjuste::Configuracion) {
+            // El del archivo existe pero es para el servidor del archivo, y la aplicación
+            // tiene guardado otro: no viaja hacia ese (ver Ajustes::resolver()).
+            if ($definicion->claveConfig !== null && filled(config($definicion->claveConfig))) {
+                return $definicion->etiqueta.': se quitó el valor guardado. El del archivo del servidor no se usa porque el servidor guardado en la aplicación es otro. Queda sin configurar hasta que cargues uno nuevo.';
+            }
+
             return $definicion->etiqueta.': no tiene ningún valor, ni guardado ni en el archivo del servidor. Queda sin configurar hasta que cargues uno nuevo.';
         }
 

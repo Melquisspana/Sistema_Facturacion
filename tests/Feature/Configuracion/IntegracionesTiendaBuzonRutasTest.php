@@ -122,15 +122,19 @@ class IntegracionesTiendaBuzonRutasTest extends TestCase
         $this->assertCount(0, $this->cambiosDe('tienda.url'));
     }
 
-    /** Guardar la URL no toca el secreto, que vive en su propia pantalla. */
+    /**
+     * Guardar la pantalla sin cambiar la URL no toca el secreto, que vive en su propia
+     * pantalla. (Si la URL cambia, el secreto se quita: ver ClaveAtadaAlServidorTest.)
+     */
     public function test_guardar_la_url_no_toca_el_secreto(): void
     {
         $admin = $this->admin();
         $this->actingAs($admin);
+        Ajustes::guardar('tienda.url', self::URL);
         Ajustes::guardar('tienda.secreto', 'secreto-de-prueba-tienda');
 
         $this->actingAs($admin)
-            ->put(route('configuracion.integraciones.tienda.update'), ['url' => self::URL, 'confirmacion' => '1'])
+            ->put(route('configuracion.integraciones.tienda.update'), ['url' => self::URL, 'automatica' => '1', 'confirmacion' => '1'])
             ->assertRedirect(route('configuracion.integraciones.tienda'));
 
         $this->assertSame('secreto-de-prueba-tienda', Ajustes::secretoParaRuntime('tienda.secreto'));

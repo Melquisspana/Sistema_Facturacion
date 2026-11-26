@@ -25,6 +25,8 @@ class DefinicionAjuste
      * @param  string|null  $claveLegacy  Clave en la tabla `configuraciones` (transición).
      * @param  array<int, string>  $reglas  Reglas Laravel adicionales a las del tipo.
      * @param  bool  $datoPersonal  Dato de una persona (DUI, nacimiento, domicilio…): su valor no queda en la auditoría.
+     * @param  string|null  $servidor  Solo secretos: clave del ajuste con la dirección adonde viaja. Si esa
+     *                                 dirección cambia, el secreto no sale hacia la nueva hasta que se cargue otra vez.
      */
     private function __construct(
         public readonly string $clave,
@@ -43,6 +45,7 @@ class DefinicionAjuste
         public readonly string $etiqueta,
         public readonly string $descripcion,
         public readonly bool $datoPersonal,
+        public readonly ?string $servidor,
     ) {}
 
     /**
@@ -66,6 +69,7 @@ class DefinicionAjuste
         array $opciones = [],
         array $reglas = [],
         bool $datoPersonal = false,
+        ?string $servidor = null,
     ): self {
         // Invariantes que NO deben poder llegar a producción como bug silencioso.
         if ($tipo === TipoAjuste::Enumerado && $opciones === []) {
@@ -80,6 +84,10 @@ class DefinicionAjuste
         // mandarlo a la tabla legacy (texto plano), falla al arrancar, no en runtime.
         if ($tipo->esSecreto() && $persistencia->admiteOverride() && ! $persistencia->admiteSecretos()) {
             throw new \InvalidArgumentException("El ajuste secreto «{$clave}» solo puede persistirse en la tabla nueva (cifrada).");
+        }
+
+        if ($servidor !== null && ! $tipo->esSecreto()) {
+            throw new \InvalidArgumentException("Solo un secreto puede atarse a un servidor, y «{$clave}» no lo es.");
         }
 
         if ($persistencia === Persistencia::Legacy && $claveLegacy === null) {
@@ -108,6 +116,7 @@ class DefinicionAjuste
             etiqueta: $etiqueta,
             descripcion: $descripcion,
             datoPersonal: $datoPersonal,
+            servidor: $servidor,
         );
     }
 

@@ -33,6 +33,8 @@ use Illuminate\View\View;
  */
 trait GuardaConConfirmacionN2
 {
+    use AvisaSecretoSoltado;
+
     /**
      * @param  array<string, string>  $campos  campo del formulario ⇒ clave del registry
      * @param  array<string, mixed>  $datos  valores YA validados por el controlador
@@ -85,8 +87,11 @@ trait GuardaConConfirmacionN2
 
         // Solo lo que cambia, como Configuración › Opciones: lo demás sigue saliendo del
         // .env y la auditoría no se llena de líneas sin cambio.
+        $aGuardar = $confirmacion->soloLoQueCambia($cambios, $propuestos);
+        $secretos = $this->secretosEnUso(array_keys($aGuardar));
+
         try {
-            Ajustes::guardarVarios($confirmacion->soloLoQueCambia($cambios, $propuestos));
+            Ajustes::guardarVarios($aGuardar);
         } catch (ValorAjusteInvalidoException $e) {
             // La validación del registry es la segunda barrera; si salta, el error
             // vuelve al campo que lo produjo y no como un error 500.
@@ -95,6 +100,6 @@ trait GuardaConConfirmacionN2
             ]);
         }
 
-        return redirect()->route($volver)->with('status', $exito);
+        return redirect()->route($volver)->with('status', $exito.$this->avisoSecretosSoltados($secretos));
     }
 }

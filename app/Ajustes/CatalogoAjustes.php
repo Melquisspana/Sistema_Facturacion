@@ -99,6 +99,21 @@ class CatalogoAjustes
         return array_filter($this->todos(), static fn (DefinicionAjuste $d) => $d->seccion === $seccion);
     }
 
+    /**
+     * Secreto que viaja a la dirección guardada en `$claveServidor` (la URL de la tienda,
+     * el servidor de correo o el de un buzón), o null si ninguno va ahí.
+     */
+    public function secretoDeServidor(string $claveServidor): ?DefinicionAjuste
+    {
+        foreach ($this->todos() as $definicion) {
+            if ($definicion->servidor === $claveServidor) {
+                return $definicion;
+            }
+        }
+
+        return null;
+    }
+
     /** @return array<string, DefinicionAjuste> */
     public function porNivel(NivelConfirmacion $nivel): array
     {
@@ -131,6 +146,7 @@ class CatalogoAjustes
                 nivel: NivelConfirmacion::N2, editabilidad: Editabilidad::Editable,
                 persistencia: Persistencia::Nueva, etiqueta: 'Secreto de la tienda web',
                 descripcion: 'Autoriza al sistema a leer pedidos y avisar su estado. Nunca se muestra.',
+                servidor: 'tienda.url',
             ),
             DefinicionAjuste::hacer(
                 clave: 'tienda.pedidos.automatica', seccion: 'tienda', tipo: TipoAjuste::Booleano,
@@ -388,6 +404,7 @@ class CatalogoAjustes
                 etiqueta: 'Contraseña del servidor SMTP',
                 descripcion: 'Solo la usa el transporte de correo. Nunca se muestra ni se registra: de ella solo se sabe si está configurada y desde dónde.',
                 claveConfig: 'mail.mailers.smtp.password',
+                servidor: 'mail.smtp.host',
             ),
 
             // ================================================================
@@ -665,6 +682,7 @@ class CatalogoAjustes
                 etiqueta: 'Contraseña del buzón',
                 descripcion: 'En Yahoo y Gmail es una contraseña de aplicación, no la del correo. Nunca se muestra.',
                 claveConfig: 'documentos_recibidos.mail.password',
+                servidor: 'documentos_recibidos.host',
             ),
             DefinicionAjuste::hacer(
                 clave: 'documentos_recibidos.folder',
@@ -822,6 +840,7 @@ class CatalogoAjustes
                 etiqueta: 'Contraseña del segundo buzón',
                 descripcion: 'En Yahoo y Gmail es una contraseña de aplicación, no la del correo. Nunca se muestra.',
                 claveConfig: 'documentos_recibidos.buzon_adicional.password',
+                servidor: 'documentos_recibidos.buzon_adicional.host',
             ),
             DefinicionAjuste::hacer(
                 clave: 'documentos_recibidos.buzon_adicional.folder',
