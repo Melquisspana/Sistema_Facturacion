@@ -516,7 +516,7 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
 
         $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
             ->assertSessionHas('status')
-            ->assertSessionHas('aviso_precios', 'Se pusieron los pesos actuales de Productos: Producto de prueba 144 u.');
+            ->assertSessionHas('aviso_precios', 'Se pusieron el empaque y los pesos actuales de Productos: Producto de prueba 144 u.');
 
         $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
         $this->assertEquals([
@@ -537,6 +537,44 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
 
         // La original conserva sus pesos.
         $this->assertEquals($pesosOriginales, $this->pesos($original->fresh()));
+    }
+
+    /**
+     * El empaque también es de la presentación y sale impreso junto a los pesos: si en
+     * Productos se cambió la bolsa por una caja master (mismas unidades y gramos), la
+     * copia lleva el empaque de hoy con el peso de hoy, no el empaque viejo con el peso
+     * de la caja nueva.
+     */
+    public function test_la_copia_toma_el_empaque_de_hoy_junto_con_los_pesos(): void
+    {
+        $producto = $this->presentacion();
+        $original = $this->listaDelCatalogo(null, [[$producto, 136.80]]);
+
+        $this->cambiarEnProductos($producto, ['unidad' => 'Caja master de prueba', 'peso_bruto_caja_kg' => 15.5]);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('aviso_precios', 'Se pusieron el empaque y los pesos actuales de Productos: Producto de prueba 144 u.');
+
+        $linea = Exportacion::query()->whereKeyNot($original->id)->sole()->items()->sole();
+        $this->assertSame('Caja master de prueba', $linea->unidad);
+        $this->assertEquals(15.50, (float) $linea->peso_bruto_caja_kg);
+        $this->assertSame('Bolsa de prueba', $original->items()->sole()->unidad);
+    }
+
+    /**
+     * Solo cambió el empaque en Productos, no los pesos: igual se pone al día y se avisa.
+     */
+    public function test_si_solo_cambio_el_empaque_la_copia_lo_pone_al_dia_y_lo_avisa(): void
+    {
+        $producto = $this->presentacion();
+        $original = $this->listaDelCatalogo(null, [[$producto, 136.80]]);
+
+        $this->cambiarEnProductos($producto, ['unidad' => 'Caja master de prueba']);
+
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('aviso_precios', 'Se pusieron el empaque y los pesos actuales de Productos: Producto de prueba 144 u.');
+
+        $this->assertSame('Caja master de prueba', Exportacion::query()->whereKeyNot($original->id)->sole()->items()->sole()->unidad);
     }
 
     /**

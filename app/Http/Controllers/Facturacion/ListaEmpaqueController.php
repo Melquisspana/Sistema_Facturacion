@@ -52,9 +52,12 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  */
 class ListaEmpaqueController extends Controller
 {
-    /** Lo que la línea copia de su presentación y se pone al día al duplicar la lista. */
-    private const PESOS_DE_LA_PRESENTACION = [
-        'gramos_por_unidad', 'onzas_por_unidad',
+    /**
+     * Lo que la línea copia de su presentación y se pone al día al duplicar la lista:
+     * el empaque va con los pesos, porque salen impresos juntos.
+     */
+    private const EMPAQUE_Y_PESOS = [
+        'unidad', 'gramos_por_unidad', 'onzas_por_unidad',
         'peso_neto_caja_kg', 'peso_bruto_caja_kg', 'peso_neto_caja_lb', 'peso_bruto_caja_lb',
     ];
 
@@ -301,7 +304,7 @@ class ListaEmpaqueController extends Controller
 
     /**
      * Copia con los mismos productos y fecha de hoy, en borrador. Cada línea del
-     * catálogo toma los pesos de HOY de su presentación en Productos y el precio ACTUAL
+     * catálogo toma el empaque y los pesos de HOY de su presentación en Productos y el precio ACTUAL
      * del cliente: al finalizar, el precio de la lista pasa a ser el del cliente, y uno
      * viejo se lo bajaba. Sin precio del cliente, la línea conserva el de la lista vieja
      * y se avisa. Si la presentación cambió en Productos, o el producto ya no está, la
@@ -383,10 +386,12 @@ class ListaEmpaqueController extends Controller
                     continue;
                 }
 
-                // Los pesos son los de hoy. Los totales de la lista se calculan de las líneas.
-                $pesos = $producto->only(self::PESOS_DE_LA_PRESENTACION);
-                if (collect($pesos)->contains(fn ($valor, string $campo) => round((float) $valor, 2) !== round((float) $item->{$campo}, 2))) {
-                    $nuevo->fill($pesos);
+                // El empaque y los pesos son los de hoy. Los totales de la lista se calculan de las líneas.
+                $deHoy = $producto->only(self::EMPAQUE_Y_PESOS);
+                if (collect($deHoy)->contains(fn ($valor, string $campo) => $campo === 'unidad'
+                    ? (string) $valor !== (string) $item->unidad
+                    : round((float) $valor, 2) !== round((float) $item->{$campo}, 2))) {
+                    $nuevo->fill($deHoy);
                     $pesosDeHoy[] = $linea;
                 }
 
@@ -414,7 +419,7 @@ class ListaEmpaqueController extends Controller
 
         $aviso = collect([
             $cambiados !== [] ? 'Se pusieron los precios actuales del cliente: '.$this->enumerarLineas($cambiados).'.' : null,
-            $pesosDeHoy !== [] ? 'Se pusieron los pesos actuales de Productos: '.$this->enumerarLineas($pesosDeHoy).'.' : null,
+            $pesosDeHoy !== [] ? 'Se pusieron el empaque y los pesos actuales de Productos: '.$this->enumerarLineas($pesosDeHoy).'.' : null,
             $otraPresentacion !== [] ? "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio y los pesos de la lista #{$lista->id}: "
                 .$this->enumerarLineas($otraPresentacion).'. Quitalas en Editar y volvé a agregarlas antes de facturar.' : null,
             $sinProducto !== [] ? "Ojo: estas líneas no están en Productos y quedaron con el precio y los pesos de la lista #{$lista->id}: "
