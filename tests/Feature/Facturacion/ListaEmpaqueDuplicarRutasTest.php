@@ -586,11 +586,14 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
 
     /**
      * Los datos del exportador salen de Configuración, como el FDA y como en una lista
-     * nueva. El que Configuración no tenga se conserva de la original.
+     * nueva. El que Configuración no tenga se conserva de la original, no el de la
+     * Empresa emisora: en producción siempre hay una, y la copia salía con su razón
+     * social o su dirección fiscal en vez de la bodega que se escribió en la lista.
      */
     public function test_la_copia_toma_el_exportador_de_configuracion_y_conserva_lo_que_falte(): void
     {
         config(['exportaciones.exportador_nombre' => '', 'exportaciones.exportador_direccion' => '', 'exportaciones.fda_reg_number' => '']);
+        Empresa::create(['razon_social' => 'Empresa de prueba', 'direccion' => 'Dirección fiscal de prueba', 'ambiente' => '00', 'activo' => true]);
         $usuario = $this->usuario();
         $original = $this->lista(['exportador_direccion' => 'Dirección del exportador de prueba']);
 

@@ -311,6 +311,8 @@ class ListaEmpaqueRecorridoOficinaTest extends TestCase
      */
     public function test_el_fda_y_el_exportador_guardados_salen_en_la_copia(): void
     {
+        // Como en producción, hay una Empresa emisora con su dirección fiscal.
+        Empresa::create(['razon_social' => 'Empresa de prueba', 'direccion' => 'Dirección fiscal de prueba', 'ambiente' => '00', 'activo' => true]);
         $usuario = $this->usuario();
         Ajustes::guardarComoSistema('exportaciones.fda_reg_number', '00000000001');
         $vieja = $this->armarLista($usuario, $this->perfil(), [['exportacion_producto_id' => $this->presentacion()->id, 'cantidad_cajas' => 10, 'precio_caja' => '']]);

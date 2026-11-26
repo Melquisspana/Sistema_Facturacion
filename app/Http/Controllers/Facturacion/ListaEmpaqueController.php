@@ -306,7 +306,7 @@ class ListaEmpaqueController extends Controller
      * viejo se lo bajaba. Sin precio del cliente, la línea conserva el de la lista vieja
      * y se avisa. Si la presentación cambió en Productos, o el producto ya no está, la
      * línea conserva todo lo de la lista vieja y también se avisa. Los datos del
-     * exportador salen de Configuración, como en una lista nueva.
+     * exportador salen de Configuración; el que no esté guardado ahí, de la original.
      */
     public function duplicar(Exportacion $lista): RedirectResponse
     {
@@ -341,9 +341,10 @@ class ListaEmpaqueController extends Controller
             // El FDA es de la empresa y en la lista no se escribe: la copia lleva el que
             // está configurado hoy, no el de la lista vieja. Sin nada configurado, el suyo.
             $copia->fda_reg_number = $this->exportador->fdaRegNumber() ?? $lista->fda_reg_number;
-            // Igual el nombre y la dirección del exportador: los de hoy, como en una lista nueva.
-            $copia->exportador_nombre = $this->exportador->nombre() ?? $lista->exportador_nombre;
-            $copia->exportador_direccion = $this->exportador->direccion() ?? $lista->exportador_direccion;
+            // Igual el nombre y la dirección del exportador guardados en Configuración. Lo
+            // que no esté guardado se conserva de la original, no el de la Empresa emisora.
+            $copia->exportador_nombre = $this->exportador->nombreConfigurado() ?? $lista->exportador_nombre;
+            $copia->exportador_direccion = $this->exportador->direccionConfigurada() ?? $lista->exportador_direccion;
             // El número de factura ya no se copia: se deriva de las FEX que se vinculen
             // a la copia, y copiar el de otra lista es exactamente el error que se quiso
             // eliminar al dejar de teclearlo.
