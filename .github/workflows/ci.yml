@@ -199,6 +199,9 @@ jobs:
 
   analisis-estatico:
     name: Análisis estático (Larastan)
+    # Tiene que estar entre los checks requeridos de master. Si no, un error nuevo puede
+    # entrar con el botón de merge y hacer fallar este job en todas las ramas que salgan
+    # de master, aunque no lo hayan tocado.
     # Misma condición que los otros jobs: los PR internos ya se verifican por push.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest

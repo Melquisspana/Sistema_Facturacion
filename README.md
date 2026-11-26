@@ -135,7 +135,7 @@ Para profundizar:
 ## Calidad
 
 - **Integración continua** en GitHub Actions en cada cambio: la suite de PHPUnit (más de 6.000 pruebas), una segunda corrida sobre MySQL en modo estricto (informativa por ahora) y el estilo de código con Laravel Pint.
-- **Auditoría de dependencias** en la CI: `composer audit` y `npm audit` (solo lo que va a producción, gravedad alta o más) fallan si una librería tiene una falla de seguridad conocida.
+- **Auditoría de dependencias** en la CI: `composer audit` y `npm audit` (lo que llega al navegador, gravedad alta o más) señalan las librerías con fallas de seguridad conocidas. Es informativa y no hace fallar la CI, porque su resultado cambia cada vez que se publica un aviso nuevo; el seguimiento lo llevan las alertas y los PR de seguridad de Dependabot.
 - **Análisis estático** con Larastan, nivel 5, sobre `app/` y `routes/`. Los errores que ya existían quedan en `phpstan-baseline.neon` y no frenan; el código nuevo o cambiado tiene que pasar limpio. Quien arregla errores viejos regenera esa línea base con `vendor/bin/phpstan analyse --memory-limit=2G --generate-baseline`; si no, Larastan avisa que la entrada sobra y el job falla.
 - **Pruebas aisladas:** la suite se niega a correr contra una base que no sea SQLite en memoria, salvo la base desechable de la CI. Nunca toca datos reales.
 - **Flujo con ramas y pull requests:** nada entra directo a la rama principal; cada cambio pasa por revisión y por la CI.
