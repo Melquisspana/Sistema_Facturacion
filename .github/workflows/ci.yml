@@ -158,6 +158,42 @@ jobs:
 
           vendor/bin/pint --test "${files[@]}"
 
+  auditoria:
+    name: Auditoría de dependencias
+    # Avisa de librerías con fallas de seguridad conocidas. Misma condición que los otros
+    # jobs: los PR internos ya se verifican por push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    # Solo lee los archivos lock y consulta las bases de avisos: tarda segundos.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # --locked revisa las versiones fijadas en composer.lock sin instalar nada. Incluye
+      # las de desarrollo porque corren en la CI con el código. Falla con cualquier aviso;
+      # un paquete abandonado se muestra pero no frena, porque no es una falla conocida.
+      - name: Avisos de seguridad de PHP
+        run: composer audit --locked --abandoned=report --format=plain --no-interaction
+
+      # Corre aunque el paso anterior falle, para ver los dos resultados juntos. Solo
+      # revisa lo que va a producción (--omit=dev) y desde gravedad alta: Vite, esbuild y
+      # las demás herramientas de compilación no corren en el servidor. Ojo: hoy todo
+      # package.json está en devDependencies, como en el esqueleto de Laravel; alpinejs y
+      # axios sí llegan al navegador, pero este paso no los revisa hasta que pasen a
+      # dependencies.
+      - name: Avisos de seguridad de npm
+        if: ${{ !cancelled() }}
+        run: npm audit --package-lock-only --omit=dev --audit-level=high
+
   pruebas-mysql:
     # El total sale de la matriz: los checks se llaman «PHPUnit (MySQL estricto) (1/4)»
     # hasta «(4/4)».
