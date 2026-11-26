@@ -209,7 +209,11 @@ class Dte extends Model
         return $this->belongsTo(Cliente::class);
     }
 
-    /** Historial de envíos por correo (manual) al cliente, más reciente primero. */
+    /**
+     * Historial de envíos por correo (manual) al cliente, más reciente primero.
+     *
+     * @return HasMany<DteEnvio, $this>
+     */
     public function envios(): HasMany
     {
         return $this->hasMany(DteEnvio::class)->latest();
