@@ -44,6 +44,15 @@ class RolesPermisosTest extends TestCase
         return User::factory()->create(['activo' => true])->assignRole($rol);
     }
 
+    /** Simulacro del 26/11 (F19): la página 403 del permiso decía el motivo en inglés. */
+    public function test_la_pagina_403_sin_permiso_dice_el_motivo_en_castellano(): void
+    {
+        $this->actingAs($this->usuario('facturacion'))->get(route('auditoria.index'))
+            ->assertForbidden()
+            ->assertSee('No tenés permiso para entrar acá.')
+            ->assertDontSee('User does not have the right permissions.');
+    }
+
     // ---------------------------------------------------------------------
     // Lecturas (GET): 200 para roles permitidos, 403 para el resto.
     // ---------------------------------------------------------------------

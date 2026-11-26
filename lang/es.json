@@ -15,6 +15,10 @@
     "Service Unavailable": "Servicio no disponible",
     "Payment Required": "Pago requerido",
     "This action is unauthorized.": "No tenés permiso para hacer esto.",
+    "User does not have the right permissions.": "No tenés permiso para entrar acá.",
+    "User does not have the right roles.": "No tenés permiso para entrar acá.",
+    "User does not have any of the necessary access rights.": "No tenés permiso para entrar acá.",
+    "User is not logged in.": "Tenés que entrar con tu usuario para ver esto.",
 
     "Log in": "Entrar",
     "Log Out": "Salir",
