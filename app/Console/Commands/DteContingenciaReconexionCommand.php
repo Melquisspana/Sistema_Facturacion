@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Contingencia;
+use App\Observers\DteObserver;
 use App\Services\Dte\ContingenciaEventoService;
 use App\Services\Dte\ContingenciaService;
 use App\Services\Dte\ContingenciaTransporte;
@@ -57,6 +58,8 @@ class DteContingenciaReconexionCommand extends Command
                             $actual->update(['cese' => HoraNegocio::ahora(), 'estado' => 'cerrada', 'activa_unica' => null]);
                             activity('dte_contingencia')->performedOn($actual)->withProperties(['cese' => $actual->cese])
                                 ->log('Reconexión automática: contingencia terminada');
+                            // Con la conexión de vuelta, el provisional que no le llegó al cliente sale otra vez.
+                            app(DteObserver::class)->reintentarProvisionales($actual);
                             $this->info('Volvió la conexión: enviá el aviso a Hacienda.');
                         });
                     } else {

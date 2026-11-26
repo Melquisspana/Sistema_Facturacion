@@ -7,6 +7,7 @@ use App\Enums\TipoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Facades\Ajustes;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Contingencia;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Services\Cobros\AltaCobrosService;
@@ -231,6 +232,46 @@ class DteObserver
                 app(EnvioDteCorreoService::class)->encolar($dte, [$correo], null, DteEnvio::CANAL_CLIENTE);
             } catch (Throwable $e) {
                 report($e);
+            }
+        });
+    }
+
+    /**
+     * Al terminar la contingencia se manda otra vez el provisional que no le llegó al
+     * cliente. En la tipo 3 (sin internet) sale apenas se emite y falla, porque el
+     * servidor de correo también es de afuera, y el job no reintenta (simulacro del
+     * 17/11, F8). Al terminar ya hay conexión.
+     *
+     * Solo los documentos todavía sin sello cuyos envíos al cliente fallaron todos: lo
+     * que salió, está en cola o nunca se intentó no se toca. Una vez por cese; si vuelve a
+     * fallar, la ficha deja reenviarlo y el completo sale solo al sellarse. Lo llaman los
+     * dos ceses: el de la persona ({@see ContingenciaService::terminar()}) y el de la
+     * reconexión automática.
+     */
+    public function reintentarProvisionales(Contingencia $contingencia): void
+    {
+        if (! Ajustes::bool('correo.auto_envio', false)) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($contingencia) {
+            $documentos = $contingencia->dtes()->where('estado', EstadoDte::Firmado->value)
+                ->with(['envios', 'cliente', 'clienteSucursal'])->get();
+            foreach ($documentos as $dte) {
+                try {
+                    $alCliente = $dte->envios->reject(fn (DteEnvio $e) => $e->esCanalContabilidad());
+                    if (! $dte->esTransitorio() || $alCliente->isEmpty()
+                        || $alCliente->contains(fn (DteEnvio $e) => $e->estado !== 'error')) {
+                        continue;
+                    }
+                    $correo = $this->correoDelCliente($dte);
+                    if (blank($correo)) {
+                        continue;
+                    }
+                    app(EnvioDteCorreoService::class)->encolar($dte, [$correo], null, DteEnvio::CANAL_CLIENTE);
+                } catch (Throwable $e) {
+                    report($e);
+                }
             }
         });
     }

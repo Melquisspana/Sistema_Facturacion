@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -74,21 +75,25 @@ class ContingenciaCorreoClienteTest extends TestCase
         parent::tearDown();
     }
 
-    /** Firmador que contesta y Hacienda que no (la recepción cortada, la consulta «no lo tengo»). */
-    private function simular(): void
+    /**
+     * Firmador que contesta y Hacienda que no (la recepción cortada, la consulta «no lo
+     * tengo»). Sin internet, la sonda tampoco contesta (contingencia tipo 3). Con
+     * `$haciendaVolvio`, el login y la recepción responden: la reconexión declara el cese.
+     */
+    private function simular(bool $internet = true, bool $haciendaVolvio = false): void
     {
         Http::swap(new Factory);
         Http::preventStrayRequests();
         Http::fake([
-            '*generate_204' => Http::response('', 204),
+            '*generate_204' => $internet ? Http::response('', 204) : Http::failedConnection(),
             '*firmardocumento*' => function ($request) {
                 $b64 = fn ($v) => rtrim(strtr(base64_encode(json_encode($v)), '+/', '-_'), '=');
 
                 return Http::response(['status' => 'OK', 'body' => $b64(['alg' => 'RS512']).'.'.$b64($request['dteJson']).'.firma-inventada']);
             },
-            '*recepciondte*' => Http::failedConnection(),
+            '*recepciondte*' => $haciendaVolvio ? Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Solicitud inventada'], 400) : Http::failedConnection(),
             '*consultadte*' => Http::response([], 404),
-            '*seguridad/auth' => Http::failedConnection(),
+            '*seguridad/auth' => $haciendaVolvio ? Http::response(['status' => 'OK', 'body' => ['token' => 'TOKEN-INVENTADO']]) : Http::failedConnection(),
         ]);
     }
 
@@ -143,6 +148,21 @@ class ContingenciaCorreoClienteTest extends TestCase
         });
 
         return [$envio->refresh(), $correo];
+    }
+
+    /**
+     * Corre el job real con el servidor de correo inalcanzable, como en la contingencia
+     * tipo 3: sin internet tampoco hay SMTP (es de afuera). El job no reintenta.
+     */
+    private function correrSinSalida(DteEnvio $envio): DteEnvio
+    {
+        $this->simularProduccionCorreo();
+        $real = Mail::getFacadeRoot();
+        Mail::shouldReceive('to')->andThrow(new TransportException('Connection could not be established with host "smtp.example.test:587"'));
+        (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
+        Mail::swap($real);
+
+        return $envio->refresh();
     }
 
     private function enviosAlCliente(Dte $dte)
@@ -221,6 +241,99 @@ class ContingenciaCorreoClienteTest extends TestCase
         $html = $correo->render();
         $this->assertStringContainsString('Documento provisional', $html);
         $this->assertStringContainsString('le enviaremos el documento definitivo cuando Hacienda lo selle', $html);
+    }
+
+    /**
+     * Contingencia tipo 3 (sin internet): el provisional sale apenas se emite y falla,
+     * porque el servidor de correo también es de afuera, y el job no reintenta. Al
+     * terminar la contingencia ya hay conexión: el que no salió se manda otra vez.
+     */
+    public function test_a_sin_internet_el_provisional_que_fallo_sale_otra_vez_al_terminar_la_contingencia(): void
+    {
+        $dte = $this->emitirEnContingenciaManual();
+        $this->assertSame(3, $dte->contingencia->tipo);
+        $fallido = $this->correrSinSalida($this->enviosAlCliente($dte)->sole());
+        $this->assertSame('error', $fallido->estado);
+
+        app(ContingenciaService::class)->terminar(null);
+
+        Queue::assertPushed(EnviarDteCorreo::class, 2);
+        $envios = $this->enviosAlCliente($dte);
+        $this->assertCount(2, $envios);
+        $this->assertSame('error', $envios[0]->estado, 'El intento fallido queda en el historial.');
+        $this->assertSame('pendiente', $envios[1]->estado);
+        $this->assertSame(self::CORREO, $envios[1]->destinatario);
+        $this->assertSame(DteEnvio::CANAL_CLIENTE, $envios[1]->canal);
+        $this->assertNull($envios[1]->user_id, 'Envío automático (sistema).');
+        [$reintento, $correo] = $this->correr($envios[1]);
+        $this->assertSame('enviado', $reintento->estado);
+        $this->assertSame(DteEnvio::PDF_PROVISIONAL.', JSON', $reintento->adjuntos);
+        $this->assertStringContainsString('Documento provisional', $correo->render());
+    }
+
+    /** Lo mismo cuando la contingencia la terminó sola la reconexión (entrada automática). */
+    public function test_a_sin_internet_el_provisional_que_fallo_sale_otra_vez_cuando_vuelve_la_conexion(): void
+    {
+        $dte = $this->documento(false);
+        $this->simular(internet: false);
+        $this->post(route('facturacion.firmar-transmitir', $dte))->assertRedirect()
+            ->assertSessionHas('status', 'Documento emitido en contingencia, pendiente de sello de recepción.');
+        $this->assertTrue($dte->refresh()->esTransitorio());
+        $this->assertSame(3, $dte->contingencia->tipo);
+        $this->assertSame('automatica', $dte->contingencia->origen);
+        $this->assertSame('error', $this->correrSinSalida($this->enviosAlCliente($dte)->sole())->estado);
+
+        // Mientras no vuelve, nada.
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertCount(1, $this->enviosAlCliente($dte));
+
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(haciendaVolvio: true);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('cerrada', $dte->contingencia->refresh()->estado);
+        $envios = $this->enviosAlCliente($dte);
+        $this->assertCount(2, $envios);
+        $this->assertSame('pendiente', $envios[1]->estado);
+        $this->assertNull($envios[1]->user_id);
+
+        // Una sola vez por cese: la vuelta siguiente no lo repite.
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertCount(2, $this->enviosAlCliente($dte));
+        Queue::assertPushed(EnviarDteCorreo::class, 2);
+    }
+
+    /** Al terminar solo se reintenta lo que falló, y con las mismas condiciones de siempre. */
+    public function test_a_al_terminar_solo_se_reintenta_el_provisional_que_fallo(): void
+    {
+        $salio = $this->emitirEnContingenciaManual();
+        $this->correr($this->enviosAlCliente($salio)->sole());
+
+        Ajustes::guardarComoSistema('correo.auto_envio', false);
+        $nuncaSalio = $this->emitirEnContingenciaManualSinActivar();
+        Ajustes::guardarComoSistema('correo.auto_envio', true);
+
+        $fallo = $this->emitirEnContingenciaManualSinActivar();
+        $this->correrSinSalida($this->enviosAlCliente($fallo)->sole());
+
+        app(ContingenciaService::class)->terminar(null);
+
+        $this->assertCount(1, $this->enviosAlCliente($salio), 'El que salió no se repite.');
+        $this->assertCount(0, $this->enviosAlCliente($nuncaSalio), 'Sin intento al emitirse, no se inventa uno.');
+        $this->assertCount(2, $this->enviosAlCliente($fallo));
+        Queue::assertPushed(EnviarDteCorreo::class, 3);
+    }
+
+    public function test_a_con_el_envio_automatico_apagado_al_terminar_no_se_reintenta(): void
+    {
+        $dte = $this->emitirEnContingenciaManual();
+        $this->correrSinSalida($this->enviosAlCliente($dte)->sole());
+        Ajustes::guardarComoSistema('correo.auto_envio', false);
+
+        app(ContingenciaService::class)->terminar(null);
+
+        $this->assertCount(1, $this->enviosAlCliente($dte));
+        Queue::assertPushed(EnviarDteCorreo::class, 1);
     }
 
     public function test_b_al_regularizarse_sale_el_completo_aunque_ya_salio_el_provisional(): void
