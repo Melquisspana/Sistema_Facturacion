@@ -8,6 +8,39 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.25.2] - 2026-11-25
+
+Barrido de botones sin prueba, tandas 3, 4 y 5: Planilla, Gastos y PPQ (#424), exportaciones (#425), y planta, integraciones y respaldo (#426). Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- Gastos › Por pagar: «Saltar» en «Fecha pasada · por confirmar». Pide el motivo, avisa que no se puede deshacer y usa los mismos permisos y el mismo candado que «Saltar» en la ficha de la regla (#424).
+- PPQ: borrar un lote queda en la auditoría como `ppq.lote_eliminado`, con el número, el cliente, cuántos CCF y NC tenía, a qué estado volvió cada CCF y quién lo borró (#424).
+- Bitácora: quedan registrados los cambios de precio de exportación de un cliente, los del catálogo, lo que crea el Excel y el cambio de cliente de una lista de empaque (#425).
+- Configuración › Sistema: la auditoría anota quién apretó «Generar respaldo ahora» y cómo terminó (#426).
+
+### Cambiado
+
+- Listas de empaque: al duplicar, cada línea toma el precio que el cliente tiene hoy y la ficha avisa qué cambió. Conserva el de la lista vieja, con aviso, cuando el cliente no tiene precio para ese producto, el precio está apagado o en $0, o la presentación cambió en Productos (#425).
+- Listas de empaque: cambiar el cliente de un borrador pasa las líneas al cliente nuevo con su precio. Se niega si la lista tiene una factura de exportación emitida a otro cliente (#425).
+- Listas de empaque: el FDA sale de Configuración, no del navegador. La copia lleva el que está configurado hoy (#425).
+- Productos: el Excel del catálogo de exportación calcula onzas y libras igual que el formulario y avisa qué filas no importó (#425).
+- Gastos: al reanudar una regla ya no se crean de golpe los meses que vencieron en la pausa. «Generar», la tarea programada y su simulación avisan cuáles quedaron sin crear (#424).
+- Gastos › Por pagar: las fechas muestran el año y todos los formularios ponen Cancelar a la izquierda, con botones de 44 px (#424).
+- Gastos: «Lo que viene» de una regla que arranca más adelante muestra sus primeros seis períodos (#424).
+- Respaldo: cada corrida tiene su propio archivo y corre una sola a la vez. El aviso de falla manda a «Última ejecución», en la misma pantalla (#426).
+
+### Corregido
+
+- Planilla › Anticipos: solo se aceptan pagos hechos a esa persona, nunca el de su quincena ni por más que el pago. La lista solo ofrece los pagos que quien registra puede ver en Gastos (#424).
+- Gastos: «Saltar» rechaza un período mal escrito y funciona en todos los años de una regla anual. La ficha de la regla abre aunque tenga saltos viejos sin fecha (#424).
+- Listas de empaque: la copia de una lista archivada nace como borrador, una lista pendiente de revisión no se puede duplicar, una línea de otra lista se rechaza y una lista archivada no se puede borrar. El cliente deshabilitado de un borrador sigue saliendo en Editar (#425).
+- Productos: el Excel del catálogo ya no crea cajas imposibles, y un archivo dañado da un aviso en vez de la página de error (#425).
+- Configuración › Sistema: un respaldo que quedó a medias se marca como fallido y se borra. El doble clic ya no corre dos respaldos ni manda un aviso falso de falla, y el botón se apaga al apretarlo. Un respaldo bueno ya no sale como «NO se encuentra» (#426).
+- Configuración › Integraciones: «Quitar valor guardado» deja una sola línea en la auditoría, y el mensaje avisa cuando el secreto queda sin ningún valor (#426).
+- Configuración › Opciones: el horario del lector acepta que abra y cierre dentro de la misma hora (#426).
+- Producción › Empaques: «Editar» guarda la referencia del cliente. Un empaque inactivo no queda como predeterminado ni se reactiva con una bolsa o viñeta fuera de uso (#426).
+
 ## [2026.11.25] - 2026-11-25
 
 Entregas de la fábrica y correo de las 18:00 ordenado (#422). Sin migraciones ni cambios de permisos.
