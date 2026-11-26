@@ -179,7 +179,8 @@
             <div class="flex flex-wrap gap-2">
                 @can('gastos.registrar')
                     @can('gastos.pagos.registrar')
-                        <button type="button" @click="abrir('compra')" class="{{ $botonAccion }}">Compré y pagué</button>
+                        <button type="button" @click="abrir('compra')" class="{{ $botonAccion }}"
+                                :aria-expanded="abierto === 'compra' ? 'true' : 'false'" aria-expanded="false" aria-controls="compra">Compré y pagué</button>
                     @endcan
                     <a href="{{ route('gastos.create') }}" class="{{ $boton }}">Anotar un gasto</a>
                     <a href="{{ route('gastos.cuentas') }}" class="{{ $boton }}">Agregar compra a cuenta</a>
@@ -189,7 +190,7 @@
             {{-- Compré y pagué: el gasto y el pago nacen juntos. Nunca existe la deuda. --}}
             @can('gastos.registrar')
                 @can('gastos.pagos.registrar')
-                    <div x-show="abierto === 'compra'" x-cloak class="rounded-lg border border-indigo-200 bg-white p-4 shadow-sm">
+                    <div id="compra" x-show="abierto === 'compra'" x-cloak class="rounded-lg border border-indigo-200 bg-white p-4 shadow-sm">
                         <form method="POST" action="{{ route('gastos.panel.compras') }}" class="space-y-3">
                             @csrf
                             <input type="hidden" name="clave" value="{{ $compraClave }}">

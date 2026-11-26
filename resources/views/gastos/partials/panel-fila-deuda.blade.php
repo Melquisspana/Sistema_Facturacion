@@ -83,22 +83,25 @@
 
             @if ($accion === 'pagar')
                 @can('gastos.pagos.registrar')
-                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}">Pagar</button>
+                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}"
+                            :aria-expanded="abierto === '{{ $panel }}' ? 'true' : 'false'" aria-expanded="false" aria-controls="{{ $panel }}">Pagar</button>
                 @endcan
             @elseif ($accion === 'abonar')
                 @can('gastos.pagos.registrar')
-                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}">Abonar</button>
+                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}"
+                            :aria-expanded="abierto === '{{ $panel }}' ? 'true' : 'false'" aria-expanded="false" aria-controls="{{ $panel }}">Abonar</button>
                 @endcan
             @elseif ($accion === 'completar')
                 @can('gastos.registrar')
-                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}">Anotar el monto</button>
+                    <button type="button" @click="abrir('{{ $panel }}')" class="{{ $botonAccion }}"
+                            :aria-expanded="abierto === '{{ $panel }}' ? 'true' : 'false'" aria-expanded="false" aria-controls="{{ $panel }}">Anotar el monto</button>
                 @endcan
             @endif
         </div>
     </div>
 
     {{-- ══════════════ El formulario de la acción ══════════════ --}}
-    <div x-show="abierto === '{{ $panel }}'" x-cloak class="border-t border-gray-100 bg-gray-50 px-4 py-4">
+    <div id="{{ $panel }}" x-show="abierto === '{{ $panel }}'" x-cloak class="border-t border-gray-100 bg-gray-50 px-4 py-4">
 
         @if ($accion === 'pagar')
             {{-- Pagar: el sistema ya sabe a quién, qué y cuánto. Solo falta cuándo y cómo. --}}

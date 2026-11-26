@@ -395,6 +395,26 @@ class PanelConservaLoEscritoTest extends TestCase
         $this->assertSame(0, Pago::count(), 'Ni el pago.');
     }
 
+    /**
+     * Los botones que abren un formulario dicen si está abierto y cuál abren, como ya hacían
+     * «Registrar pago» y «Saltar». Importa más ahora que, tras un error, el formulario se
+     * abre solo: sin esto, volver al botón y tocarlo lo cerraba sin ningún aviso.
+     */
+    public function test_los_botones_que_abren_un_formulario_dicen_si_esta_abierto(): void
+    {
+        $u = $this->operador();
+        $pagar = $this->deuda($u, 'Proveedor de prueba A', '48.00', 'operativo');
+        $abonar = $this->deuda($u, 'Proveedor de prueba B', '300.00', 'compra');
+        $completar = $this->sinMonto($u, 'Proveedor de prueba C', 'operativo');
+        $html = $this->actingAs($u)->get(route('gastos.panel'))->assertOk()->getContent();
+
+        foreach (['compra', 'fila-pagar-'.$pagar->id, 'fila-abonar-'.$abonar->id, 'fila-completar-'.$completar->id] as $panel) {
+            $this->assertMatchesRegularExpression('/<button type="button" @click="abrir\(\''.$panel.'\'\)"[^>]*'
+                .':aria-expanded="abierto === \''.$panel.'\' \? \'true\' : \'false\'" aria-expanded="false" aria-controls="'.$panel.'"/', $html);
+            $this->assertMatchesRegularExpression('/<div id="'.$panel.'" x-show="abierto === \''.$panel.'\'"/', $html);
+        }
+    }
+
     public function test_registrar_pago_de_una_fila_programada_vuelve_abierto_con_lo_escrito(): void
     {
         $u = $this->operador();
