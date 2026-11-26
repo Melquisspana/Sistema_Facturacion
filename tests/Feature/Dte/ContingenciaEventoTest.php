@@ -686,6 +686,45 @@ class ContingenciaEventoTest extends TestCase
         $this->assertSame('2026-10-10 11:00:00', $parte->rechazado_en?->format('Y-m-d H:i:s'));
     }
 
+    /** @return array<string, array{string, string}> */
+    public static function avisoSinRespuesta(): array
+    {
+        return [
+            'no pudo conectar: el aviso no salió' => ['rechazada', 'El aviso no salió: no hubo conexión con Hacienda. Se puede reintentar.'],
+            'salió y se perdió la respuesta' => ['salio_sin_respuesta', 'El aviso salió, pero Hacienda no contestó: puede que lo tenga. Se puede reintentar; sale el mismo aviso, no uno nuevo.'],
+        ];
+    }
+
+    /**
+     * Simulacro del 26/11 (F18): un aviso que salió y quedó sin respuesta decía
+     * «error_conexion: No se pudo conectar con el MH». Ahora distingue si salió, y lo
+     * que lee la persona no empieza con el código interno del resultado.
+     */
+    #[DataProvider('avisoSinRespuesta')]
+    public function test_el_aviso_sin_respuesta_dice_si_salio_y_sin_el_codigo_interno(string $falla, string $mensaje): void
+    {
+        $this->documento();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FIRMA.INVENTADA.JWS']),
+            '*consultadte*' => Http::response([], 404),
+            '*fesv/contingencia' => SimulaFallasDeConexion::repetir(SimulaFallasDeConexion::fallaReal($falla))]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHas('status', $mensaje);
+
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHas('status', 'Hacienda recibió el aviso.');
+    }
+
+    public function test_el_rechazo_del_aviso_se_lee_sin_el_codigo_interno(): void
+    {
+        $this->documento();
+        $this->simular('RECHAZADO');
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))
+            ->assertSessionHas('status', 'Hacienda rechazó el aviso. Responsable incorrecto');
+    }
+
     public function test_con_la_firma_apagada_el_aviso_muestra_su_propio_mensaje_y_no_un_error_del_servidor(): void
     {
         $this->documento();
