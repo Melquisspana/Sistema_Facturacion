@@ -190,11 +190,9 @@ jobs:
         run: composer audit --locked --abandoned=report --format=plain --no-interaction
 
       # Corre aunque el paso anterior falle, para ver los dos resultados juntos. Solo
-      # revisa lo que va a producción (--omit=dev) y desde gravedad alta: Vite, esbuild y
-      # las demás herramientas de compilación no corren en el servidor. Ojo: hoy todo
-      # package.json está en devDependencies, como en el esqueleto de Laravel; alpinejs y
-      # axios sí llegan al navegador, pero este paso no los revisa hasta que pasen a
-      # dependencies.
+      # revisa lo que llega al navegador (--omit=dev), desde gravedad alta: alpinejs y
+      # axios están en dependencies por eso. Vite, esbuild y las demás herramientas de
+      # compilación quedan en devDependencies porque no salen de la máquina que compila.
       - name: Avisos de seguridad de npm
         if: ${{ !cancelled() }}
         run: npm audit --package-lock-only --omit=dev --audit-level=high
