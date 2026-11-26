@@ -4,7 +4,9 @@ namespace App\Services\Exportaciones;
 
 use App\Http\Requests\Exportaciones\PresentacionExportacionRequest;
 use App\Models\ExportacionProducto;
+use App\Models\ExportacionProductoBase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
@@ -20,7 +22,8 @@ use Throwable;
  *
  * Un producto que ya existe (mismo nombre_es) no se crea otra vez: si la fila trae
  * una presentación que no tiene (otras unidades por caja u otros gramos), se le
- * agrega; si ya la tiene, se omite y no se pisa.
+ * agrega bajo su producto base (si no lo tenía, se le crea); si ya la tiene, se
+ * omite y no se pisa.
  */
 class ImportadorCatalogoExportacion
 {
@@ -121,10 +124,11 @@ class ImportadorCatalogoExportacion
     }
 
     /**
-     * Con producto base, la presentación cuelga de él por el mismo camino que el
-     * formulario ({@see CatalogoExportacion::agregarPresentacion()}: sus nombres, sin
-     * repetir presentación y los pesos de {@see CatalogoExportacion::pesos()}). Un
-     * producto sin agrupar no tiene base: la presentación queda con su mismo nombre.
+     * La presentación cuelga del producto base por el mismo camino que el formulario
+     * ({@see CatalogoExportacion::agregarPresentacion()}: sus nombres, sin repetir
+     * presentación y los pesos de {@see CatalogoExportacion::pesos()}). Un producto
+     * sin agrupar primero se agrupa ({@see agrupar()}): con otra fila suelta del mismo
+     * nombre quedaban dos productos en «Sin agrupar» que nada podía juntar después.
      *
      * @param  Collection<int, ExportacionProducto>  $existentes
      */
@@ -136,7 +140,40 @@ class ImportadorCatalogoExportacion
             return app(CatalogoExportacion::class)->agregarPresentacion($base, $datos);
         }
 
-        return ExportacionProducto::create(['nombre_en' => $existentes->first()->nombre_en] + $datos);
+        return DB::transaction(fn () => app(CatalogoExportacion::class)->agregarPresentacion($this->agrupar($existentes), $datos));
+    }
+
+    /**
+     * Le crea su producto base a un producto suelto (lo dejó una importación anterior),
+     * con los nombres de su primera fila, y sus filas pasan a ser presentaciones de él:
+     * las mismas, con sus precios de cliente y sus listas. Cada cambio queda en la
+     * bitácora. Si dos filas sueltas tienen la misma presentación, agruparlas la dejaría
+     * repetida dentro del producto ({@see CatalogoExportacion::exigirUnica()}): la fila
+     * se informa como error y no cambia nada.
+     *
+     * @param  Collection<int, ExportacionProducto>  $sueltas
+     */
+    private function agrupar(Collection $sueltas): ExportacionProductoBase
+    {
+        $repetida = $sueltas
+            ->groupBy(fn (ExportacionProducto $p) => (int) $p->unidades_por_caja.'|'.round((float) $p->gramos_por_unidad, 2))
+            ->first(fn (Collection $iguales) => $iguales->count() > 1)?->first();
+        if ($repetida !== null) {
+            throw new RuntimeException("«{$repetida->nombre_es}» tiene la presentación {$repetida->etiquetaEmpaque()}, "
+                .(float) $repetida->gramos_por_unidad.' g repetida sin agrupar: no se agregó la nueva. Corregí o borrá la repetida en Productos y volvé a importar.');
+        }
+
+        $primera = $sueltas->first();
+        $base = ExportacionProductoBase::firstOrCreate(
+            ['nombre_es' => $primera->nombre_es],
+            ['nombre_en' => (string) $primera->nombre_en, 'activo' => true],
+        );
+
+        foreach ($sueltas as $suelta) {
+            $suelta->update(['exportacion_producto_base_id' => $base->id, 'nombre_es' => $base->nombre_es, 'nombre_en' => $base->nombre_en]);
+        }
+
+        return $base;
     }
 
     /**

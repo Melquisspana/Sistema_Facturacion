@@ -2,6 +2,10 @@
 
 namespace Tests\Feature\Productos;
 
+use App\Models\Cliente;
+use App\Models\Exportacion;
+use App\Models\ExportacionCliente;
+use App\Models\ExportacionClienteProducto;
 use App\Models\ExportacionProducto;
 use App\Models\ExportacionProductoBase;
 use App\Models\User;
@@ -178,7 +182,8 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
      * Decisión de Melqui: el mismo producto con otra presentación (otras unidades por
      * caja u otros gramos) se le agrega como presentación, sin crear otro producto y
      * sin pisar la que ya tenía. Onzas y libras salen de gramos y kilos, como siempre.
-     * El resumen lo dice en una línea por fila.
+     * El resumen lo dice en una línea por fila. Las tres quedan bajo un solo producto
+     * base: antes quedaban tres filas sueltas con el mismo nombre en «Sin agrupar».
      */
     public function test_el_mismo_producto_con_otra_presentacion_se_le_agrega_y_el_resumen_lo_dice(): void
     {
@@ -208,6 +213,89 @@ class ImportarCatalogoExportacionBordesTest extends TestCase
         $this->assertEquals(11.02, (float) $nueva->peso_neto_caja_lb);
         $this->assertEquals(13.23, (float) $nueva->peso_bruto_caja_lb);
         $this->assertEquals(99.00, (float) $nueva->precio_caja);
+
+        $base = ExportacionProductoBase::query()->sole();
+        $this->assertSame(['Producto de prueba', 'Test product'], [$base->nombre_es, $base->nombre_en]);
+        $this->assertSame([$base->id, $base->id, $base->id], $presentaciones->pluck('exportacion_producto_base_id')->map(fn ($id) => (int) $id)->all());
+    }
+
+    /**
+     * Un producto suelto (sin producto base) que dejó una importación anterior, con su
+     * precio de cliente y una lista que lo usa: la presentación nueva no se agrega como
+     * otra fila suelta con el mismo nombre. Se le crea su producto base, la fila que ya
+     * estaba pasa a ser una presentación de él —la misma, con sus precios y sus listas—
+     * y la nueva cuelga de él. Productos › De exportación lo muestra agrupado y la
+     * bitácora dice quién creó el producto, quién agrupó la fila y quién agregó la nueva.
+     */
+    public function test_a_un_producto_suelto_se_le_crea_su_producto_base_y_la_presentacion_nueva_cuelga_de_el(): void
+    {
+        $usuario = $this->usuario();
+        $this->actingAs($usuario)->post(route('productos.exportacion.importar.run'), [
+            'archivo' => $this->subir($this->rutaExcel([['Producto de prueba \\ Test product', 144, 85, 136.80, 13, 14]])),
+        ])->assertSessionHas('status', 'Importación completada: 1 creados, 0 omitidos (ya existían).');
+        $suelta = ExportacionProducto::query()->sole();
+        $this->assertNull($suelta->exportacion_producto_base_id);
+        $perfil = ExportacionCliente::create([
+            'cliente_id' => Cliente::factory()->exportacion()->create(['nombre' => 'Cliente de prueba'])->id,
+            'nombre' => 'Cliente de prueba', 'activo' => true,
+        ]);
+        $precio = ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $suelta->id, 'precio_caja' => 140.00, 'precio_fijado_en' => '2026-11-01', 'activo' => true]);
+        $lista = Exportacion::create(['exportacion_cliente_id' => $perfil->id, 'cliente_nombre' => 'Cliente de prueba', 'exportador_nombre' => 'Exportador de prueba', 'fecha' => '2026-11-01', 'estado' => Exportacion::ESTADO_BORRADOR]);
+        $item = $lista->items()->create(['exportacion_producto_id' => $suelta->id, 'cantidad_cajas' => 10, 'precio_caja' => 140.00] + $suelta->datosSnapshot());
+
+        $this->actingAs($usuario)->post(route('productos.exportacion.importar.run'), [
+            'archivo' => $this->subir($this->rutaExcel([['Producto de prueba \\ Test product', 24, 40, 99.00, 5, 6]])),
+        ])->assertSessionHas('status', "Importación completada: 0 creados, 0 omitidos (ya existían).\n"
+            .'Fila 9: se agregó la presentación Bolsa de prueba · 24 u, 40 g a «Producto de prueba».');
+
+        $base = ExportacionProductoBase::query()->sole();
+        $this->assertSame(['Producto de prueba', 'Test product'], [$base->nombre_es, $base->nombre_en]);
+        $this->assertTrue($base->activo);
+        $this->assertSame([144, 24], $base->presentaciones()->orderBy('id')->pluck('unidades_por_caja')->all());
+        $this->assertSame(2, ExportacionProducto::count());
+        // La que ya estaba es la misma fila: su precio de cliente y su lista siguen con ella.
+        $this->assertSame($base->id, (int) $suelta->fresh()->exportacion_producto_base_id);
+        $this->assertSame($suelta->id, (int) $precio->fresh()->exportacion_producto_id);
+        $this->assertSame($suelta->id, (int) $item->fresh()->exportacion_producto_id);
+
+        $indice = $this->actingAs($usuario)->get(route('productos.exportacion.index'))->assertOk();
+        $this->assertCount(0, $indice->viewData('sinAgrupar'));
+
+        $bitacora = Activity::query()->where('log_name', 'producto_exportacion')->where('causer_id', $usuario->id);
+        $this->assertSame(1, (clone $bitacora)->where('subject_type', ExportacionProductoBase::class)->where('subject_id', $base->id)->where('event', 'created')->count());
+        $agrupada = (clone $bitacora)->where('subject_type', ExportacionProducto::class)->where('subject_id', $suelta->id)->where('event', 'updated')->sole();
+        $this->assertSame($base->id, (int) $agrupada->properties['attributes']['exportacion_producto_base_id']);
+        $nueva = ExportacionProducto::query()->where('unidades_por_caja', 24)->sole();
+        $this->assertSame(1, (clone $bitacora)->where('subject_type', ExportacionProducto::class)->where('subject_id', $nueva->id)->where('event', 'created')->count());
+    }
+
+    /**
+     * Intento de romperlo: dos filas sueltas del mismo producto con la misma presentación
+     * (una se editó en Productos hasta quedar igual a la otra). Agruparlas dejaría la
+     * presentación repetida dentro del producto, que es justo lo que no se permite: la
+     * fila se informa como error y no cambia nada.
+     */
+    public function test_un_producto_suelto_con_una_presentacion_repetida_no_se_agrupa_y_se_informa(): void
+    {
+        foreach ([136.80, 140.00] as $precio) {
+            ExportacionProducto::create([
+                'nombre_es' => 'Producto de prueba', 'nombre_en' => 'Test product', 'unidad' => 'Bolsa de prueba',
+                'unidades_por_caja' => 144, 'gramos_por_unidad' => 85, 'onzas_por_unidad' => 3, 'precio_caja' => $precio,
+                'peso_neto_caja_kg' => 13, 'peso_bruto_caja_kg' => 14, 'peso_neto_caja_lb' => 28.66, 'peso_bruto_caja_lb' => 30.86, 'activo' => true,
+            ]);
+        }
+
+        $this->actingAs($this->usuario())->post(route('productos.exportacion.importar.run'), [
+            'archivo' => $this->subir($this->rutaExcel([['Producto de prueba \\ Test product', 24, 40, 99.00, 5, 6]])),
+        ])->assertSessionHas('error');
+
+        $mensaje = (string) session('error');
+        $this->assertStringContainsString('Fila 9', $mensaje);
+        $this->assertStringContainsString('repetida', $mensaje);
+        $this->assertStringNotContainsString('Fila 9: se agregó', $mensaje);
+        $this->assertSame(0, ExportacionProductoBase::count());
+        $this->assertSame([144, 144], ExportacionProducto::query()->pluck('unidades_por_caja')->all());
+        $this->assertSame([null, null], ExportacionProducto::query()->pluck('exportacion_producto_base_id')->all());
     }
 
     /**
