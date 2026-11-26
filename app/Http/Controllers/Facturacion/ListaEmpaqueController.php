@@ -304,12 +304,13 @@ class ListaEmpaqueController extends Controller
 
     /**
      * Copia con los mismos productos y fecha de hoy, en borrador. Cada línea del
-     * catálogo toma el empaque y los pesos de HOY de su presentación en Productos y el precio ACTUAL
-     * del cliente: al finalizar, el precio de la lista pasa a ser el del cliente, y uno
-     * viejo se lo bajaba. Sin precio del cliente, la línea conserva el de la lista vieja
-     * y se avisa. Si la presentación cambió en Productos, o el producto ya no está (se
-     * borró o se archivó), la línea conserva todo lo de la lista vieja y también se avisa. Los datos del
-     * exportador salen de Configuración; el que no esté guardado ahí, de la original.
+     * catálogo toma el empaque y los pesos de HOY de su presentación en Productos y el
+     * precio ACTUAL del cliente: al finalizar, el precio de la lista pasa a ser el del
+     * cliente, y uno viejo se lo bajaba. Sin precio del cliente, la línea conserva el de
+     * la lista vieja y se avisa. Si la presentación cambió en Productos, o el producto ya
+     * no está (se borró o se archivó), la línea conserva todo lo de la lista vieja y
+     * también se avisa. Los datos del exportador salen de Configuración; el que no esté
+     * guardado ahí, de la original.
      */
     public function duplicar(Exportacion $lista): RedirectResponse
     {
