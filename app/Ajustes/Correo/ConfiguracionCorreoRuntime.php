@@ -57,6 +57,27 @@ class ConfiguracionCorreoRuntime
     /** Valor de `mail.smtp.scheme` que significa "que lo derive Laravel del puerto". */
     public const SCHEME_AUTOMATICO = 'auto';
 
+    /**
+     * Lo que dice el .env en cada clave de config() que pisa aplicar().
+     *
+     * aplicar() escribe en las MISMAS claves que el catálogo usa como respaldo del .env.
+     * En el worker (un proceso que vive horas, y esta clase es única en él) el «valor
+     * del .env» pasaría a ser lo último que se aplicó: un servidor que alguien ya quitó
+     * con «Usar el valor del servidor», o una contraseña del .env ya borrada porque por
+     * un rato se guardó otro servidor. Por eso, antes de resolver, se devuelve el .env.
+     *
+     * @var array<string, mixed>
+     */
+    private array $delEnv = [];
+
+    /**
+     * Lo que escribió aplicar() la última vez: lo que no coincide lo cambió otro (al
+     * arrancar, el .env; en una prueba, quien la arma) y pasa a ser el .env.
+     *
+     * @var array<string, mixed>
+     */
+    private array $aplicado = [];
+
     public function __construct(
         private readonly Ajustes $ajustes,
         private readonly Application $app,
@@ -71,6 +92,8 @@ class ConfiguracionCorreoRuntime
      */
     public function aplicar(): void
     {
+        $this->volverAlEnv();
+
         $nuevos = [];
 
         foreach (self::MAPA as $ajuste => $destino) {
@@ -88,8 +111,25 @@ class ConfiguracionCorreoRuntime
         $nuevos['mail.mailers.smtp.scheme'] = $scheme === self::SCHEME_AUTOMATICO || $scheme === '' ? null : $scheme;
 
         config($nuevos);
+        $this->aplicado = $nuevos;
 
         $this->olvidarMailers();
+    }
+
+    /** Devuelve a config() lo que dice el .env, para que los ajustes se resuelvan contra él. */
+    private function volverAlEnv(): void
+    {
+        $destinos = [...array_values(self::MAPA), 'mail.mailers.smtp.password', 'mail.mailers.smtp.scheme'];
+
+        foreach ($destinos as $destino) {
+            $actual = config($destino);
+
+            if (! array_key_exists($destino, $this->aplicado) || $this->aplicado[$destino] !== $actual) {
+                $this->delEnv[$destino] = $actual;
+            }
+        }
+
+        config($this->delEnv);
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Configuracion;
 
 use App\Ajustes\CatalogoAjustes;
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Integraciones\ConfiguracionBuzonAdicional;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
@@ -286,6 +287,54 @@ class ClaveAtadaAlServidorTest extends TestCase
         $this->assertSame('', app(ConfiguracionDocumentosRecibidos::class)->paraLector()['password']);
         $this->assertFalse(app(ConfiguracionDocumentosRecibidos::class)->completa());
         $this->assertSame('', app(ConfiguracionBuzonAdicional::class)->paraLector()['password']);
+    }
+
+    /**
+     * El worker de la cola es UN proceso que aplica la configuración de correo antes de
+     * cada trabajo. Guardar por error otro servidor y corregirlo no le hace perder la
+     * clave del .env: antes la borraba de su memoria hasta reiniciarse y los correos
+     * fallaban al autenticar.
+     */
+    public function test_en_el_worker_volver_al_servidor_del_env_recupera_la_clave_del_env(): void
+    {
+        config(['mail.mailers.smtp.host' => 'smtp.ejemplo.com', 'mail.mailers.smtp.password' => self::CLAVE_ENV]);
+        $worker = app(ConfiguracionCorreoRuntime::class);
+        $this->actingAs($this->admin());
+
+        $worker->aplicar();
+        $this->assertSame(self::CLAVE_ENV, config('mail.mailers.smtp.password'));
+
+        Ajustes::guardar('mail.smtp.host', 'smtp.otro.ejemplo.com');
+        $worker->aplicar();
+        $this->assertSame('smtp.otro.ejemplo.com', config('mail.mailers.smtp.host'));
+        $this->assertNull(config('mail.mailers.smtp.password'));
+
+        Ajustes::guardar('mail.smtp.host', 'smtp.ejemplo.com');
+        $worker->aplicar();
+        $this->assertSame('smtp.ejemplo.com', config('mail.mailers.smtp.host'));
+        $this->assertSame(self::CLAVE_ENV, config('mail.mailers.smtp.password'));
+    }
+
+    /**
+     * «Usar el valor del servidor» en el worker vuelve al servidor del .env: la clave que
+     * se cargue después no sale hacia el servidor que se quitó.
+     */
+    public function test_en_el_worker_usar_el_valor_del_servidor_vuelve_al_servidor_del_env(): void
+    {
+        config(['mail.mailers.smtp.host' => 'smtp.ejemplo.com']);
+        $worker = app(ConfiguracionCorreoRuntime::class);
+        $this->actingAs($this->admin());
+        Ajustes::guardar('mail.smtp.host', 'smtp.ajeno.ejemplo.com');
+        Ajustes::guardar('mail.smtp.password', self::CLAVE_VIEJA);
+        $worker->aplicar();
+        $this->assertSame('smtp.ajeno.ejemplo.com', config('mail.mailers.smtp.host'));
+
+        Ajustes::quitarOverride('mail.smtp.host');
+        Ajustes::guardar('mail.smtp.password', self::CLAVE_NUEVA);
+        $worker->aplicar();
+
+        $this->assertSame('smtp.ejemplo.com', config('mail.mailers.smtp.host'));
+        $this->assertSame(self::CLAVE_NUEVA, config('mail.mailers.smtp.password'));
     }
 
     /** Cada secreto atado apunta a un ajuste de texto que existe y no es secreto. */
