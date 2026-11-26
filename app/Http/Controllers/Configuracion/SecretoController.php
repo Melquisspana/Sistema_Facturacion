@@ -11,6 +11,7 @@ use App\Facades\Ajustes;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -51,6 +52,11 @@ class SecretoController extends Controller
         return view('configuracion.secretos.edit', [
             'definicion' => $definicion,
             'estado' => $ajustes->estadoParaPantalla($definicion->clave),
+            // A qué servidor va la clave (null: a ninguno en particular, como Gmail). El
+            // formulario lo devuelve para que la clave quede atada al que se vio acá.
+            'direccion' => $ajustes->direccionDelSecreto($definicion->clave),
+            'etiquetaDireccion' => $definicion->servidor === null ? null : $ajustes->catalogo()->definicion($definicion->servidor)->etiqueta,
+            'retenido' => $ajustes->secretoDelEnvRetenido($definicion->clave),
             // ¿Hay algo que quitar? Solo si el valor vive en la base de datos: el
             // .env no se toca desde aquí, así que ofrecer "quitar" cuando el valor
             // viene del archivo sería ofrecer un botón que no puede hacer nada.
@@ -73,12 +79,25 @@ class SecretoController extends Controller
             // secreto. No hay `nullable` a propósito.
             'password' => ['required', 'string', 'max:512'],
             'confirmacion' => ['accepted'],
+            'servidor_visto' => ['nullable', 'string', 'max:255'],
         ], [
             'password.required' => 'Escribí el valor nuevo. Dejar el campo vacío no borra el actual.',
             'confirmacion.accepted' => 'Confirmá que querés reemplazar «'.$definicion->etiqueta.'».',
         ], [
             'password' => mb_strtolower($definicion->etiqueta),
         ]);
+
+        // La clave se escribió para el servidor que mostraba la pantalla. Si otra sesión
+        // lo cambió mientras tanto, no se guarda: si no, saldría hacia el servidor nuevo.
+        $direccion = Ajustes::direccionDelSecreto($definicion->clave);
+
+        if ($direccion !== null && ! Ajustes::mismaDireccion($datos['servidor_visto'] ?? '', $direccion)) {
+            $servidor = Ajustes::catalogo()->definicion((string) $definicion->servidor)->etiqueta;
+
+            throw ValidationException::withMessages(['password' => "«{$servidor}» cambió mientras escribías: "
+                .($direccion === '' ? 'ahora no tiene ninguno' : "ahora es «{$direccion}»")
+                .'. La clave no se guardó. Revisá que ese sea el servidor correcto y escribila otra vez.']);
+        }
 
         // Ajustes::guardar cifra con Crypt, invalida la caché compartida y emite la
         // auditoría del reemplazo. Este controlador no toca nada de eso.
@@ -120,7 +139,7 @@ class SecretoController extends Controller
         if (Ajustes::fuente($definicion->clave) !== FuenteAjuste::Configuracion) {
             // El del archivo existe pero es para el servidor del archivo, y la aplicación
             // tiene guardado otro: no viaja hacia ese (ver Ajustes::resolver()).
-            if ($definicion->claveConfig !== null && filled(config($definicion->claveConfig))) {
+            if (Ajustes::secretoDelEnvRetenido($definicion->clave)) {
                 return $definicion->etiqueta.': se quitó el valor guardado. El del archivo del servidor no se usa porque el servidor guardado en la aplicación es otro. Queda sin configurar hasta que cargues uno nuevo.';
             }
 

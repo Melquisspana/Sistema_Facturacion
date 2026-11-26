@@ -160,6 +160,21 @@ secreto no sale hacia la nueva hasta que alguien lo cargue otra vez:
 
 Gmail no entra: el secreto de cliente va siempre a Google, cambie lo que cambie.
 
+- La pantalla de la clave dice a qué servidor va y la ata a ese: si otra sesión cambia
+  el servidor mientras alguien la escribe, la clave no se guarda y el aviso dice cuál
+  es el servidor nuevo.
+- La confirmación del cambio de servidor (y la de «Usar el valor del servidor») avisa
+  ANTES qué clave deja de usarse.
+- El worker de la cola vuelve a resolver contra el .env antes de cada trabajo: un
+  servidor quitado no se le queda pegado ni pierde la contraseña del .env.
+
+**Al desplegar esta regla.** Una instalación que ya tenía guardado en la aplicación un
+servidor distinto del .env, con la clave en el .env, deja de mandar esa clave sin que
+nadie guarde nada (el buzón no trae compras o el correo no autentica). `php artisan
+ajustes:estado` lo avisa por cada clave, sin el valor, y la pantalla de la clave lo dice.
+Arreglo: cargar la clave en la aplicación o volver al servidor del .env con «Usar el
+valor del servidor».
+
 ---
 
 ## 7. Cifrado y APP_KEY

@@ -78,11 +78,31 @@ class AjustesEstadoCommand extends Command
             $filas = array_merge($filas, $filasSeccion);
         }
 
+        $this->secretosDelEnvRetenidos($catalogo, $ajustes);
+
         $this->newLine();
         $this->line('Ajustes mostrados: '.count($filas));
         $this->line('Secretos cifrados en la base: '.count($rotacion->afectados()));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Claves del .env que no se usan porque la aplicación tiene guardado otro servidor
+     * (un secreto viaja solo a su servidor). Al desplegar esa regla, una instalación que
+     * ya estaba así deja de autenticar sin que nadie guarde nada: acá se ve. Sin valores.
+     */
+    private function secretosDelEnvRetenidos(CatalogoAjustes $catalogo, Ajustes $ajustes): void
+    {
+        foreach ($catalogo->todos() as $clave => $definicion) {
+            if ($definicion->servidor === null || ! $this->intentar(fn () => $ajustes->secretoDelEnvRetenido($clave), false)) {
+                continue;
+            }
+
+            $servidor = $catalogo->definicion($definicion->servidor);
+            $this->newLine();
+            $this->warn("«{$definicion->etiqueta}» ({$clave}): la del archivo del servidor (.env) no se usa porque «{$servidor->etiqueta}» ({$servidor->clave}) guardado en la aplicación es otro. Cargala en Configuración o volvé al servidor del archivo con «Usar el valor del servidor».");
+        }
     }
 
     // ---------------------------------------------------------------- bloques

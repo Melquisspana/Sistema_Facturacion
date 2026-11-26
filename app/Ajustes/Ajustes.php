@@ -275,6 +275,33 @@ class Ajustes
         return $this->resolver($clave)->fuente;
     }
 
+    /**
+     * Dirección adonde viaja hoy un secreto atado a un servidor (la URL de la tienda,
+     * el servidor de correo o el de un buzón): '' si no hay ninguna, null si el secreto
+     * no está atado a ninguna (Gmail).
+     */
+    public function direccionDelSecreto(string $claveSecreto): ?string
+    {
+        $servidor = $this->catalogo->definicion($claveSecreto)->servidor;
+
+        return $servidor === null ? null : (string) $this->resolverParaPantalla($servidor)->valor;
+    }
+
+    /**
+     * ¿El secreto del archivo del servidor (.env) existe pero no se usa porque la
+     * dirección guardada en la aplicación es otra? Para avisarlo; nunca da el valor.
+     */
+    public function secretoDelEnvRetenido(string $clave): bool
+    {
+        $definicion = $this->catalogo->definicion($clave);
+        [$guardado] = $this->overrideAlmacenado($definicion);
+
+        return $guardado === null
+            && $definicion->claveConfig !== null
+            && filled(config($definicion->claveConfig))
+            && ! $this->viajaASuServidor($definicion);
+    }
+
     public function estaConfigurado(string $clave): bool
     {
         return $this->resolver($clave)->configurado();
@@ -537,7 +564,7 @@ class Ajustes
     }
 
     /** Un servidor no distingue mayúsculas; los espacios y la barra final tampoco cuentan. */
-    private function mismaDireccion(mixed $una, mixed $otra): bool
+    public function mismaDireccion(mixed $una, mixed $otra): bool
     {
         $normal = static fn (mixed $valor): string => rtrim(mb_strtolower(trim((string) $valor)), '/');
 

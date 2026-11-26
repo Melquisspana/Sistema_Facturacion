@@ -179,12 +179,64 @@ class ClaveAtadaAlServidorTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->actingAs($admin)
-            ->put(route($rutaSecreto), ['password' => self::CLAVE_NUEVA, 'confirmacion' => '1'])
+            ->put(route($rutaSecreto), ['password' => self::CLAVE_NUEVA, 'confirmacion' => '1', 'servidor_visto' => $nuevo])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route($pantalla));
 
         $this->assertSame($nuevo, Ajustes::texto($claveServidor));
         $this->assertSame(self::CLAVE_NUEVA, Ajustes::secretoParaRuntime($claveSecreto));
+    }
+
+    /**
+     * La pantalla de la clave dice a qué servidor va, y la clave queda atada a ese: si
+     * otra sesión cambia el servidor mientras alguien la escribe, no se guarda ni sale
+     * hacia el nuevo.
+     */
+    #[DataProvider('integraciones')]
+    public function test_la_clave_no_se_guarda_si_el_servidor_cambio_mientras_se_escribia(
+        string $pantalla, array $formulario, string $campo, string $nuevo, string $claveServidor, string $claveSecreto, string $rutaSecreto, array $env,
+    ): void {
+        $admin = $this->admin();
+        $this->integracionFuncionando($admin, $env, $claveServidor, $formulario[$campo], $claveSecreto);
+        $visto = $formulario[$campo];
+
+        $this->actingAs($admin)->get(route(str_replace('.update', '.edit', $rutaSecreto)))
+            ->assertOk()
+            ->assertSee('name="servidor_visto" value="'.$visto.'"', false);
+
+        // Mientras escribe, otra sesión cambia el servidor.
+        Ajustes::guardar($claveServidor, $nuevo);
+
+        $this->actingAs($admin)
+            ->put(route($rutaSecreto), ['password' => self::CLAVE_NUEVA, 'confirmacion' => '1', 'servidor_visto' => $visto])
+            ->assertSessionHasErrors('password');
+
+        $this->assertStringContainsString("ahora es «{$nuevo}»", session('errors')->first('password'));
+        $this->assertNull(Ajustes::secretoParaRuntime($claveSecreto));
+        $this->assertFalse(AjusteSistema::query()->where('clave', $claveSecreto)->exists());
+    }
+
+    /**
+     * Al desplegar, una instalación con otro servidor guardado deja de mandar la clave
+     * del .env sin que nadie guarde nada: el diagnóstico del despliegue y la pantalla de
+     * la clave lo dicen, sin mostrar la clave.
+     */
+    public function test_la_clave_del_env_que_no_se_usa_se_avisa_en_el_diagnostico_y_en_la_pantalla(): void
+    {
+        config(['mail.mailers.smtp.host' => 'smtp.ejemplo.com', 'mail.mailers.smtp.password' => self::CLAVE_ENV]);
+        $this->actingAs($this->admin());
+        Ajustes::guardar('mail.smtp.host', 'smtp.otro.ejemplo.com');
+
+        $this->artisan('ajustes:estado')
+            ->expectsOutputToContain('«Contraseña del servidor SMTP» (mail.smtp.password): la del archivo del servidor (.env) no se usa')
+            ->doesntExpectOutputToContain(self::CLAVE_ENV)
+            ->assertSuccessful();
+
+        $this->get(route('configuracion.correo.smtp.password.edit'))
+            ->assertOk()
+            ->assertSee('smtp.otro.ejemplo.com')
+            ->assertSee('La del archivo del servidor no se usa')
+            ->assertDontSee(self::CLAVE_ENV);
     }
 
     /** La clave del .env solo viaja al servidor del .env. La tienda no tiene .env. */
