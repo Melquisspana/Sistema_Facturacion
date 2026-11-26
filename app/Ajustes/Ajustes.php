@@ -288,6 +288,45 @@ class Ajustes
     }
 
     /**
+     * Secretos que hoy se usan y dejarían de servir si estas direcciones pasaran a valer
+     * lo propuesto: el guardado se borra (ver escribir()) y el del .env solo viaja a la
+     * dirección del .env. Para avisarlo ANTES de confirmar; no escribe nada.
+     *
+     * @param  array<string, mixed>  $valores  clave de la dirección ⇒ valor propuesto (vacío: vuelve al .env)
+     * @return array<string, DefinicionAjuste> clave de la dirección ⇒ su secreto
+     */
+    public function secretosQueSeSueltan(array $valores): array
+    {
+        $sueltan = [];
+
+        foreach ($valores as $clave => $propuesta) {
+            $secreto = $this->catalogo->secretoDeServidor($clave);
+
+            if ($secreto === null || ! $this->estaConfigurado($secreto->clave)) {
+                continue;
+            }
+
+            $nueva = blank($propuesta) ? $this->valorDelServidor($clave)->valor : $propuesta;
+
+            if ($this->mismaDireccion($this->resolverParaPantalla($clave)->valor, $nueva)) {
+                continue;
+            }
+
+            // Después del cambio solo serviría la del .env, y solo hacia la dirección del .env.
+            $servidor = $this->catalogo->definicion($clave);
+            $sigueLaDelEnv = $secreto->claveConfig !== null
+                && filled(config($secreto->claveConfig))
+                && $this->mismaDireccion($nueva, $servidor->claveConfig === null ? null : config($servidor->claveConfig));
+
+            if (! $sigueLaDelEnv) {
+                $sueltan[$clave] = $secreto;
+            }
+        }
+
+        return $sueltan;
+    }
+
+    /**
      * ¿El secreto del archivo del servidor (.env) existe pero no se usa porque la
      * dirección guardada en la aplicación es otra? Para avisarlo; nunca da el valor.
      */

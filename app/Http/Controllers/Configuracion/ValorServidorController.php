@@ -48,7 +48,9 @@ class ValorServidorController extends Controller
         if ($definicion->nivel->requiereConfirmacion() && ! $request->boolean('confirmacion')) {
             return view('configuracion.confirmar', [
                 'titulo' => 'Vas a volver al valor del servidor',
-                'consecuencia' => 'Se borra lo guardado en la aplicación y vuelve a mandar el archivo de configuración del servidor (.env) o, si no dice nada, el valor por defecto. Para cambiarlo otra vez, guardalo de nuevo en esta pantalla.',
+                'consecuencia' => 'Se borra lo guardado en la aplicación y vuelve a mandar el archivo de configuración del servidor (.env) o, si no dice nada, el valor por defecto. Para cambiarlo otra vez, guardalo de nuevo en esta pantalla.'
+                    // Si es la dirección de una integración, su clave también: se dice antes.
+                    .$this->avisoAntesDeConfirmar([$clave => null]),
                 'cambios' => [CambioPropuesto::deValor(
                     $definicion,
                     $ajustes->resolverParaPantalla($clave)->valor,

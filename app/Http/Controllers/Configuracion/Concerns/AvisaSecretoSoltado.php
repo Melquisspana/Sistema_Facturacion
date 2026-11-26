@@ -17,6 +17,27 @@ use App\Ajustes\Definicion\DefinicionAjuste;
 trait AvisaSecretoSoltado
 {
     /**
+     * Para la confirmación, ANTES de guardar: una frase por cada secreto que dejaría de
+     * usarse con estos valores, o nada. Así se sabe antes de confirmar que habrá que
+     * cargar otra vez una contraseña de aplicación que quizás se vio una sola vez.
+     *
+     * @param  array<string, mixed>  $valores  clave de la dirección ⇒ valor propuesto (vacío: vuelve al .env)
+     */
+    protected function avisoAntesDeConfirmar(array $valores): string
+    {
+        $ajustes = app(Ajustes::class);
+        $aviso = '';
+
+        foreach ($ajustes->secretosQueSeSueltan($valores) as $clave => $secreto) {
+            $direccion = $ajustes->catalogo()->definicion($clave)->etiqueta;
+            $aviso .= " Al cambiar «{$direccion}», «{$secreto->etiqueta}» deja de usarse: se cargó para el servidor anterior. "
+                .'Después de guardar, cargala de nuevo con el botón «Configurar».';
+        }
+
+        return $aviso;
+    }
+
+    /**
      * Secretos que hoy se usan y viajan a alguna de estas direcciones. Se pide ANTES de
      * guardar.
      *

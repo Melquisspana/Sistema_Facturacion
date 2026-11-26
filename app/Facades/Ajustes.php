@@ -36,6 +36,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static bool estaConfigurado(string $clave)
  * @method static string|null direccionDelSecreto(string $claveSecreto)
  * @method static bool secretoDelEnvRetenido(string $clave)
+ * @method static array<string, \App\Ajustes\Definicion\DefinicionAjuste> secretosQueSeSueltan(array $valores)
  * @method static bool mismaDireccion(mixed $una, mixed $otra)
  * @method static EstadoAjuste estadoParaPantalla(string $clave)
  * @method static array<string, EstadoAjuste> estadosDeSeccion(string $seccion)

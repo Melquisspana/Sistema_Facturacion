@@ -151,6 +151,72 @@ class ClaveAtadaAlServidorTest extends TestCase
         $this->assertStringNotContainsString(self::CLAVE_VIEJA, $this->auditoriaCompleta());
     }
 
+    /**
+     * La confirmación avisa ANTES de guardar qué clave deja de usarse: en Yahoo o Gmail es
+     * una contraseña de aplicación que se ve una sola vez. Con el mismo servidor, nada.
+     */
+    #[DataProvider('integraciones')]
+    public function test_la_confirmacion_avisa_antes_que_la_clave_deja_de_usarse(
+        string $pantalla, array $formulario, string $campo, string $nuevo, string $claveServidor, string $claveSecreto, string $rutaSecreto, array $env,
+    ): void {
+        $admin = $this->admin();
+        $this->integracionFuncionando($admin, $env, $claveServidor, $formulario[$campo], $claveSecreto);
+        $etiqueta = app(CatalogoAjustes::class)->definicion($claveSecreto)->etiqueta;
+        $aviso = "«{$etiqueta}» deja de usarse";
+
+        $this->actingAs($admin)
+            ->put(route($this->rutaGuardar($pantalla)), array_replace($formulario, [$campo => $nuevo]))
+            ->assertOk()
+            ->assertSee('Confirmar y guardar')
+            ->assertSee($aviso);
+
+        $otroCampo = $campo === 'url' ? ['automatica' => '1'] : ['puerto' => '2525'];
+        $this->actingAs($admin)
+            ->put(route($this->rutaGuardar($pantalla)), array_replace($formulario, $otroCampo))
+            ->assertOk()
+            ->assertSee('Confirmar y guardar')
+            ->assertDontSee($aviso);
+
+        // Nada se guardó todavía: la clave sigue.
+        $this->assertSame(self::CLAVE_VIEJA, Ajustes::secretoParaRuntime($claveSecreto));
+    }
+
+    /** «Usar el valor del servidor» en la dirección también lo avisa antes de confirmar. */
+    #[DataProvider('integraciones')]
+    public function test_usar_el_valor_del_servidor_avisa_antes_que_la_clave_deja_de_usarse(
+        string $pantalla, array $formulario, string $campo, string $nuevo, string $claveServidor, string $claveSecreto, string $rutaSecreto, array $env,
+    ): void {
+        config($env);
+        $admin = $this->admin();
+        $this->actingAs($admin);
+        Ajustes::guardar($claveServidor, $nuevo);
+        Ajustes::guardar($claveSecreto, self::CLAVE_VIEJA);
+        $etiqueta = app(CatalogoAjustes::class)->definicion($claveSecreto)->etiqueta;
+
+        $this->actingAs($admin)
+            ->from(route($pantalla))
+            ->delete(route('configuracion.ajustes.servidor', $claveServidor), ['volver' => route($pantalla)])
+            ->assertOk()
+            ->assertSee('Usar el valor del servidor')
+            ->assertSee("«{$etiqueta}» deja de usarse");
+
+        $this->assertSame(self::CLAVE_VIEJA, Ajustes::secretoParaRuntime($claveSecreto));
+    }
+
+    /**
+     * El botón de la confirmación se apaga al enviar: un doble clic no manda un segundo
+     * pedido que pise el aviso de la clave que dejó de usarse con «No había nada que cambiar».
+     */
+    public function test_la_confirmacion_no_se_envia_dos_veces(): void
+    {
+        $this->actingAs($this->admin());
+
+        $this->put(route('configuracion.integraciones.tienda.update'), ['url' => 'https://tienda.ejemplo.com/api', 'automatica' => '0'])
+            ->assertOk()
+            ->assertSee('x-data="{ enviando: false }" @submit="enviando = true"', false)
+            ->assertSee(':disabled="enviando"', false);
+    }
+
     #[DataProvider('integraciones')]
     public function test_con_el_mismo_servidor_la_clave_sigue(
         string $pantalla, array $formulario, string $campo, string $nuevo, string $claveServidor, string $claveSecreto, string $rutaSecreto, array $env,

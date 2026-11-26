@@ -75,7 +75,8 @@ trait GuardaConConfirmacionN2
         if (! $request->boolean('confirmacion') && $confirmacion->requiereConfirmacion($cambios)) {
             return view('configuracion.confirmar', [
                 'titulo' => $titulo,
-                'consecuencia' => $consecuencia,
+                // Más la clave que se borra si cambia su servidor: se dice antes, no después.
+                'consecuencia' => $consecuencia.$this->avisoAntesDeConfirmar($confirmacion->soloLoQueCambia($cambios, $propuestos)),
                 'cambios' => $cambios,
                 'accion' => $request->url(),
                 // Se reenvían los valores YA VALIDADOS, con los mismos nombres de
