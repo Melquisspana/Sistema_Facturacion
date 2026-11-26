@@ -329,6 +329,81 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
     }
 
     /**
+     * Si la presentación se editó en Productos (otra caja con el mismo producto), el
+     * precio del cliente es el de la caja nueva y la línea copiada sigue describiendo
+     * la vieja. Mezclarlos cobraría la caja de 120 u por cajas de 144 u: la línea
+     * conserva su precio y se avisa que hay que quitarla y volver a agregarla.
+     */
+    public function test_si_la_presentacion_cambio_en_productos_la_copia_conserva_el_precio_y_lo_avisa(): void
+    {
+        $usuario = $this->usuario();
+        $perfil = $this->perfil();
+        $producto = $this->presentacion();
+        ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $producto->id, 'precio_caja' => 140.00, 'precio_fijado_en' => '2026-11-01', 'activo' => true]);
+        $original = $this->listaDelCatalogo($perfil, [[$producto, 140.00]], '2026-11-01');
+        $lineasOriginales = $this->lineas($original);
+
+        // El 20/11 la caja pasa a 120 u en Productos y el precio del cliente baja a $125.
+        Carbon::setTestNow(Carbon::parse('2026-11-20 10:00', HoraNegocio::zona()));
+        $this->actingAs($usuario)->put(route('productos.exportacion.update', $producto), [
+            'unidad' => 'Bolsa de prueba', 'unidades_por_caja' => 120, 'gramos_por_unidad' => 85,
+            'peso_neto_caja_kg' => 11, 'precio_caja' => 114.00, 'activo' => '1',
+        ])->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->put(route('productos.exportacion.clientes', $producto), [
+            'clientes' => [$perfil->id => ['activo' => '1', 'precio' => '125']],
+        ])->assertSessionHasNoErrors();
+
+        Carbon::setTestNow(Carbon::parse('2026-11-25 09:00', HoraNegocio::zona()));
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio de la lista #{$original->id}: "
+                .'Producto de prueba 144 u $140.00 (ahora 120 u). Quitalas en Editar y volvé a agregarlas antes de facturar.');
+
+        // La línea queda entera como estaba: 144 u a $140, no 144 u a $125.
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals($lineasOriginales, $this->lineas($copia));
+        $this->assertEquals(125.00, $this->precioDelCliente($perfil, $producto));
+    }
+
+    /**
+     * Un producto apagado para el cliente sí tiene precio guardado, solo que apagado.
+     * La copia conserva el de la lista, y el aviso dice el motivo real y lo que pasa
+     * al finalizar con esa línea: se le vuelve a habilitar al cliente a ese precio.
+     */
+    public function test_si_el_cliente_tiene_el_producto_apagado_la_copia_avisa_que_al_finalizar_se_vuelve_a_habilitar(): void
+    {
+        $usuario = $this->usuario();
+        $perfil = $this->perfil();
+        $producto = $this->presentacion();
+        ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $producto->id, 'precio_caja' => 175.00, 'precio_fijado_en' => '2026-11-01', 'activo' => true]);
+        $original = $this->listaDelCatalogo($perfil, [[$producto, 160.00]], '2026-11-01');
+
+        // El 20/11 la oficina se lo apaga desde Productos: ya no se le vende.
+        Carbon::setTestNow(Carbon::parse('2026-11-20 10:00', HoraNegocio::zona()));
+        $this->actingAs($usuario)->put(route('productos.exportacion.clientes', $producto), [
+            'clientes' => [$perfil->id => ['precio' => '175']],
+        ])->assertSessionHasNoErrors();
+
+        Carbon::setTestNow(Carbon::parse('2026-11-25 09:00', HoraNegocio::zona()));
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$original->id}: "
+                .'Producto de prueba 144 u $160.00. Si finalizás con ellas, se le vuelven a habilitar a ese precio. Si ya no se le venden, quitalas en Editar.');
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals([160.00], $this->precios($copia));
+
+        // Lo que dice el aviso es lo que pasa: al finalizar, vuelve a estar habilitado a $160.
+        $fex = $this->fexAceptada($perfil);
+        $this->actingAs($usuario)->post(route('facturacion.listas.facturas.vincular', $copia), ['dte_id' => $fex->id])
+            ->assertSessionHas('status');
+        $this->actingAs($usuario)->patch(route('facturacion.listas.finalizar', $copia))
+            ->assertSessionHas('status');
+        $asignacion = ExportacionClienteProducto::query()->where('exportacion_cliente_id', $perfil->id)->where('exportacion_producto_id', $producto->id)->sole();
+        $this->assertTrue($asignacion->activo);
+        $this->assertEquals(160.00, (float) $asignacion->precio_caja);
+    }
+
+    /**
      * Lado seguro: sin precio del cliente (no lo tiene, está apagado o en $0) la línea
      * conserva el de la lista vieja y se avisa, porque al finalizar ese pasa a ser el
      * del cliente. Nunca toma el precio base ni queda sin precio. Una línea que no
@@ -363,7 +438,8 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
         $this->assertEquals([140.00, 120.00, 160.00, 110.00, 99.50], $this->precios($copia));
         $aviso = (string) session('aviso_precios');
         $this->assertStringContainsString("precio de la lista #{$original->id}", $aviso);
-        $this->assertStringContainsString('Producto sin precio de prueba 144 u $120.00; Producto apagado de prueba 144 u $160.00; Producto en cero de prueba 144 u $110.00', $aviso);
+        $this->assertStringContainsString('porque el cliente no tiene precio para ellas: Producto sin precio de prueba 144 u $120.00; Producto en cero de prueba 144 u $110.00.', $aviso);
+        $this->assertStringContainsString("están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$original->id}: Producto apagado de prueba 144 u \$160.00.", $aviso);
         $this->assertStringNotContainsString('Producto de prueba 144 u', $aviso);
         $this->assertStringNotContainsString('Línea anterior de prueba', $aviso);
         $this->assertStringNotContainsString('Se pusieron los precios actuales', $aviso);

@@ -9,6 +9,7 @@ use App\Http\Requests\Exportaciones\ExportacionRequest;
 use App\Models\Dte;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
+use App\Models\ExportacionClienteProducto;
 use App\Models\ExportacionItem;
 use App\Models\ExportacionProducto;
 use App\Services\Exportaciones\CrearFexDesdeExportacionService;
@@ -308,9 +309,9 @@ class ListaEmpaqueController extends Controller
             return $this->error($lista, 'No se puede duplicar: la lista viene del flujo anterior y está pendiente de clasificar. Un administrador tiene que resolverla primero.');
         }
 
-        $cambiados = $sinPrecioDelCliente = [];
+        $cambiados = $otraPresentacion = $apagadas = $sinPrecioDelCliente = [];
 
-        $copia = DB::transaction(function () use ($lista, &$cambiados, &$sinPrecioDelCliente) {
+        $copia = DB::transaction(function () use ($lista, &$cambiados, &$otraPresentacion, &$apagadas, &$sinPrecioDelCliente) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
             $copia->fecha = HoraNegocio::fechaHoy();
             $copia->estado = Exportacion::ESTADO_BORRADOR;
@@ -342,7 +343,7 @@ class ListaEmpaqueController extends Controller
                 : null;
             $dinero = fn (float $valor) => '$'.number_format($valor, 2);
 
-            foreach ($lista->items as $item) {
+            foreach ($lista->items()->with('producto')->get() as $item) {
                 $nuevo = $item->replicate();
                 $nuevo->exportacion_id = $copia->id;
 
@@ -352,9 +353,20 @@ class ListaEmpaqueController extends Controller
                     $actual = $cliente->precioPara((int) $item->exportacion_producto_id);
                     $antes = round((float) $item->precio_caja, 2);
                     $linea = trim($item->nombre_es.' '.$item->unidades_por_caja.' u');
+                    // Las unidades y los gramos son la presentación (CatalogoExportacion::exigirUnica).
+                    // Si se editaron en Productos, el precio del cliente es el de otra caja.
+                    $producto = $item->producto;
+                    $otrosGramos = $producto !== null
+                        && round((float) $producto->gramos_por_unidad, 2) !== round((float) $item->gramos_por_unidad, 2);
 
-                    // Un precio del cliente en $0.00 no se copia: nunca se factura a cero.
-                    if ($actual === null || $actual <= 0) {
+                    if ($producto !== null && ($otrosGramos || (int) $producto->unidades_por_caja !== (int) $item->unidades_por_caja)) {
+                        $otraPresentacion[] = $linea.' '.$dinero($antes).' (ahora '.$producto->unidades_por_caja.' u'
+                            .($otrosGramos ? ' de '.(float) $producto->gramos_por_unidad.' g' : '').')';
+                    } elseif ($actual === null && $cliente->productos->contains(fn (ExportacionClienteProducto $a) => (int) $a->exportacion_producto_id === (int) $item->exportacion_producto_id)) {
+                        // Apagado en Productos: tiene precio guardado, pero al finalizar se le vuelve a habilitar.
+                        $apagadas[] = $linea.' '.$dinero($antes);
+                    } elseif ($actual === null || $actual <= 0) {
+                        // Un precio del cliente en $0.00 no se copia: nunca se factura a cero.
                         $sinPrecioDelCliente[] = $linea.' '.$dinero($antes);
                     } elseif (round($actual, 2) !== $antes) {
                         $nuevo->precio_caja = $actual;
@@ -370,6 +382,10 @@ class ListaEmpaqueController extends Controller
 
         $aviso = collect([
             $cambiados !== [] ? 'Se pusieron los precios actuales del cliente: '.$this->enumerarLineas($cambiados).'.' : null,
+            $otraPresentacion !== [] ? "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio de la lista #{$lista->id}: "
+                .$this->enumerarLineas($otraPresentacion).'. Quitalas en Editar y volvé a agregarlas antes de facturar.' : null,
+            $apagadas !== [] ? "Ojo: estas líneas están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$lista->id}: "
+                .$this->enumerarLineas($apagadas).'. Si finalizás con ellas, se le vuelven a habilitar a ese precio. Si ya no se le venden, quitalas en Editar.' : null,
             $sinPrecioDelCliente !== [] ? "Ojo: estas líneas quedaron con el precio de la lista #{$lista->id} porque el cliente no tiene precio para ellas: "
                 .$this->enumerarLineas($sinPrecioDelCliente).'. Al finalizar, ese pasa a ser su precio. Revisalo en Editar antes de facturar.' : null,
         ])->filter()->implode(' ');
