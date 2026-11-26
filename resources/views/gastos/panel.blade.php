@@ -18,6 +18,19 @@
     // «Fecha pasada» puede traer meses de más de un año: sin el año, enero de 2025 y
     // enero de 2026 se leían igual.
     $fechaConAnio = fn (?string $iso) => $iso ? \Carbon\CarbonImmutable::parse($iso)->format('d/m/Y') : null;
+
+    // «Compré y pagué» que volvió con error: se reabre con lo escrito, el aviso debajo de
+    // su campo y el foco en el primero que falló, como «Saltar». Las filas de abajo usan
+    // los mismos nombres de campo y no reciben nada de esto.
+    $compraVisibles = ['concepto', 'importe', 'beneficiario', 'fecha', 'metodo', 'ambito'];
+    $compraVolvio = $errors->any() && old('panel') === 'compra';
+    $compraEscrito = fn (string $campo, string $siNo = '') => $compraVolvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
+    $compraFoco = $compraVolvio ? (collect($compraVisibles)->first(fn ($c) => $errors->has($c)) ?? $compraVisibles[0]) : null;
+    // Lo que no es de un campo a la vista (clave, moneda, pago…) se lee igual adentro.
+    $compraOtrosErrores = $compraVolvio ? collect($errors->getMessages())->except($compraVisibles)->flatten() : collect();
+    // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
+    // (doble clic), reenviarlo no registra otra compra; si no, la clave sigue libre.
+    $compraClave = $compraVolvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : $clave;
 @endphp
 
 {{-- LA PANTALLA PRINCIPAL DE GASTOS Y PAGOS
@@ -163,43 +176,71 @@
                     <div x-show="abierto === 'compra'" x-cloak class="rounded-lg border border-indigo-200 bg-white p-4 shadow-sm">
                         <form method="POST" action="{{ route('gastos.panel.compras') }}" class="space-y-3">
                             @csrf
-                            <input type="hidden" name="clave" value="{{ $clave }}">
+                            <input type="hidden" name="clave" value="{{ $compraClave }}">
+                            <input type="hidden" name="panel" value="compra">
                             <input type="hidden" name="moneda" value="USD">
                             <p class="font-semibold text-gray-900">Compré y pagué</p>
                             <p class="text-xs text-gray-500">Gasto y pago en una sola operación. No queda ninguna deuda abierta.</p>
+                            @foreach ($compraOtrosErrores as $mensaje)
+                                <p class="text-sm text-red-600">{{ $mensaje }}</p>
+                            @endforeach
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div class="sm:col-span-2">
                                     <label class="{{ $etiqueta }}" for="c-concepto">Qué compraste</label>
-                                    <input id="c-concepto" name="concepto" required maxlength="200" class="{{ $campo }}" placeholder="Bolsas para empaque">
+                                    <input id="c-concepto" name="concepto" required maxlength="200" value="{{ $compraEscrito('concepto') }}"
+                                           @if ($compraFoco === 'concepto') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Bolsas para empaque">
+                                    @if ($compraVolvio)
+                                        @error('concepto')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-importe">Cuánto</label>
-                                    <input id="c-importe" name="importe" required inputmode="decimal" class="{{ $campo }}" placeholder="0.00">
+                                    <input id="c-importe" name="importe" required inputmode="decimal" value="{{ $compraEscrito('importe') }}"
+                                           @if ($compraFoco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                                    @if ($compraVolvio)
+                                        @error('importe')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-beneficiario">A quién</label>
-                                    <input id="c-beneficiario" name="beneficiario" maxlength="180" class="{{ $campo }}" placeholder="Opcional">
+                                    <input id="c-beneficiario" name="beneficiario" maxlength="180" value="{{ $compraEscrito('beneficiario') }}"
+                                           @if ($compraFoco === 'beneficiario') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
+                                    @if ($compraVolvio)
+                                        @error('beneficiario')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-fecha">Cuándo</label>
-                                    <input id="c-fecha" name="fecha" type="date" required value="{{ $hoy }}" max="{{ $hoy }}" class="{{ $campo }}">
+                                    <input id="c-fecha" name="fecha" type="date" required value="{{ $compraEscrito('fecha', $hoy) }}" max="{{ $hoy }}"
+                                           @if ($compraFoco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                    @if ($compraVolvio)
+                                        @error('fecha')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-metodo">Cómo pagaste</label>
-                                    <select id="c-metodo" name="metodo" class="{{ $campo }}">
+                                    <select id="c-metodo" name="metodo"
+                                            @if ($compraFoco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                         @foreach ($metodos as $valor => $texto)
-                                            <option value="{{ $valor }}">{{ $texto }}</option>
+                                            <option value="{{ $valor }}" @selected($compraVolvio && old('metodo') === $valor)>{{ $texto }}</option>
                                         @endforeach
                                     </select>
+                                    @if ($compraVolvio)
+                                        @error('metodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-ambito">De quién es</label>
-                                    <select id="c-ambito" name="ambito" class="{{ $campo }}">
+                                    <select id="c-ambito" name="ambito"
+                                            @if ($compraFoco === 'ambito') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                         <option value="empresarial">De la empresa</option>
                                         @can('gastos.personales')
-                                            <option value="personal">Personal</option>
+                                            <option value="personal" @selected($compraVolvio && old('ambito') === 'personal')>Personal</option>
                                         @endcan
                                     </select>
+                                    @if ($compraVolvio)
+                                        @error('ambito')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                    @endif
                                 </div>
                             </div>
                             <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
