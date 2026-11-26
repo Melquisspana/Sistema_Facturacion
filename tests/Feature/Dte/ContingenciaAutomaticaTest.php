@@ -349,22 +349,75 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame('activa', $manual->refresh()->estado);
     }
 
-    public function test_evento_automatico_desde_12_horas_y_una_sola_vez(): void
+    /** Simulacro del 17/11 (F13): Melqui bajó el envío automático de 12 a 2 horas (26/11). */
+    public function test_evento_automatico_desde_2_horas_y_una_sola_vez(): void
     {
+        $this->assertSame(2, config('dte.contingencia.envio_automatico_horas'));
         $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
         $this->documento();
         app(ContingenciaService::class)->terminar(null);
-        Carbon::setTestNow(now()->addHours(12)->subSecond());
+        $cese = $activa->refresh()->cese->copy();
+        Carbon::setTestNow($cese->copy()->addHour()->addMinutes(59));
         $this->simular();
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         Http::assertNothingSent();
-        Carbon::setTestNow(now()->addSecond());
+        Carbon::setTestNow($cese->copy()->addHours(2));
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertSame('informada', $activa->refresh()->estado);
         $this->assertDatabaseCount('contingencia_eventos', 1);
-        $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 12 horas del cese']);
+        $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 2 horas del cese']);
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         Http::assertSentCount(3);
+    }
+
+    /** Un error de configuración (0 o negativo) no lo manda al instante: el mínimo es 1 hora. */
+    public function test_evento_automatico_nunca_antes_de_1_hora(): void
+    {
+        config(['dte.contingencia.envio_automatico_horas' => 0]);
+        $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
+        $this->documento();
+        app(ContingenciaService::class)->terminar(null);
+        $cese = $activa->refresh()->cese->copy();
+        Carbon::setTestNow($cese->copy()->addMinutes(59));
+        $this->simular();
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        Http::assertNothingSent();
+        $this->assertSame('cerrada', $activa->refresh()->estado);
+        Carbon::setTestNow($cese->copy()->addHour());
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('informada', $activa->refresh()->estado);
+        $this->assertDatabaseHas('activity_log', ['description' => 'Envío automático del evento tras 1 hora del cese']);
+    }
+
+    /** A las 2 horas sigue igual lo demás: una parte rechazada o en duda espera a una persona. */
+    public function test_a_las_2_horas_no_sale_con_una_parte_rechazada_o_en_duda(): void
+    {
+        foreach (['rechazado', 'incierto'] as $i => $estado) {
+            $contingencia = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'automatica', null);
+            $this->documento();
+            app(ContingenciaService::class)->terminar(null);
+            $contingencia->eventos()->create(['parte' => 1, 'codigo_generacion' => '00000000-0000-4000-8000-00000000000'.($i + 1),
+                'estado' => $estado, 'fecha_transmision' => now()]);
+            Carbon::setTestNow($contingencia->refresh()->cese->copy()->addHours(2));
+            $this->simular();
+            $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+            Http::assertNothingSent();
+            $this->assertSame('cerrada', $contingencia->refresh()->estado, $estado);
+            $this->assertSame(1, $contingencia->eventos()->count(), $estado);
+            Carbon::setTestNow(now()->addMinutes(5));
+        }
+        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 2 horas del cese']);
+    }
+
+    public function test_a_las_2_horas_la_manual_no_se_cierra_sola(): void
+    {
+        $manual = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
+        Carbon::setTestNow(now()->addHours(2));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('activa', $manual->refresh()->estado);
+        $this->assertNull($manual->cese);
+        $this->assertDatabaseCount('contingencia_eventos', 0);
     }
 
     /**
@@ -384,6 +437,29 @@ class ContingenciaAutomaticaTest extends TestCase
 
         $this->assertSame('informada', $activa->refresh()->estado);
         $this->assertStringNotContainsString('Volvió la conexión', $franja());
+    }
+
+    /**
+     * Simulacro del 26/11 (F16): «Volvió la conexión» salía también cuando una persona
+     * terminó la automática con el botón y Hacienda seguía caída. Lo dice solo si la
+     * cerró la reconexión; si la terminó una persona, un texto que no promete conexión.
+     */
+    public function test_la_franja_dice_que_volvio_la_conexion_solo_si_la_cerro_la_reconexion(): void
+    {
+        $franja = fn (Contingencia $c) => (string) $this->view('components.plazos-contingencia', ['contingencia' => $c->refresh()]);
+
+        $aMano = app(ContingenciaService::class)->activar(1, 'MH inventado', 'automatica', null);
+        app(ContingenciaService::class)->terminar($this->usuario);
+        $this->assertStringContainsString('Contingencia terminada: enviá el aviso a Hacienda cuando haya conexión.', $franja($aMano));
+        $this->assertStringNotContainsString('Volvió la conexión', $franja($aMano));
+
+        $sola = app(ContingenciaService::class)->activar(1, 'MH inventado', 'automatica', null);
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('cerrada', $sola->refresh()->estado);
+        $this->assertStringContainsString('Volvió la conexión: enviá el aviso a Hacienda.', $franja($sola));
+        $this->assertStringNotContainsString('Contingencia terminada', $franja($sola));
     }
 
     public function test_correccion_cese_limites_y_bloqueo_tipo_firmado(): void
@@ -540,19 +616,30 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame(EstadoDte::Generado, $dte->estado);
     }
 
-    public function test_sello_no_envia_correo_y_boton_reutiliza_pipeline(): void
+    /**
+     * Antes el regularizado no salía solo (había que apretar «Reenviar al cliente»). Desde
+     * el 26/11 (simulacro, F8) el completo sale solo al sellarse, y el botón sigue andando.
+     */
+    public function test_sello_envia_el_completo_y_el_boton_reutiliza_pipeline(): void
     {
         app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);
         $dte = $this->documento();
         Ajustes::guardarComoSistema('correo.auto_envio', true);
         $dte->update(['estado' => EstadoDte::Aceptado, 'sello_recepcion' => 'SELLO-INVENTADO']);
-        Queue::assertNothingPushed();
-        $this->assertDatabaseCount('dte_envios', 0);
+        Queue::assertPushed(EnviarDteCorreo::class, 1);
+        $this->assertDatabaseHas('dte_envios', ['dte_id' => $dte->id, 'destinatario' => 'cliente@example.test',
+            'estado' => 'pendiente', 'user_id' => null]);
         $this->actingAs(User::factory()->create()->assignRole('administrador'));
         $this->get(route('facturacion.contingencia.pendientes'))->assertOk()->assertSee('Reenviar al cliente');
-        $this->post(route('facturacion.correo.cliente', $dte))->assertRedirect()->assertSessionHas('status');
+        // Con el automático todavía en cola, el botón no lo duplica.
+        $this->post(route('facturacion.correo.cliente', $dte))->assertRedirect()
+            ->assertSessionHas('status', 'Ya hay un envío pendiente para cliente@example.test; no se duplicó.');
         Queue::assertPushed(EnviarDteCorreo::class, 1);
-        $this->assertDatabaseHas('dte_envios', ['dte_id' => $dte->id, 'destinatario' => 'cliente@example.test']);
+        // Ya salido, el botón lo vuelve a mandar a mano.
+        $dte->envios()->update(['estado' => 'enviado', 'adjuntos' => 'PDF, JSON']);
+        $this->post(route('facturacion.correo.cliente', $dte))->assertRedirect()->assertSessionHas('status');
+        Queue::assertPushed(EnviarDteCorreo::class, 2);
+        $this->assertSame(2, $dte->envios()->count());
     }
 
     public function test_planificador_cada_15_minutos_con_interruptor_y_solapamiento(): void

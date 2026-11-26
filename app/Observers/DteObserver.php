@@ -7,6 +7,7 @@ use App\Enums\TipoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Facades\Ajustes;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Contingencia;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Services\Cobros\AltaCobrosService;
@@ -101,6 +102,10 @@ class DteObserver
         if ($dte->wasChanged('estado') && $dte->estado === EstadoDte::Aceptado) {
             $this->alQuedarAceptado($dte);
         }
+        // Firmado dentro de una contingencia: el provisional ya está emitido.
+        if ($dte->wasChanged('estado') && $dte->esTransitorio()) {
+            $this->alQuedarProvisional($dte);
+        }
         if ($dte->wasChanged('estado') && $dte->tipo_dte === TipoDte::NotaCredito && $dte->dte_relacionado_id) {
             $this->recalcularCobroDelCcf($dte);
         }
@@ -140,12 +145,17 @@ class DteObserver
      * Ocurre cuando el estado pasa a Aceptado. Lo llama además la transmisión cuando una
      * consulta le completa el sello a un documento que figuraba aceptado sin él: recién
      * ahí es una aceptación real. Repetirlo no duplica nada: el alta y las notas no hacen
-     * nada si ya están, y el correo no sale si ya hay un envío encolado o exitoso.
+     * nada si ya están, y el correo no sale si el documento completo ya salió o está en cola.
      *
      * Auto-envío del DTE por correo al cliente, si está activado en Configuración
      * (correo.auto_envio). Solo encola (afterCommit): NO bloquea ni modifica la
-     * transmisión; vive en el módulo de correo. Sin destinatario o si ya hay un envío
-     * encolado/exitoso, no hace nada.
+     * transmisión; vive en el módulo de correo. Sin destinatario no hace nada.
+     *
+     * Vale también para el regularizado de una contingencia, aunque el cliente ya tenga
+     * el provisional, y para el documento en duda al que alguien le mandó a mano el PDF
+     * preliminar: lo que salió sin sello no cuenta como el documento completo (simulacro
+     * del 17/11, F8; decisión de Melqui del 26/11). Un envío en cola sí cuenta, porque el
+     * job arma el PDF al correr, ya con el sello.
      */
     public function alQuedarAceptado(Dte $dte): void
     {
@@ -169,17 +179,14 @@ class DteObserver
                 }
             });
         }
-        if (config('dte.contingencia.enabled', false) && $dte->contingencia_id !== null) {
-            return; // El archivo regularizado se reenvía solo por decisión del usuario.
-        }
         if (! Ajustes::bool('correo.auto_envio', false)) {
             return;
         }
-        if ($dte->envios()->whereIn('estado', ['pendiente', 'enviado'])->exists()) {
+        if ($dte->envios()->get()->contains(fn (DteEnvio $e) => $e->estado === 'pendiente' || $e->llevoDocumentoCompleto())) {
             return;
         }
 
-        $correo = $dte->clienteSucursal?->correo ?: $dte->cliente?->correo;
+        $correo = $this->correoDelCliente($dte);
         if (blank($correo)) {
             return;
         }
@@ -193,6 +200,86 @@ class DteObserver
             null,
             DteEnvio::CANAL_CLIENTE,
         );
+    }
+
+    /**
+     * Documento emitido en contingencia (provisional: firmado, sin sello). La norma pide
+     * entregarle al cliente el provisional y después el completo: con el envío automático
+     * encendido, este sale solo y el completo sale al sellarse ({@see alQuedarAceptado()}).
+     * Solo el correo: lo demás de la aceptación espera al sello. Decisión de Melqui del
+     * 26/11/2026 (simulacro del 17/11, F8).
+     *
+     * Lo llaman el paso a Firmado de un documento generado dentro de una contingencia y la
+     * conversión automática ({@see ContingenciaAutomaticaService}). Mismas condiciones que
+     * el envío automático al aceptarse; se encola después del commit y no se repite si ya
+     * hay un envío en cola o hecho. Si falla, no rompe la emisión: se reporta.
+     */
+    public function alQuedarProvisional(Dte $dte): void
+    {
+        if (! $dte->esTransitorio() || ! Ajustes::bool('correo.auto_envio', false)) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($dte) {
+            try {
+                if ($dte->envios()->whereIn('estado', ['pendiente', 'enviado'])->exists()) {
+                    return;
+                }
+                $correo = $this->correoDelCliente($dte);
+                if (blank($correo)) {
+                    return;
+                }
+                app(EnvioDteCorreoService::class)->encolar($dte, [$correo], null, DteEnvio::CANAL_CLIENTE);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        });
+    }
+
+    /**
+     * Al terminar la contingencia se manda otra vez el provisional que no le llegó al
+     * cliente. En la tipo 3 (sin internet) sale apenas se emite y falla, porque el
+     * servidor de correo también es de afuera, y el job no reintenta (simulacro del
+     * 17/11, F8). Al terminar ya hay conexión.
+     *
+     * Solo los documentos todavía sin sello cuyos envíos al cliente fallaron todos: lo
+     * que salió, está en cola o nunca se intentó no se toca. Una vez por cese; si vuelve a
+     * fallar, la ficha deja reenviarlo y el completo sale solo al sellarse. Lo llaman los
+     * dos ceses: el de la persona ({@see ContingenciaService::terminar()}) y el de la
+     * reconexión automática.
+     */
+    public function reintentarProvisionales(Contingencia $contingencia): void
+    {
+        if (! Ajustes::bool('correo.auto_envio', false)) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($contingencia) {
+            $documentos = $contingencia->dtes()->where('estado', EstadoDte::Firmado->value)
+                ->with(['envios', 'cliente', 'clienteSucursal'])->get();
+            foreach ($documentos as $dte) {
+                try {
+                    $alCliente = $dte->envios->reject(fn (DteEnvio $e) => $e->esCanalContabilidad());
+                    if (! $dte->esTransitorio() || $alCliente->isEmpty()
+                        || $alCliente->contains(fn (DteEnvio $e) => $e->estado !== 'error')) {
+                        continue;
+                    }
+                    $correo = $this->correoDelCliente($dte);
+                    if (blank($correo)) {
+                        continue;
+                    }
+                    app(EnvioDteCorreoService::class)->encolar($dte, [$correo], null, DteEnvio::CANAL_CLIENTE);
+                } catch (Throwable $e) {
+                    report($e);
+                }
+            }
+        });
+    }
+
+    /** Correo del envío automático: el de la sala si tiene, si no el del cliente. */
+    private function correoDelCliente(Dte $dte): ?string
+    {
+        return $dte->clienteSucursal?->correo ?: $dte->cliente?->correo;
     }
 
     public function deleting(Dte $dte): void

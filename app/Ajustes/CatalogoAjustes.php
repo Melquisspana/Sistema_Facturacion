@@ -214,7 +214,7 @@ class CatalogoAjustes
                 editabilidad: Editabilidad::Editable,
                 persistencia: Persistencia::Nueva,
                 etiqueta: 'Envío automático del DTE al cliente',
-                descripcion: 'Encola el correo al aceptar el documento, sin intervención del usuario.',
+                descripcion: 'Encola el correo al cliente cuando Hacienda acepta el documento y, en contingencia, también el provisional al emitirse, sin intervención del usuario.',
                 claveLegacy: 'correo.auto_envio',
                 porDefecto: false,
             ),

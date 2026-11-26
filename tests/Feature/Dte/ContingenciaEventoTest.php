@@ -497,11 +497,11 @@ class ContingenciaEventoTest extends TestCase
         $this->get(route('facturacion.contingencia.show', $this->contingencia))->assertOk()
             ->assertSee('YA EXISTE UN REGISTRO CON ESE VALOR')->assertSee('Ya verifiqué en Hacienda');
 
-        // Tampoco el envío automático de las 12 horas.
+        // Tampoco el envío automático de las 2 horas.
         Carbon::setTestNow(Carbon::parse('2026-10-10 22:16:00', 'America/El_Salvador'));
         $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
         $this->assertDatabaseCount('contingencia_eventos', 1);
-        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 12 horas del cese']);
+        $this->assertDatabaseMissing('activity_log', ['description' => 'Envío automático del evento tras 2 horas del cese']);
         Http::assertNothingSent();
     }
 
@@ -591,6 +591,24 @@ class ContingenciaEventoTest extends TestCase
         $this->assertSame('recibido', $dte->refresh()->loteDte?->estado);
     }
 
+    /**
+     * Simulacro del 26/11 (F17): después de «Hacienda sí lo tiene», la ficha seguía
+     * mostrando el rechazo del reintento, en rojo. La parte está recibida: no se muestra
+     * como rechazo, y la respuesta original sigue guardada.
+     */
+    public function test_la_parte_dada_por_recibida_no_se_muestra_como_rechazada(): void
+    {
+        $this->documento();
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
+        $this->post(route('facturacion.contingencia.eventos.recibido', $parte), ['confirmo_recibido' => '1'])
+            ->assertSessionHasNoErrors();
+
+        $this->get(route('facturacion.contingencia.show', $this->contingencia))->assertOk()
+            ->assertDontSee('YA EXISTE UN REGISTRO CON ESE VALOR')->assertDontSee('Rechazado inventado')
+            ->assertSee('Dada por recibida: se verificó en Hacienda que tiene este aviso.');
+        $this->assertSame('RECHAZADO', $parte->refresh()->respuesta_mh['estado']);
+    }
+
     public function test_una_parte_en_duda_se_reemplaza_en_las_24_horas_desde_su_rechazo_aunque_ya_pasaron_24_desde_el_cese(): void
     {
         // Cese el 10/10 a las 10:15: el aviso sale y se rechaza al reintentar el 11/10 a las 10:00.
@@ -666,6 +684,45 @@ class ContingenciaEventoTest extends TestCase
         $parte = ContingenciaEvento::sole();
         $this->assertSame($estado, $parte->estado);
         $this->assertSame('2026-10-10 11:00:00', $parte->rechazado_en?->format('Y-m-d H:i:s'));
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function avisoSinRespuesta(): array
+    {
+        return [
+            'no pudo conectar: el aviso no salió' => ['rechazada', 'El aviso no salió: no hubo conexión con Hacienda. Se puede reintentar.'],
+            'salió y se perdió la respuesta' => ['salio_sin_respuesta', 'El aviso salió, pero Hacienda no contestó: puede que lo tenga. Se puede reintentar; sale el mismo aviso, no uno nuevo.'],
+        ];
+    }
+
+    /**
+     * Simulacro del 26/11 (F18): un aviso que salió y quedó sin respuesta decía
+     * «error_conexion: No se pudo conectar con el MH». Ahora distingue si salió, y lo
+     * que lee la persona no empieza con el código interno del resultado.
+     */
+    #[DataProvider('avisoSinRespuesta')]
+    public function test_el_aviso_sin_respuesta_dice_si_salio_y_sin_el_codigo_interno(string $falla, string $mensaje): void
+    {
+        $this->documento();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FIRMA.INVENTADA.JWS']),
+            '*consultadte*' => Http::response([], 404),
+            '*fesv/contingencia' => SimulaFallasDeConexion::repetir(SimulaFallasDeConexion::fallaReal($falla))]);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHas('status', $mensaje);
+
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHas('status', 'Hacienda recibió el aviso.');
+    }
+
+    public function test_el_rechazo_del_aviso_se_lee_sin_el_codigo_interno(): void
+    {
+        $this->documento();
+        $this->simular('RECHAZADO');
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))
+            ->assertSessionHas('status', 'Hacienda rechazó el aviso. Responsable incorrecto');
     }
 
     public function test_con_la_firma_apagada_el_aviso_muestra_su_propio_mensaje_y_no_un_error_del_servidor(): void

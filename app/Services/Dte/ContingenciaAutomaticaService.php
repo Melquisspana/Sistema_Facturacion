@@ -8,6 +8,7 @@ use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Contingencia;
 use App\Models\Dte;
 use App\Models\User;
+use App\Observers\DteObserver;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\HoraNegocio;
 use Illuminate\Http\Client\ConnectionException;
@@ -155,6 +156,8 @@ class ContingenciaAutomaticaService
                     'json_anterior' => $actual->json_generado_path, 'firma_anterior' => $actual->json_firmado_path])
                 ->log('Documento re-firmado en contingencia tras reintentos agotados');
             $dte->refresh();
+            // Ya es el provisional: el correo al cliente sale después del commit.
+            app(DteObserver::class)->alQuedarProvisional($dte);
 
             return true;
         });

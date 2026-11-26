@@ -206,7 +206,8 @@ class ArchivoEntregaDteTest extends TestCase
             $this->assertStringContainsString($esperado, implode('; ', $entrega->faltantes));
             $this->assertNotEmpty($entrega->recuperacion);
             $envio = $this->enviar($dte);
-            $this->assertSame('PDF', $envio->adjuntos);
+            // Sin sello el PDF que viajó es el preliminar, y así queda anotado.
+            $this->assertSame($caso === 'sello' ? DteEnvio::PDF_PRELIMINAR : 'PDF', $envio->adjuntos);
             $this->assertStringContainsString('Entrega fiscal incompleta', $envio->error);
             $this->get(route('facturacion.json.descargar', $dte))->assertRedirect()->assertSessionHas('error');
         }

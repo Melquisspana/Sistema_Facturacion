@@ -16,6 +16,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * `canal` es NULL en los envíos históricos (previos a la columna): se interpretan como
  * envíos al cliente (ver canalEfectivo()); no se hace backfill.
+ *
+ * `adjuntos` dice además qué documento viajó: «PDF» es el completo (con sello);
+ * «PDF provisional» (emitido en contingencia) y «PDF preliminar» (sin sello) no lo son.
+ * Lo anota el job con el mismo documento con que arma el PDF ({@see etiquetaPdf()}).
  */
 class DteEnvio extends Model
 {
@@ -25,6 +29,12 @@ class DteEnvio extends Model
 
     /** Canales válidos para un envío NUEVO (los históricos pueden traer NULL). */
     public const CANALES = [self::CANAL_CLIENTE, self::CANAL_CONTABILIDAD];
+
+    /** El PDF que viajó era el de un documento emitido en contingencia, sin sello todavía. */
+    public const PDF_PROVISIONAL = 'PDF provisional';
+
+    /** El PDF que viajó era preliminar: sin sello y fuera de contingencia (borrador, en duda, rechazado). */
+    public const PDF_PRELIMINAR = 'PDF preliminar';
 
     protected $table = 'dte_envios';
 
@@ -46,6 +56,7 @@ class DteEnvio extends Model
         ];
     }
 
+    /** @return BelongsTo<Dte, $this> */
     public function dte(): BelongsTo
     {
         return $this->belongsTo(Dte::class);
@@ -65,6 +76,34 @@ class DteEnvio extends Model
     public function esSimulado(): bool
     {
         return $this->estado === 'simulado';
+    }
+
+    /**
+     * Cómo se anota en `adjuntos` el PDF de este documento tal como está ahora: completo
+     * con el sello (igual que el PDF, que deja de ser preliminar al tenerlo), provisional
+     * si se emitió en contingencia, y preliminar en cualquier otro caso.
+     */
+    public static function etiquetaPdf(Dte $dte): string
+    {
+        if (filled($dte->sello_recepcion)) {
+            return 'PDF';
+        }
+
+        return $dte->esTransitorio() ? self::PDF_PROVISIONAL : self::PDF_PRELIMINAR;
+    }
+
+    /**
+     * ¿Le llegó al destinatario el documento completo? Solo un envío que salió y no fue
+     * provisional ni preliminar. Los anteriores a la marca cuentan como completos, como
+     * hasta ahora.
+     */
+    public function llevoDocumentoCompleto(): bool
+    {
+        $adjuntos = (string) $this->adjuntos;
+
+        return $this->estado === 'enviado'
+            && ! str_starts_with($adjuntos, self::PDF_PROVISIONAL)
+            && ! str_starts_with($adjuntos, self::PDF_PRELIMINAR);
     }
 
     /**

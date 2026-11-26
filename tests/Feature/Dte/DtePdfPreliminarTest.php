@@ -7,6 +7,7 @@ use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Models\Cliente;
+use App\Models\Contingencia;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -256,6 +257,111 @@ class DtePdfPreliminarTest extends TestCase
         $this->assertStringNotContainsString('no válido como documento fiscal', $html);
         // El sello de recepción sí se muestra.
         $this->assertStringContainsString('2026SELLOREALXYZ0000', $html);
+    }
+
+    /** Un CCF emitido en contingencia: firmado, sin sello, dentro de una contingencia. */
+    private function ccfEnContingencia(array $extra = []): Dte
+    {
+        config(['dte.contingencia.enabled' => true]);
+        $contingencia = Contingencia::create(['tipo' => 3, 'motivo' => 'Internet inventado interrumpido',
+            'origen' => 'manual', 'inicio' => now()->subHour(), 'estado' => 'activa', 'activa_unica' => 1]);
+        $dte = $this->ccfFirmado();
+        // Directo a la base: el documento ya emitido no deja cambiar estos campos por el modelo.
+        Dte::whereKey($dte->id)->update(array_replace(['estado' => EstadoDte::Firmado->value,
+            'contingencia_id' => $contingencia->id, 'tipo_modelo' => 2, 'tipo_operacion' => 2,
+            'tipo_contingencia' => 3, 'motivo_contingencia' => $contingencia->motivo], $extra));
+
+        return $dte->refresh();
+    }
+
+    /**
+     * Simulacro del 17/11 (F14): el PDF provisional decía «Preliminar · no válido
+     * fiscalmente» y el cliente podía creer que no servía. Ahora dice que está emitido en
+     * contingencia y pendiente de sello, sin la línea de estado técnico.
+     */
+    public function test_provisional_en_contingencia_dice_pendiente_de_sello_y_no_preliminar(): void
+    {
+        $dte = $this->ccfEnContingencia();
+        $this->assertTrue($dte->esTransitorio());
+
+        foreach ([false, true] as $interno) {
+            $html = $this->html($dte, $interno);
+            $this->assertStringContainsString('Emitida en contingencia: pendiente de sello de Hacienda', $html);
+            // La leyenda de contingencia se conserva.
+            $this->assertStringContainsString('Documento emitido en contingencia, pendiente de sello de recepción', $html);
+            $this->assertStringNotContainsString('Preliminar · no válido fiscalmente', $html);
+            $this->assertStringNotContainsString('Documento PRELIMINAR', $html);
+            $this->assertStringNotContainsString('Representación gráfica PRELIMINAR', $html);
+            $this->assertStringNotContainsString('Estado técnico (interno):', $html);
+        }
+    }
+
+    public function test_provisional_ya_con_sello_sale_como_cualquier_aceptado(): void
+    {
+        $dte = $this->ccfEnContingencia(['estado' => EstadoDte::Aceptado->value,
+            'sello_recepcion' => '2026SELLOCONTINGENCIA00', 'fecha_procesamiento_mh' => now()]);
+        $this->assertFalse($dte->esTransitorio());
+
+        $html = $this->html($dte);
+        $this->assertStringContainsString('2026SELLOCONTINGENCIA00', $html);
+        $this->assertStringNotContainsString('Emitida en contingencia', $html);
+        $this->assertStringNotContainsString('pendiente de sello', $html);
+        $this->assertStringNotContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringNotContainsString('Documento PRELIMINAR', $html);
+        $this->assertStringNotContainsString('Representación gráfica PRELIMINAR', $html);
+    }
+
+    /** Con la contingencia encendida, los demás preliminares no cambian. */
+    public function test_los_demas_preliminares_siguen_igual_con_la_contingencia_encendida(): void
+    {
+        config(['dte.contingencia.enabled' => true]);
+
+        // Firmado sin contingencia (transmisión normal pendiente). ccfFirmado() solo le
+        // pone el JWS y lo deja Generado: el estado va directo a la base, como en
+        // ccfEnContingencia(), para probar un Firmado de verdad.
+        $firmado = $this->ccfFirmado();
+        Dte::whereKey($firmado->id)->update(['estado' => EstadoDte::Firmado->value]);
+        $firmado->refresh();
+        $this->assertSame(EstadoDte::Firmado, $firmado->estado);
+        $this->assertNull($firmado->contingencia_id);
+        $html = $this->html($firmado, interno: true);
+        $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringContainsString('Documento PRELIMINAR', $html);
+        $this->assertStringContainsString('Estado técnico (interno):', $html);
+        $this->assertStringNotContainsString('Emitida en contingencia', $html);
+
+        // Borrador.
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $borradores = app(DteBorradorService::class);
+        $borrador = $borradores->crearBorrador(['tipo_dte' => TipoDte::CreditoFiscal,
+            'cliente_id' => Cliente::factory()->contribuyente()->create()->id,
+            'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id]);
+        $borradores->agregarLineaDesdeProducto($borrador, $producto, cantidad: 1);
+        $html = $this->html($borrador->refresh());
+        $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringContainsString('<b>BORRADOR</b>', $html);
+        $this->assertStringNotContainsString('Emitida en contingencia', $html);
+    }
+
+    public function test_el_rechazado_en_contingencia_sigue_igual(): void
+    {
+        $html = $this->html($this->ccfEnContingencia(['estado' => EstadoDte::Rechazado->value,
+            'respuesta_mh' => json_encode(['descripcionMsg' => 'Rechazo inventado del lote'])]), interno: true);
+        $this->assertStringContainsString('RECHAZADO POR HACIENDA', $html);
+        $this->assertStringContainsString('Documento PRELIMINAR', $html);
+        $this->assertStringContainsString('Estado técnico (interno):', $html);
+        $this->assertStringNotContainsString('Emitida en contingencia', $html);
+    }
+
+    public function test_con_el_interruptor_apagado_el_documento_de_contingencia_sigue_como_preliminar(): void
+    {
+        $dte = $this->ccfEnContingencia();
+        config(['dte.contingencia.enabled' => false]);
+
+        $html = $this->html($dte, interno: true);
+        $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringContainsString('Estado técnico (interno):', $html);
+        $this->assertStringNotContainsString('Emitida en contingencia', $html);
     }
 
     public function test_rechazado_muestra_aviso_compacto(): void

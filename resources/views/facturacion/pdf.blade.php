@@ -161,6 +161,9 @@
         ? 'aceptado'
         : ($dte->estado === EstadoDte::Rechazado ? 'rechazado' : 'no transmitido');
     $preliminar = ! $tieneSello;
+    // Emitido en contingencia y todavía sin sello: es el documento que el cliente recibe y
+    // vale, así que no se le dice «preliminar» (simulacro del 17/11, F14).
+    $transitorio = $dte->esTransitorio();
 
     // Columnas fijas: #, código, descripción, cantidad, presentación, precio, descuento
     // y total. La de base («Gravado»/«Exportación») solo se pinta cuando aporta algo
@@ -176,7 +179,7 @@
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <title>{{ $preliminar ? 'Representación gráfica PRELIMINAR' : 'DTE' }} — {{ $dte->tipo_dte->label() }}</title>
+    <title>{{ $transitorio ? 'Emitida en contingencia' : ($preliminar ? 'Representación gráfica PRELIMINAR' : 'DTE') }} — {{ $dte->tipo_dte->label() }}</title>
     <style>
         * { box-sizing: border-box; }
         @page { margin: 32px 34px; }
@@ -339,6 +342,8 @@
     @elseif ($dte->estado === EstadoDte::Rechazado)
         @php $motivoRechazo = data_get($dte->respuesta_mh, 'descripcionMsg'); @endphp
         <div class="st st-void"><b>RECHAZADO POR HACIENDA</b>@if ($motivoRechazo) · {{ \Illuminate\Support\Str::limit($motivoRechazo, 90) }}@endif</div>
+    @elseif ($transitorio)
+        <div class="st-prelim">Emitida en contingencia: pendiente de sello de Hacienda</div>
     @else
         {{-- Borrador / Generado / Firmado, aún NO aceptado: aviso pequeño y discreto (una
              línea), con la marca de BORRADOR cuando corresponde. --}}
@@ -641,8 +646,8 @@
 
     {{-- ESTADO TÉCNICO (una línea). Solo en la copia de la oficina (Facturación: ver,
          imprimir y descargar); el PDF del cliente —correo, rutas, fábrica, contabilidad—
-         no lo lleva. --}}
-    @if ($interno ?? false)
+         no lo lleva. Tampoco el provisional de contingencia, que puede llegar al cliente. --}}
+    @if (($interno ?? false) && ! $transitorio)
     <div class="tech">
         <span class="th">Estado técnico (interno):</span>
         JSON generado: <strong>{{ $jsonGenerado ? 'sí' : 'no' }}</strong> ·
@@ -655,7 +660,7 @@
 
     <div class="pie">
         Representación gráfica generada el {{ \App\Support\HoraNegocio::ahora()->format('d/m/Y H:i') }}.
-        @if ($preliminar) Documento PRELIMINAR — no equivale a un DTE emitido ante Hacienda hasta completar transmisión y sello de recepción. @endif
+        @if ($preliminar && ! $transitorio) Documento PRELIMINAR — no equivale a un DTE emitido ante Hacienda hasta completar transmisión y sello de recepción. @endif
         @if ($esNc && ! $tieneSello) Pendiente validación contra esquema oficial MH. @endif
     </div>
     </div>{{-- /.cierre --}}

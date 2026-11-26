@@ -247,12 +247,17 @@ class ContingenciaEventoService
                     // Si cURL demuestra que este primer envío no salió de la máquina, Hacienda
                     // no pudo recibirlo: sin el JWS, el intento siguiente vuelve a ser el
                     // primero y su rechazo es un rechazo común. Si pudo salir, el JWS queda.
-                    if (! $reintento && PedidoSinSalida::probado($e, $url, $transferencias)) {
+                    $noSalio = PedidoSinSalida::probado($e, $url, $transferencias);
+                    if (! $reintento && $noSalio) {
                         Log::info('Contingencia: el aviso no salió de la máquina', ['evento_id' => $evento->id] + PedidoSinSalida::evidencia($e));
                         $disco->delete($ruta.'.jws');
                     }
 
-                    return ['resultado' => 'error_conexion', 'mensaje' => 'No se pudo conectar con el MH. Se puede reintentar.'];
+                    // Salió sin respuesta no es «no se pudo conectar»: Hacienda puede tenerlo
+                    // (simulacro del 26/11, F18).
+                    return ['resultado' => 'error_conexion', 'mensaje' => $noSalio
+                        ? 'El aviso no salió: no hubo conexión con Hacienda. Se puede reintentar.'
+                        : 'El aviso salió, pero Hacienda no contestó: puede que lo tenga. Se puede reintentar; sale el mismo aviso, no uno nuevo.'];
                 }
                 $cuerpo = $respuesta->json();
                 $estado = is_array($cuerpo) ? ($cuerpo['estado'] ?? null) : null;

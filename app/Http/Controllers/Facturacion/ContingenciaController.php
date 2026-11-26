@@ -34,7 +34,7 @@ class ContingenciaController extends Controller
             'paraRevision' => app(ContingenciaService::class)->documentosParaRevision()
                 ->with('cliente')->orderBy('fecha_emision')->orderBy('hora_emision')->paginate(50, ['*'], 'revision'),
             'documentos' => Schema::hasTable('lotes_dte')
-                ? Dte::whereNotNull('contingencia_id')->with(['cliente', 'contingencia', 'contingenciaEvento', 'loteDte'])->orderByDesc('id')->paginate(50)
+                ? Dte::whereNotNull('contingencia_id')->with(['cliente', 'contingencia', 'contingenciaEvento', 'loteDte', 'envios'])->orderByDesc('id')->paginate(50)
                 : collect(),
             // Los rechazos siguen visibles aunque sus documentos ya hayan sido liberados.
             'lotesConError' => Schema::hasTable('lotes_dte')
@@ -99,8 +99,14 @@ class ContingenciaController extends Controller
         // La casilla «Ya verifiqué en Hacienda»: reemplazar una parte que quedó en duda.
         $resultados = $this->conBloqueosVisibles(fn () => $service->enviar($contingencia, $request->boolean('reemplazar_incierto')));
 
+        // Lo que lee la persona, sin el código interno del resultado (simulacro del 26/11, F18).
+        // Los demás resultados ya traen su mensaje escrito para ella.
         return to_route('facturacion.contingencia.show', $contingencia)
-            ->with('status', collect($resultados)->map(fn ($r) => $r['resultado'].': '.($r['mensaje'] ?? ''))->implode(' | '));
+            ->with('status', collect($resultados)->map(fn ($r) => match ($r['resultado']) {
+                'recibido' => 'Hacienda recibió el aviso.',
+                'rechazado' => trim('Hacienda rechazó el aviso. '.($r['mensaje'] ?? '')),
+                default => $r['mensaje'] ?? '',
+            })->implode(' | '));
     }
 
     /** «Hacienda sí lo tiene»: una persona vio en Hacienda el aviso de una parte en duda. */

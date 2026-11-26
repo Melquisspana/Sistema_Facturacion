@@ -64,6 +64,10 @@
                         $final = in_array($dte->estado->value, ['aceptado', 'rechazado'], true);
                         $estado = $final ? $dte->estado->value : ($dte->lote_dte_id ? 'en lote' : ($recibido ? 'informado' : 'pendiente'));
                         $segundos = $plazo ? max(0, (int) \App\Support\HoraNegocio::ahora()->diffInSeconds($plazo)) : 0;
+                        // El provisional se le manda al cliente también a mano: sin internet el
+                        // automático pudo no salir (simulacro del 17/11, F8).
+                        $provisional = $dte->esTransitorio();
+                        $ultimoAlCliente = $dte->envios->reject(fn ($e) => $e->esCanalContabilidad())->sortByDesc('id')->first();
                     @endphp
                     <tr class="border-t border-gray-300 dark:border-gray-600">
                         <td class="p-3"><a class="underline" href="{{ route('facturacion.show', $dte) }}">{{ $dte->codigo_generacion }}</a><br>{{ $dte->cliente?->nombre ?? $dte->cliente?->razon_social ?? 'Sin cliente' }}</td>
@@ -81,7 +85,10 @@
                             @endif
                         </td>
                         <td class="space-y-2 p-3">
-                            @if ($dte->estado === \App\Enums\EstadoDte::Aceptado && filled($dte->sello_recepcion))
+                            @if ($provisional && $ultimoAlCliente?->estado === 'error')
+                                <p role="alert">El correo provisional al cliente no salió.</p>
+                            @endif
+                            @if (($dte->estado === \App\Enums\EstadoDte::Aceptado && filled($dte->sello_recepcion)) || $provisional)
                                 @can('enviarCorreo', $dte)
                                     <form method="POST" action="{{ route('facturacion.correo.cliente', $dte) }}">@csrf<button class="underline" type="submit">Reenviar al cliente</button></form>
                                 @endcan

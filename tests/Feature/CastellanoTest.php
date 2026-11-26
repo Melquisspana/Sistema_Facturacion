@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Lang;
+use Spatie\Permission\Exceptions\UnauthorizedException;
 use Tests\TestCase;
 
 /**
@@ -76,6 +77,28 @@ class CastellanoTest extends TestCase
         $this->assertStringContainsString('Siguiente', $html);
         $this->assertStringNotContainsString('Showing', $html);
         $this->assertStringNotContainsString('Next', $html);
+    }
+
+    /**
+     * Simulacro del 26/11 (F19): la página 403 decía «User does not have the right
+     * permissions.». Los motivos que Spatie Permission muestra a la persona, en castellano.
+     * Los que agregan el nombre del permiso o del rol no salen: están apagados en
+     * config/permission.php.
+     */
+    public function test_los_motivos_403_sin_permiso_de_spatie_salen_en_castellano(): void
+    {
+        $this->assertFalse(config('permission.display_permission_in_exception'));
+        $this->assertFalse(config('permission.display_role_in_exception'));
+
+        foreach ([
+            UnauthorizedException::forPermissions(['dte.ver']),
+            UnauthorizedException::forRoles(['administrador']),
+            UnauthorizedException::forRolesOrPermissions(['administrador', 'dte.ver']),
+            UnauthorizedException::notLoggedIn(),
+        ] as $excepcion) {
+            $this->assertDoesNotMatchRegularExpression('/\b(User|does not|logged in)\b/', $excepcion->getMessage());
+        }
+        $this->assertSame('No tenés permiso para entrar acá.', UnauthorizedException::forPermissions(['dte.ver'])->getMessage());
     }
 
     /** @return list<string> claves con punto para los arreglos anidados */

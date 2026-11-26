@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Models\Contingencia;
 use App\Models\Dte;
 use App\Models\User;
+use App\Observers\DteObserver;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\HoraNegocio;
 use Carbon\CarbonInterface;
@@ -93,6 +94,8 @@ class ContingenciaService
             $contingencia->update(['cese' => $fecha, 'estado' => 'cerrada', 'activa_unica' => null, 'cerrada_por' => $usuario?->id]);
             activity('dte_contingencia')->performedOn($contingencia)->causedBy($usuario)
                 ->withProperties(['cese' => $fecha])->log('Contingencia terminada');
+            // Con la conexión de vuelta, el provisional que no le llegó al cliente sale otra vez.
+            app(DteObserver::class)->reintentarProvisionales($contingencia);
 
             return $contingencia;
         });

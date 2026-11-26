@@ -6067,6 +6067,12 @@ parameters:
 			path: app/Services/Dte/ContingenciaEventoService.php
 
 		-
+			message: '#^Parameter \#2 \$tipo of method App\\Services\\Dte\\DteSchemaValidator\:\:validar\(\) expects App\\Enums\\TipoDte, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Dte/ContingenciaService.php
+
+		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$fecha_transmision\.$#'
 			identifier: property.notFound
 			count: 1
