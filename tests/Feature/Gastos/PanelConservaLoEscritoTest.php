@@ -168,10 +168,15 @@ class PanelConservaLoEscritoTest extends TestCase
         $this->assertMatchesRegularExpression('/id="'.preg_quote($idConFoco, '/').'"[^<]*x-init="'.preg_quote(self::FOCO, '/').'"/', $html);
     }
 
-    /** El aviso va justo debajo de su campo. */
+    /**
+     * El aviso va justo debajo de su campo y está enlazado a él: al llegar el foco, el lector
+     * de pantalla dice que el campo está mal y lee el aviso. Solo se marca el que falló.
+     */
     private function assertErrorDebajo(string $formulario, string $id): void
     {
-        $this->assertMatchesRegularExpression('/id="'.preg_quote($id, '/').'"[^<]*>\s*<p class="mt-1 text-sm text-red-600">/', $formulario);
+        $aviso = preg_quote($id.'-error', '/');
+        $this->assertMatchesRegularExpression('/id="'.preg_quote($id, '/').'"[^<]*aria-invalid="true" aria-describedby="'.$aviso.'"[^<]*>\s*<p id="'.$aviso.'" class="mt-1 text-sm text-red-600">/', $formulario);
+        $this->assertSame(1, substr_count($formulario, 'aria-invalid="true"'), 'Solo el campo que falló se marca.');
     }
 
     /** Lo escrito vuelve una sola vez en la página, y es en ese formulario. */

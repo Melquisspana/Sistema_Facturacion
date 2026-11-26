@@ -34,6 +34,11 @@
     $otrosErrores = $volvio
         ? collect($errors->getMessages())->except($visibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
         : collect();
+    // El aviso queda enlazado a su campo: al llegar el foco, el lector de pantalla dice que
+    // está mal y lee el aviso (el aviso lleva el id del campo más «-error»).
+    $conAviso = fn (string $campo, string $id) => $volvio && $errors->has($campo)
+        ? new \Illuminate\Support\HtmlString('aria-invalid="true" aria-describedby="'.e($id).'-error"')
+        : '';
     // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
     // (doble clic), reenviarlo no registra otro pago; si no, la clave sigue libre.
     $clave = $volvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : (string) \Illuminate\Support\Str::uuid();
@@ -112,29 +117,29 @@
                     <div>
                         <label class="{{ $etiqueta }}" for="p-fecha-{{ $g->id }}">Cuándo pagaste</label>
                         <input id="p-fecha-{{ $g->id }}" name="fecha" type="date" required value="{{ $escrito('fecha', $hoy) }}" max="{{ $hoy }}"
-                               @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                               {{ $conAviso('fecha', 'p-fecha-'.$g->id) }} @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                         @if ($volvio)
-                            @error('fecha')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('fecha')<p id="p-fecha-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="p-metodo-{{ $g->id }}">Cómo</label>
                         <select id="p-metodo-{{ $g->id }}" name="metodo"
-                                @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                {{ $conAviso('metodo', 'p-metodo-'.$g->id) }} @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                             @foreach ($metodos as $valor => $texto)
                                 <option value="{{ $valor }}" @selected($volvio && old('metodo') === $valor)>{{ $texto }}</option>
                             @endforeach
                         </select>
                         @if ($volvio)
-                            @error('metodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('metodo')<p id="p-metodo-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="p-ref-{{ $g->id }}">Referencia</label>
                         <input id="p-ref-{{ $g->id }}" name="referencia" maxlength="180" value="{{ $escrito('referencia') }}"
-                               @if ($foco === 'referencia') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
+                               {{ $conAviso('referencia', 'p-ref-'.$g->id) }} @if ($foco === 'referencia') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
                         @if ($volvio)
-                            @error('referencia')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('referencia')<p id="p-ref-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                 </div>
@@ -174,29 +179,29 @@
                     <div>
                         <label class="{{ $etiqueta }}" for="a-importe-{{ $g->id }}">Cuánto abonás</label>
                         <input id="a-importe-{{ $g->id }}" name="importe" required inputmode="decimal" value="{{ $escrito('importe') }}"
-                               @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                               {{ $conAviso('importe', 'a-importe-'.$g->id) }} @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
                         @if ($volvio)
-                            @error('importe')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('importe')<p id="a-importe-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="a-fecha-{{ $g->id }}">Cuándo</label>
                         <input id="a-fecha-{{ $g->id }}" name="fecha" type="date" required value="{{ $escrito('fecha', $hoy) }}" max="{{ $hoy }}"
-                               @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                               {{ $conAviso('fecha', 'a-fecha-'.$g->id) }} @if ($foco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                         @if ($volvio)
-                            @error('fecha')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('fecha')<p id="a-fecha-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="a-metodo-{{ $g->id }}">Cómo</label>
                         <select id="a-metodo-{{ $g->id }}" name="metodo"
-                                @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                {{ $conAviso('metodo', 'a-metodo-'.$g->id) }} @if ($foco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                             @foreach ($metodos as $valor => $texto)
                                 <option value="{{ $valor }}" @selected($volvio && old('metodo') === $valor)>{{ $texto }}</option>
                             @endforeach
                         </select>
                         @if ($volvio)
-                            @error('metodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('metodo')<p id="a-metodo-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                 </div>
@@ -232,17 +237,17 @@
                     <div>
                         <label class="{{ $etiqueta }}" for="r-importe-{{ $g->id }}">Importe del recibo</label>
                         <input id="r-importe-{{ $g->id }}" name="importe" required inputmode="decimal" value="{{ $escrito('importe') }}"
-                               @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                               {{ $conAviso('importe', 'r-importe-'.$g->id) }} @if ($foco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
                         @if ($volvio)
-                            @error('importe')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('importe')<p id="r-importe-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                     </div>
                     <div>
                         <label class="{{ $etiqueta }}" for="r-vence-{{ $g->id }}">Vence el (opcional)</label>
                         <input id="r-vence-{{ $g->id }}" name="vence" type="date" value="{{ $escrito('vence') }}"
-                               @if ($foco === 'vence') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                               {{ $conAviso('vence', 'r-vence-'.$g->id) }} @if ($foco === 'vence') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                         @if ($volvio)
-                            @error('vence')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            @error('vence')<p id="r-vence-{{ $g->id }}-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         @endif
                         <p class="mt-1 text-xs text-gray-500">La fecha que trae el papel. Si no la ponés, queda sin vencimiento.</p>
                     </div>

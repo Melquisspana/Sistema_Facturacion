@@ -33,6 +33,11 @@
     $compraOtrosErrores = $compraVolvio
         ? collect($errors->getMessages())->except($compraVisibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
         : collect();
+    // El aviso queda enlazado a su campo: al llegar el foco, el lector de pantalla dice que
+    // está mal y lee el aviso (el aviso lleva el id del campo más «-error»).
+    $compraConAviso = fn (string $campo) => $compraVolvio && $errors->has($campo)
+        ? new \Illuminate\Support\HtmlString('aria-invalid="true" aria-describedby="c-'.e($campo).'-error"')
+        : '';
     // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
     // (doble clic), reenviarlo no registra otra compra; si no, la clave sigue libre.
     $compraClave = $compraVolvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : $clave;
@@ -199,58 +204,58 @@
                                 <div class="sm:col-span-2">
                                     <label class="{{ $etiqueta }}" for="c-concepto">Qué compraste</label>
                                     <input id="c-concepto" name="concepto" required maxlength="200" value="{{ $compraEscrito('concepto') }}"
-                                           @if ($compraFoco === 'concepto') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Bolsas para empaque">
+                                           {{ $compraConAviso('concepto') }} @if ($compraFoco === 'concepto') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Bolsas para empaque">
                                     @if ($compraVolvio)
-                                        @error('concepto')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                        @error('concepto')<p id="c-concepto-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                                     @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-importe">Cuánto</label>
                                     <input id="c-importe" name="importe" required inputmode="decimal" value="{{ $compraEscrito('importe') }}"
-                                           @if ($compraFoco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
+                                           {{ $compraConAviso('importe') }} @if ($compraFoco === 'importe') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="0.00">
                                     @if ($compraVolvio)
-                                        @error('importe')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                        @error('importe')<p id="c-importe-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                                     @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-beneficiario">A quién</label>
                                     <input id="c-beneficiario" name="beneficiario" maxlength="180" value="{{ $compraEscrito('beneficiario') }}"
-                                           @if ($compraFoco === 'beneficiario') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
+                                           {{ $compraConAviso('beneficiario') }} @if ($compraFoco === 'beneficiario') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}" placeholder="Opcional">
                                     @if ($compraVolvio)
-                                        @error('beneficiario')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                        @error('beneficiario')<p id="c-beneficiario-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                                     @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-fecha">Cuándo</label>
                                     <input id="c-fecha" name="fecha" type="date" required value="{{ $compraEscrito('fecha', $hoy) }}" max="{{ $hoy }}"
-                                           @if ($compraFoco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                           {{ $compraConAviso('fecha') }} @if ($compraFoco === 'fecha') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                     @if ($compraVolvio)
-                                        @error('fecha')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                        @error('fecha')<p id="c-fecha-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                                     @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-metodo">Cómo pagaste</label>
                                     <select id="c-metodo" name="metodo"
-                                            @if ($compraFoco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                            {{ $compraConAviso('metodo') }} @if ($compraFoco === 'metodo') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                         @foreach ($metodos as $valor => $texto)
                                             <option value="{{ $valor }}" @selected($compraVolvio && old('metodo') === $valor)>{{ $texto }}</option>
                                         @endforeach
                                     </select>
                                     @if ($compraVolvio)
-                                        @error('metodo')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                        @error('metodo')<p id="c-metodo-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                                     @endif
                                 </div>
                                 <div>
                                     <label class="{{ $etiqueta }}" for="c-ambito">De quién es</label>
                                     <select id="c-ambito" name="ambito"
-                                            @if ($compraFoco === 'ambito') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
+                                            {{ $compraConAviso('ambito') }} @if ($compraFoco === 'ambito') x-init="$nextTick(() => $el.focus())" @endif class="{{ $campo }}">
                                         <option value="empresarial">De la empresa</option>
                                         @can('gastos.personales')
                                             <option value="personal" @selected($compraVolvio && old('ambito') === 'personal')>Personal</option>
                                         @endcan
                                     </select>
                                     @if ($compraVolvio)
-                                        @error('ambito')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                                        @error('ambito')<p id="c-ambito-error" class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                                     @endif
                                 </div>
                             </div>
