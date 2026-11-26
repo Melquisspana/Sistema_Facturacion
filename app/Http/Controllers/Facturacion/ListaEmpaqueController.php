@@ -52,6 +52,12 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  */
 class ListaEmpaqueController extends Controller
 {
+    /** Lo que la línea copia de su presentación y se pone al día al duplicar la lista. */
+    private const PESOS_DE_LA_PRESENTACION = [
+        'gramos_por_unidad', 'onzas_por_unidad',
+        'peso_neto_caja_kg', 'peso_bruto_caja_kg', 'peso_neto_caja_lb', 'peso_bruto_caja_lb',
+    ];
+
     public function __construct(
         private readonly VincularFexALista $vinculos,
         private readonly DatosExportador $exportador,
@@ -294,10 +300,13 @@ class ListaEmpaqueController extends Controller
     }
 
     /**
-     * Copia con los mismos productos (snapshot tal cual) y fecha de hoy, en borrador.
-     * Cada línea del catálogo toma el precio ACTUAL del cliente: al finalizar, el precio
-     * de la lista pasa a ser el del cliente, y uno viejo se lo bajaba. Sin precio del
-     * cliente, la línea conserva el de la lista vieja y se avisa.
+     * Copia con los mismos productos y fecha de hoy, en borrador. Cada línea del
+     * catálogo toma los pesos de HOY de su presentación en Productos y el precio ACTUAL
+     * del cliente: al finalizar, el precio de la lista pasa a ser el del cliente, y uno
+     * viejo se lo bajaba. Sin precio del cliente, la línea conserva el de la lista vieja
+     * y se avisa. Si la presentación cambió en Productos, o el producto ya no está, la
+     * línea conserva todo lo de la lista vieja y también se avisa. Los datos del
+     * exportador salen de Configuración, como en una lista nueva.
      */
     public function duplicar(Exportacion $lista): RedirectResponse
     {
@@ -309,9 +318,9 @@ class ListaEmpaqueController extends Controller
             return $this->error($lista, 'No se puede duplicar: la lista viene del flujo anterior y está pendiente de clasificar. Un administrador tiene que resolverla primero.');
         }
 
-        $cambiados = $otraPresentacion = $apagadas = $sinPrecioDelCliente = [];
+        $cambiados = $pesosDeHoy = $otraPresentacion = $sinProducto = $apagadas = $sinPrecioDelCliente = [];
 
-        $copia = DB::transaction(function () use ($lista, &$cambiados, &$otraPresentacion, &$apagadas, &$sinPrecioDelCliente) {
+        $copia = DB::transaction(function () use ($lista, &$cambiados, &$pesosDeHoy, &$otraPresentacion, &$sinProducto, &$apagadas, &$sinPrecioDelCliente) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
             $copia->fecha = HoraNegocio::fechaHoy();
             $copia->estado = Exportacion::ESTADO_BORRADOR;
@@ -332,6 +341,9 @@ class ListaEmpaqueController extends Controller
             // El FDA es de la empresa y en la lista no se escribe: la copia lleva el que
             // está configurado hoy, no el de la lista vieja. Sin nada configurado, el suyo.
             $copia->fda_reg_number = $this->exportador->fdaRegNumber() ?? $lista->fda_reg_number;
+            // Igual el nombre y la dirección del exportador: los de hoy, como en una lista nueva.
+            $copia->exportador_nombre = $this->exportador->nombre() ?? $lista->exportador_nombre;
+            $copia->exportador_direccion = $this->exportador->direccion() ?? $lista->exportador_direccion;
             // El número de factura ya no se copia: se deriva de las FEX que se vinculen
             // a la copia, y copiar el de otra lista es exactamente el error que se quiso
             // eliminar al dejar de teclearlo.
@@ -346,23 +358,42 @@ class ListaEmpaqueController extends Controller
             foreach ($lista->items()->with('producto')->get() as $item) {
                 $nuevo = $item->replicate();
                 $nuevo->exportacion_id = $copia->id;
+                $antes = round((float) $item->precio_caja, 2);
+                $linea = trim($item->nombre_es.' '.$item->unidades_por_caja.' u');
+                $producto = $item->producto;
 
-                // Solo cambia el precio. Sin cliente o sin producto del catálogo, la línea
-                // no tiene precio del cliente que tomar y al finalizar no toca ninguno.
-                if ($cliente !== null && $item->exportacion_producto_id !== null) {
-                    $actual = $cliente->precioPara((int) $item->exportacion_producto_id);
-                    $antes = round((float) $item->precio_caja, 2);
-                    $linea = trim($item->nombre_es.' '.$item->unidades_por_caja.' u');
-                    // Las unidades y los gramos son la presentación (CatalogoExportacion::exigirUnica).
-                    // Si se editaron en Productos, el precio del cliente es el de otra caja.
-                    $producto = $item->producto;
-                    $otrosGramos = $producto !== null
-                        && round((float) $producto->gramos_por_unidad, 2) !== round((float) $item->gramos_por_unidad, 2);
+                // Sin el producto en Productos (no venía del catálogo o se borró) no hay de
+                // dónde tomar pesos ni precio: la línea queda como en la lista vieja.
+                if ($producto === null) {
+                    $sinProducto[] = $linea.' '.$dinero($antes);
+                    $nuevo->save();
 
-                    if ($producto !== null && ($otrosGramos || (int) $producto->unidades_por_caja !== (int) $item->unidades_por_caja)) {
-                        $otraPresentacion[] = $linea.' '.$dinero($antes).' (ahora '.$producto->unidades_por_caja.' u'
-                            .($otrosGramos ? ' de '.(float) $producto->gramos_por_unidad.' g' : '').')';
-                    } elseif ($actual === null && $cliente->productos->contains(fn (ExportacionClienteProducto $a) => (int) $a->exportacion_producto_id === (int) $item->exportacion_producto_id)) {
+                    continue;
+                }
+
+                // Las unidades y los gramos son la presentación (CatalogoExportacion::exigirUnica).
+                // Si se editaron en Productos, los pesos y el precio del cliente son de otra caja.
+                $otrosGramos = round((float) $producto->gramos_por_unidad, 2) !== round((float) $item->gramos_por_unidad, 2);
+                if ($otrosGramos || (int) $producto->unidades_por_caja !== (int) $item->unidades_por_caja) {
+                    $otraPresentacion[] = $linea.' '.$dinero($antes).' (ahora '.$producto->unidades_por_caja.' u'
+                        .($otrosGramos ? ' de '.(float) $producto->gramos_por_unidad.' g' : '').')';
+                    $nuevo->save();
+
+                    continue;
+                }
+
+                // Los pesos son los de hoy. Los totales de la lista se calculan de las líneas.
+                $pesos = $producto->only(self::PESOS_DE_LA_PRESENTACION);
+                if (collect($pesos)->contains(fn ($valor, string $campo) => round((float) $valor, 2) !== round((float) $item->{$campo}, 2))) {
+                    $nuevo->fill($pesos);
+                    $pesosDeHoy[] = $linea;
+                }
+
+                // Sin cliente, la línea no tiene precio del cliente que tomar y al finalizar no toca ninguno.
+                if ($cliente !== null) {
+                    $actual = $cliente->precioPara((int) $producto->id);
+
+                    if ($actual === null && $cliente->productos->contains(fn (ExportacionClienteProducto $a) => (int) $a->exportacion_producto_id === (int) $producto->id)) {
                         // Apagado en Productos: tiene precio guardado, pero al finalizar se le vuelve a habilitar.
                         $apagadas[] = $linea.' '.$dinero($antes);
                     } elseif ($actual === null || $actual <= 0) {
@@ -382,8 +413,11 @@ class ListaEmpaqueController extends Controller
 
         $aviso = collect([
             $cambiados !== [] ? 'Se pusieron los precios actuales del cliente: '.$this->enumerarLineas($cambiados).'.' : null,
-            $otraPresentacion !== [] ? "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio de la lista #{$lista->id}: "
+            $pesosDeHoy !== [] ? 'Se pusieron los pesos actuales de Productos: '.$this->enumerarLineas($pesosDeHoy).'.' : null,
+            $otraPresentacion !== [] ? "Ojo: estas líneas cambiaron de presentación en Productos y quedaron con el precio y los pesos de la lista #{$lista->id}: "
                 .$this->enumerarLineas($otraPresentacion).'. Quitalas en Editar y volvé a agregarlas antes de facturar.' : null,
+            $sinProducto !== [] ? "Ojo: estas líneas no están en Productos y quedaron con el precio y los pesos de la lista #{$lista->id}: "
+                .$this->enumerarLineas($sinProducto).'. Revisalas en Editar antes de facturar.' : null,
             $apagadas !== [] ? "Ojo: estas líneas están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$lista->id}: "
                 .$this->enumerarLineas($apagadas).'. Si finalizás con ellas, se le vuelven a habilitar a ese precio. Si ya no se le venden, quitalas en Editar.' : null,
             $sinPrecioDelCliente !== [] ? "Ojo: estas líneas quedaron con el precio de la lista #{$lista->id} porque el cliente no tiene precio para ellas: "
