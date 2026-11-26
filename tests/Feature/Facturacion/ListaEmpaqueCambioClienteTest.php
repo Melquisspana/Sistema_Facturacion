@@ -25,7 +25,8 @@ use Tests\TestCase;
  * Una FEX emitida a otro cliente impide el cambio: la lista diría un cliente y saldría
  * impresa con la factura del otro. Sin eso, las líneas guardadas pasan al cliente nuevo
  * con SU precio, nunca con el del anterior, que al finalizar quedaría como el suyo. Una
- * lista que no tenía cliente lo recibe sin perder sus líneas. Datos ficticios.
+ * lista que no tenía cliente lo recibe sin perder sus líneas, y un cliente deshabilitado
+ * sigue en el selector de su propia lista. Datos ficticios.
  */
 class ListaEmpaqueCambioClienteTest extends TestCase
 {
@@ -256,5 +257,28 @@ class ListaEmpaqueCambioClienteTest extends TestCase
         ]))->assertSessionHasErrors('exportacion_cliente_id');
 
         $this->assertEquals($antes, $this->foto($lista));
+    }
+
+    /**
+     * Un cliente deshabilitado no se ofrece para listas nuevas, pero sigue en el selector
+     * de las suyas: si no, el formulario obligaba a elegir otro para poder guardar.
+     */
+    public function test_el_borrador_de_un_cliente_deshabilitado_lo_sigue_ofreciendo_y_se_guarda(): void
+    {
+        $lista = $this->listaDelClienteA();
+        $this->clienteA->update(['activo' => false]);
+
+        $this->actingAs($this->usuario)->get(route('facturacion.listas.edit', $lista))
+            ->assertOk()
+            ->assertSee('Cliente de prueba A (deshabilitado)');
+        $this->actingAs($this->usuario)->get(route('facturacion.listas.create'))
+            ->assertOk()
+            ->assertDontSee('Cliente de prueba A');
+
+        $this->actingAs($this->usuario)->put(route('facturacion.listas.update', $lista), $this->formulario($this->clienteA, [
+            ['id' => $lista->items()->sole()->id, 'cantidad_cajas' => 12, 'precio_caja' => '140.00'],
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame(12, (int) $lista->items()->sole()->cantidad_cajas);
     }
 }

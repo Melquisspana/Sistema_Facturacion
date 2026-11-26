@@ -82,7 +82,7 @@
                         class="mt-1 w-full rounded-md border-gray-300 text-sm">
                     <option value="">— elegí un cliente —</option>
                     @foreach ($clientes as $c)
-                        <option value="{{ $c->id }}">{{ $c->nombre }}</option>
+                        <option value="{{ $c->id }}">{{ $c->nombre }}{{ $c->activo ? '' : ' (deshabilitado)' }}</option>
                     @endforeach
                 </select>
                 <p class="mt-1 text-xs text-gray-400">

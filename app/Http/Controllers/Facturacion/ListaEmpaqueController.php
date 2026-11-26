@@ -162,7 +162,9 @@ class ListaEmpaqueController extends Controller
         return view('facturacion.listas.edit', [
             'lista' => $lista,
             'productos' => $this->productosParaFormulario(),
-            'clientes' => $this->clientesParaFormulario(),
+            // Con su cliente aunque esté deshabilitado: sin él, el selector obligaba a
+            // elegir otro para poder guardar.
+            'clientes' => $this->clientesParaFormulario($lista->exportacion_cliente_id),
         ]);
     }
 
@@ -841,9 +843,10 @@ class ListaEmpaqueController extends Controller
             ->get(['id', 'exportacion_producto_base_id', 'nombre_es', 'nombre_en', 'unidad', 'unidades_por_caja', 'gramos_por_unidad', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
     }
 
-    private function clientesParaFormulario(): Collection
+    private function clientesParaFormulario(?int $incluir = null): Collection
     {
-        return ExportacionCliente::where('activo', true)
+        return ExportacionCliente::where(fn ($q) => $q->where('activo', true)
+            ->when($incluir !== null, fn ($q) => $q->orWhere('id', $incluir)))
             ->with(['cliente:id,nombre,direccion', 'productos' => fn ($q) => $q->where('activo', true)])
             ->get()
             ->sortBy(fn (ExportacionCliente $c) => $c->nombreLegal())
