@@ -162,6 +162,43 @@ class DetectoresTest extends TestCase
         $this->assertFalse($detector->aplica());
     }
 
+    /**
+     * Simulacro del 26/11 (F20): el correo «por vencer» no decía a qué hora vencía (su
+     * «Desde:» es seis horas antes) y contaba también los vencidos, que tienen su propio
+     * correo («pasaron el plazo»): llegaban dos por lo mismo.
+     */
+    public function test_contingencia_por_vencer_dice_a_que_hora_vence_y_deja_los_vencidos_a_su_aviso(): void
+    {
+        config(['dte.contingencia.enabled' => true]);
+        $this->travelTo(Carbon::parse('2026-11-02 11:00', 'America/El_Salvador'));
+        foreach (['2026-11-01 16:30', '2026-11-01 08:00'] as $cese) {
+            $contingencia = Contingencia::create(['tipo' => 3, 'origen' => 'manual', 'estado' => 'cerrada',
+                'inicio' => Carbon::parse($cese, 'America/El_Salvador')->subHour(), 'cese' => Carbon::parse($cese, 'America/El_Salvador')]);
+            $this->dte(['estado' => EstadoDte::Firmado->value, 'contingencia_id' => $contingencia->id]);
+        }
+        $detector = app(ContingenciaPorVencer::class);
+        $avisador = app(Avisador::class);
+
+        // Uno vence hoy a las 16:30; el otro venció a las 08:00 y lo avisa ContingenciaVencida.
+        $h = $detector->revisar();
+        $this->assertSame(1, $h?->conteo);
+        $this->assertSame('Sigue sin sello de Hacienda y le quedan menos de 6 horas de plazo: vence el 02/11/2026 a las 16:30.', $h->detalle);
+        $this->assertSame(1, app(ContingenciaVencida::class)->revisar()?->conteo);
+        $this->assertSame('falla', $avisador->procesar($detector));
+
+        // Al vencer el segundo no llega un «Ya se normalizó» falso: de eso avisa el otro correo.
+        $this->travelTo(Carbon::parse('2026-11-02 16:30:01', 'America/El_Salvador'));
+        $this->assertNull($detector->revisar());
+        $this->assertFalse($detector->aplica());
+        $this->assertNull($avisador->procesar($detector));
+        $this->assertSame(2, app(ContingenciaVencida::class)->revisar()?->conteo);
+
+        // Con el sello, sí se normaliza.
+        DB::table('dtes')->update(['sello_recepcion' => 'SELLO-INVENTADO']);
+        $this->assertTrue($detector->aplica());
+        $this->assertSame('normalizado', $avisador->procesar($detector));
+    }
+
     public function test_firmado_sin_transmitir_avisa_solo_los_de_produccion_viejos_fuera_de_contingencia(): void
     {
         $this->travelTo(Carbon::parse('2026-11-10 09:00', 'America/El_Salvador'));

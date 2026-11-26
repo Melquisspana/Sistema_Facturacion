@@ -439,6 +439,29 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertStringNotContainsString('Volvió la conexión', $franja());
     }
 
+    /**
+     * Simulacro del 26/11 (F16): «Volvió la conexión» salía también cuando una persona
+     * terminó la automática con el botón y Hacienda seguía caída. Lo dice solo si la
+     * cerró la reconexión; si la terminó una persona, un texto que no promete conexión.
+     */
+    public function test_la_franja_dice_que_volvio_la_conexion_solo_si_la_cerro_la_reconexion(): void
+    {
+        $franja = fn (Contingencia $c) => (string) $this->view('components.plazos-contingencia', ['contingencia' => $c->refresh()]);
+
+        $aMano = app(ContingenciaService::class)->activar(1, 'MH inventado', 'automatica', null);
+        app(ContingenciaService::class)->terminar($this->usuario);
+        $this->assertStringContainsString('Contingencia terminada: enviá el aviso a Hacienda cuando haya conexión.', $franja($aMano));
+        $this->assertStringNotContainsString('Volvió la conexión', $franja($aMano));
+
+        $sola = app(ContingenciaService::class)->activar(1, 'MH inventado', 'automatica', null);
+        Carbon::setTestNow(now()->addMinutes(15));
+        $this->simular(mh: true, recepcion: 400);
+        $this->artisan('dte:contingencia-reconexion')->assertSuccessful();
+        $this->assertSame('cerrada', $sola->refresh()->estado);
+        $this->assertStringContainsString('Volvió la conexión: enviá el aviso a Hacienda.', $franja($sola));
+        $this->assertStringNotContainsString('Contingencia terminada', $franja($sola));
+    }
+
     public function test_correccion_cese_limites_y_bloqueo_tipo_firmado(): void
     {
         $activa = app(ContingenciaService::class)->activar(3, 'Internet inventado', 'manual', null);

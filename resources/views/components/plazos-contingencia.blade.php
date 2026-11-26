@@ -13,8 +13,12 @@
 @endif
 @if ($contingencia->cese)
     {{-- Solo mientras el aviso se puede enviar, igual que el botón «Enviar aviso de
-         contingencia»: recibido, la contingencia pasa a «informada» (simulacro del 17/11, F12). --}}
-    @if ($contingencia->origen === 'automatica' && $contingencia->estado === 'cerrada')<p>Volvió la conexión: enviá el aviso a Hacienda.</p>@endif
+         contingencia»: recibido, la contingencia pasa a «informada» (simulacro del 17/11, F12).
+         Sin persona que la cerró, la cerró la reconexión porque Hacienda contestó. Si la terminó
+         alguien con el botón, Hacienda puede seguir caída (simulacro del 26/11, F16). --}}
+    @if ($contingencia->origen === 'automatica' && $contingencia->estado === 'cerrada')
+        <p>{{ $contingencia->cerrada_por ? 'Contingencia terminada: enviá el aviso a Hacienda cuando haya conexión.' : 'Volvió la conexión: enviá el aviso a Hacienda.' }}</p>
+    @endif
     @if ($partesPlazo->isEmpty())
         @php
             $limitePlazo = $eventosPlazo->plazo($contingencia);
