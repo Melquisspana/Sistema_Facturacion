@@ -307,8 +307,8 @@ class ListaEmpaqueController extends Controller
      * catálogo toma el empaque y los pesos de HOY de su presentación en Productos y el precio ACTUAL
      * del cliente: al finalizar, el precio de la lista pasa a ser el del cliente, y uno
      * viejo se lo bajaba. Sin precio del cliente, la línea conserva el de la lista vieja
-     * y se avisa. Si la presentación cambió en Productos, o el producto ya no está, la
-     * línea conserva todo lo de la lista vieja y también se avisa. Los datos del
+     * y se avisa. Si la presentación cambió en Productos, o el producto ya no está (se
+     * borró o se archivó), la línea conserva todo lo de la lista vieja y también se avisa. Los datos del
      * exportador salen de Configuración; el que no esté guardado ahí, de la original.
      */
     public function duplicar(Exportacion $lista): RedirectResponse
@@ -321,9 +321,9 @@ class ListaEmpaqueController extends Controller
             return $this->error($lista, 'No se puede duplicar: la lista viene del flujo anterior y está pendiente de clasificar. Un administrador tiene que resolverla primero.');
         }
 
-        $cambiados = $pesosDeHoy = $otraPresentacion = $sinProducto = $apagadas = $sinPrecioDelCliente = [];
+        $cambiados = $pesosDeHoy = $otraPresentacion = $sinProducto = $archivadas = $apagadas = $sinPrecioDelCliente = [];
 
-        $copia = DB::transaction(function () use ($lista, &$cambiados, &$pesosDeHoy, &$otraPresentacion, &$sinProducto, &$apagadas, &$sinPrecioDelCliente) {
+        $copia = DB::transaction(function () use ($lista, &$cambiados, &$pesosDeHoy, &$otraPresentacion, &$sinProducto, &$archivadas, &$apagadas, &$sinPrecioDelCliente) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
             $copia->fecha = HoraNegocio::fechaHoy();
             $copia->estado = Exportacion::ESTADO_BORRADOR;
@@ -359,7 +359,7 @@ class ListaEmpaqueController extends Controller
                 : null;
             $dinero = fn (float $valor) => '$'.number_format($valor, 2);
 
-            foreach ($lista->items()->with('producto')->get() as $item) {
+            foreach ($lista->items()->with('producto.base')->get() as $item) {
                 $nuevo = $item->replicate();
                 $nuevo->exportacion_id = $copia->id;
                 $antes = round((float) $item->precio_caja, 2);
@@ -370,6 +370,15 @@ class ListaEmpaqueController extends Controller
                 // dónde tomar pesos ni precio: la línea queda como en la lista vieja.
                 if ($producto === null) {
                     $sinProducto[] = $linea.' '.$dinero($antes);
+                    $nuevo->save();
+
+                    continue;
+                }
+
+                // Archivado (la presentación o su producto) ya no se ofrece al armar listas
+                // (productosParaFormulario): tampoco se pone al día en la copia.
+                if (! $producto->activo || ($producto->base !== null && ! $producto->base->activo)) {
+                    $archivadas[] = $linea.' '.$dinero($antes);
                     $nuevo->save();
 
                     continue;
@@ -424,6 +433,8 @@ class ListaEmpaqueController extends Controller
                 .$this->enumerarLineas($otraPresentacion).'. Quitalas en Editar y volvé a agregarlas antes de facturar.' : null,
             $sinProducto !== [] ? "Ojo: estas líneas no están en Productos y quedaron con el precio y los pesos de la lista #{$lista->id}: "
                 .$this->enumerarLineas($sinProducto).'. Revisalas en Editar antes de facturar.' : null,
+            $archivadas !== [] ? "Ojo: estas líneas están archivadas en Productos y quedaron con el precio y los pesos de la lista #{$lista->id}: "
+                .$this->enumerarLineas($archivadas).'. Si ya no se venden, quitalas en Editar antes de facturar.' : null,
             $apagadas !== [] ? "Ojo: estas líneas están apagadas para el cliente en Productos y quedaron con el precio de la lista #{$lista->id}: "
                 .$this->enumerarLineas($apagadas).'. Si finalizás con ellas, se le vuelven a habilitar a ese precio. Si ya no se le venden, quitalas en Editar.' : null,
             $sinPrecioDelCliente !== [] ? "Ojo: estas líneas quedaron con el precio de la lista #{$lista->id} porque el cliente no tiene precio para ellas: "

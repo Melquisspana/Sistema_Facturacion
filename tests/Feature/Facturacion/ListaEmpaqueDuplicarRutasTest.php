@@ -623,6 +623,48 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
     }
 
     /**
+     * Dentro de la aplicación un producto «ya no está» porque se archivó: no se puede
+     * borrar si está en una lista, y archivado deja de ofrecerse al armar listas. La copia
+     * lo trata igual que uno borrado: la línea conserva todo lo de la lista vieja (ni los
+     * pesos ni el precio de hoy) y el aviso lo dice. Vale si se archivó la presentación o
+     * el producto entero, aunque después se haya reactivado solo la presentación.
+     */
+    public function test_si_el_producto_esta_archivado_la_copia_conserva_la_linea_y_lo_avisa(): void
+    {
+        $usuario = $this->usuario();
+        $perfil = $this->perfil();
+        $presentacionArchivada = $this->presentacion('Producto archivado de prueba');
+        $baseArchivada = $this->presentacion('Producto con base archivada de prueba');
+        foreach ([$presentacionArchivada, $baseArchivada] as $producto) {
+            ExportacionClienteProducto::create(['exportacion_cliente_id' => $perfil->id, 'exportacion_producto_id' => $producto->id, 'precio_caja' => 140.00, 'precio_fijado_en' => '2026-11-01', 'activo' => true]);
+        }
+        $original = $this->listaDelCatalogo($perfil, [[$presentacionArchivada, 140.00], [$baseArchivada, 140.00]], '2026-11-01');
+        $lineasOriginales = $this->lineas($original);
+
+        // En Productos cambian los pesos y el precio del cliente, y después se archivan.
+        foreach ([$presentacionArchivada, $baseArchivada] as $producto) {
+            $this->cambiarEnProductos($producto, ['peso_neto_caja_kg' => 15]);
+            $this->actingAs($usuario)->put(route('productos.exportacion.clientes', $producto), [
+                'clientes' => [$perfil->id => ['activo' => '1', 'precio' => '150']],
+            ])->assertSessionHasNoErrors();
+        }
+        $this->actingAs($usuario)->patch(route('productos.exportacion.toggle-activo', $presentacionArchivada))->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->patch(route('productos.exportacion.base.toggle-activo', $baseArchivada->base))->assertSessionHasNoErrors();
+        $this->actingAs($usuario)->patch(route('productos.exportacion.toggle-activo', $baseArchivada))->assertSessionHasNoErrors();
+        $this->assertFalse($presentacionArchivada->fresh()->activo);
+        $this->assertTrue($baseArchivada->fresh()->activo);
+        $this->assertFalse($baseArchivada->fresh()->base->activo);
+
+        $this->actingAs($usuario)->post(route('facturacion.listas.duplicar', $original))
+            ->assertSessionHas('status')
+            ->assertSessionHas('aviso_precios', "Ojo: estas líneas están archivadas en Productos y quedaron con el precio y los pesos de la lista #{$original->id}: "
+                .'Producto archivado de prueba 144 u $140.00; Producto con base archivada de prueba 144 u $140.00. Si ya no se venden, quitalas en Editar antes de facturar.');
+
+        $copia = Exportacion::query()->whereKeyNot($original->id)->sole();
+        $this->assertEquals($lineasOriginales, $this->lineas($copia));
+    }
+
+    /**
      * Los datos del exportador salen de Configuración, como el FDA y como en una lista
      * nueva. El que Configuración no tenga se conserva de la original, no el de la
      * Empresa emisora: en producción siempre hay una, y la copia salía con su razón
