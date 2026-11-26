@@ -53,9 +53,9 @@
      La fila no dice qué tan firme es el saldo (provisional o confirmado): ninguna
      pantalla carga ese dato, así que mostrarlo afirmaba algo que nadie escribió. --}}
 <div class="border-t border-gray-100 first:border-t-0">
-    <div class="flex items-center justify-between gap-3 px-4 py-3">
+    <div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div class="min-w-0">
-            <a href="{{ route('gastos.show', $g) }}" class="truncate font-medium text-gray-900 hover:text-indigo-700">
+            <a href="{{ route('gastos.show', $g) }}" class="block truncate font-medium text-gray-900 hover:text-indigo-700">
                 {{ $g->beneficiario }}
             </a>
             <p class="truncate text-sm text-gray-500">
@@ -66,7 +66,7 @@
             </p>
         </div>
 
-        <div class="flex shrink-0 items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3 sm:shrink-0">
             @if ($g->ambito === 'personal')
                 <span class="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">Casa</span>
             @else

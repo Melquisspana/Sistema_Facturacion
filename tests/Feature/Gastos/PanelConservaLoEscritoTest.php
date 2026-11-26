@@ -416,6 +416,23 @@ class PanelConservaLoEscritoTest extends TestCase
     }
 
     /** Los campos de los formularios del panel miden 44 px (min-h-11), como pide la guía para Gastos en el celular. */
+    /**
+     * En el celular, el nombre del proveedor de una fila de deuda quedaba debajo de la
+     * etiqueta «Empresa»: el enlace era de línea y «truncate» no lo cortaba. Ahora la fila
+     * pone el nombre arriba y los botones abajo, como las filas programadas, y en la
+     * computadora el nombre largo se corta con «…».
+     */
+    public function test_el_nombre_de_una_fila_de_deuda_se_corta_en_vez_de_quedar_debajo_de_la_etiqueta(): void
+    {
+        $u = $this->operador();
+        $g = $this->deuda($u, 'Proveedor de prueba con un nombre largo', '48.00', 'operativo');
+        $html = $this->actingAs($u)->get(route('gastos.panel'))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">\s*<div class="min-w-0">\s*<a href="'
+            .preg_quote(route('gastos.show', $g), '/').'" class="block truncate /', $html);
+    }
+
     public function test_los_campos_de_los_formularios_del_panel_miden_44_px(): void
     {
         $u = $this->operador();
