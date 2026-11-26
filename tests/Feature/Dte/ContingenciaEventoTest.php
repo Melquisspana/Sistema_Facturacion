@@ -591,6 +591,24 @@ class ContingenciaEventoTest extends TestCase
         $this->assertSame('recibido', $dte->refresh()->loteDte?->estado);
     }
 
+    /**
+     * Simulacro del 26/11 (F17): después de «Hacienda sí lo tiene», la ficha seguía
+     * mostrando el rechazo del reintento, en rojo. La parte está recibida: no se muestra
+     * como rechazo, y la respuesta original sigue guardada.
+     */
+    public function test_la_parte_dada_por_recibida_no_se_muestra_como_rechazada(): void
+    {
+        $this->documento();
+        $parte = $this->avisoConLaRespuestaPerdidaRechazadoAlReintentar();
+        $this->post(route('facturacion.contingencia.eventos.recibido', $parte), ['confirmo_recibido' => '1'])
+            ->assertSessionHasNoErrors();
+
+        $this->get(route('facturacion.contingencia.show', $this->contingencia))->assertOk()
+            ->assertDontSee('YA EXISTE UN REGISTRO CON ESE VALOR')->assertDontSee('Rechazado inventado')
+            ->assertSee('Dada por recibida: se verificó en Hacienda que tiene este aviso.');
+        $this->assertSame('RECHAZADO', $parte->refresh()->respuesta_mh['estado']);
+    }
+
     public function test_una_parte_en_duda_se_reemplaza_en_las_24_horas_desde_su_rechazo_aunque_ya_pasaron_24_desde_el_cese(): void
     {
         // Cese el 10/10 a las 10:15: el aviso sale y se rechaza al reintentar el 11/10 a las 10:00.

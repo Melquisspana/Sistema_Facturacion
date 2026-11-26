@@ -62,7 +62,12 @@
             <section class="rounded border border-gray-400 p-4">
                 <h3>Parte {{ $evento->parte }} · {{ $evento->codigo_generacion }} · {{ $evento->estado }}</h3>
                 @if ($evento->sello_recibido)<p>Sello: {{ $evento->sello_recibido }}</p>@endif
-                @if ($evento->respuesta_mh)
+                {{-- Recibida sin sello: una persona apretó «Hacienda sí lo tiene». La respuesta
+                     guardada es el rechazo del reintento y queda en la base, pero ya no vale
+                     como rechazo (simulacro del 26/11, F17). --}}
+                @if ($evento->estado === 'recibido' && ! $evento->sello_recibido)
+                    <p>Dada por recibida: se verificó en Hacienda que tiene este aviso.</p>
+                @elseif ($evento->respuesta_mh)
                     <p>{{ $evento->respuesta_mh['mensaje'] ?? $evento->respuesta_mh['descripcionMsg'] ?? '' }}</p>
                     @foreach (($evento->respuesta_mh['observaciones'] ?? []) as $observacion)
                         <p role="alert">{{ is_string($observacion) ? $observacion : json_encode($observacion, JSON_UNESCAPED_UNICODE) }}</p>
