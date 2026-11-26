@@ -4,6 +4,7 @@ use App\Http\Controllers\Rutas\MapaVentasController;
 use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
 use App\Http\Controllers\Rutas\PedidoSalaController;
+use App\Http\Controllers\Rutas\PedidosYEntregasController;
 use App\Http\Controllers\Rutas\PersonalRutaController;
 use App\Http\Controllers\Rutas\PorEntregarController;
 use App\Http\Controllers\Rutas\RutaCoberturaController;
@@ -47,8 +48,8 @@ use Illuminate\Support\Facades\Route;
 |     anota entregas y gastos, no se guardan en el navegador (`no-store`): al tocar «atrás»
 |     después de marcar se vuelven a pedir y muestran lo hecho. Una copia vieja llevaría a
 |     marcar dos veces.
-|   - Las de la oficina que solo se miran (Tablero, Viajes, Mapa, Pedidos, Zonas, Ventas y
-|     Todos los viajes) usan `private, no-cache`: «atrás» las restaura al instante como
+|   - Las de la oficina que solo se miran (Tablero, Viajes, Mapa, Pedidos, Zonas, Ventas,
+|     Pedidos y entregas y Todos los viajes) usan `private, no-cache`: «atrás» las restaura al instante como
 |     estaban, una visita nueva las pide frescas y ningún proxy las guarda. Al salir, el
 |     logout manda `Clear-Site-Data: "cache"` para que «atrás» no las muestre sin sesión.
 |
@@ -131,6 +132,9 @@ Route::middleware(['auth', 'permission:rutas.ver'])
                 ->middleware('permission:rutas.mapa.ver')->name('mapa');
             Route::get('ventas', [VentasController::class, 'index'])
                 ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
+            // «Pedidos y entregas» (26/11/2026): la de la dueña, para el celular. Solo mira.
+            Route::get('pedidos-y-entregas', [PedidosYEntregasController::class, 'index'])
+                ->middleware('permission:rutas.pedidos-entregas.ver')->name('pedidos-entregas');
 
             /*
             | «Zonas»: el catálogo de rutas, con su nombre y los lugares que cubre. La zona le pone

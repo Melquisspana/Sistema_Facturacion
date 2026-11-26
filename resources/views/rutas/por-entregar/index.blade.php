@@ -27,8 +27,9 @@
         <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">El efectivo de hoy se entrega a la oficina con el PDF del día («Terminar el día»).</p>
     @endif
 
-    {{-- Quien no tiene ficha de vendedor (la oficina, Jefatura) mira la lista y no marca. --}}
-    @if (! $persona)
+    {{-- Quien no marca entregas (la oficina; Jefatura, aunque tenga ficha para sacar pedidos)
+         mira la lista. --}}
+    @if (! $puedeMarcar)
         <p class="mt-4 rounded-2xl bg-white p-5 dark:bg-ink-800">Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.</p>
     @endif
 

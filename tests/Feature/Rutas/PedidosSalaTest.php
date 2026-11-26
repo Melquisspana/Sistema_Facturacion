@@ -132,8 +132,10 @@ class PedidosSalaTest extends TestCase
         $this->assertContains('rutas.pedidos.ver', RolSistema::JefeVendedores->permisos());
         foreach ([RolSistema::Jefatura, RolSistema::Facturacion] as $rol) {
             $this->assertContains('rutas.pedidos.ver', $rol->permisos());
-            $this->assertNotContains('rutas.pedidos.registrar', $rol->permisos());
         }
+        // Jefatura saca pedidos desde el 26/11/2026 (Melqui); Facturación, no.
+        $this->assertContains('rutas.pedidos.registrar', RolSistema::Jefatura->permisos());
+        $this->assertNotContains('rutas.pedidos.registrar', RolSistema::Facturacion->permisos());
         foreach ([RolSistema::Contabilidad, RolSistema::Produccion] as $rol) {
             $this->assertNotContains('rutas.pedidos.ver', $rol->permisos());
             $this->assertNotContains('rutas.pedidos.registrar', $rol->permisos());
