@@ -415,6 +415,27 @@ class PanelConservaLoEscritoTest extends TestCase
         }
     }
 
+    /** Los campos de los formularios del panel miden 44 px (min-h-11), como pide la guía para Gastos en el celular. */
+    public function test_los_campos_de_los_formularios_del_panel_miden_44_px(): void
+    {
+        $u = $this->operador();
+        $pagar = $this->deuda($u, 'Proveedor de prueba A', '48.00', 'operativo');
+        $this->deuda($u, 'Proveedor de prueba B', '300.00', 'compra');
+        $completar = $this->sinMonto($u, 'Proveedor de prueba C', 'operativo');
+        $regla = $this->reglaVariable($u, 'Proveedor de prueba D');
+        $html = $this->actingAs($u)->get(route('gastos.panel'))->assertOk()->getContent();
+
+        foreach ([route('gastos.panel.compras'), route('gastos.panel.pagar', $pagar), route('gastos.panel.abonos'),
+            route('gastos.panel.completar', $completar), route('gastos.panel.programado.pagar', $regla)] as $accion) {
+            preg_match_all('/<(?:input|select)\b[^>]*>/', $this->formularioCon($html, 'action="'.$accion.'"'), $m);
+            $campos = array_filter($m[0], fn (string $c) => ! str_contains($c, 'type="hidden"'));
+            $this->assertNotEmpty($campos, $accion);
+            foreach ($campos as $campo) {
+                $this->assertMatchesRegularExpression('/class="[^"]*\bmin-h-11\b/', $campo, 'Mide menos de 44 px: '.$campo);
+            }
+        }
+    }
+
     public function test_registrar_pago_de_una_fila_programada_vuelve_abierto_con_lo_escrito(): void
     {
         $u = $this->operador();

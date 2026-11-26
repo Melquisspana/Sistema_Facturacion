@@ -5,7 +5,7 @@
 
     $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
     $botonAccion = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-500';
-    $campo = 'mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
+    $campo = 'mt-1 min-h-11 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm';
     $etiqueta = 'block text-sm font-medium text-gray-700';
 
     // Cada fila lleva su ámbito como una marca discreta. Es informativa: el candado de
