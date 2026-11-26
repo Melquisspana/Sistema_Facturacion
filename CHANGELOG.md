@@ -8,6 +8,42 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.26] - 2026-11-26
+
+Por pagar conserva lo escrito (#428), librerías al día y revisión automática del código (#436), y las decisiones de Melqui sobre exportaciones (#437) y sobre planta y configuración (#438). Sin migraciones ni cambios de permisos.
+
+### Agregado
+
+- CI: «Auditoría de dependencias» revisa las librerías de PHP y del navegador contra los avisos de seguridad publicados. Es informativa: muestra los avisos pero no frena (#436).
+- CI: «Análisis estático (Larastan)» revisa `app/` y `routes/` sin correr el sistema y marca la línea de cada error nuevo. Los errores que ya existían quedan en la línea base, y es check obligatorio de master (#436).
+- Productos: si el Excel del catálogo de exportación trae una presentación nueva de un producto que ya existe, se la agrega. Si ese producto estaba sin agrupar, le crea su producto base y deja las dos presentaciones bajo él (#437).
+- Configuración: un aviso ámbar para lo que no falló pero todavía no se hizo, como «Ya hay un respaldo en curso», en Sistema y en «Preparar emisión real». La guía de pantallas lo incluye (#438).
+- `ajustes:estado` avisa cada clave del archivo del servidor que no se usa porque la aplicación tiene guardado otro servidor, sin mostrar el valor (#438).
+
+### Cambiado
+
+- Listas de empaque: al duplicar, cada línea toma el empaque y los pesos de Productos, y el nombre y la dirección del exportador de Configuración. La línea queda como en la lista vieja, con aviso, si la presentación cambió, si el producto o la presentación están archivados o ya no existen, o si la línea no vino del catálogo (#437).
+- Listas de empaque: «Duplicar» se apaga al apretarlo, así un doble clic no deja dos copias (#437).
+- Exportaciones: las cinco rutas de precios de exportación por cliente que ninguna pantalla usaba responden 409 y dicen dónde se hace eso ahora (#437).
+- Configuración: al cambiar el servidor del correo, de un buzón o la dirección de la tienda web, la clave guardada se borra en la misma operación y el aviso dice dónde cargarla. La confirmación lo avisa antes, y la pantalla de cada clave dice a qué servidor va (#438).
+- Configuración: Integraciones, Sistema, Correo › Documentos fiscales y Contabilidad anotan en la auditoría solo lo que cambió. Si no cambió nada, no queda ninguna línea (#438).
+- Producción › Empaques: desactivar desde «Editar» el empaque predeterminado le quita la marca, como en el listado (#438).
+- Configuración: «Confirmar y guardar» se apaga al enviar (#438).
+- Laravel 12.71 y Symfony 7.4.24, vite 7.3.8 y otras librerías del navegador, sin cambios en el uso del sistema (#436).
+
+### Corregido
+
+- Gastos › Por pagar: «Compré y pagué», «Pagar», «Abonar», «Anotar el monto» y «Registrar pago» vuelven abiertos y con lo escrito cuando algo falla, con el aviso debajo de su campo. Conservan la clave que evita pagos dobles (#428).
+- Gastos › Por pagar: con la sesión vencida, el formulario vuelve con lo escrito y avisa que no se guardó nada. Un segundo clic en «Registrar el pago» avisa que ya estaba saldada en vez de dar una página de error (#428).
+- Gastos › Por pagar: un doble clic en «Guardar el monto» ya no abre «Pagar» o «Abonar» con datos equivocados. En el celular, la etiqueta «Empresa» ya no tapa el nombre del proveedor (#428).
+- Gastos › Por pagar: el lector de pantalla dice qué campo está mal, los botones dicen si su formulario está abierto y los campos miden 44 px (#428).
+- Configuración: la clave del archivo del servidor solo viaja al servidor de ese archivo. La cola de correos ya no pierde esa clave ni sigue usando un servidor que se quitó (#438).
+- Configuración: vaciar un campo que sale del archivo del servidor ya no anota un cambio falso (#438).
+
+### Seguridad
+
+- Se cierran los 11 avisos publicados de Laravel y Symfony, dos de ellos de symfony/mailer por STARTTLS, y los de las librerías del navegador, como vite y follow-redirects (#436).
+
 ## [2026.11.25.2] - 2026-11-25
 
 Barrido de botones sin prueba, tandas 3, 4 y 5: Planilla, Gastos y PPQ (#424), exportaciones (#425), y planta, integraciones y respaldo (#426). Sin migraciones ni cambios de permisos.
