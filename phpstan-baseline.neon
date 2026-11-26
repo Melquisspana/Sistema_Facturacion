@@ -1645,6 +1645,12 @@ parameters:
 			path: app/Http/Controllers/Facturacion/ListaEmpaqueController.php
 
 		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$unidad\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Facturacion/ListaEmpaqueController.php
+
+		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$nombre\.$#'
 			identifier: property.notFound
 			count: 1
@@ -2153,6 +2159,24 @@ parameters:
 			identifier: method.notFound
 			count: 1
 			path: app/Http/Controllers/Planta/AjusteController.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: app/Http/Controllers/Planta/EmpaqueConfigController.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 2
+			path: app/Http/Controllers/Planta/EmpaqueConfigController.php
+
+		-
+			message: '#^Ternary operator condition is always false\.$#'
+			identifier: ternary.alwaysFalse
+			count: 1
+			path: app/Http/Controllers/Planta/EmpaqueConfigController.php
 
 		-
 			message: '#^Parameter \#1 \$movimientos of static method App\\Support\\Planta\\MovimientoQuery\:\:numerosDeDocumento\(\) expects iterable\<App\\Models\\Planta\\PlantaMovimiento\>, Illuminate\\Contracts\\Pagination\\LengthAwarePaginator given\.$#'
@@ -8441,6 +8465,12 @@ parameters:
 			identifier: deadCode.unreachable
 			count: 1
 			path: app/Services/Exportaciones/CrearFexDesdeExportacionService.php
+
+		-
+			message: '#^Parameter \#1 \$base of method App\\Services\\Exportaciones\\CatalogoExportacion\:\:agregarPresentacion\(\) expects App\\Models\\ExportacionProductoBase, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Exportaciones/ImportadorCatalogoExportacion.php
 
 		-
 			message: '#^Cannot call method startOfDay\(\) on string\.$#'

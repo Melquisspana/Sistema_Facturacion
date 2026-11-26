@@ -14,3 +14,7 @@ parameters:
         - routes/
     # Nivel 5 de 10: tipos de argumentos y retornos sin exigir anotaciones en todo.
     level: 5
+    # Una entrada de la línea base que ya no coincide (alguien arregló o borró ese código)
+    # no hace fallar el análisis. Sin esto, unir un PR que borra código viejo pone en rojo
+    # a master y a todas las ramas hasta regenerar la línea base. Lo nuevo se sigue exigiendo.
+    reportUnmatchedIgnoredErrors: false
