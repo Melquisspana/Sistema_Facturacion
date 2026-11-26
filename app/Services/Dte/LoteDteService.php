@@ -61,10 +61,15 @@ class LoteDteService
         return $evento?->estado === 'recibido' ? $this->plazo($evento) : $this->eventos->plazo($dte->contingencia, $evento);
     }
 
-    /** Le quedan menos de {@see HORAS_AVISO_POR_VENCER} horas, o ya venció. */
+    /**
+     * Le quedan menos de {@see HORAS_AVISO_POR_VENCER} horas y todavía no venció. Lo
+     * vencido tiene su propio aviso (simulacro del 26/11, F20).
+     */
     public function porVencer(?Carbon $plazo): bool
     {
-        return $plazo !== null && HoraNegocio::ahora()->gt($plazo->copy()->subHours(self::HORAS_AVISO_POR_VENCER));
+        $ahora = HoraNegocio::ahora();
+
+        return $plazo !== null && $ahora->gt($plazo->copy()->subHours(self::HORAS_AVISO_POR_VENCER)) && ! $ahora->gt($plazo);
     }
 
     /**
