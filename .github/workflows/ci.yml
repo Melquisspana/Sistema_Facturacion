@@ -166,6 +166,11 @@ jobs:
     runs-on: ubuntu-latest
     # Solo lee los archivos lock y consulta las bases de avisos: tarda segundos.
     timeout-minutes: 10
+    # INFORMATIVO: muestra los avisos, pero la CI no falla por ellos. El resultado depende
+    # de avisos que se publican después del commit; si frenara, pondría en rojo de un día
+    # para otro hasta los PR de solo docs. Por eso tampoco es un check requerido de
+    # master. Las alertas de Dependabot y sus PR de seguridad llevan el seguimiento.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
