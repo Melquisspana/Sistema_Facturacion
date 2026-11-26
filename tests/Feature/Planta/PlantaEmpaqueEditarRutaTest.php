@@ -163,14 +163,13 @@ class PlantaEmpaqueEditarRutaTest extends TestCase
     }
 
     /**
-     * Desmarcar «Activa» en una predeterminada sin desmarcar «Predeterminada» dejaba una
-     * configuración inactiva ocupando el lugar de la predeterminada. Ni «Desactivar» ni
-     * «Marcar predeterminada» lo permiten: el formulario tampoco.
+     * Desmarcar «Activa» en la predeterminada hace lo mismo que el botón «Desactivar» del
+     * listado: le quita «Predeterminada» sola, guarda lo demás y el aviso lo dice. Nunca
+     * queda inactiva ocupando el lugar de la predeterminada.
      */
-    public function test_no_queda_inactiva_y_predeterminada_a_la_vez(): void
+    public function test_desactivar_la_predeterminada_al_editar_le_quita_la_marca_y_lo_avisa(): void
     {
         $config = $this->configuracion(['es_predeterminada' => true]);
-        $antes = $this->columnas($config);
 
         $this->actingAs($this->admin())
             ->from(route('planta.empaques.edit', $config))
@@ -178,6 +177,40 @@ class PlantaEmpaqueEditarRutaTest extends TestCase
                 'activo' => '0',
                 'es_predeterminada' => '1',
                 'referencia_cliente' => 'REF-PRUEBA-03',
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('planta.empaques.index'))
+            ->assertSessionHas('status', "Configuración de empaque #{$config->id} actualizada. Se le quitó «Predeterminada» porque quedó inactiva.");
+
+        $config->refresh();
+        $this->assertFalse($config->activo);
+        $this->assertFalse($config->es_predeterminada);
+        $this->assertNull($config->predeterminada_key);
+        $this->assertSame('REF-PRUEBA-03', $config->referencia_cliente);
+
+        // Y otra del mismo mercado puede tomar el relevo.
+        $otra = $this->configuracion(['planta_presentacion_id' => $config->planta_presentacion_id, 'marca' => 'Marca B']);
+        $this->actingAs($this->admin())
+            ->patch(route('planta.empaques.predeterminada', $otra))
+            ->assertSessionHasNoErrors();
+        $this->assertTrue($otra->refresh()->es_predeterminada);
+    }
+
+    /**
+     * La regla sigue: una configuración que NO era la predeterminada no puede quedar
+     * inactiva y predeterminada a la vez desde el formulario. No cambia nada.
+     */
+    public function test_una_que_no_era_predeterminada_no_queda_inactiva_y_predeterminada(): void
+    {
+        $config = $this->configuracion();
+        $antes = $this->columnas($config);
+
+        $this->actingAs($this->admin())
+            ->from(route('planta.empaques.edit', $config))
+            ->put(route('planta.empaques.update', $config), $this->formulario($config, [
+                'activo' => '0',
+                'es_predeterminada' => '1',
+                'referencia_cliente' => 'REF-PRUEBA-06',
             ]))
             ->assertRedirect(route('planta.empaques.edit', $config))
             ->assertSessionHasErrors('es_predeterminada');

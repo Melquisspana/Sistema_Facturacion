@@ -83,11 +83,17 @@ class EmpaqueConfigController extends Controller
     {
         $this->autorizarGestion($request);
 
+        $eraPredeterminada = $empaque->es_predeterminada;
+
         $this->servicio->actualizar($empaque, $request->validated());
+
+        // El servicio le quita «Predeterminada» a la que quedó inactiva: se avisa.
+        $perdioLaMarca = $eraPredeterminada && ! $empaque->es_predeterminada && ! $empaque->activo;
 
         return redirect()
             ->route('planta.empaques.index')
-            ->with('status', "Configuración de empaque #{$empaque->id} actualizada.");
+            ->with('status', "Configuración de empaque #{$empaque->id} actualizada."
+                .($perdioLaMarca ? ' Se le quitó «Predeterminada» porque quedó inactiva.' : ''));
     }
 
     /**

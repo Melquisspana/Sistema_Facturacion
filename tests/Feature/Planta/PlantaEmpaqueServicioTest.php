@@ -308,6 +308,20 @@ class PlantaEmpaqueServicioTest extends TestCase
         $this->assertTrue($otra->fresh()->es_predeterminada);
     }
 
+    /** Desactivarla desde «Editar» hace lo mismo que alternarActivo(): pierde la marca. */
+    public function test_desactivar_al_actualizar_una_predeterminada_le_retira_esa_condicion(): void
+    {
+        $config = $this->servicio->crear($this->datos(['marca' => 'A', 'es_predeterminada' => true]));
+
+        $this->servicio->actualizar($config, $this->datos(['marca' => 'A', 'es_predeterminada' => true, 'activo' => false]));
+
+        $fila = $config->fresh();
+        $this->assertEquals(
+            ['activo' => false, 'es_predeterminada' => false, 'predeterminada_key' => null],
+            ['activo' => $fila->activo, 'es_predeterminada' => $fila->es_predeterminada, 'predeterminada_key' => $fila->predeterminada_key],
+        );
+    }
+
     public function test_una_configuracion_inactiva_no_puede_ser_predeterminada(): void
     {
         $config = $this->servicio->crear($this->datos());
