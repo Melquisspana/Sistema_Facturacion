@@ -23,11 +23,17 @@
         'completar' => ['importe', 'vence'],
         default => [],
     };
-    $volvio = $errors->any() && old('panel') === $panel;
+    // Lo escrito (old) solo vuelve cuando el envío se rechazó: por un error de validación o
+    // porque la sesión había vencido (419), que trae el aviso en session('error') y ningún
+    // $errors. Por eso alcanza con que haya vuelto el panel, como en «Saltar».
+    $volvio = old('panel') === $panel;
     $escrito = fn (string $campo, string $siNo = '') => $volvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
     $foco = $volvio ? (collect($visibles)->first(fn ($c) => $errors->has($c)) ?? ($visibles[0] ?? null)) : null;
-    // Lo que no es de un campo a la vista (clave, pago, beneficiario…) se lee igual acá adentro.
-    $otrosErrores = $volvio ? collect($errors->getMessages())->except($visibles)->flatten() : collect();
+    // Lo que no es de un campo a la vista (clave, pago, beneficiario, la sesión vencida…) se
+    // lee igual acá adentro.
+    $otrosErrores = $volvio
+        ? collect($errors->getMessages())->except($visibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
+        : collect();
     // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
     // (doble clic), reenviarlo no registra otro pago; si no, la clave sigue libre.
     $clave = $volvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : (string) \Illuminate\Support\Str::uuid();

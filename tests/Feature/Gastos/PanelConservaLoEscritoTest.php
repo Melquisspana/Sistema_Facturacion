@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Gastos\Recurrencia\AdministrarReglas;
 use App\Services\Gastos\Recurrencia\GenerarObligaciones;
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
@@ -334,6 +335,59 @@ class PanelConservaLoEscritoTest extends TestCase
 
         $this->assertSame('50.00', $operativo->fresh()->importe);
         $this->assertSame(1, $compra->fresh()->cuotas()->count(), 'Se anotó una sola vez.');
+    }
+
+    /**
+     * La sesión vence con el panel abierto (media hora sin tocar nada): el envío llega con
+     * un token que ya no vale y no se guarda nada. Vuelve abierto y con lo escrito, y dice
+     * que no se guardó, arriba y dentro del formulario. Antes volvía cerrado, vacío y sin
+     * ningún aviso: parecía guardado.
+     */
+    public function test_con_la_sesion_vencida_vuelve_abierto_con_lo_escrito_y_avisa_que_no_se_guardo(): void
+    {
+        $u = $this->operador();
+        $a = $this->deuda($u, 'Proveedor de prueba A', '48.00', 'operativo');
+        // En las pruebas Laravel no revisa el token: acá sí, como en el servidor.
+        config(['app.url' => 'http://localhost']);
+        $this->app->bind(ValidateCsrfToken::class, fn ($app) => new class($app, $app['encrypter']) extends ValidateCsrfToken
+        {
+            protected function runningUnitTests()
+            {
+                return false;
+            }
+        });
+        $enLocal = fn (string $url) => 'http://localhost'.parse_url($url, PHP_URL_PATH);
+        $pagar = 'fila-pagar-'.$a->id;
+        $envios = [
+            'compra' => [route('gastos.panel.compras'), 'c-concepto', [
+                'moneda' => 'USD', 'concepto' => 'Bolsas de prueba', 'importe' => '12.50',
+                'beneficiario' => 'Tienda de prueba', 'fecha' => '2026-09-24', 'metodo' => 'tarjeta', 'ambito' => 'personal',
+            ], ['value="Bolsas de prueba"', 'value="12.50"', 'value="2026-09-24"', '<option value="tarjeta" selected>', '<option value="personal" selected>']],
+            $pagar => [route('gastos.panel.pagar', $a), 'p-fecha-'.$a->id, [
+                'fecha' => '2026-09-23', 'metodo' => 'efectivo', 'referencia' => 'Ref de prueba 79',
+            ], ['value="2026-09-23"', '<option value="efectivo" selected>', 'value="Ref de prueba 79"']],
+        ];
+
+        foreach ($envios as $panel => [$url, $foco, $datos, $escritos]) {
+            $clave = (string) Str::uuid();
+            $this->flushHeaders()->actingAs($u)
+                ->withHeaders(['Referer' => $enLocal(route('gastos.panel')), 'Origin' => 'http://localhost'])
+                ->post($enLocal($url), $datos + ['_token' => 'token-de-una-sesion-vencida', 'clave' => $clave, 'panel' => $panel])
+                ->assertRedirect($enLocal(route('gastos.panel')))
+                ->assertSessionHas('error');
+            $html = $this->flushHeaders()->actingAs($u)->get(route('gastos.panel'))->assertOk()->getContent();
+
+            $form = $this->formularioDe($html, $panel);
+            $this->assertReabierto($html, $panel, $foco);
+            $this->assertMatchesRegularExpression('/role="alert"[^>]*>\s*Tu sesión había vencido/', $html, 'El aviso se lee arriba.');
+            $this->assertStringContainsString('Tu sesión había vencido', $form, 'Y dentro del formulario que volvió.');
+            foreach (array_merge($escritos, ['value="'.$clave.'"']) as $escrito) {
+                $this->assertUnaVezEn($html, $form, $escrito);
+            }
+        }
+
+        $this->assertSame(1, Gasto::count(), 'No se guardó la compra.');
+        $this->assertSame(0, Pago::count(), 'Ni el pago.');
     }
 
     public function test_registrar_pago_de_una_fila_programada_vuelve_abierto_con_lo_escrito(): void

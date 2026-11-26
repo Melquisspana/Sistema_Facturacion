@@ -23,11 +23,16 @@
     // su campo y el foco en el primero que falló, como «Saltar». Las filas de abajo usan
     // los mismos nombres de campo y no reciben nada de esto.
     $compraVisibles = ['concepto', 'importe', 'beneficiario', 'fecha', 'metodo', 'ambito'];
-    $compraVolvio = $errors->any() && old('panel') === 'compra';
+    // Lo escrito (old) solo vuelve cuando el envío se rechazó: por validación o por la
+    // sesión vencida (419, con el aviso en session('error') y sin $errors).
+    $compraVolvio = old('panel') === 'compra';
     $compraEscrito = fn (string $campo, string $siNo = '') => $compraVolvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
     $compraFoco = $compraVolvio ? (collect($compraVisibles)->first(fn ($c) => $errors->has($c)) ?? $compraVisibles[0]) : null;
-    // Lo que no es de un campo a la vista (clave, moneda, pago…) se lee igual adentro.
-    $compraOtrosErrores = $compraVolvio ? collect($errors->getMessages())->except($compraVisibles)->flatten() : collect();
+    // Lo que no es de un campo a la vista (clave, moneda, pago, la sesión vencida…) se lee
+    // igual adentro.
+    $compraOtrosErrores = $compraVolvio
+        ? collect($errors->getMessages())->except($compraVisibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
+        : collect();
     // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
     // (doble clic), reenviarlo no registra otra compra; si no, la clave sigue libre.
     $compraClave = $compraVolvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : $clave;
@@ -83,7 +88,7 @@
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6"
-         x-data="{ abierto: @js($errors->any() && is_string(old('panel')) ? old('panel') : null), abrir(id) { this.abierto = this.abierto === id ? null : id } }">
+         x-data="{ abierto: @js(is_string(old('panel')) ? old('panel') : null), abrir(id) { this.abierto = this.abierto === id ? null : id } }">
         <div class="mx-auto max-w-4xl space-y-4">
 
             {{-- El aviso puede traer un enlace al registro que se acaba de crear. Volver
@@ -98,6 +103,12 @@
                         </a>
                     @endif
                 </div>
+            @endif
+
+            {{-- La sesión había vencido (419): vuelve con lo escrito y este aviso, sin $errors.
+                 El layout no lo dibuja; sin esto parecía guardado. --}}
+            @if (session('error'))
+                <div class="rounded-md border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-800" role="alert">{{ session('error') }}</div>
             @endif
 
             @if ($errors->any())

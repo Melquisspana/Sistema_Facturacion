@@ -20,11 +20,16 @@
     // «Registrar pago» que volvió con error: se reabre como «Saltar», con lo escrito, el
     // aviso debajo de su campo y el foco en el primero que falló. Solo esta fila.
     $visibles = $variable ? ['importe', 'fecha', 'metodo', 'referencia'] : ['fecha', 'metodo', 'referencia'];
-    $volvio = $errors->any() && old('panel') === $panel;
+    // Lo escrito (old) solo vuelve cuando el envío se rechazó: por validación o por la
+    // sesión vencida (419, con el aviso en session('error') y sin $errors).
+    $volvio = old('panel') === $panel;
     $escrito = fn (string $campo, string $siNo = '') => $volvio ? (is_string(old($campo)) ? old($campo) : '') : $siNo;
     $foco = $volvio ? (collect($visibles)->first(fn ($c) => $errors->has($c)) ?? $visibles[0]) : null;
-    // Lo que no es de un campo a la vista (período, clave, pago…) se lee igual acá adentro.
-    $otrosErrores = $volvio ? collect($errors->getMessages())->except($visibles)->flatten() : collect();
+    // Lo que no es de un campo a la vista (período, clave, pago, la sesión vencida…) se lee
+    // igual acá adentro.
+    $otrosErrores = $volvio
+        ? collect($errors->getMessages())->except($visibles)->flatten()->when(session('error'), fn ($c, $aviso) => $c->push($aviso))
+        : collect();
     // Al volver con error se conserva la MISMA clave: si ese envío sí llegó a guardarse
     // (doble clic), reenviarlo no registra otro pago; si no, la clave sigue libre.
     $clave = $volvio && \Illuminate\Support\Str::isUuid(old('clave')) ? old('clave') : (string) \Illuminate\Support\Str::uuid();
