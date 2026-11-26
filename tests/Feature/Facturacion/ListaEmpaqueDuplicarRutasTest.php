@@ -477,6 +477,25 @@ class ListaEmpaqueDuplicarRutasTest extends TestCase
     }
 
     /**
+     * Duplicar crea una lista nueva por cada envío: el botón se apaga al apretarlo, igual
+     * que «Generar respaldo ahora», para que un doble clic no deje dos copias.
+     */
+    public function test_el_boton_duplicar_se_apaga_al_apretarlo(): void
+    {
+        $original = $this->lista();
+
+        $html = $this->actingAs($this->usuario())->get(route('facturacion.listas.show', $original))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '~<form method="POST" action="'.preg_quote(route('facturacion.listas.duplicar', $original), '~').'"\s+'
+            .'x-data="\{ enviando: false \}" @submit="enviando = true">\s*'
+            .'<input type="hidden" name="_token"[^>]*>\s*'
+            .'<button type="submit" :disabled="enviando" class="[^"]*\bdisabled:opacity-50\b[^"]*"[^>]*>\s*Duplicar\s*</button>~',
+            $html,
+        );
+    }
+
+    /**
      * Una lista heredada que todavía espera que un administrador la clasifique está
      * congelada y la ficha no ofrece «Duplicar». Por la ruta tampoco se copia.
      */

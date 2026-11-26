@@ -44,10 +44,14 @@
                            class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
                     @endif
                     @unless ($lista->requiereRevision())
-                        <form method="POST" action="{{ route('facturacion.listas.duplicar', $lista) }}">
+                        {{-- Cada envío crea una lista nueva: el botón se apaga al enviar, como «Generar respaldo ahora», para que un doble clic no deje dos copias. --}}
+                        <form method="POST" action="{{ route('facturacion.listas.duplicar', $lista) }}"
+                              x-data="{ enviando: false }" @submit="enviando = true">
                             @csrf
-                            <button class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200"
-                                    title="Crea una copia con los mismos productos y la fecha de hoy, en borrador y sin facturas">Duplicar</button>
+                            <button type="submit" :disabled="enviando" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                                    title="Crea una copia con los mismos productos y la fecha de hoy, en borrador y sin facturas">
+                                Duplicar
+                            </button>
                         </form>
                     @endunless
                     @if ($lista->puedeFinalizarse())
