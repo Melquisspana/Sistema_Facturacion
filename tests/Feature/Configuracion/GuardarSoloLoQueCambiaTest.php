@@ -6,6 +6,7 @@ use App\Ajustes\Definicion\FuenteAjuste;
 use App\Facades\Ajustes;
 use App\Models\AjusteSistema;
 use App\Models\User;
+use App\Support\Dte\PlantillaCorreo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Activitylog\Models\Activity;
@@ -198,6 +199,119 @@ class GuardarSoloLoQueCambiaTest extends TestCase
             ->assertSessionHas('status', $sinCambios);
 
         $this->assertCount($lineasAntes, $this->lineasDeCambio());
+    }
+
+    /**
+     * Vaciar un campo que sale del .env, sin nada guardado, no cambia nada: el campo
+     * vacío vuelve al .env, que es lo que ya mandaba. Antes se pedía confirmar
+     * «avisos@ejemplo.com → sin definir» y quedaba «avisos@ejemplo.com → avisos@ejemplo.com».
+     */
+    public function test_vaciar_un_campo_que_sale_del_env_no_cambia_nada(): void
+    {
+        config(['backup_diario.dias_retencion' => 30, 'backup.notifications.mail.to' => 'avisos@ejemplo.com']);
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+
+        foreach ([[], ['confirmacion' => '1']] as $confirmacion) {
+            $this->actingAs($admin)
+                ->put(route('configuracion.sistema.update'), ['retencion' => '30', 'avisos' => ''] + $confirmacion)
+                ->assertRedirect(route('configuracion.sistema'))
+                ->assertSessionHas('status', 'No había nada que cambiar en la política de respaldos.');
+        }
+
+        $this->assertCount(0, $this->lineasDeCambio());
+        $this->assertDatabaseCount('ajustes_sistema', 0);
+        $this->assertSame('avisos@ejemplo.com', Ajustes::texto('respaldos.notificaciones.correo'));
+    }
+
+    /**
+     * Vaciar un valor guardado sí cambia: vuelve al del .env. La confirmación y la
+     * auditoría dicen a cuál, no «sin definir».
+     */
+    public function test_vaciar_un_valor_guardado_muestra_y_anota_el_del_env(): void
+    {
+        config(['backup_diario.dias_retencion' => 30, 'backup.notifications.mail.to' => 'avisos@ejemplo.com']);
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $this->actingAs($admin);
+        Ajustes::guardar('respaldos.notificaciones.correo', 'otro@ejemplo.com');
+        $lineasAntes = $this->lineasDeCambio()->count();
+
+        $this->put(route('configuracion.sistema.update'), ['retencion' => '30', 'avisos' => ''])
+            ->assertOk()
+            ->assertSee('otro@ejemplo.com')
+            ->assertSee('avisos@ejemplo.com')
+            ->assertDontSee('sin definir');
+
+        $this->put(route('configuracion.sistema.update'), ['retencion' => '30', 'avisos' => '', 'confirmacion' => '1'])
+            ->assertSessionHas('status', 'Política de respaldos guardada.');
+
+        $linea = $this->lineasDeCambio()->slice($lineasAntes)->sole();
+        $this->assertSame('otro@ejemplo.com', $linea->properties['valor_antes']);
+        $this->assertSame('avisos@ejemplo.com', $linea->properties['valor_despues']);
+        $this->assertSame('avisos@ejemplo.com', Ajustes::texto('respaldos.notificaciones.correo'));
+    }
+
+    /**
+     * Configuración › Correo › Documentos fiscales y Configuración › Contabilidad no piden
+     * confirmación, pero también guardan solo lo que cambió: guardar sin tocar nada no
+     * deja «No → No» en la auditoría y el aviso lo dice.
+     *
+     * @return array<string, array{0: string, 1: array<string, string>, 2: array<string, string>, 3: string, 4: string, 5: string}>
+     */
+    public static function pantallasSinConfirmacion(): array
+    {
+        return [
+            'documentos fiscales' => [
+                'configuracion.correo.update',
+                ['plantilla' => PlantillaCorreo::DEFAULT],
+                ['auto_envio' => '1'],
+                'correo.auto_envio',
+                'Configuración de documentos fiscales guardada.',
+                'No había nada que cambiar en los documentos fiscales.',
+            ],
+            'contabilidad' => [
+                'configuracion.contabilidad.update',
+                ['correo_contabilidad' => ''],
+                ['correo_contabilidad' => 'contabilidad@ejemplo.com'],
+                'contabilidad.correo',
+                'Configuración de contabilidad guardada. No se envió ningún correo.',
+                'No había nada que cambiar en contabilidad.',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $formulario
+     * @param  array<string, string>  $cambio
+     */
+    #[DataProvider('pantallasSinConfirmacion')]
+    public function test_sin_confirmacion_tambien_se_guarda_solo_lo_que_cambio(
+        string $ruta, array $formulario, array $cambio, string $clave, string $exito, string $sinCambios,
+    ): void {
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+
+        $this->actingAs($admin)->put(route($ruta), $formulario)
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', $sinCambios);
+        $this->assertCount(0, $this->lineasDeCambio());
+        $this->assertDatabaseCount('ajustes_sistema', 0);
+
+        $this->actingAs($admin)->put(route($ruta), array_replace($formulario, $cambio))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status', $exito);
+        $this->assertSame($clave, $this->lineasDeCambio()->sole()->properties['clave']);
+        $this->assertSame([$clave], AjusteSistema::query()->pluck('clave')->all());
+    }
+
+    /** Un correo que el catálogo no admite sigue volviendo a su campo, no se pierde en silencio. */
+    public function test_contabilidad_rechaza_un_correo_que_el_catalogo_no_admite(): void
+    {
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+
+        $this->actingAs($admin)
+            ->put(route('configuracion.contabilidad.update'), ['correo_contabilidad' => 'contabilidad@intranet'])
+            ->assertSessionHasErrors('correo_contabilidad');
+
+        $this->assertDatabaseCount('ajustes_sistema', 0);
     }
 
     /**

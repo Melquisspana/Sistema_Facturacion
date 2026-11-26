@@ -74,8 +74,17 @@ class ConfirmacionN2
             $actual = $this->ajustes->resolverParaPantalla($clave)->valor;
             $textoActual = $this->conversor->aTexto($definicion, $actual);
 
+            // Vaciar un campo no lo deja «sin definir»: vuelve a lo que diga el servidor
+            // (.env) o el valor por defecto. Se compara contra eso: si ya mandaba el .env,
+            // no hay nada que cambiar; si no, la confirmación anuncia el valor que queda.
+            $nuevo = null;
+            if ($textoNuevo === null) {
+                $nuevo = $this->ajustes->valorDelServidor($clave)->valor;
+                $textoNuevo = $this->conversor->aTexto($definicion, $nuevo);
+            }
+
             if ($textoNuevo !== $textoActual) {
-                $nuevo = $this->conversor->aValor($definicion, $textoNuevo);
+                $nuevo ??= $this->conversor->aValor($definicion, $textoNuevo);
 
                 // Un cliente se confirma por su NOMBRE: «7 → 12» no dice a qué empresa
                 // van a ir los lotes.
