@@ -6,6 +6,7 @@ use App\Ajustes\Ajustes as ServicioAjustes;
 use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\Ceremonias\CambioPropuesto;
 use App\Ajustes\Definicion\FuenteAjuste;
+use App\Http\Controllers\Configuracion\Concerns\AvisaSecretoSoltado;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,8 @@ use Illuminate\View\View;
  */
 class ValorServidorController extends Controller
 {
+    use AvisaSecretoSoltado;
+
     public function destroy(Request $request, string $clave, ServicioAjustes $ajustes, CatalogoAjustes $catalogo): View|RedirectResponse
     {
         abort_unless($catalogo->existe($clave), 404);
@@ -45,7 +48,9 @@ class ValorServidorController extends Controller
         if ($definicion->nivel->requiereConfirmacion() && ! $request->boolean('confirmacion')) {
             return view('configuracion.confirmar', [
                 'titulo' => 'Vas a volver al valor del servidor',
-                'consecuencia' => 'Se borra lo guardado en la aplicación y vuelve a mandar el archivo de configuración del servidor (.env) o, si no dice nada, el valor por defecto. Para cambiarlo otra vez, guardalo de nuevo en esta pantalla.',
+                'consecuencia' => 'Se borra lo guardado en la aplicación y vuelve a mandar el archivo de configuración del servidor (.env) o, si no dice nada, el valor por defecto. Para cambiarlo otra vez, guardalo de nuevo en esta pantalla.'
+                    // Si es la dirección de una integración, su clave también: se dice antes.
+                    .$this->avisoAntesDeConfirmar([$clave => null]),
                 'cambios' => [CambioPropuesto::deValor(
                     $definicion,
                     $ajustes->resolverParaPantalla($clave)->valor,
@@ -61,11 +66,14 @@ class ValorServidorController extends Controller
             ]);
         }
 
+        // Si es la dirección de una integración, su clave guardada se borra con ella.
+        $secretos = $this->secretosEnUso([$clave]);
+
         // false: otro pedido lo quitó primero (doble clic, dos pestañas).
         $quitado = $ajustes->quitarOverride($clave);
 
         return redirect()->to($volver)->with('status', $quitado
-            ? "«{$definicion->etiqueta}» vuelve a usar el valor del servidor."
+            ? "«{$definicion->etiqueta}» vuelve a usar el valor del servidor.".$this->avisoSecretosSoltados($secretos)
             : "«{$definicion->etiqueta}» ya usa el valor del servidor.");
     }
 

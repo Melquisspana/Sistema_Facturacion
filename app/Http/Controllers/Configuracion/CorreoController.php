@@ -14,6 +14,7 @@ use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dte\PlantillaCorreo;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -76,21 +77,36 @@ class CorreoController extends Controller
     }
 
     /**
-     * Documentos fiscales. Sigue escribiendo en la tabla `configuraciones` de
-     * siempre (persistencia Legacy declarada en el registry): esta fase unifica la
-     * pantalla, no mueve los datos.
+     * Documentos fiscales. Son N1: se guardan sin confirmación, pero SOLO lo que
+     * cambia, igual que Configuración › Opciones ({@see ConfirmacionN2::soloLoQueCambia()}):
+     * guardar sin tocar nada no deja «No → No» en la auditoría.
      */
-    public function update(Request $request): RedirectResponse
+    public function update(Request $request, ConfirmacionN2 $confirmacion): RedirectResponse
     {
         $datos = $request->validate([
             'plantilla' => ['nullable', 'string', 'max:5000'],
         ]);
 
-        Ajustes::guardarVarios([
+        $propuestos = [
             'correo.auto_envio' => $request->boolean('auto_envio'),
             'correo.adjuntar_jws' => $request->boolean('adjuntar_jws'),
             'correo.plantilla' => trim((string) ($datos['plantilla'] ?? '')),
-        ]);
+        ];
+
+        // calcular() omite en silencio lo que el catálogo no admite: se frena antes.
+        if ($invalidos = $confirmacion->invalidos($propuestos)) {
+            throw ValidationException::withMessages(['plantilla' => reset($invalidos)]);
+        }
+
+        $cambios = $confirmacion->calcular($propuestos);
+
+        if ($cambios === []) {
+            return redirect()
+                ->route('configuracion.correo.edit')
+                ->with('status', 'No había nada que cambiar en los documentos fiscales.');
+        }
+
+        Ajustes::guardarVarios($confirmacion->soloLoQueCambia($cambios, $propuestos));
 
         return redirect()
             ->route('configuracion.correo.edit')

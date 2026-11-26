@@ -87,6 +87,8 @@ class PasswordSmtpTest extends TestCase
             ->put(route('configuracion.correo.smtp.password.update'), [
                 'password' => self::SECRETO,
                 'confirmacion' => '1',
+                // El servidor que muestra la pantalla de la clave (el del .env).
+                'servidor_visto' => config('mail.mailers.smtp.host'),
             ])
             ->assertRedirect(route('configuracion.correo.edit'))
             ->assertSessionHas('status');
@@ -235,6 +237,7 @@ class PasswordSmtpTest extends TestCase
         $this->actingAs($admin)->put(route('configuracion.correo.smtp.password.update'), [
             'password' => self::SECRETO,
             'confirmacion' => '1',
+            'servidor_visto' => config('mail.mailers.smtp.host'),
         ])->assertRedirect();
 
         $this->actingAs($admin)->delete(route('configuracion.correo.smtp.password.destroy'), [
@@ -258,6 +261,7 @@ class PasswordSmtpTest extends TestCase
         $this->actingAs($this->admin())->put(route('configuracion.correo.smtp.password.update'), [
             'password' => self::SECRETO,
             'confirmacion' => '1',
+            'servidor_visto' => config('mail.mailers.smtp.host'),
         ])->assertRedirect();
 
         $actividad = Activity::query()->where('log_name', 'ajustes')->latest('id')->firstOrFail();

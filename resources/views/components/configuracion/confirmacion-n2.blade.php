@@ -67,7 +67,10 @@
             Cancelar
         </a>
 
-        <form method="POST" action="{{ $accion }}">
+        {{-- El botón se apaga al enviar: un segundo clic mandaría otro pedido que ya no
+             encuentra cambios y pisaría el aviso del primero (por ejemplo, que una clave
+             dejó de usarse) con «No había nada que cambiar». --}}
+        <form method="POST" action="{{ $accion }}" x-data="{ enviando: false }" @submit="enviando = true">
             @csrf
             @method($metodo)
 
@@ -88,7 +91,7 @@
                  Sin ella el controlador vuelve a mostrar esta misma pantalla. --}}
             <input type="hidden" name="confirmacion" value="1">
 
-            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            <button type="submit" :disabled="enviando" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
                 {{ $etiquetaConfirmar }}
             </button>
         </form>

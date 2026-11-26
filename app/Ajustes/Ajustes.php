@@ -40,7 +40,8 @@ use Illuminate\Support\Facades\DB;
  *
  *   1. override en la ubicación que la definición declare (tabla nueva o tabla
  *      `configuraciones`); si declara Persistencia::Ninguna, este paso no existe;
- *   2. `config($definicion->claveConfig)`, solo si la definición lo declara;
+ *   2. `config($definicion->claveConfig)`, solo si la definición lo declara (un
+ *      secreto atado a un servidor, además, solo si la dirección es la del .env);
  *   3. el valor por defecto de la definición;
  *   4. null.
  *
@@ -204,7 +205,16 @@ class Ajustes
             );
         }
 
-        return $this->resolverSinOverride($definicion);
+        $resuelto = $this->resolverSinOverride($definicion);
+
+        // Un secreto del .env solo viaja a la dirección del .env: si la dirección se
+        // cambió en la aplicación, no sale hacia la nueva hasta que alguien lo cargue
+        // acá (el guardado, en cambio, se borra al cambiar la dirección: ver escribir()).
+        if ($resuelto->fuente === FuenteAjuste::Configuracion && ! $this->viajaASuServidor($definicion)) {
+            return new ValorAjuste($definicion, null, FuenteAjuste::NoConfigurado);
+        }
+
+        return $resuelto;
     }
 
     /**
@@ -263,6 +273,72 @@ class Ajustes
     public function fuente(string $clave): FuenteAjuste
     {
         return $this->resolver($clave)->fuente;
+    }
+
+    /**
+     * Dirección adonde viaja hoy un secreto atado a un servidor (la URL de la tienda,
+     * el servidor de correo o el de un buzón): '' si no hay ninguna, null si el secreto
+     * no está atado a ninguna (Gmail).
+     */
+    public function direccionDelSecreto(string $claveSecreto): ?string
+    {
+        $servidor = $this->catalogo->definicion($claveSecreto)->servidor;
+
+        return $servidor === null ? null : (string) $this->resolverParaPantalla($servidor)->valor;
+    }
+
+    /**
+     * Secretos que hoy se usan y dejarían de servir si estas direcciones pasaran a valer
+     * lo propuesto: el guardado se borra (ver escribir()) y el del .env solo viaja a la
+     * dirección del .env. Para avisarlo ANTES de confirmar; no escribe nada.
+     *
+     * @param  array<string, mixed>  $valores  clave de la dirección ⇒ valor propuesto (vacío: vuelve al .env)
+     * @return array<string, DefinicionAjuste> clave de la dirección ⇒ su secreto
+     */
+    public function secretosQueSeSueltan(array $valores): array
+    {
+        $sueltan = [];
+
+        foreach ($valores as $clave => $propuesta) {
+            $secreto = $this->catalogo->secretoDeServidor($clave);
+
+            if ($secreto === null || ! $this->estaConfigurado($secreto->clave)) {
+                continue;
+            }
+
+            $nueva = blank($propuesta) ? $this->valorDelServidor($clave)->valor : $propuesta;
+
+            if ($this->mismaDireccion($this->resolverParaPantalla($clave)->valor, $nueva)) {
+                continue;
+            }
+
+            // Después del cambio solo serviría la del .env, y solo hacia la dirección del .env.
+            $servidor = $this->catalogo->definicion($clave);
+            $sigueLaDelEnv = $secreto->claveConfig !== null
+                && filled(config($secreto->claveConfig))
+                && $this->mismaDireccion($nueva, $servidor->claveConfig === null ? null : config($servidor->claveConfig));
+
+            if (! $sigueLaDelEnv) {
+                $sueltan[$clave] = $secreto;
+            }
+        }
+
+        return $sueltan;
+    }
+
+    /**
+     * ¿El secreto del archivo del servidor (.env) existe pero no se usa porque la
+     * dirección guardada en la aplicación es otra? Para avisarlo; nunca da el valor.
+     */
+    public function secretoDelEnvRetenido(string $clave): bool
+    {
+        $definicion = $this->catalogo->definicion($clave);
+        [$guardado] = $this->overrideAlmacenado($definicion);
+
+        return $guardado === null
+            && $definicion->claveConfig !== null
+            && filled(config($definicion->claveConfig))
+            && ! $this->viajaASuServidor($definicion);
     }
 
     public function estaConfigurado(string $clave): bool
@@ -375,22 +451,29 @@ class Ajustes
 
         $antes = $this->resolverParaPantalla($clave);
 
-        $quitado = match ($definicion->persistencia) {
-            Persistencia::Nueva => $this->repositorio->eliminar($clave) > 0,
-            Persistencia::Legacy => $this->legacy->eliminar((string) $definicion->claveLegacy),
-            Persistencia::Ninguna => false,
-        };
+        // En una transacción: si se quita una dirección, su secreto guardado se borra
+        // con ella o no se quita ninguno de los dos.
+        return DB::transaction(function () use ($definicion, $clave, $antes) {
+            $quitado = match ($definicion->persistencia) {
+                Persistencia::Nueva => $this->repositorio->eliminar($clave) > 0,
+                Persistencia::Legacy => $this->legacy->eliminar((string) $definicion->claveLegacy),
+                Persistencia::Ninguna => false,
+            };
 
-        if (! $quitado) {
-            return false;
-        }
+            if (! $quitado) {
+                return false;
+            }
 
-        $despues = $this->resolverParaPantalla($clave);
+            $despues = $this->resolverParaPantalla($clave);
 
-        // La auditoría decide si los valores se registran (nunca los de un secreto).
-        $this->auditoria->overrideQuitado($definicion, $antes->fuente, $despues->fuente, $antes->valor, $despues->valor);
+            // La auditoría decide si los valores se registran (nunca los de un secreto).
+            $this->auditoria->overrideQuitado($definicion, $antes->fuente, $despues->fuente, $antes->valor, $despues->valor);
 
-        return true;
+            // Volver a la dirección del .env también es cambiar de dirección.
+            $this->soltarSecretoSiCambioLaDireccion($definicion, $antes->valor, $despues->valor);
+
+            return true;
+        });
     }
 
     /**
@@ -476,6 +559,55 @@ class Ajustes
             $resueltoAntes->fuente,
             $resueltoDespues->fuente,
         );
+
+        $this->soltarSecretoSiCambioLaDireccion($definicion, $resueltoAntes->valor, $resueltoDespues->valor);
+    }
+
+    /**
+     * Un secreto guardado se cargó para la dirección que había. Si la dirección cambia
+     * (la URL de la tienda, el servidor de correo o el de un buzón), se borra —queda en
+     * la auditoría, sin el valor— y no sale hacia la nueva hasta que alguien lo cargue
+     * otra vez. Va en la misma transacción que el cambio de dirección.
+     */
+    private function soltarSecretoSiCambioLaDireccion(DefinicionAjuste $servidor, mixed $antes, mixed $despues): void
+    {
+        $secreto = $this->catalogo->secretoDeServidor($servidor->clave);
+
+        if ($secreto === null || $this->mismaDireccion($antes, $despues)) {
+            return;
+        }
+
+        if ($this->repositorio->eliminar($secreto->clave) > 0) {
+            $this->auditoria->overrideQuitado($secreto, FuenteAjuste::BaseDeDatos, $this->resolverParaPantalla($secreto->clave)->fuente);
+        }
+    }
+
+    /**
+     * ¿El secreto (sin valor guardado) puede viajar a la dirección actual? Solo si la
+     * dirección también sale del .env, o si la guardada es la misma que la del .env.
+     */
+    private function viajaASuServidor(DefinicionAjuste $secreto): bool
+    {
+        if ($secreto->servidor === null) {
+            return true;
+        }
+
+        $servidor = $this->catalogo->definicion($secreto->servidor);
+        [$guardada] = $this->overrideAlmacenado($servidor);
+
+        if ($guardada === null) {
+            return true;
+        }
+
+        return $this->mismaDireccion($guardada, $servidor->claveConfig === null ? null : config($servidor->claveConfig));
+    }
+
+    /** Un servidor no distingue mayúsculas; los espacios y la barra final tampoco cuentan. */
+    public function mismaDireccion(mixed $una, mixed $otra): bool
+    {
+        $normal = static fn (mixed $valor): string => rtrim(mb_strtolower(trim((string) $valor)), '/');
+
+        return $normal($una) === $normal($otra);
     }
 
     /** Actor autenticado capaz de responder `can()`, o null. */

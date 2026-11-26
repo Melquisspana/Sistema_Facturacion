@@ -400,7 +400,7 @@ class ImportarPedidosWebTest extends TestCase
             ->assertOk()->assertSee('Configuración completa')->assertSee('https://tienda.example.test')->assertDontSee(self::SECRETO);
         $this->get(route('configuracion.integraciones.tienda.secreto.edit'))->assertOk()->assertDontSee(self::SECRETO);
         $this->put(route('configuracion.integraciones.tienda.update'), ['url' => 'http://inseguro.example.test'])->assertSessionHasErrors('url');
-        $this->put(route('configuracion.integraciones.tienda.secreto.update'), ['password' => 'nuevo-secreto-inventado-123456789012', 'confirmacion' => '1'])->assertRedirect();
+        $this->put(route('configuracion.integraciones.tienda.secreto.update'), ['password' => 'nuevo-secreto-inventado-123456789012', 'confirmacion' => '1', 'servidor_visto' => 'https://tienda.example.test'])->assertRedirect();
         $this->assertSame('nuevo-secreto-inventado-123456789012', app(ConfiguracionTiendaWeb::class)->secreto());
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('vendedor'))
             ->get(route('configuracion.integraciones.tienda'))->assertForbidden();

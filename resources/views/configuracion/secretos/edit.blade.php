@@ -36,12 +36,31 @@
             @if ($definicion->descripcion)
                 <p class="mt-3 text-xs text-gray-500">{{ $definicion->descripcion }}</p>
             @endif
+
+            {{-- A qué servidor va la clave. Si ese servidor cambia, la clave deja de usarse
+                 (docs/CENTRO_CONFIGURACION.md, «Un secreto viaja solo a su servidor»). --}}
+            @if ($direccion !== null)
+                <p class="mt-3 text-sm text-gray-700">
+                    Se usa con «{{ $etiquetaDireccion }}»:
+                    <span class="font-medium">{{ $direccion !== '' ? $direccion : 'sin configurar' }}</span>
+                </p>
+                @if ($retenido)
+                    <p class="mt-1 text-xs text-amber-800">
+                        La del archivo del servidor no se usa: es para otro servidor que el guardado en
+                        la aplicación. Cargala acá para usarla con este.
+                    </p>
+                @endif
+            @endif
         </div>
 
         {{-- ---- Reemplazar ---- --}}
         <form method="POST" action="{{ $rutas['update'] }}" class="space-y-4">
             @csrf
             @method('PUT')
+            @if ($direccion !== null)
+                {{-- Ata la clave al servidor que se ve arriba: si cambió antes de guardar, se rechaza. --}}
+                <input type="hidden" name="servidor_visto" value="{{ $direccion }}">
+            @endif
 
             <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 <p class="font-semibold">Qué pasa al guardar</p>

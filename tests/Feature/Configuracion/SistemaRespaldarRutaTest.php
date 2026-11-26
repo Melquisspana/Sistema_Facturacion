@@ -183,11 +183,20 @@ class SistemaRespaldarRutaTest extends TestCase
         $this->assertTrue($enCurso->get());
         $admin = $this->admin();
 
+        // Ámbar, no verde: no falló, pero todavía no se hizo y hay que esperar.
         $this->actingAs($admin)
             ->post(route('configuracion.sistema.respaldar'))
             ->assertRedirect(route('configuracion.sistema'))
-            ->assertSessionHas('status', 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.')
+            ->assertSessionHas('espera', 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.')
+            ->assertSessionMissing('status')
             ->assertSessionMissing('error');
+
+        $this->actingAs($admin)
+            ->get(route('configuracion.sistema'))
+            ->assertOk()
+            ->assertSee('<div role="status" class="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">', false)
+            ->assertSee('Ya hay un respaldo en curso; esperá unos minutos y recargá la página.')
+            ->assertDontSee('border-green-200 bg-green-50 p-4', false);
 
         $linea = $this->assertAuditado($admin, 'en_curso');
         $this->assertSame(2, $linea->getExtraProperty('codigo'));

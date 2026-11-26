@@ -110,9 +110,14 @@ class SistemaController extends Controller
         };
         $auditoria->respaldoManual($resultado, $codigo);
 
-        // El motivo de un fallo se ve en la misma pantalla, en «Última ejecución».
+        // El motivo de un fallo se ve en la misma pantalla, en «Última ejecución». «En
+        // curso» no es un fallo ni un éxito: va en ámbar, hay que esperar.
         return redirect()->route('configuracion.sistema')->with(
-            $resultado === 'fallo' ? 'error' : 'status',
+            match ($resultado) {
+                'fallo' => 'error',
+                'en_curso' => 'espera',
+                default => 'status',
+            },
             match ($resultado) {
                 'exito' => 'Respaldo generado y verificado. Revisá «último respaldo válido» abajo.',
                 'en_curso' => 'Ya hay un respaldo en curso; esperá unos minutos y recargá la página.',

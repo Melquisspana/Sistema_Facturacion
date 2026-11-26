@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Configuracion;
 
+use App\Ajustes\Ceremonias\ConfirmacionN2;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Facades\Ajustes;
 use App\Http\Controllers\Controller;
@@ -37,7 +38,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function update(Request $request): RedirectResponse
+    public function update(Request $request, ConfirmacionN2 $confirmacion): RedirectResponse
     {
         $enviarCopia = $request->boolean('enviar_copia_contabilidad');
 
@@ -46,20 +47,34 @@ class ContabilidadController extends Controller
             'correo_contabilidad' => [$enviarCopia ? 'required' : 'nullable', 'email', 'max:255'],
         ], [], ['correo_contabilidad' => 'correo de contabilidad']);
 
-        // Las dos claves en UNA transacción: si la segunda fallara, no queda la
-        // preferencia activada apuntando a un correo que no llegó a guardarse.
+        $propuestos = [
+            'contabilidad.correo' => trim((string) ($datos['correo_contabilidad'] ?? '')) ?: null,
+            'contabilidad.enviar_copia' => $enviarCopia,
+        ];
+
+        // La regla `email` de Laravel y filter_var no coinciden del todo: la primera
+        // acepta direcciones sin punto en el dominio ("juan@intranet") que la segunda
+        // rechaza, y son las que de verdad usan los consumidores para decidir si envían.
+        // Antes ese valor se guardaba y luego lo ignoraba en silencio todo el que iba a
+        // mandar el correo; ahora se devuelve al campo como lo que es: un correo que no
+        // sirve. Va antes de calcular(), que omite en silencio lo que no valida.
+        if ($invalidos = $confirmacion->invalidos($propuestos)) {
+            throw ValidationException::withMessages(['correo_contabilidad' => reset($invalidos)]);
+        }
+
+        // Solo lo que cambia, como Configuración › Opciones: guardar sin tocar nada no
+        // deja líneas sin cambio en la auditoría.
+        $cambios = $confirmacion->calcular($propuestos);
+
+        if ($cambios === []) {
+            return back()->with('status', 'No había nada que cambiar en contabilidad.');
+        }
+
+        // En UNA transacción: si la segunda fallara, no queda la preferencia activada
+        // apuntando a un correo que no llegó a guardarse.
         try {
-            Ajustes::guardarVarios([
-                'contabilidad.correo' => trim((string) ($datos['correo_contabilidad'] ?? '')) ?: null,
-                'contabilidad.enviar_copia' => $enviarCopia,
-            ]);
+            Ajustes::guardarVarios($confirmacion->soloLoQueCambia($cambios, $propuestos));
         } catch (ValorAjusteInvalidoException $e) {
-            // La regla `email` de Laravel y filter_var no coinciden del todo: la
-            // primera acepta direcciones sin punto en el dominio ("juan@intranet")
-            // que la segunda rechaza, y son las que de verdad usan los consumidores
-            // para decidir si envían. Antes ese valor se guardaba y luego lo
-            // ignoraba en silencio todo el que iba a mandar el correo; ahora se
-            // devuelve al campo como lo que es: un correo que no sirve.
             throw ValidationException::withMessages(['correo_contabilidad' => $e->getMessage()]);
         }
 

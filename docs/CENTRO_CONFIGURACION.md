@@ -144,6 +144,37 @@ La garantía es **estructural**, no una convención:
 
 De un secreto se publica: si está configurado y desde dónde sale. Nada más.
 
+### Un secreto viaja solo a su servidor (25/11/2026)
+
+La contraseña SMTP, las de los dos buzones y el secreto de la tienda declaran en el
+catálogo a qué dirección viajan (`servidor:` → `mail.smtp.host`, `documentos_recibidos.host`,
+`documentos_recibidos.buzon_adicional.host`, `tienda.url`). Si esa dirección cambia, el
+secreto no sale hacia la nueva hasta que alguien lo cargue otra vez:
+
+- El **guardado** en la aplicación se borra en la misma transacción que el cambio de
+  dirección (formulario o «Usar el valor del servidor»). Queda en la auditoría como
+  «quitó el valor guardado», sin el valor. El aviso dice dónde se carga de nuevo.
+- El del **.env** solo viaja a la dirección del .env: si la aplicación tiene guardada
+  otra dirección (sin distinguir mayúsculas, espacios ni la barra final), el secreto se
+  resuelve como «sin configurar».
+
+Gmail no entra: el secreto de cliente va siempre a Google, cambie lo que cambie.
+
+- La pantalla de la clave dice a qué servidor va y la ata a ese: si otra sesión cambia
+  el servidor mientras alguien la escribe, la clave no se guarda y el aviso dice cuál
+  es el servidor nuevo.
+- La confirmación del cambio de servidor (y la de «Usar el valor del servidor») avisa
+  ANTES qué clave deja de usarse.
+- El worker de la cola vuelve a resolver contra el .env antes de cada trabajo: un
+  servidor quitado no se le queda pegado ni pierde la contraseña del .env.
+
+**Al desplegar esta regla.** Una instalación que ya tenía guardado en la aplicación un
+servidor distinto del .env, con la clave en el .env, deja de mandar esa clave sin que
+nadie guarde nada (el buzón no trae compras o el correo no autentica). `php artisan
+ajustes:estado` lo avisa por cada clave, sin el valor, y la pantalla de la clave lo dice.
+Arreglo: cargar la clave en la aplicación o volver al servidor del .env con «Usar el
+valor del servidor».
+
 ---
 
 ## 7. Cifrado y APP_KEY

@@ -16,7 +16,8 @@ use Illuminate\View\View;
  *
  * El primer envío no escribe: calcula qué cambiaría de verdad y devuelve la
  * pantalla de confirmación con el antes y el después. Solo el segundo, ya con
- * `confirmacion`, guarda. Lo comparten el servidor de correo y las dos
+ * `confirmacion`, guarda, y guarda SOLO lo que cambia (igual que Configuración ›
+ * Opciones, por {@see ConfirmacionN2::soloLoQueCambia()}). Lo comparten el servidor de correo y las dos
  * integraciones porque el flujo es idéntico y tenerlo tres veces copiado
  * garantizaba que las tres versiones se separaran con el tiempo.
  *
@@ -32,6 +33,8 @@ use Illuminate\View\View;
  */
 trait GuardaConConfirmacionN2
 {
+    use AvisaSecretoSoltado;
+
     /**
      * @param  array<string, string>  $campos  campo del formulario ⇒ clave del registry
      * @param  array<string, mixed>  $datos  valores YA validados por el controlador
@@ -53,6 +56,16 @@ trait GuardaConConfirmacionN2
             $propuestos[$clave] = $datos[$campo] ?? null;
         }
 
+        // Lo que el catálogo no admite se frena acá, en su campo: calcular() lo omite en
+        // silencio y, como solo se guarda lo que cambia, se perdería sin aviso.
+        $invalidos = $confirmacion->invalidos($propuestos);
+
+        if ($invalidos !== []) {
+            throw ValidationException::withMessages(collect($invalidos)
+                ->mapWithKeys(fn (string $motivo, string $clave) => [(string) array_search($clave, $campos, true) => $motivo])
+                ->all());
+        }
+
         $cambios = $confirmacion->calcular($propuestos);
 
         if ($cambios === []) {
@@ -62,7 +75,8 @@ trait GuardaConConfirmacionN2
         if (! $request->boolean('confirmacion') && $confirmacion->requiereConfirmacion($cambios)) {
             return view('configuracion.confirmar', [
                 'titulo' => $titulo,
-                'consecuencia' => $consecuencia,
+                // Más la clave que se borra si cambia su servidor: se dice antes, no después.
+                'consecuencia' => $consecuencia.$this->avisoAntesDeConfirmar($confirmacion->soloLoQueCambia($cambios, $propuestos)),
                 'cambios' => $cambios,
                 'accion' => $request->url(),
                 // Se reenvían los valores YA VALIDADOS, con los mismos nombres de
@@ -72,8 +86,13 @@ trait GuardaConConfirmacionN2
             ]);
         }
 
+        // Solo lo que cambia, como Configuración › Opciones: lo demás sigue saliendo del
+        // .env y la auditoría no se llena de líneas sin cambio.
+        $aGuardar = $confirmacion->soloLoQueCambia($cambios, $propuestos);
+        $secretos = $this->secretosEnUso(array_keys($aGuardar));
+
         try {
-            Ajustes::guardarVarios($propuestos);
+            Ajustes::guardarVarios($aGuardar);
         } catch (ValorAjusteInvalidoException $e) {
             // La validación del registry es la segunda barrera; si salta, el error
             // vuelve al campo que lo produjo y no como un error 500.
@@ -82,6 +101,6 @@ trait GuardaConConfirmacionN2
             ]);
         }
 
-        return redirect()->route($volver)->with('status', $exito);
+        return redirect()->route($volver)->with('status', $exito.$this->avisoSecretosSoltados($secretos));
     }
 }

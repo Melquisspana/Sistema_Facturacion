@@ -63,7 +63,16 @@ class EmpaqueConfigService
                 $this->validarDependenciasVigentes($config);
             }
 
-            return $this->guardar($config, (bool) ($datos['es_predeterminada'] ?? false));
+            $predeterminada = (bool) ($datos['es_predeterminada'] ?? false);
+
+            // Desactivar desde el formulario la que ERA la predeterminada le quita esa
+            // condición, igual que alternarActivo(). Lo demás no se perdona: pedir que
+            // una inactiva pase a ser la predeterminada lo sigue rechazando guardar().
+            if (! $config->activo && $config->getOriginal('activo') && $config->getOriginal('es_predeterminada')) {
+                $predeterminada = false;
+            }
+
+            return $this->guardar($config, $predeterminada);
         });
     }
 
