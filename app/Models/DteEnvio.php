@@ -56,6 +56,7 @@ class DteEnvio extends Model
         ];
     }
 
+    /** @return BelongsTo<Dte, $this> */
     public function dte(): BelongsTo
     {
         return $this->belongsTo(Dte::class);

@@ -17,6 +17,7 @@ class Contingencia extends Model
         return ['tipo' => 'integer', 'inicio' => 'datetime', 'cese' => 'datetime'];
     }
 
+    /** @return HasMany<Dte, $this> */
     public function dtes(): HasMany
     {
         return $this->hasMany(Dte::class);
