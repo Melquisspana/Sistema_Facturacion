@@ -316,8 +316,15 @@ class DtePdfPreliminarTest extends TestCase
     {
         config(['dte.contingencia.enabled' => true]);
 
-        // Firmado sin contingencia (transmisión normal pendiente).
-        $html = $this->html($this->ccfFirmado(), interno: true);
+        // Firmado sin contingencia (transmisión normal pendiente). ccfFirmado() solo le
+        // pone el JWS y lo deja Generado: el estado va directo a la base, como en
+        // ccfEnContingencia(), para probar un Firmado de verdad.
+        $firmado = $this->ccfFirmado();
+        Dte::whereKey($firmado->id)->update(['estado' => EstadoDte::Firmado->value]);
+        $firmado->refresh();
+        $this->assertSame(EstadoDte::Firmado, $firmado->estado);
+        $this->assertNull($firmado->contingencia_id);
+        $html = $this->html($firmado, interno: true);
         $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
         $this->assertStringContainsString('Documento PRELIMINAR', $html);
         $this->assertStringContainsString('Estado técnico (interno):', $html);
