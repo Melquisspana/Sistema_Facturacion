@@ -164,6 +164,9 @@ class PanelSistema
      * `null` significa "no se puede comprobar" (no hay ruta registrada), que no es
      * lo mismo que "no está". La pantalla distingue los tres casos en vez de
      * pintar un verde optimista.
+     *
+     * `backup:mysql-diario` registra solo el nombre del archivo, dentro del disco
+     * `backups`: se busca ahí, no en la carpeta del proceso web ni en `local`.
      */
     private function archivoPresente(?string $ruta): ?bool
     {
@@ -172,7 +175,7 @@ class PanelSistema
         }
 
         return (bool) $this->intentar(
-            static fn () => is_file($ruta) || Storage::disk('local')->exists($ruta),
+            static fn () => Storage::disk('backups')->exists($ruta),
             false,
         );
     }

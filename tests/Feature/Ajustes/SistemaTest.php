@@ -187,6 +187,30 @@ class SistemaTest extends TestCase
         $this->assertNull(app(PanelSistema::class)->respaldos()['archivo_presente']);
     }
 
+    /**
+     * El comando guarda solo el nombre del archivo, dentro de la carpeta de respaldos:
+     * ahí es donde hay que buscarlo. Antes un respaldo bueno salía «NO se encuentra».
+     */
+    public function test_el_archivo_del_ultimo_respaldo_se_busca_en_la_carpeta_de_respaldos(): void
+    {
+        Storage::fake('backups');
+        RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-2026-11-25_221005_ab12cd.sql', 'origen' => 'manual',
+        ]);
+
+        $this->assertFalse(app(PanelSistema::class)->respaldos()['archivo_presente'], 'Sin el archivo, se dice que falta.');
+
+        Storage::disk('backups')->put('auto-2026-11-25_221005_ab12cd.sql', "-- Dump completed\n");
+
+        $this->assertTrue(app(PanelSistema::class)->respaldos()['archivo_presente']);
+        $this->actingAs($this->admin())
+            ->get(route('configuracion.sistema'))
+            ->assertOk()
+            ->assertSee('presente en disco')
+            ->assertDontSee('NO se encuentra');
+    }
+
     // -------------------------------------------------------------- permiso
 
     /** El botón de respaldo tiene su propio permiso, más estrecho que el del grupo. */
