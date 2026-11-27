@@ -735,4 +735,53 @@ class ContingenciaEventoTest extends TestCase
         $this->assertSame('preparado', ContingenciaEvento::sole()->estado);
         Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/fesv/contingencia'));
     }
+
+    // ─────────── Hacienda dice tener el aviso repetido (ensayo contra apitest del 26/11) ───────────
+    //
+    // Al reenviar un aviso que ya recibió, Hacienda real contesta RECHAZADO con la observación
+    // «Ya existe envento de contingencia para codigo generacion: <código>» (así, con la errata).
+    // La parte sigue en duda —no se da por recibida sola—, pero el mensaje dice lo que contestó.
+
+    /** El aviso sale y se pierde la respuesta; al reintentar, Hacienda contesta con esta observación. */
+    private function avisoRepetidoConLaObservacion(callable $observacion): ContingenciaEvento
+    {
+        $this->documento();
+        $this->simular(conexion: true);
+        $this->assertSame('error_conexion', $this->service()->enviar($this->contingencia)[0]['resultado']);
+        $parte = ContingenciaEvento::sole();
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*fesv/contingencia' => Http::response(['estado' => 'RECHAZADO', 'fechaHora' => '10/10/2026 11:00:08',
+            'mensaje' => 'Rechazado inventado', 'selloRecibido' => null, 'observaciones' => [$observacion($parte)]], 400)]);
+
+        return $parte;
+    }
+
+    public function test_si_al_reintentar_hacienda_dice_que_ya_tiene_ese_aviso_el_mensaje_en_duda_lo_dice(): void
+    {
+        $parte = $this->avisoRepetidoConLaObservacion(fn ($parte) => 'Ya existe envento de contingencia para codigo generacion: '.$parte->codigo_generacion);
+        $mensaje = 'La parte 1 quedó en duda, pero Hacienda dice que ya tiene este aviso ('.$parte->codigo_generacion.'). '
+            .'Confirmalo con «Hacienda sí lo tiene» y no mandes otro.';
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHas('status', $mensaje);
+
+        // Sigue en duda: lo confirma una persona.
+        $this->assertSame('incierto', $parte->refresh()->estado);
+        $this->assertSame('cerrada', $this->contingencia->refresh()->estado);
+        // El clic siguiente dice lo mismo y no manda nada.
+        $this->simular();
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))->assertSessionHas('status', $mensaje);
+        Http::assertNothingSent();
+    }
+
+    public function test_si_el_aviso_que_hacienda_dice_tener_es_otro_el_mensaje_en_duda_es_el_de_siempre(): void
+    {
+        $otro = strtoupper((string) Str::uuid());
+        $parte = $this->avisoRepetidoConLaObservacion(fn () => 'Ya existe envento de contingencia para codigo generacion: '.$otro);
+
+        $this->post(route('facturacion.contingencia.enviar', $this->contingencia))
+            ->assertSessionHas('status', fn (string $status) => str_contains($status, 'Verificá en Hacienda')
+                && ! str_contains($status, 'Hacienda dice que ya tiene'));
+        $this->assertSame('incierto', $parte->refresh()->estado);
+    }
 }
