@@ -148,14 +148,16 @@
                                 @csrf
                                 @method('PUT')
                                 <label for="numero_marcar" class="block text-sm font-medium text-gray-700 dark:text-paper-100">{{ $tieneNumero ? 'Número nuevo' : 'Número para marcar' }}</label>
-                                <div class="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center">
-                                    <input id="numero_marcar" name="numero" type="text" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4"
-                                           required autocomplete="off" value="{{ old('numero', $numeroPropuesto ?? '') }}"
-                                           aria-describedby="numero_marcar_ayuda" @error('numero') aria-invalid="true" @enderror
-                                           class="block min-h-11 w-32 rounded-md border-gray-300 text-lg tabular-nums tracking-widest shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                <div class="mt-1 flex flex-col gap-3 sm:flex-row sm:items-start">
+                                    <div>
+                                        <input id="numero_marcar" name="numero" type="text" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4"
+                                               required autocomplete="off" value="{{ old('numero', $numeroPropuesto ?? '') }}"
+                                               aria-describedby="numero_marcar_ayuda" @error('numero') aria-invalid="true" @enderror
+                                               class="block min-h-11 w-32 rounded-md border-gray-300 text-lg tabular-nums tracking-widest shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                        @error('numero') <p class="mt-1 text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p> @enderror
+                                    </div>
                                     <button type="submit" class="{{ $botonPrincipal }}">{{ $tieneNumero ? 'Cambiar número' : 'Guardar número' }}</button>
                                 </div>
-                                @error('numero') <p class="mt-1 text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p> @enderror
                                 <p id="numero_marcar_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">
                                     Te proponemos uno libre al azar; podés escribir otro. Decíselo a la persona antes de guardar: después no se vuelve a mostrar.
                                 </p>
