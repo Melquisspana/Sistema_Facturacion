@@ -45,7 +45,16 @@ rcv() {
   if rclone "$@" --stats 0 >> "$LOG" 2>&1; then log "OK $etiqueta"; return; fi
   log "REINTENTO $etiqueta en ${REINTENTO_SEG}s (la primera comprobación no terminó bien)"
   sleep "$REINTENTO_SEG"
-  if rclone "$@" --stats 0 >> "$LOG" 2>&1; then log "OK $etiqueta (al reintentar)"; else falla "$etiqueta"; fi
+  # --min-age se vuelve a calcular: con el valor de antes, un archivo creado después de la
+  # copia (por ejemplo, un PDF de la sincronización de cada 5 minutos) ya tendría más edad
+  # que ese tope, se compararía, no estaría en Drive y daría una falla falsa.
+  local args=() sigue_edad=no a
+  for a in "$@"; do
+    if [ "$sigue_edad" = si ]; then a="$(($(date +%s) - T0 + 60))s"; sigue_edad=no; fi
+    [ "$a" = --min-age ] && sigue_edad=si
+    args+=("$a")
+  done
+  if rclone "${args[@]}" --stats 0 >> "$LOG" 2>&1; then log "OK $etiqueta (al reintentar)"; else falla "$etiqueta"; fi
 }
 
 T0=$(date +%s)
