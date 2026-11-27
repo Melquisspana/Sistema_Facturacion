@@ -377,6 +377,9 @@ enum Sonido : uint8_t {
 // aparato: si un toque cae del lado opuesto, poner en true ese eje.
 // =====================================================
 
+// Código 0x17 de fingerFastSearch del AS608 (sin constante en la librería de Adafruit).
+#define BUSQUEDA_SIN_COINCIDENCIA_AS608 0x17
+
 #define TACTIL_ADDR 0x38
 #define TACTIL_INT  17
 #define TACTIL_RST  18
@@ -3769,9 +3772,16 @@ ResultadoHuella identificarHuella(
       return RH_RECONOCIDA;
     }
 
+    // 0x17 (23): el AS608 lo devuelve a menudo en la búsqueda de un dedo que NO está
+    // registrado, alternado con NOTFOUND (lo vio Melqui el 27/11/2026: con un dedo sin
+    // registrar salía «ponga bien la huella» una y otra vez, porque el 23 no contaba y
+    // nunca se juntaban dos NOTFOUND). La imagen ya pasó image2Tz, así que hay dedo de
+    // verdad: cuenta como «no coincide». Una huella registrada da 0 y no pasa por acá.
     if (
       busqueda ==
-      FINGERPRINT_NOTFOUND
+      FINGERPRINT_NOTFOUND ||
+      busqueda ==
+      BUSQUEDA_SIN_COINCIDENCIA_AS608
     ) {
 
       noCoincide++;
