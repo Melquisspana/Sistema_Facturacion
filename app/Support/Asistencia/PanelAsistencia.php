@@ -56,7 +56,8 @@ class PanelAsistencia
             }),
             'faltan' => $faltan,
             'conteos' => ['marcaron' => $jornadas->count(), 'faltan' => $faltan->count(), 'activos' => $activos->count()],
-            'empleados_sin_huella' => $activos->where('huellas_vigentes', 0)->count(),
+            // Quien no puede marcar: sin huella vigente NI número. Con número sí marca.
+            'empleados_sin_huella' => $activos->where('huellas_vigentes', 0)->whereNull('numero_marcar_indice')->count(),
         ];
     }
 }

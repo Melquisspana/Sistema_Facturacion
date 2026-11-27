@@ -9,6 +9,7 @@ use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Asistencia\AsistenciaHuella;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
+use App\Services\Asistencia\NumeroParaMarcar;
 use App\Services\Planilla\AltaEmpleado;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -194,6 +195,20 @@ class AreaPersonalTest extends TestCase
         // Beto está de baja: la lista abre con los activos y se lo busca entre «Todos».
         $this->get(route('personal.empleados', ['q' => 'beto', 'activo' => 'todos']))->assertSee('Beto Ejemplo')->assertSee('Sin huella')->assertDontSee('Ana Ficticia');
         $this->get(route('personal.empleados', ['activo' => '1']))->assertSee('Ana Ficticia')->assertDontSee('Beto Ejemplo');
+    }
+
+    /** Sin huella pero con número sí puede marcar: «Solo número», neutro; «Sin huella» queda para quien no puede. */
+    public function test_quien_marca_solo_con_numero_no_sale_como_sin_huella(): void
+    {
+        app(NumeroParaMarcar::class)->asignar(AsistenciaEmpleado::factory()->create(['nombres' => 'Ceci', 'apellidos' => 'Ejemplo']), '4821');
+        AsistenciaEmpleado::factory()->create(['nombres' => 'Dani', 'apellidos' => 'Ejemplo']);
+        $this->actingAs($this->admin);
+
+        $html = $this->get(route('personal.empleados', ['q' => 'ceci']))->assertOk()
+            ->assertSee('Solo número')->assertDontSee('Sin huella')->getContent();
+        $this->assertDoesNotMatchRegularExpression('/amber[^>]*>\s*Solo número/u', $html, 'No es un problema: no va en ámbar.');
+
+        $this->get(route('personal.empleados', ['q' => 'dani']))->assertSee('Sin huella')->assertDontSee('Solo número');
     }
 
     public function test_quien_solo_tiene_asistencia_no_ve_sueldos_ni_documentos(): void

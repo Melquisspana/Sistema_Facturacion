@@ -18,7 +18,7 @@
             </div>
             @if ($hoy['empleados_sin_huella'])
                 <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                    {{ $hoy['empleados_sin_huella'] }} persona(s) activa(s) sin huella vigente.
+                    {{ $hoy['empleados_sin_huella'] }} persona(s) activa(s) sin huella vigente ni número para marcar.
                     <a href="{{ route('personal.empleados') }}" class="font-medium underline">Ver quiénes</a>
                 </p>
             @endif

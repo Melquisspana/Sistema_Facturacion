@@ -7,6 +7,7 @@ use App\Enums\PermisoSistema;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\User;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -214,7 +215,19 @@ class AreaAsistenciaTest extends TestCase
             ->assertDontSee('Todavía no hay personal activo')
             ->assertSee('Personas activas')
             // 3 activas de 4 dadas de alta, y las 3 sin ranura.
-            ->assertSee('3 persona(s) activa(s) sin huella vigente.');
+            ->assertSee('3 persona(s) activa(s) sin huella vigente ni número para marcar.');
+    }
+
+    /** El aviso es por quien no puede marcar: sin huella pero con número, sí puede. */
+    public function test_quien_no_tiene_huella_pero_si_numero_no_cuenta_en_el_aviso(): void
+    {
+        AsistenciaEmpleado::factory()->count(2)->create();
+        app(NumeroParaMarcar::class)->asignar(AsistenciaEmpleado::factory()->create(), '4821');
+
+        $this->actingAs($this->admin())
+            ->get(route('asistencia.dashboard'))
+            ->assertOk()
+            ->assertSee('2 persona(s) activa(s) sin huella vigente ni número para marcar.');
     }
 
     /**
