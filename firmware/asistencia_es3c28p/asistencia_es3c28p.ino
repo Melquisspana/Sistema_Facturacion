@@ -1482,6 +1482,35 @@ void iniciarTactil() {
   Wire.write(0x00);
   Wire.endTransmission();
 
+  // Barrido lento: con el vidrio barriendo a toda velocidad, el AS608 que
+  // esta justo detras leia "huellas" validas sin nadie apoyado (huella
+  // desconocida varias veces por minuto). Probado en el aparato el 27/11/2026:
+  // con estos valores, 0 en 2 minutos, igual que con el tactil apagado, y el
+  // toque sigue abriendo el teclado. Sin toque pasa a modo monitor al segundo.
+  //   0x86 G_CTRL             = 1: pasar a monitor cuando no hay toque
+  //   0x87 G_TIMEENTERMONITOR = 1: a 1 s sin toque
+  //   0x88 G_PERIODACTIVE     = 6: barrido activo lo mas lento permitido
+  //   0x89 G_PERIODMONITOR    = 0x28: barrido de monitor (el de fabrica)
+  const uint8_t tactilBarridoLento[][2] = {
+    { 0x86, 0x01 },
+    { 0x87, 0x01 },
+    { 0x88, 0x06 },
+    { 0x89, 0x28 }
+  };
+
+  for (
+    const auto& registro : tactilBarridoLento
+  ) {
+
+    Wire.beginTransmission(
+      TACTIL_ADDR
+    );
+
+    Wire.write(registro[0]);
+    Wire.write(registro[1]);
+    Wire.endTransmission();
+  }
+
   pinMode(
     TACTIL_INT,
     INPUT_PULLUP
