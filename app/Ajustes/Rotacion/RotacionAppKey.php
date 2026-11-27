@@ -3,6 +3,7 @@
 namespace App\Ajustes\Rotacion;
 
 use App\Ajustes\RepositorioAjustes;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
@@ -61,8 +62,11 @@ class RotacionAppKey
      *
      * `filtro` acota a las filas que de verdad lo están (en `ajustes_sistema`
      * conviven valores planos y cifrados); `etiqueta` es lo único que se muestra.
+     * `indices` (opcional): columna cifrada => columna con su HMAC derivado de APP_KEY
+     * ({@see NumeroParaMarcar::indice()}), que se rehace con la clave nueva en la misma
+     * escritura.
      *
-     * @var array<int, array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>}>
+     * @var array<int, array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>, indices?: array<string, string>}>
      */
     private const ORIGENES = [
         [
@@ -76,6 +80,15 @@ class RotacionAppKey
             'columnas' => ['access_token', 'refresh_token'],
             'etiqueta' => 'email',
             'filtro' => [],
+        ],
+        [
+            // El número para marcar de Asistencia: sin rehacer el índice, después de
+            // rotar nadie podría marcar con su número (ver NumeroParaMarcar).
+            'tabla' => 'asistencia_empleados',
+            'columnas' => ['numero_marcar'],
+            'etiqueta' => 'nombres',
+            'filtro' => [],
+            'indices' => ['numero_marcar' => 'numero_marcar_indice'],
         ],
     ];
 
@@ -235,6 +248,15 @@ class RotacionAppKey
                         'columna' => $columna,
                         'valor' => $criptogramaNuevo,
                     ];
+
+                    if (isset($origen['indices'][$columna])) {
+                        $escrituras[] = [
+                            'tabla' => $origen['tabla'],
+                            'id' => (int) $fila->id,
+                            'columna' => $origen['indices'][$columna],
+                            'valor' => NumeroParaMarcar::indice($plano, $nuevo->getKey()),
+                        ];
+                    }
                 }
             }
         }

@@ -14,6 +14,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaSueldo;
 use App\Models\User;
 use App\Services\Asistencia\HoraOficial;
+use App\Services\Asistencia\NumeroParaMarcar;
 use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\PosiblesRepetidos;
 use App\Services\Planilla\SalarioMinimo;
@@ -138,6 +139,7 @@ class PersonalController extends Controller
         ConsultaAsistencia $consulta,
         HoraOficial $horaOficial,
         IndemnizacionBaja $indemnizacion,
+        NumeroParaMarcar $numeros,
     ): View {
         [$veAsistencia, $vePlanilla] = $this->accesos($request);
         abort_unless(preg_match('/^([ap])(\d+)$/D', $persona, $partes) === 1, 404);
@@ -208,6 +210,10 @@ class PersonalController extends Controller
             // dirían cosas distintas de la misma persona.
             'ultimas' => $consulta->ultimasDe($asistencia->id),
             'zona' => $horaOficial->zona(),
+
+            // Un número libre al azar para el formulario, solo para quien puede ponerlo.
+            // Es una propuesta sin guardar: el de la persona no se vuelve a mostrar nunca.
+            'numeroPropuesto' => $request->user()->can('asistencia.gestionar') ? $numeros->proponer() : null,
 
             // La orden viva permite seguir la captura y cancelarla desde la ficha.
             'ordenViva' => AsistenciaOrdenEnrolamiento::query()

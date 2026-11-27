@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Asistencia\DispositivoMarcacionController;
+use App\Http\Controllers\Asistencia\DispositivoNumerosController;
 use App\Http\Controllers\Asistencia\DispositivoPingController;
 use App\Http\Controllers\Asistencia\EnrolamientoDispositivoController;
 use Illuminate\Support\Facades\Route;
@@ -31,10 +32,11 @@ use Illuminate\Support\Facades\Route;
 |                           habría dejado sin cuota a las marcaciones reales. Ver
 |                           AppServiceProvider.
 |
-| Solo en `marcar`:
+| Solo en `marcar` y `numeros`:
 |
-|   3. dispositivo.asistencia -> 401 sin token de lector válido. Es la ruta que
-|                           ESCRIBE historial laboral de personas; no puede estar
+|   3. dispositivo.asistencia -> 401 sin token de lector válido. `marcar` ESCRIBE
+|                           historial laboral de personas y `numeros` entrega con qué
+|                           adivinar los números para marcar; ninguna puede estar
 |                           abierta a cualquiera en la red.
 |
 | El PING queda a propósito SIN ese tercer candado: es la herramienta para saber
@@ -57,6 +59,12 @@ Route::prefix('asistencia')
         Route::post('marcar', DispositivoMarcacionController::class)
             ->middleware('dispositivo.asistencia')
             ->name('marcar');
+
+        // Los números para marcar sin huella, sin el número en claro. Con token: con la
+        // lista se pueden probar los 10.000 números. Ver DispositivoNumerosController.
+        Route::get('numeros', DispositivoNumerosController::class)
+            ->middleware('dispositivo.asistencia')
+            ->name('numeros');
 
         /*
         | ─────────────────────────── ENROLAMIENTO ───────────────────────────

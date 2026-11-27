@@ -61,7 +61,11 @@
             <div class="{{ $tarjeta }}">
                 <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Huellas vigentes</h3>
 
-                @if ($vigentes->isEmpty())
+                @if ($vigentes->isEmpty() && $empleado->tieneNumeroMarcar())
+                    <p class="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:bg-ink-700 dark:text-paper-300">
+                        Sin huellas guardadas: esta persona marca solo con su número.
+                    </p>
+                @elseif ($vigentes->isEmpty())
                     <p class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                         Sin huellas guardadas: esta persona <strong>no puede marcar todavía</strong>.
                     </p>
@@ -103,6 +107,74 @@
                         </table>
                     </div>
                 @endif
+            </div>
+
+            {{-- ─────────────────────── Número para marcar ─────────────────────── --}}
+            {{-- Junto a la huella. Después de guardarlo el número NO se vuelve a mostrar: solo
+                 «Tiene número» o «Sin número». Lo que se ve en el campo es una PROPUESTA libre,
+                 sin guardar; con número ya puesto queda plegada en «Cambiar número» para que
+                 nadie la confunda con el número actual.
+                 Botones con el aspecto de la guía escrito acá, como el resto de esta ficha:
+                 x-primary-button y x-danger-button todavía tienen el aspecto viejo de Breeze. --}}
+            @php
+                $tieneNumero = $empleado->tieneNumeroMarcar();
+                $botonPrincipal = 'inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700';
+            @endphp
+            <div id="numero-para-marcar" class="{{ $tarjeta }}">
+                <div class="flex flex-wrap items-center gap-3">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Número para marcar</h3>
+                    @if ($tieneNumero)
+                        <span class="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-500/15 dark:text-green-300">Tiene número</span>
+                    @else
+                        <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-ink-700 dark:text-paper-300">Sin número</span>
+                    @endif
+                </div>
+                <p class="mt-2 text-sm text-gray-600 dark:text-paper-300">
+                    @if ($tieneNumero)
+                        Puede marcar en el lector con su número de 4 dígitos, además de la huella. Por seguridad no se vuelve a mostrar: si lo olvida, ponele otro.
+                    @else
+                        Marca solo con huella. Con un número de 4 dígitos también puede marcar sin el dedo.
+                    @endif
+                </p>
+
+                @can('asistencia.gestionar')
+                    <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
+                            @if ($tieneNumero)
+                                <details @error('numero') open @enderror>
+                                <summary class="inline-flex min-h-11 cursor-pointer items-center text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-300">Cambiar número</summary>
+                            @endif
+                            <form method="POST" action="{{ route('asistencia.empleados.numero.update', $empleado) }}" class="mt-2">
+                                @csrf
+                                @method('PUT')
+                                <label for="numero_marcar" class="block text-sm font-medium text-gray-700 dark:text-paper-100">{{ $tieneNumero ? 'Número nuevo' : 'Número para marcar' }}</label>
+                                <div class="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center">
+                                    <input id="numero_marcar" name="numero" type="text" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4"
+                                           required autocomplete="off" value="{{ old('numero', $numeroPropuesto ?? '') }}"
+                                           aria-describedby="numero_marcar_ayuda" @error('numero') aria-invalid="true" @enderror
+                                           class="block min-h-11 w-32 rounded-md border-gray-300 text-lg tabular-nums tracking-widest shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                    <button type="submit" class="{{ $botonPrincipal }}">{{ $tieneNumero ? 'Cambiar número' : 'Guardar número' }}</button>
+                                </div>
+                                @error('numero') <p class="mt-1 text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p> @enderror
+                                <p id="numero_marcar_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">
+                                    Te proponemos uno libre al azar; podés escribir otro. Decíselo a la persona antes de guardar: después no se vuelve a mostrar.
+                                </p>
+                            </form>
+                            @if ($tieneNumero)
+                                </details>
+                            @endif
+                        </div>
+
+                        @if ($tieneNumero)
+                            <form method="POST" action="{{ route('asistencia.empleados.numero.destroy', $empleado) }}"
+                                  onsubmit="return confirm('¿Quitar el número para marcar? Esta persona va a marcar solo con huella.');">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto">Quitar número</button>
+                            </form>
+                        @endif
+                    </div>
+                @endcan
             </div>
 
             {{-- ──────────────────────── Asignar una ranura ──────────────────────── --}}

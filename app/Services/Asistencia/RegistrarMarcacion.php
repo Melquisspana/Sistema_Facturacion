@@ -3,6 +3,7 @@
 namespace App\Services\Asistencia;
 
 use App\DataTransferObjects\Asistencia\ResultadoRegistroMarcacion;
+use App\Enums\Asistencia\MetodoMarcacion;
 use App\Enums\Asistencia\TipoMarcacion;
 use App\Facades\Ajustes;
 use App\Models\Asistencia\AsistenciaDispositivo;
@@ -11,12 +12,14 @@ use App\Models\Asistencia\AsistenciaHuella;
 use App\Models\Asistencia\AsistenciaMarcacion;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * LA REGLA de la marcación, y el único sitio donde se escribe una.
  *
- * El dispositivo manda una ranura y, para marcas sin red, un instante validado.
- * Quién es, si es entrada o salida y si cuenta se decide acá.
+ * El dispositivo manda una ranura o un número de 4 dígitos y, para marcas sin red, un
+ * instante validado. Quién es, si es entrada o salida y si cuenta se decide acá; la
+ * marca anota con qué se identificó (`metodo`).
  *
  * ───────────────────────────── Entrada o salida ─────────────────────────────
  *
@@ -52,8 +55,12 @@ use Illuminate\Support\Facades\DB;
  */
 class RegistrarMarcacion
 {
-    public function __construct(private readonly HoraOficial $horaOficial) {}
+    public function __construct(
+        private readonly HoraOficial $horaOficial,
+        private readonly NumeroParaMarcar $numeros,
+    ) {}
 
+    /** Con huella: el lector manda la ranura que reconoció. */
     public function __invoke(AsistenciaDispositivo $dispositivo, int $fingerprintId, ?string $ip = null, ?Carbon $instante = null): ResultadoRegistroMarcacion
     {
         $huella = AsistenciaHuella::query()
@@ -73,11 +80,51 @@ class RegistrarMarcacion
             return ResultadoRegistroMarcacion::empleadoInactivo($huella->empleado, $fingerprintId);
         }
 
-        return DB::transaction(function () use ($huella, $dispositivo, $fingerprintId, $ip, $instante) {
+        return $this->registrarPara($huella->empleado, $dispositivo, MetodoMarcacion::Huella, $huella, $ip, $instante);
+    }
+
+    /**
+     * Con el número de 4 dígitos (ya validado). La regla es la misma que con la huella;
+     * el número no se devuelve ni se anota en ningún lado.
+     */
+    public function porNumero(AsistenciaDispositivo $dispositivo, string $numero, ?string $ip = null, ?Carbon $instante = null): ResultadoRegistroMarcacion
+    {
+        $empleado = $this->numeros->buscar($numero);
+
+        if ($empleado === null) {
+            // Las huellas desconocidas no se anotan en ningún lado: los números van al log
+            // de la aplicación, sin los dígitos, para ver si alguien prueba números.
+            Log::warning('Asistencia: llegó un número para marcar que nadie tiene.', [
+                'dispositivo' => $dispositivo->codigo,
+                'ip' => $ip,
+            ]);
+
+            return ResultadoRegistroMarcacion::numeroDesconocido();
+        }
+
+        if (! $empleado->activo) {
+            return ResultadoRegistroMarcacion::empleadoInactivo($empleado, null);
+        }
+
+        return $this->registrarPara($empleado, $dispositivo, MetodoMarcacion::Numero, null, $ip, $instante);
+    }
+
+    /** LA REGLA, con la persona ya resuelta por huella o por número. */
+    private function registrarPara(
+        AsistenciaEmpleado $persona,
+        AsistenciaDispositivo $dispositivo,
+        MetodoMarcacion $metodo,
+        ?AsistenciaHuella $huella,
+        ?string $ip,
+        ?Carbon $instante,
+    ): ResultadoRegistroMarcacion {
+        $fingerprintId = $huella?->fingerprint_id;
+
+        return DB::transaction(function () use ($persona, $huella, $metodo, $dispositivo, $fingerprintId, $ip, $instante) {
             // Serializa las marcaciones DE ESTA PERSONA: dos peticiones a la vez
             // se ponen en fila y la segunda ve lo que escribió la primera.
             $empleado = AsistenciaEmpleado::query()
-                ->whereKey($huella->asistencia_empleado_id)
+                ->whereKey($persona->getKey())
                 ->lockForUpdate()
                 ->first();
 
@@ -157,11 +204,12 @@ class RegistrarMarcacion
             $marcacion = AsistenciaMarcacion::create([
                 'asistencia_empleado_id' => $empleado->id,
                 'asistencia_dispositivo_id' => $dispositivo->id,
-                'asistencia_huella_id' => $huella->id,
+                'asistencia_huella_id' => $huella?->id,
                 'tipo' => TipoMarcacion::siguienteTras($ultimaDeHoy?->tipo),
                 'marcado_at' => $instante,
                 'fecha_local' => $fechaLocal,
                 'origen' => $diferida ? 'diferida' : 'dispositivo',
+                'metodo' => $metodo,
                 'ip' => $ip,
             ]);
 

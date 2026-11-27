@@ -5,6 +5,7 @@ namespace App\Http\Requests\Asistencia;
 use App\Enums\Asistencia\ResultadoMarcacion;
 use App\Facades\Ajustes;
 use App\Services\Asistencia\HoraOficial;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -26,11 +27,18 @@ class MarcarRequest extends FormRequest
         return true;
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Exactamente uno de los dos: `fingerprint_id` (la ranura que reconoció el sensor) o
+     * `numero` (texto de 4 dígitos; un número JSON se rechaza para no perder ceros a la
+     * izquierda). Los dos juntos, o ninguno, son `payload_invalido`.
+     *
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         return [
-            'fingerprint_id' => ['required', 'integer', 'min:0', 'max:65535'],
+            'fingerprint_id' => ['required_without:numero', 'prohibits:numero', 'integer', 'min:0', 'max:65535'],
+            'numero' => ['required_without:fingerprint_id', 'string', 'regex:'.NumeroParaMarcar::PATRON],
             'marcado_en' => ['sometimes', 'required', 'integer', function ($attribute, $value, $fail) {
                 $ahora = app(HoraOficial::class)->instante()->getTimestamp();
                 // Tolerante: un .env fuera del rango de la pantalla no puede frenar las marcas.
@@ -43,9 +51,18 @@ class MarcarRequest extends FormRequest
         ];
     }
 
-    public function fingerprintId(): int
+    /** `null` cuando se marcó con número. */
+    public function fingerprintId(): ?int
     {
-        return (int) $this->validated('fingerprint_id');
+        $ranura = $this->validated('fingerprint_id');
+
+        return $ranura === null ? null : (int) $ranura;
+    }
+
+    /** `null` cuando se marcó con huella. */
+    public function numero(): ?string
+    {
+        return $this->validated('numero');
     }
 
     public function instante(): ?Carbon

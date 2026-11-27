@@ -7,6 +7,7 @@ use App\Http\Controllers\Asistencia\HojaAsistenciaController;
 use App\Http\Controllers\Asistencia\HuellaController;
 use App\Http\Controllers\Asistencia\JornadaController;
 use App\Http\Controllers\Asistencia\MarcacionController;
+use App\Http\Controllers\Asistencia\NumeroParaMarcarController;
 use App\Http\Controllers\Asistencia\ReporteController;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use Illuminate\Http\Request;
@@ -26,7 +27,8 @@ use Illuminate\Support\Facades\Route;
 |   2. modulo.asistencia        -> 404 si ASISTENCIA_ENABLED=false.
 |   3. permission:asistencia.ver-> 403 para quien no tenga el permiso de entrada.
 |   4. permission:asistencia.gestionar (inline)
-|        crear y editar personas, activarlas, guardar y QUITAR huellas. Asignar
+|        crear y editar personas, activarlas, guardar y QUITAR huellas, poner y
+|        quitar el número para marcar. Asignar
 |        decide de quién van a ser las marcaciones que vengan después.
 |
 | Los botones de las vistas son PRESENTACIÓN y nunca autorizan.
@@ -67,6 +69,11 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         | contrario de lo que hace.
         */
         Route::post('empleados/{empleado}/huellas', [HuellaController::class, 'store'])->middleware($gestionar)->name('empleados.huellas.store');
+
+        // NÚMERO PARA MARCAR, junto a la huella y con el mismo permiso. Nunca se lee:
+        // no hay ruta que lo muestre, solo poner/cambiar y quitar.
+        Route::put('empleados/{empleado}/numero', [NumeroParaMarcarController::class, 'update'])->middleware($gestionar)->name('empleados.numero.update');
+        Route::delete('empleados/{empleado}/numero', [NumeroParaMarcarController::class, 'destroy'])->middleware($gestionar)->name('empleados.numero.destroy');
 
         /*
         | ENROLAMIENTO desde la web. Solo dos verbos: pedir y cancelar.

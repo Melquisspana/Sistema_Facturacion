@@ -175,10 +175,12 @@
 
                                     <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-100">
                                         {{ $jornada->primeraEntrada()?->marcado_at?->copy()?->setTimezone($zona)?->format('H:i') ?? '—' }}
+                                        @if ($jornada->primeraEntrada()?->metodo) <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $jornada->primeraEntrada()->metodo->label() }}</span> @endif
                                     </td>
 
                                     <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-100">
                                         {{ $jornada->ultimaSalida()?->marcado_at?->copy()?->setTimezone($zona)?->format('H:i') ?? '—' }}
+                                        @if ($jornada->ultimaSalida()?->metodo) <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $jornada->ultimaSalida()->metodo->label() }}</span> @endif
                                     </td>
 
                                     <td class="px-4 py-3 tabular-nums">

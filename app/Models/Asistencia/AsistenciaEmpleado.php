@@ -3,6 +3,7 @@
 namespace App\Models\Asistencia;
 
 use App\Models\User;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,12 +36,29 @@ class AsistenciaEmpleado extends Model
         'user_id',
     ];
 
+    /**
+     * El número para marcar NO es asignable en masa ni sale en ningún arreglo o JSON: lo
+     * pone y lo quita solo {@see NumeroParaMarcar}, y la auditoría de `logFillable()`
+     * no lo ve porque no está en `$fillable`.
+     */
+    protected $hidden = [
+        'numero_marcar',
+        'numero_marcar_indice',
+    ];
+
     protected function casts(): array
     {
         return [
             'activo' => 'boolean',
             'fecha_ingreso' => 'date',
+            'numero_marcar' => 'encrypted',
         ];
+    }
+
+    /** Sin descifrar nada: alcanza con saber si hay índice. */
+    public function tieneNumeroMarcar(): bool
+    {
+        return $this->numero_marcar_indice !== null;
     }
 
     public function getActivitylogOptions(): LogOptions

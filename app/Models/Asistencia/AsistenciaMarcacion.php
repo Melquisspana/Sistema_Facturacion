@@ -2,6 +2,7 @@
 
 namespace App\Models\Asistencia;
 
+use App\Enums\Asistencia\MetodoMarcacion;
 use App\Enums\Asistencia\TipoMarcacion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -34,6 +35,7 @@ class AsistenciaMarcacion extends Model
         'marcado_at',
         'fecha_local',
         'origen',
+        'metodo',
         'ip',
     ];
 
@@ -41,6 +43,7 @@ class AsistenciaMarcacion extends Model
     {
         return [
             'tipo' => TipoMarcacion::class,
+            'metodo' => MetodoMarcacion::class,
             'marcado_at' => 'datetime',
             'fecha_local' => 'date',
         ];

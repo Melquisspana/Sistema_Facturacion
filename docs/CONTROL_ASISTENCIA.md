@@ -35,6 +35,33 @@ HTTP 200 y `repetida: true`, sin crear otra fila. El tipo alterna respecto de la
 marca anterior del mismo día local; el cooldown revisa ambos vecinos temporales
 de la persona. Insertar una marca antigua no recalcula tipos ya guardados.
 
+### Marcar con número (26/11/2026)
+
+Además de la huella, una persona puede marcar con un número de 4 dígitos. Lo pone la
+oficina en la ficha (Personal › persona › «Número para marcar», permiso
+`asistencia.gestionar`, como las huellas) o acepta el que propone el sistema, libre y al
+azar. Vacío = solo huella. Dos personas nunca tienen el mismo (único en la base).
+Después de guardarlo **no se vuelve a mostrar**: la ficha dice «Tiene número» o «Sin
+número»; si alguien lo olvida, se le pone otro.
+
+- Base: `asistencia_empleados.numero_marcar` (cifrado con APP_KEY) y
+  `numero_marcar_indice` (HMAC-SHA256 con clave derivada de APP_KEY, ÚNICO) para buscar
+  y garantizar unicidad. `ajustes:rotar-app-key` re-cifra el número y rehace el índice.
+  `asistencia_marcaciones.metodo`: `huella` | `numero`, NULL en las manuales.
+- `GET /api/asistencia/numeros` (con token de lector) → `{"version", "sal", "numeros":
+  [{"e": id, "h": sha256(sal . número), "n": nombre corto, máx. 24}]}`. Solo activos con
+  número; nunca el número en claro. `version` (16 hex) es un hash de lo listado y `sal`
+  (32 hex) sale de APP_KEY y de la versión.
+- El ping con credencial **válida** agrega `numeros_version`; si no coincide con la suya,
+  el lector vuelve a pedir la lista. Sin credencial el ping queda igual que siempre.
+- `POST /api/asistencia/marcar` acepta `numero` (texto de exactamente 4 dígitos) en vez
+  de `fingerprint_id`: exactamente uno de los dos. Misma regla, misma respuesta y mismo
+  `marcado_en`/`repetida` para los reenvíos. Un número que nadie tiene da
+  `numero_desconocido` (404, sin devolver el número) y queda en el log de la aplicación
+  sin los dígitos, con el lector y la IP.
+- Cada marca dice «Con huella» o «Con número» en Marcaciones, «Marcas de hoy», la hoja,
+  las jornadas y la ficha.
+
 1. **La hora oficial la pone el servidor.** El ESP32 no tiene reloj con batería:
    se reinicia y se desfasa. Lo que mande en el cuerpo se ignora.
 2. **El ESP32 no sabe de quién es la huella.** Manda el número de ranura del
@@ -591,9 +618,10 @@ Todas las respuestas traen `ok`, `estado` y `mensaje`. **El firmware ramifica so
 |---|---|---|
 | `registrada` | 200 | Se escribió la marcación |
 | `huella_desconocida` | 404 | Ranura sin asociar, o huella dada de baja |
-| `empleado_inactivo` | 403 | La huella es de alguien que ya no marca |
+| `numero_desconocido` | 404 | Nadie tiene ese número (no se devuelve el número) |
+| `empleado_inactivo` | 403 | La huella o el número es de alguien que ya no marca |
 | `cooldown` | 409 | Dedo repetido dentro de la ventana. **No** se escribió nada |
-| `payload_invalido` | 422 | Falta `fingerprint_id` o no es un entero |
+| `payload_invalido` | 422 | No vino exactamente uno de `fingerprint_id` (entero) o `numero` (texto de 4 dígitos) |
 | `dispositivo_no_autorizado` | 401 | Sin token válido de lector |
 
 409 y no 429 para el cooldown: 429 es lo que devuelve el limitador de peticiones y

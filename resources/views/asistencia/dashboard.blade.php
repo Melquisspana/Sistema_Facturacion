@@ -33,8 +33,14 @@
                             @forelse ($hoy['marcaron'] as $fila)
                                 <tr>
                                     <td class="py-3 pr-4"><a href="{{ route('asistencia.empleados.show', $fila['persona']) }}" class="text-indigo-600 hover:underline dark:text-indigo-300">{{ $fila['persona']?->nombreCompleto() }}</a></td>
-                                    <td class="py-3 pr-4 tabular-nums">{{ $fila['primera_entrada']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? '—' }}</td>
-                                    <td class="py-3 pr-4 tabular-nums">{{ $fila['ultima_salida']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? 'sigue adentro' }}</td>
+                                    <td class="py-3 pr-4 tabular-nums">
+                                        {{ $fila['primera_entrada']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? '—' }}
+                                        @if ($fila['primera_entrada_metodo']) <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $fila['primera_entrada_metodo'] }}</span> @endif
+                                    </td>
+                                    <td class="py-3 pr-4 tabular-nums">
+                                        {{ $fila['ultima_salida']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? 'sigue adentro' }}
+                                        @if ($fila['ultima_salida_metodo']) <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $fila['ultima_salida_metodo'] }}</span> @endif
+                                    </td>
                                     <td class="py-3 pr-4 tabular-nums">{{ $fila['horas'] }} @unless ($fila['exacto']) <span class="text-xs text-gray-500 dark:text-paper-300">(mínimo)</span> @endunless</td>
                                 </tr>
                             @empty

@@ -89,7 +89,7 @@ class HojaAsistenciaTest extends TestCase
         $respuesta = $this->actingAs($this->usuario())->get(route('asistencia.hoja'))->assertOk();
 
         $this->assertSame('2026-11-10', $respuesta->viewData('fecha')->format('Y-m-d'));
-        $this->assertEquals([['nombre' => 'Ana Prueba Uno', 'entrada' => null, 'salida' => null]], $respuesta->viewData('filas'));
+        $this->assertEquals([['nombre' => 'Ana Prueba Uno', 'entrada' => null, 'entrada_metodo' => null, 'salida' => null, 'salida_metodo' => null]], $respuesta->viewData('filas'));
         $respuesta->assertSee('10/11/2026')->assertSee('Ana Prueba Uno');
     }
 
@@ -100,7 +100,7 @@ class HojaAsistenciaTest extends TestCase
 
         $respuesta = $this->actingAs($this->usuario())->get(route('asistencia.hoja', ['fecha' => '2026-11-02']))->assertOk();
 
-        $this->assertEquals([['nombre' => 'Dario De Baja', 'entrada' => '08:00', 'salida' => null]], $respuesta->viewData('filas'));
+        $this->assertEquals([['nombre' => 'Dario De Baja', 'entrada' => '08:00', 'entrada_metodo' => 'Con huella', 'salida' => null, 'salida_metodo' => null]], $respuesta->viewData('filas'));
     }
 
     public function test_rechaza_una_fecha_que_no_es_fecha(): void

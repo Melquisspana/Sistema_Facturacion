@@ -105,7 +105,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
      * existen» solo se podía averiguar leyendo tres archivos, y nada impedía que
      * uno escribiera `dispositivo_no_autorizado` y otro `no_autorizado`.
      */
-    public function test_el_enum_declara_los_siete_estados_del_contrato(): void
+    public function test_el_enum_declara_los_ocho_estados_del_contrato(): void
     {
         $estados = array_map(fn (ResultadoMarcacion $r) => $r->value, ResultadoMarcacion::cases());
         sort($estados);
@@ -116,6 +116,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
             'empleado_inactivo',
             'hora_invalida',
             'huella_desconocida',
+            'numero_desconocido',
             'payload_invalido',
             'registrada',
         ], $estados);
@@ -125,6 +126,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
     {
         $this->assertSame(200, ResultadoMarcacion::Registrada->httpStatus());
         $this->assertSame(404, ResultadoMarcacion::HuellaDesconocida->httpStatus());
+        $this->assertSame(404, ResultadoMarcacion::NumeroDesconocido->httpStatus());
         $this->assertSame(403, ResultadoMarcacion::EmpleadoInactivo->httpStatus());
         $this->assertSame(409, ResultadoMarcacion::Cooldown->httpStatus());
         $this->assertSame(422, ResultadoMarcacion::PayloadInvalido->httpStatus());
@@ -135,7 +137,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
     /** Qué decide la regla de marcación y qué se resuelve antes de llegar a ella. */
     public function test_el_enum_distingue_lo_que_decide_la_regla(): void
     {
-        foreach ([ResultadoMarcacion::Registrada, ResultadoMarcacion::HuellaDesconocida,
+        foreach ([ResultadoMarcacion::Registrada, ResultadoMarcacion::HuellaDesconocida, ResultadoMarcacion::NumeroDesconocido,
             ResultadoMarcacion::EmpleadoInactivo, ResultadoMarcacion::Cooldown] as $estado) {
             $this->assertTrue($estado->loDecideLaRegla(), $estado->value.' lo devuelve RegistrarMarcacion.');
         }

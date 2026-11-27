@@ -40,15 +40,20 @@ class PanelAsistencia
         return [
             'fecha_hoy' => $fecha,
             'zona' => $this->horaOficial->zona(),
-            'marcaron' => $jornadas->map(fn (Jornada $jornada) => [
-                'persona' => $jornada->empleado,
-                'primera_entrada' => $jornada->primeraEntrada()?->marcado_at,
+            'marcaron' => $jornadas->map(function (Jornada $jornada) {
                 // Una nueva entrada después de una salida vuelve a dejarla adentro.
-                'ultima_salida' => $jornada->marcaciones->last()?->tipo === TipoMarcacion::Entrada
-                    ? null : $jornada->ultimaSalida()?->marcado_at,
-                'horas' => $jornada->trabajadoLegible(),
-                'exacto' => $jornada->tiempoEsExacto(),
-            ]),
+                $salida = $jornada->marcaciones->last()?->tipo === TipoMarcacion::Entrada ? null : $jornada->ultimaSalida();
+
+                return [
+                    'persona' => $jornada->empleado,
+                    'primera_entrada' => $jornada->primeraEntrada()?->marcado_at,
+                    'primera_entrada_metodo' => $jornada->primeraEntrada()?->metodo?->label(),
+                    'ultima_salida' => $salida?->marcado_at,
+                    'ultima_salida_metodo' => $salida?->metodo?->label(),
+                    'horas' => $jornada->trabajadoLegible(),
+                    'exacto' => $jornada->tiempoEsExacto(),
+                ];
+            }),
             'faltan' => $faltan,
             'conteos' => ['marcaron' => $jornadas->count(), 'faltan' => $faltan->count(), 'activos' => $activos->count()],
             'empleados_sin_huella' => $activos->where('huellas_vigentes', 0)->count(),

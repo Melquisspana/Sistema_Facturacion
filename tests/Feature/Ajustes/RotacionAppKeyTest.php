@@ -6,8 +6,10 @@ use App\Ajustes\Rotacion\RotacionAppKey;
 use App\Ajustes\Rotacion\RotacionImposibleException;
 use App\Facades\Ajustes;
 use App\Models\AjusteSistema;
+use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\GmailCuenta;
 use App\Models\User;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -251,6 +253,26 @@ class RotacionAppKeyTest extends TestCase
 
         $this->assertSame(self::TOKEN, $cifrador->decryptString((string) $fila->access_token));
         $this->assertSame(self::TOKEN.'-refresh', $cifrador->decryptString((string) $fila->refresh_token));
+    }
+
+    /**
+     * El número para marcar de Asistencia también va cifrado, y su índice de búsqueda
+     * sale de APP_KEY: sin rehacerlo, después de rotar nadie podría marcar con su número.
+     */
+    public function test_la_rotacion_recifra_el_numero_para_marcar_y_rehace_su_indice(): void
+    {
+        $empleado = AsistenciaEmpleado::factory()->create();
+        app(NumeroParaMarcar::class)->asignar($empleado, '4821');
+        $indiceViejo = DB::table('asistencia_empleados')->where('id', $empleado->id)->value('numero_marcar_indice');
+        $clave = $this->claveNueva();
+
+        $this->assertNotEmpty(array_filter($this->rotacion()->afectados(), fn ($e) => str_starts_with($e, 'asistencia_empleados')));
+        $this->rotacion()->ejecutar($clave);
+
+        $fila = DB::table('asistencia_empleados')->where('id', $empleado->id)->first();
+        $this->assertSame('4821', $this->cifradorDe($clave)->decryptString((string) $fila->numero_marcar));
+        $this->assertSame(NumeroParaMarcar::indice('4821', RotacionAppKey::normalizar($clave)), $fila->numero_marcar_indice);
+        $this->assertNotSame($indiceViejo, $fila->numero_marcar_indice);
     }
 
     /** Nunca queda texto plano en la base, ni antes ni después de rotar. */

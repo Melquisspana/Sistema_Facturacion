@@ -24,7 +24,7 @@ class HojaAsistencia
         private readonly ConsultaJornadas $jornadas,
     ) {}
 
-    /** @return list<array{nombre: string, entrada: ?string, salida: ?string}> */
+    /** @return list<array{nombre: string, entrada: ?string, entrada_metodo: ?string, salida: ?string, salida_metodo: ?string}> */
     public function delDia(CarbonImmutable $fecha): array
     {
         $jornadas = $this->jornadas->porRango(FiltroAsistencia::vacio()->conRango($fecha, $fecha))
@@ -37,11 +37,16 @@ class HojaAsistencia
 
         return $personas->map(function (AsistenciaEmpleado $persona) use ($jornadas) {
             $marcas = $jornadas->get($persona->id)?->marcaciones;
+            $entrada = $marcas?->first();
+            $salida = $marcas !== null && $marcas->count() > 1 ? $marcas->last() : null;
 
             return [
                 'nombre' => $persona->nombreCompleto(),
-                'entrada' => $this->hora($marcas?->first()?->marcado_at),
-                'salida' => $marcas !== null && $marcas->count() > 1 ? $this->hora($marcas->last()->marcado_at) : null,
+                'entrada' => $this->hora($entrada?->marcado_at),
+                // «Con huella» o «Con número»; nada en una corrección manual.
+                'entrada_metodo' => $entrada?->metodo?->label(),
+                'salida' => $this->hora($salida?->marcado_at),
+                'salida_metodo' => $salida?->metodo?->label(),
             ];
         })->all();
     }
