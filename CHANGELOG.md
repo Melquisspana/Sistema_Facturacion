@@ -8,6 +8,27 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.27.3] - 2026-11-27
+
+«Volvió a la fábrica» para los pedidos que salieron y no se entregaron (#457), el total de Compras que resta las notas de crédito (#455) y una limpieza de código (#458). Sin migraciones ni cambios de permisos. También entran la CI más rápida (#456), que no cambia nada del servidor, y el reintento del respaldo (#454), que todavía falta instalar en el servidor (ver abajo).
+
+### Agregado
+
+- Facturación › «Llegó de pedidos»: botón «Volvió a la fábrica», para quien puede facturar. Cierra con motivo un pedido que salió y no se entregó, lo saca de lo pendiente de facturar y deja constancia en la ficha. No toca inventario, cobros ni documentos (#457).
+
+### Cambiado
+
+- CI: un PR pasa de unos 38 a unos 21 minutos, con las mismas pruebas. Ahora son 6 partes en SQLite y 8 en MySQL repartidas por peso, y un PR de solo CHANGELOG o firmware pasa en segundos. Los checks obligatorios de master son 16 (#456).
+- Respaldo a Drive: las comprobaciones se repiten una vez antes de avisar «FALLÓ» (#454). **Todavía no está instalado:** el servidor corre una versión anterior del script, hecha a mano, y hay que decidir cómo pasarlo.
+
+### Corregido
+
+- Compras › Documentos recibidos: el total resta las notas de crédito y no suma los comprobantes de retención (#455).
+
+### Quitado
+
+- Los comandos de relleno de una sola vez `ppq:backfill-salas` y `municipios:codigos-mh`, que nada usaba. `.env.example` documenta las variables de Rutas (#458).
+
 ## [2026.11.27.2] - 2026-11-27
 
 Gastos con los últimos errores del #16 arreglados, aunque el módulo sigue apagado (#449); un solo aviso cuando se corta internet (#451); y el teclado del lector que se abre tocando cualquier pantalla (#450). Sin migraciones ni cambios de permisos.
