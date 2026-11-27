@@ -13,6 +13,8 @@
 #include <Fonts/FreeSansBold24pt7b.h>
 #include <time.h>
 #include <sys/time.h>
+#include <esp_sntp.h>
+#include <mbedtls/sha256.h>
 
 #include "logo.h"
 
@@ -47,6 +49,16 @@
 // sondeo que la encuentre viva, asi que un sondeo en paralelo invalidaria el
 // token que este firmware tiene en RAM y el resultado final se perderia con un
 // 404 despues de haber grabado la plantilla en el sensor.
+//
+// TECLADO: tocar la pantalla en reposo abre un teclado numerico. Al cuarto
+// digito el numero se envia solo. Mientras el teclado esta abierto el sensor y
+// la red esperan; Cancelar o 15 s sin tocar lo cierran. 5 numeros equivocados
+// seguidos traban el teclado 1 minuto (la huella sigue andando).
+//
+// SIN RED la marca no se pierde: si no se pudo enviar (sin Wi-Fi, sin
+// conexion, tiempo agotado, 5xx o 429) se guarda en una cola en NVS con su
+// hora y se reenvia en orden, con `marcado_en`, desde el reposo. Sin red, el
+// numero se comprueba contra la lista local que baja del servidor.
 //
 // Las credenciales (SSID, password, token del lector) viven en secretos.h, que
 // NO se versiona. La plantilla versionada es secretos.h.example.
@@ -87,6 +99,64 @@ const uint8_t ENROL_MAX_REINTENTOS_RESULTADO =
 // una capacidad absurda: 1000 ranuras a ~6 ms son ya 6 s de UART.
 const uint16_t ENROL_MAX_RANURAS_BARRIDO =
   1000;
+
+
+// =====================================================
+// TECLADO NUMERICO (vidrio tactil)
+// =====================================================
+
+const uint8_t TECLADO_DIGITOS =
+  4;
+
+// Sin tocar nada durante este tiempo, el teclado vuelve al reposo.
+const unsigned long TECLADO_INACTIVIDAD_MS =
+  15000;
+
+// Cada cuanto se lee el vidrio mientras el teclado esta abierto.
+const unsigned long TECLADO_SONDEO_MS =
+  20;
+
+// Numeros equivocados seguidos que traban el teclado, y por cuanto tiempo.
+const uint8_t BLOQUEO_INTENTOS =
+  5;
+
+const unsigned long BLOQUEO_MS =
+  60000;
+
+
+// =====================================================
+// MARCAS SIN RED
+// =====================================================
+
+// Tope de la cola en NVS. Con la cola llena se avisa y no se guarda.
+const uint16_t COLA_TOPE =
+  300;
+
+// Pausa entre dos reenvios que llegaron. Uno por segundo deja lugar dentro del
+// limitador de Laravel (120/min por lector) para el sondeo y el ping.
+const unsigned long COLA_PASO_MS =
+  1000;
+
+// Espera tras un reenvio que no llego al servidor.
+const unsigned long COLA_REINTENTO_MS =
+  15000;
+
+// Ping en reposo: pone el reloj en hora y trae la version de la lista de
+// numeros.
+const unsigned long PING_CADA_MS =
+  60000;
+
+// Espera para volver a pedir la lista de numeros tras un fallo.
+const unsigned long NUMEROS_REINTENTO_MS =
+  60000;
+
+// Ademas del epoch del ping: si al prender el servidor esta caido pero hay
+// internet, la hora igual queda sincronizada y se pueden guardar marcas.
+#define NTP_SERVIDOR "pool.ntp.org"
+
+// false en produccion: la ranura, el numero tecleado y el cuerpo de la
+// marcacion no salen por Serial.
+#define SERIE_DETALLE false
 
 
 // =====================================================
@@ -231,6 +301,7 @@ enum Sonido : uint8_t {
   SONIDO_ADVERTENCIA,
   SONIDO_COOLDOWN,
   SONIDO_ARRANQUE,
+  SONIDO_TECLA,
 
   // Tono + frase hablada (voces.h).
   SONIDO_VOZ_ENTRADA,
@@ -241,6 +312,29 @@ enum Sonido : uint8_t {
 
 // false = solo tonos, como antes de las voces.
 #define LECTOR_HABLA true
+
+
+// =====================================================
+// TACTIL: FT6336G (vidrio capacitivo)
+//
+// Mismo bus I2C que el ES8311 (IO16 SDA / IO15 SCL), direccion 0x38. INT en
+// IO17 (en bajo mientras hay un toque) y RST en IO18, segun la tabla de pines
+// del wiki de LCDwiki («2.8inch ESP32-S3 Display») y el BSP de la ES3C28P. No
+// chocan con nada del firmware; si el sensor quedara en IO15/16 no hay tactil,
+// igual que no hay audio.
+//
+// Con PANTALLA_ROTACION 0 las coordenadas del FT6336G caen tal cual sobre la
+// pantalla: el BSP del fabricante espeja el panel en X (lo mismo que hace la
+// rotacion 0 de Adafruit) y no espeja el tactil. NO se comprobo con el
+// aparato: si un toque cae del lado opuesto, poner en true ese eje.
+// =====================================================
+
+#define TACTIL_ADDR 0x38
+#define TACTIL_INT  17
+#define TACTIL_RST  18
+
+#define TACTIL_INVERTIR_X false
+#define TACTIL_INVERTIR_Y false
 
 
 // =====================================================
@@ -257,6 +351,12 @@ enum EstadoPantalla {
   PANTALLA_AJUSTAR,
   PANTALLA_COOLDOWN,
   PANTALLA_ERROR,
+
+  // Teclado numerico y marcas sin red
+  PANTALLA_TECLADO,
+  PANTALLA_BLOQUEO,
+  PANTALLA_NUMERO_MALO,
+  PANTALLA_GUARDADA,
 
   // Enrolamiento
   PANTALLA_ENROL_INICIO,
@@ -375,6 +475,107 @@ String resultadoPendienteCuerpo =
 unsigned long proximoReintentoPendiente =
   0;
 
+// ------------------------------------- tactil y teclado
+
+bool tactilDisponible =
+  false;
+
+// La pone la interrupcion del INT del FT6336G. Solo abre el teclado desde el
+// reposo: el loop puede pasar 1,6 s dentro de identificarHuella() (dedo
+// fantasma) y un toque corto se perderia si solo se leyera el I2C.
+volatile bool tactilToco =
+  false;
+
+String tecladoDigitos =
+  "";
+
+unsigned long tecladoUltimoToque =
+  0;
+
+// Verdadero mientras el dedo sigue apoyado: una tecla cuenta una vez por toque.
+bool tecladoDedoAbajo =
+  false;
+
+int8_t teclaPresionada =
+  -1;
+
+uint8_t numerosFallidos =
+  0;
+
+bool bloqueoActivo =
+  false;
+
+unsigned long bloqueoDesde =
+  0;
+
+int bloqueoPintado =
+  -1;
+
+// ------------------------------------- marcas sin red
+
+enum TipoMarca : uint8_t {
+  MARCA_HUELLA,
+  MARCA_NUMERO
+};
+
+// Una marca guardada sin red, 8 bytes. `valor` es la ranura del sensor o el
+// numero de 4 cifras; el bit alto dice cual de los dos.
+struct MarcaEnCola {
+  uint32_t epoch;
+  uint16_t id;
+  uint16_t valor;
+};
+
+const uint16_t COLA_BIT_NUMERO =
+  0x8000;
+
+// Tal cual se guarda en NVS: cabecera y las marcas en orden, la mas vieja
+// primero. Solo se escriben las `total` primeras.
+struct ColaMarcas {
+  uint16_t siguienteId;
+  uint16_t total;
+  MarcaEnCola marcas[COLA_TOPE];
+};
+
+ColaMarcas cola = {
+  1,
+  0,
+  {}
+};
+
+unsigned long colaUltimoIntento =
+  0;
+
+unsigned long colaEspera =
+  0;
+
+unsigned long ultimoPing =
+  0;
+
+// ------------------------------------- lista local de numeros
+
+// Una entrada de la lista en NVS: el sha256 de sal + numero, en binario, y el
+// nombre ya pasado a ASCII para la pantalla (24 letras como maximo).
+struct EntradaNumero {
+  uint8_t hash[32];
+  char nombre[25];
+};
+
+// Copia en RAM de la version guardada en NVS ("" = no hay lista).
+String numerosVersion =
+  "";
+
+// Version que se bajo pero no cupo en NVS: no se vuelve a pedir hasta que el
+// ping traiga otra.
+String numerosVersionFallida =
+  "";
+
+bool numerosPendiente =
+  false;
+
+unsigned long numerosUltimoIntento =
+  0;
+
 
 // =====================================================
 // PROTOTIPOS
@@ -427,7 +628,9 @@ void esperarRetiroConMensaje(
 );
 
 RespuestaAPI enviarMarcacion(
-  uint16_t fingerprintID
+  uint8_t tipo,
+  uint16_t valor,
+  uint32_t marcadoEn
 );
 
 String obtenerValorJson(
@@ -540,6 +743,32 @@ bool esperarRetiroDeEnrolamiento(
 uint8_t estadoRanuraEnSensor(
   uint16_t ranura
 );
+
+// ------------------------------------- teclado y marcas sin red
+
+void mostrarTeclado();
+void mostrarBloqueo();
+void mostrarNumeroIncorrecto();
+
+void mostrarGuardada(
+  String nombre
+);
+
+bool pantallaEnReposo();
+bool tecladoEnBloqueo();
+
+int finObjetoJson(
+  const String& json,
+  int inicio
+);
+
+void descargarNumeros();
+
+void marcarConNumero(
+  const String& numero
+);
+
+void atenderReposo();
 
 
 bool es8311Escribir(
@@ -819,6 +1048,11 @@ void tareaAudio(
         audioTono(1568, 120);
         break;
 
+      // Clic corto: se toco una tecla del teclado numerico.
+      case SONIDO_TECLA:
+        audioTono(1800, 25);
+        break;
+
       // Las voces repiten el tono de su caso y despues dicen la frase: el
       // tono avisa al instante y la frase confirma que paso.
       case SONIDO_VOZ_ENTRADA:
@@ -987,13 +1221,16 @@ void led(
 //
 // El resto del firmware llama a estas funciones igual que antes. atenderBuzzer()
 // ya no tiene sonido que avanzar (la tarea de audio lo hace sola); como el loop
-// la llama en cada vuelta, se aprovecha para refrescar el reloj en reposo.
+// la llama en cada vuelta, se aprovecha para refrescar el reloj en reposo y la
+// cuenta regresiva del teclado bloqueado.
 
 void actualizarReloj();
+void actualizarBloqueo();
 
 void atenderBuzzer() {
 
   actualizarReloj();
+  actualizarBloqueo();
 }
 
 
@@ -1068,6 +1305,174 @@ void avisarNoRegistrada() {
 
   led(60, 0, 0);
   sonar(LECTOR_HABLA ? SONIDO_VOZ_NO_REGISTRADA : SONIDO_ERROR);
+}
+
+
+// =====================================================
+// TACTIL: lector minimo del FT6336G con Wire
+//
+// Solo los registros 0x02 a 0x06: cuantos toques hay y la X/Y del primero.
+// =====================================================
+
+void IRAM_ATTR alTocarPantalla() {
+
+  tactilToco =
+    true;
+}
+
+
+void iniciarTactil() {
+
+  // Reinicio del controlador: al menos 5 ms en bajo y ~300 ms hasta que
+  // contesta por I2C.
+  pinMode(
+    TACTIL_RST,
+    OUTPUT
+  );
+
+  digitalWrite(
+    TACTIL_RST,
+    LOW
+  );
+
+  delay(10);
+
+  digitalWrite(
+    TACTIL_RST,
+    HIGH
+  );
+
+  delay(300);
+
+  // Normalmente ya lo abrio iniciarAudio(); repetirlo con los mismos pines no
+  // cambia nada, y si el audio no arranco el tactil igual necesita el bus.
+  Wire.begin(
+    I2C_SDA,
+    I2C_SCL,
+    100000
+  );
+
+  Wire.beginTransmission(
+    TACTIL_ADDR
+  );
+
+  if (
+    Wire.endTransmission() != 0
+  ) {
+
+    Serial.println(
+      "TACTIL: el FT6336G no contesta"
+    );
+
+    return;
+  }
+
+  // G_MODE (0xA4) = 0: el INT queda en bajo MIENTRAS hay un toque, asi que un
+  // dedo que se queda apoyado no vuelve a disparar la interrupcion.
+  Wire.beginTransmission(
+    TACTIL_ADDR
+  );
+
+  Wire.write(0xA4);
+  Wire.write(0x00);
+  Wire.endTransmission();
+
+  pinMode(
+    TACTIL_INT,
+    INPUT_PULLUP
+  );
+
+  attachInterrupt(
+    digitalPinToInterrupt(TACTIL_INT),
+    alTocarPantalla,
+    FALLING
+  );
+
+  tactilDisponible =
+    true;
+
+  Serial.println(
+    "TACTIL OK"
+  );
+}
+
+
+// true si hay un dedo en el vidrio, con su X/Y ya en coordenadas de pantalla.
+bool leerTactil(
+  int16_t& x,
+  int16_t& y
+) {
+
+  if (
+    !tactilDisponible
+  ) {
+    return false;
+  }
+
+  Wire.beginTransmission(
+    TACTIL_ADDR
+  );
+
+  Wire.write(0x02);
+
+  if (
+    Wire.endTransmission(false) != 0
+  ) {
+    return false;
+  }
+
+  if (
+    Wire.requestFrom(
+      (uint16_t) TACTIL_ADDR,
+      (size_t) 5,
+      true
+    ) != 5
+  ) {
+    return false;
+  }
+
+  uint8_t d[5];
+
+  for (
+    uint8_t i = 0;
+    i < 5;
+    i++
+  ) {
+    d[i] = Wire.read();
+  }
+
+  // 0x02: cuantos toques (1 o 2). 0x03, bits 7-6: el evento; 01 = se levanto.
+  uint8_t toques =
+    d[0] & 0x0F;
+
+  if (
+    toques == 0 ||
+    toques > 2 ||
+    (d[1] >> 6) == 1
+  ) {
+    return false;
+  }
+
+  x = ((d[1] & 0x0F) << 8) | d[2];
+  y = ((d[3] & 0x0F) << 8) | d[4];
+
+  if (PANTALLA_ROTACION == 2) {
+    x = ANCHO_TFT - 1 - x;
+    y = ALTO_TFT - 1 - y;
+  }
+
+  if (TACTIL_INVERTIR_X) {
+    x = ANCHO_TFT - 1 - x;
+  }
+
+  if (TACTIL_INVERTIR_Y) {
+    y = ALTO_TFT - 1 - y;
+  }
+
+  x = constrain(x, 0, ANCHO_TFT - 1);
+  y = constrain(y, 0, ALTO_TFT - 1);
+
+  return true;
 }
 
 
@@ -1321,12 +1726,17 @@ String tipoTitulo(
 // =====================================================
 // RELOJ
 //
-// Solo para MOSTRAR. La hora de las marcaciones la sigue poniendo el servidor
-// (regla 1 del modulo). El reloj se pone en hora con el `epoch` que devuelve
-// el ping, y la zona es la de El Salvador (UTC-6, sin horario de verano).
+// Para MOSTRAR y para fechar las marcas guardadas sin red (`marcado_en`). La
+// hora de las marcaciones en vivo la sigue poniendo el servidor (regla 1 del
+// modulo), y tambien es el servidor quien valida la de las diferidas. El reloj
+// se pone en hora con el `epoch` del ping y por NTP; la zona es la de El
+// Salvador (UTC-6, sin horario de verano).
+//
+// relojEnHora arranca en false en cada encendido: sin hora sincronizada desde
+// que prendio el lector, no se guarda ninguna marca sin red.
 // =====================================================
 
-bool relojEnHora =
+volatile bool relojEnHora =
   false;
 
 int minutoPintado =
@@ -1370,6 +1780,16 @@ void ponerRelojDesdePing(
 
   Serial.print("Reloj en hora desde el servidor: ");
   Serial.println(epoch);
+}
+
+
+// La llama el SNTP (en su propia tarea) cada vez que sincroniza.
+void alSincronizarHora(
+  struct timeval* tv
+) {
+
+  relojEnHora =
+    true;
 }
 
 
@@ -1716,6 +2136,16 @@ void dibujarTarjetaLista() {
 
   iconoHuella(ANCHO_TFT / 2, TARJETA_Y + 116, COLOR_VERDE);
 
+  if (
+    tactilDisponible
+  ) {
+
+    tc("Coloque su dedo", TARJETA_Y + 136, F_NEGRITA, COLOR_VERDE);
+    tc("o toque la pantalla", TARJETA_Y + 154, F_CHICA, COLOR_GRIS_CLARO);
+
+    return;
+  }
+
   tc("Coloque su dedo", TARJETA_Y + 144, F_NEGRITA, COLOR_VERDE);
 }
 
@@ -1734,6 +2164,11 @@ void mostrarListo() {
 
   pantallaDetalle =
     "";
+
+  // Un toque que llego durante otra pantalla (o el que cerro el teclado) no
+  // tiene que volver a abrirlo.
+  tactilToco =
+    false;
 
   led(0, 0, 0);
 
@@ -2197,6 +2632,360 @@ void mostrarEnrolIndice() {
 
 
 // =====================================================
+// PANTALLAS DEL TECLADO Y DE LAS MARCAS SIN RED
+//
+// El teclado ocupa la pantalla entera, sin cabecera ni pie: las teclas tienen
+// que ser grandes. Arriba, 4 casillas (un punto por digito, el numero no se
+// muestra); abajo, 1-9, Borrar, 0 y Cancelar.
+// =====================================================
+
+const int CASILLA_ANCHO =
+  44;
+
+const int CASILLA_ALTO =
+  50;
+
+const int CASILLA_SEPARACION =
+  14;
+
+const int CASILLA_Y =
+  36;
+
+const int TECLA_X0 =
+  2;
+
+const int TECLA_ANCHO =
+  76;
+
+const int TECLA_PASO_X =
+  80;
+
+const int TECLA_Y0 =
+  100;
+
+const int TECLA_ALTO =
+  50;
+
+const int TECLA_PASO_Y =
+  55;
+
+const int8_t TECLA_BORRAR =
+  9;
+
+const int8_t TECLA_CANCELAR =
+  11;
+
+const char* const ETIQUETAS_TECLA[] = {
+  "1", "2", "3",
+  "4", "5", "6",
+  "7", "8", "9",
+  "Borrar", "0", "Cancelar"
+};
+
+
+void dibujarCasillas() {
+
+  const int x0 =
+    (ANCHO_TFT - 4 * CASILLA_ANCHO - 3 * CASILLA_SEPARACION) / 2;
+
+  for (
+    uint8_t k = 0;
+    k < TECLADO_DIGITOS;
+    k++
+  ) {
+
+    int x =
+      x0 + k * (CASILLA_ANCHO + CASILLA_SEPARACION);
+
+    bool actual =
+      k == tecladoDigitos.length();
+
+    uint16_t borde =
+      actual ? COLOR_CYAN : COLOR_GRIS;
+
+    tft.fillRoundRect(x, CASILLA_Y, CASILLA_ANCHO, CASILLA_ALTO, 8, COLOR_GRIS_OSC);
+    tft.drawRoundRect(x, CASILLA_Y, CASILLA_ANCHO, CASILLA_ALTO, 8, borde);
+    tft.drawRoundRect(x + 1, CASILLA_Y + 1, CASILLA_ANCHO - 2, CASILLA_ALTO - 2, 7, borde);
+
+    if (
+      k < tecladoDigitos.length()
+    ) {
+
+      tft.fillCircle(
+        x + CASILLA_ANCHO / 2,
+        CASILLA_Y + CASILLA_ALTO / 2,
+        9,
+        COLOR_BLANCO
+      );
+    }
+  }
+}
+
+
+void dibujarTecla(
+  int8_t tecla,
+  bool presionada
+) {
+
+  int x =
+    TECLA_X0 + (tecla % 3) * TECLA_PASO_X;
+
+  int y =
+    TECLA_Y0 + (tecla / 3) * TECLA_PASO_Y;
+
+  uint16_t fondo =
+    COLOR_GRIS_OSC;
+
+  if (tecla == TECLA_BORRAR) {
+    fondo = COLOR_AMBAR_OSC;
+  } else if (tecla == TECLA_CANCELAR) {
+    fondo = COLOR_ROJO_OSC;
+  }
+
+  if (presionada) {
+    fondo = COLOR_GRIS;
+  }
+
+  tft.fillRoundRect(x, y, TECLA_ANCHO, TECLA_ALTO, 10, fondo);
+
+  // Las palabras van con la fuente chica: «Cancelar» en negrita no entra.
+  const GFXfont* f =
+    tecla == TECLA_BORRAR || tecla == TECLA_CANCELAR
+      ? F_CHICA
+      : F_GRANDE;
+
+  String texto =
+    ETIQUETAS_TECLA[tecla];
+
+  tft.setFont(f);
+  tft.setTextColor(COLOR_BLANCO);
+  tft.setCursor(
+    x + (TECLA_ANCHO - anchoTexto(texto, f)) / 2,
+    y + (TECLA_ALTO + altoMayusculas(f)) / 2
+  );
+  tft.print(texto);
+}
+
+
+// La tecla bajo el dedo, o -1 si el toque cayo arriba de las teclas. Las
+// columnas se reparten la pantalla entera para que un dedo grueso no caiga en
+// el hueco entre dos teclas.
+int8_t teclaEn(
+  int16_t x,
+  int16_t y
+) {
+
+  if (
+    y < TECLA_Y0 - 3
+  ) {
+    return -1;
+  }
+
+  int fila =
+    constrain((y - TECLA_Y0 + 2) / TECLA_PASO_Y, 0, 3);
+
+  int columna =
+    constrain(x / (ANCHO_TFT / 3), 0, 2);
+
+  return fila * 3 + columna;
+}
+
+
+void mostrarTeclado() {
+
+  pantallaActual =
+    PANTALLA_TECLADO;
+
+  pantallaDetalle =
+    "";
+
+  tecladoDigitos =
+    "";
+
+  tecladoUltimoToque =
+    millis();
+
+  // El dedo que abrio el teclado sigue apoyado: no es una tecla.
+  tecladoDedoAbajo =
+    true;
+
+  teclaPresionada =
+    -1;
+
+  led(0, 0, 0);
+
+  tft.fillScreen(COLOR_FONDO);
+
+  tc("Digite su numero", 10, F_NEGRITA, COLOR_GRIS_CLARO);
+
+  dibujarCasillas();
+
+  for (
+    int8_t tecla = 0;
+    tecla < 12;
+    tecla++
+  ) {
+    dibujarTecla(tecla, false);
+  }
+}
+
+
+int segundosDeBloqueo() {
+
+  unsigned long pasado =
+    millis() - bloqueoDesde;
+
+  if (
+    pasado >= BLOQUEO_MS
+  ) {
+    return 0;
+  }
+
+  return (BLOQUEO_MS - pasado + 999) / 1000;
+}
+
+
+void dibujarCuentaBloqueo(
+  int segundos
+) {
+
+  const int y =
+    TARJETA_Y + 100;
+
+  tft.fillRect(MARGEN + 4, y - 2, ANCHO_TFT - 2 * MARGEN - 8, 30, COLOR_ROJO_OSC);
+
+  tc("Espere " + String(segundos) + " s", y, F_MEDIA, COLOR_BLANCO);
+
+  bloqueoPintado =
+    segundos;
+}
+
+
+void mostrarBloqueo() {
+
+  pantallaActual =
+    PANTALLA_BLOQUEO;
+
+  pantallaDetalle =
+    "";
+
+  led(60, 0, 0);
+
+  int y =
+    pantallaBase(COLOR_ROJO_OSC, COLOR_ROJO);
+
+  iconoAviso(ANCHO_TFT / 2, y + 30, COLOR_ROJO, COLOR_ROJO_OSC);
+  tc("Bloqueado", y + 60, F_GRANDE, COLOR_BLANCO);
+
+  dibujarCuentaBloqueo(
+    segundosDeBloqueo()
+  );
+
+  tc("Puede marcar con huella", y + 142, F_CHICA, COLOR_GRIS_CLARO);
+}
+
+
+// Llamada desde el loop (via atenderBuzzer): repinta solo la cuenta regresiva
+// cuando cambia el segundo y, al terminar el bloqueo, vuelve al reposo. Con el
+// bloqueo en pantalla el sensor sigue andando.
+void actualizarBloqueo() {
+
+  if (
+    pantallaActual !=
+    PANTALLA_BLOQUEO
+  ) {
+    return;
+  }
+
+  if (
+    !tecladoEnBloqueo()
+  ) {
+
+    mostrarListo();
+
+    return;
+  }
+
+  int segundos =
+    segundosDeBloqueo();
+
+  if (
+    segundos != bloqueoPintado
+  ) {
+
+    dibujarCuentaBloqueo(
+      segundos
+    );
+  }
+}
+
+
+void mostrarNumeroIncorrecto() {
+
+  pantallaActual =
+    PANTALLA_NUMERO_MALO;
+
+  int y =
+    pantallaBase(COLOR_ROJO_OSC, COLOR_ROJO);
+
+  iconoX(ANCHO_TFT / 2, y + 36, COLOR_ROJO, COLOR_ROJO_OSC);
+  tc("Numero", y + 74, F_GRANDE, COLOR_BLANCO);
+  tc("incorrecto", y + 106, F_GRANDE, COLOR_BLANCO);
+  tc("Revise su numero", y + 146, F_CHICA, COLOR_GRIS_CLARO);
+}
+
+
+// Marca guardada sin red. `nombre` llega vacio con la huella: la ranura no
+// dice de quien es, eso lo sabe el servidor.
+void mostrarGuardada(
+  String nombre
+) {
+
+  pantallaActual =
+    PANTALLA_GUARDADA;
+
+  int y =
+    pantallaBase(COLOR_AZUL_OSC, COLOR_CYAN);
+
+  iconoOk(ANCHO_TFT / 2, y + 32, COLOR_CYAN, COLOR_AZUL_OSC);
+  tc("Marca guardada", y + 64, F_MEDIA, COLOR_CYAN);
+
+  if (
+    nombre.length() > 0
+  ) {
+    tcAjustado(tipoTitulo(nombre), y + 98, FUENTES_DETALLE, 3, COLOR_BLANCO);
+  }
+
+  tc("Se enviara al servidor", y + 140, F_CHICA, COLOR_GRIS_CLARO);
+}
+
+
+// El bloqueo tambien es reposo: el sensor sigue leyendo y una lectura sin dedo
+// no tiene que borrar la cuenta regresiva.
+bool pantallaEnReposo() {
+
+  return
+    pantallaActual == PANTALLA_LISTO ||
+    pantallaActual == PANTALLA_BLOQUEO;
+}
+
+
+bool tecladoEnBloqueo() {
+
+  if (
+    bloqueoActivo &&
+    millis() - bloqueoDesde >= BLOQUEO_MS
+  ) {
+
+    bloqueoActivo =
+      false;
+  }
+
+  return bloqueoActivo;
+}
+
+
+// =====================================================
 // WIFI
 // =====================================================
 
@@ -2531,7 +3320,8 @@ bool probarServidor() {
       "\"reconocido\":true"
     ) >= 0;
 
-  // Solo para el reloj de la pantalla: ver ponerRelojDesdePing().
+  // Reloj: ver ponerRelojDesdePing(). Lista de numeros: si el servidor tiene
+  // otra version, el reposo la baja (ver atenderReposo).
   if (
     servidorDisponible
   ) {
@@ -2539,6 +3329,22 @@ bool probarServidor() {
     ponerRelojDesdePing(
       respuesta
     );
+
+    String versionNumeros =
+      obtenerValorJson(
+        respuesta,
+        "numeros_version"
+      );
+
+    if (
+      versionNumeros.length() > 0 &&
+      versionNumeros != numerosVersion &&
+      versionNumeros != numerosVersionFallida
+    ) {
+
+      numerosPendiente =
+        true;
+    }
   }
 
   Serial.print(
@@ -2731,13 +3537,18 @@ ResultadoHuella identificarHuella(
       confianza =
         finger.confidence;
 
-      Serial.print(
-        "ID = "
-      );
+      if (
+        SERIE_DETALLE
+      ) {
 
-      Serial.println(
-        id
-      );
+        Serial.print(
+          "ID = "
+        );
+
+        Serial.println(
+          id
+        );
+      }
 
       Serial.print(
         "Confianza = "
@@ -3079,6 +3890,33 @@ String extraerObjetoJson(
     return "";
   }
 
+  int fin =
+    finObjetoJson(
+      json,
+      posicion
+    );
+
+  if (
+    fin < 0
+  ) {
+    return "";
+  }
+
+  return json.substring(
+    posicion,
+    fin + 1
+  );
+}
+
+
+// Posicion de la llave que cierra el objeto que abre json[inicio], o -1 si no
+// cierra (respuesta cortada). Respeta las cadenas: una llave dentro de un
+// nombre no cuenta.
+int finObjetoJson(
+  const String& json,
+  int inicio
+) {
+
   int profundidad =
     0;
 
@@ -3086,8 +3924,8 @@ String extraerObjetoJson(
     false;
 
   for (
-    int i = posicion;
-    i < json.length();
+    int i = inicio;
+    i < (int) json.length();
     i++
   ) {
 
@@ -3137,25 +3975,44 @@ String extraerObjetoJson(
       if (
         profundidad == 0
       ) {
-
-        return json.substring(
-          posicion,
-          i + 1
-        );
+        return i;
       }
     }
   }
 
-  return "";
+  return -1;
 }
 
 
 // =====================================================
 // ENVIAR MARCACION
+//
+// Por huella (`fingerprint_id`, la ranura) o por numero (`numero`, texto de 4
+// cifras). `marcadoEn` > 0 solo en las marcas que se guardaron sin red: el
+// servidor valida esa hora y las registra como diferidas.
 // =====================================================
 
+String numeroDeCuatro(
+  uint16_t valor
+) {
+
+  char texto[8];
+
+  snprintf(
+    texto,
+    sizeof(texto),
+    "%04u",
+    (unsigned) (valor % 10000)
+  );
+
+  return String(texto);
+}
+
+
 RespuestaAPI enviarMarcacion(
-  uint16_t fingerprintID
+  uint8_t tipo,
+  uint16_t valor,
+  uint32_t marcadoEn
 ) {
 
   RespuestaAPI r;
@@ -3201,9 +4058,35 @@ RespuestaAPI enviarMarcacion(
     return r;
   }
 
-  String body =
-    "{\"fingerprint_id\":" +
-    String(fingerprintID) +
+  String body;
+
+  // El numero va entre comillas: es un texto de 4 cifras y "0042" no es 42.
+  if (
+    tipo == MARCA_NUMERO
+  ) {
+
+    body =
+      "{\"numero\":\"" +
+      numeroDeCuatro(valor) +
+      "\"";
+
+  } else {
+
+    body =
+      "{\"fingerprint_id\":" +
+      String(valor);
+  }
+
+  if (
+    marcadoEn > 0
+  ) {
+
+    body +=
+      ",\"marcado_en\":" +
+      String(marcadoEn);
+  }
+
+  body +=
     "}";
 
   WiFiClient client;
@@ -3227,21 +4110,38 @@ RespuestaAPI enviarMarcacion(
     "ENVIANDO MARCACION"
   );
 
-  Serial.print(
-    "Fingerprint ID: "
-  );
-
   Serial.println(
-    fingerprintID
+    tipo == MARCA_NUMERO
+      ? "Por numero"
+      : "Por huella"
   );
 
-  Serial.print(
-    "BODY: "
-  );
+  if (
+    marcadoEn > 0
+  ) {
 
-  Serial.println(
-    body
-  );
+    Serial.print(
+      "Guardada sin red, marcado_en: "
+    );
+
+    Serial.println(
+      marcadoEn
+    );
+  }
+
+  // El cuerpo lleva la ranura o el numero: ver SERIE_DETALLE.
+  if (
+    SERIE_DETALLE
+  ) {
+
+    Serial.print(
+      "BODY: "
+    );
+
+    Serial.println(
+      body
+    );
+  }
 
   if (
     !client.connect(
@@ -3466,13 +4366,19 @@ RespuestaAPI enviarMarcacion(
 
   client.stop();
 
-  Serial.println(
-    "RESPUESTA:"
-  );
+  // La respuesta puede devolver la ranura o el numero que se mando.
+  if (
+    SERIE_DETALLE
+  ) {
 
-  Serial.println(
-    respuesta
-  );
+    Serial.println(
+      "RESPUESTA:"
+    );
+
+    Serial.println(
+      respuesta
+    );
+  }
 
   r.ok =
     obtenerBoolJson(
@@ -3559,8 +4465,82 @@ RespuestaAPI enviarMarcacion(
 // precio es esta duplicacion; la alternativa era refactorizar el unico camino
 // que hoy no falla.
 //
+// Tambien la usa la descarga de la lista de numeros. Esa respuesta es grande y
+// Apache la manda en trozos (Transfer-Encoding: chunked): se vuelve a unir
+// antes de devolverla.
+//
 // Devuelve el codigo HTTP, o 0 si no se llego a hablar con el servidor.
 // =====================================================
+
+// Une el cuerpo de una respuesta chunked: cada trozo es «tamano en hex\r\n»,
+// los datos y «\r\n»; el trozo de tamano 0 es el final. Si viene cortado,
+// devuelve lo que alcanzo a llegar y quien llama lo rechaza.
+String unirTrozos(
+  const String& cuerpo
+) {
+
+  String salida =
+    "";
+
+  salida.reserve(
+    cuerpo.length()
+  );
+
+  int posicion =
+    0;
+
+  while (
+    posicion < (int) cuerpo.length()
+  ) {
+
+    int finLinea =
+      cuerpo.indexOf(
+        "\r\n",
+        posicion
+      );
+
+    if (
+      finLinea < 0
+    ) {
+      break;
+    }
+
+    long tamano =
+      strtol(
+        cuerpo.substring(posicion, finLinea).c_str(),
+        nullptr,
+        16
+      );
+
+    if (
+      tamano <= 0
+    ) {
+      break;
+    }
+
+    int inicio =
+      finLinea + 2;
+
+    int fin =
+      min(
+        (int) cuerpo.length(),
+        inicio + (int) tamano
+      );
+
+    salida +=
+      cuerpo.substring(
+        inicio,
+        fin
+      );
+
+    posicion =
+      fin + 2;
+  }
+
+  return salida;
+}
+
+
 
 int peticionEnrolamiento(
   const char* metodo,
@@ -3752,6 +4732,9 @@ int peticionEnrolamiento(
       true;
   }
 
+  bool enTrozos =
+    false;
+
   while (
     client.connected() ||
     client.available()
@@ -3774,6 +4757,17 @@ int peticionEnrolamiento(
       linea.length() == 0
     ) {
       break;
+    }
+
+    linea.toLowerCase();
+
+    if (
+      linea.startsWith("transfer-encoding:") &&
+      linea.indexOf("chunked") >= 0
+    ) {
+
+      enTrozos =
+        true;
     }
   }
 
@@ -3817,6 +4811,16 @@ int peticionEnrolamiento(
   client.stop();
 
   if (
+    enTrozos
+  ) {
+
+    respuesta =
+      unirTrozos(
+        respuesta
+      );
+  }
+
+  if (
     httpCode ==
     401
   ) {
@@ -3833,6 +4837,862 @@ int peticionEnrolamiento(
   }
 
   return httpCode;
+}
+
+
+// =====================================================
+// MARCAS SIN RED: LA COLA
+//
+// Vive en NVS (clave "cola" del espacio "asistencia"), que aguanta un corte de
+// luz a mitad de escritura: queda la cola vieja o la nueva, nunca media. El
+// formato es ColaMarcas: 4 bytes de cabecera y 8 por marca, la mas vieja
+// primero (300 marcas = 2,4 KB).
+//
+// Se reenvia desde el reposo, una por vez y en orden, con `marcado_en`:
+//
+//   2xx                          entregada: sale de la cola.
+//   4xx con `estado`             el servidor decidio (ya marco, hora fuera de
+//                                rango, ranura sin empleado...): sale de la
+//                                cola y se anota por Serial.
+//   401, 408, 429, 4xx sin       no es un desenlace de la marca (credencial,
+//   `estado`, 5xx o sin red      saturacion, ruta caida): se reintenta.
+// =====================================================
+
+void cargarDatosGuardados() {
+
+  preferencias.begin(
+    "asistencia",
+    true
+  );
+
+  size_t largo =
+    preferencias.getBytesLength(
+      "cola"
+    );
+
+  const size_t cabecera =
+    offsetof(ColaMarcas, marcas);
+
+  if (
+    largo >= cabecera &&
+    largo <= sizeof(cola) &&
+    (largo - cabecera) % sizeof(MarcaEnCola) == 0
+  ) {
+
+    preferencias.getBytes(
+      "cola",
+      &cola,
+      largo
+    );
+
+    cola.total =
+      (largo - cabecera) / sizeof(MarcaEnCola);
+  }
+
+  numerosVersion =
+    preferencias.getString(
+      "num_ver",
+      ""
+    );
+
+  preferencias.end();
+
+  Serial.print(
+    "MARCAS EN COLA: "
+  );
+
+  Serial.println(
+    cola.total
+  );
+
+  Serial.print(
+    "LISTA DE NUMEROS: "
+  );
+
+  Serial.println(
+    numerosVersion.length() > 0
+      ? numerosVersion
+      : String("no hay")
+  );
+}
+
+
+bool guardarCola() {
+
+  size_t largo =
+    offsetof(ColaMarcas, marcas) +
+    cola.total * sizeof(MarcaEnCola);
+
+  preferencias.begin(
+    "asistencia",
+    false
+  );
+
+  bool ok =
+    preferencias.putBytes(
+      "cola",
+      &cola,
+      largo
+    ) == largo;
+
+  preferencias.end();
+
+  return ok;
+}
+
+
+bool encolarMarca(
+  uint8_t tipo,
+  uint16_t valor,
+  uint32_t instante
+) {
+
+  if (
+    cola.total >= COLA_TOPE
+  ) {
+    return false;
+  }
+
+  MarcaEnCola& marca =
+    cola.marcas[cola.total];
+
+  marca.epoch =
+    instante;
+
+  marca.id =
+    cola.siguienteId;
+
+  marca.valor =
+    tipo == MARCA_NUMERO
+      ? (uint16_t) (valor | COLA_BIT_NUMERO)
+      : valor;
+
+  cola.total++;
+
+  cola.siguienteId++;
+
+  if (
+    cola.siguienteId == 0
+  ) {
+    cola.siguienteId = 1;
+  }
+
+  if (
+    !guardarCola()
+  ) {
+
+    cola.total--;
+
+    cola.siguienteId =
+      marca.id;
+
+    Serial.println(
+      "COLA: no se pudo escribir la NVS"
+    );
+
+    return false;
+  }
+
+  Serial.printf(
+    "COLA: marca #%u guardada (%s), %u en cola\n",
+    marca.id,
+    tipo == MARCA_NUMERO ? "numero" : "huella",
+    cola.total
+  );
+
+  return true;
+}
+
+
+void quitarPrimeraDeCola() {
+
+  if (
+    cola.total == 0
+  ) {
+    return;
+  }
+
+  memmove(
+    &cola.marcas[0],
+    &cola.marcas[1],
+    (cola.total - 1) * sizeof(MarcaEnCola)
+  );
+
+  cola.total--;
+
+  // Si esto falla, la marca se reenvia despues de un reinicio y el servidor
+  // la rechaza por repetida: no se duplica.
+  if (
+    !guardarCola()
+  ) {
+
+    Serial.println(
+      "COLA: no se pudo actualizar la NVS"
+    );
+  }
+}
+
+
+// No se pudo hablar con el servidor, o no puede atender ahora: la marca se
+// guarda en la cola en vez de perderse.
+bool marcaSinRed(
+  const RespuestaAPI& r
+) {
+
+  return
+    r.httpCode <= 0 ||
+    r.httpCode >= 500 ||
+    r.httpCode == 429;
+}
+
+
+// El servidor recibio la marca y la rechazo: reintentarla daria lo mismo.
+bool marcaRechazada(
+  const RespuestaAPI& r
+) {
+
+  return
+    r.httpCode >= 400 &&
+    r.httpCode < 500 &&
+    r.httpCode != 401 &&
+    r.httpCode != 408 &&
+    r.httpCode != 429 &&
+    r.estado.length() > 0;
+}
+
+
+// Devuelve true si hablo con el servidor (una peticion por vuelta del loop).
+bool reenviarCola() {
+
+  if (
+    cola.total == 0 ||
+    millis() - colaUltimoIntento < colaEspera
+  ) {
+    return false;
+  }
+
+  colaUltimoIntento =
+    millis();
+
+  MarcaEnCola marca =
+    cola.marcas[0];
+
+  bool porNumero =
+    (marca.valor & COLA_BIT_NUMERO) != 0;
+
+  RespuestaAPI r =
+    enviarMarcacion(
+      porNumero ? MARCA_NUMERO : MARCA_HUELLA,
+      (uint16_t) (marca.valor & ~COLA_BIT_NUMERO),
+      marca.epoch
+    );
+
+  if (
+    r.httpCode >= 200 &&
+    r.httpCode < 300
+  ) {
+
+    quitarPrimeraDeCola();
+
+    colaEspera =
+      COLA_PASO_MS;
+
+    Serial.printf(
+      "COLA: marca #%u entregada (%s), quedan %u\n",
+      marca.id,
+      r.estado.c_str(),
+      cola.total
+    );
+
+    return true;
+  }
+
+  if (
+    marcaRechazada(
+      r
+    )
+  ) {
+
+    quitarPrimeraDeCola();
+
+    colaEspera =
+      COLA_PASO_MS;
+
+    Serial.printf(
+      "COLA: marca #%u DESCARTADA, HTTP %d %s: %s. Quedan %u\n",
+      marca.id,
+      r.httpCode,
+      r.estado.c_str(),
+      r.mensaje.c_str(),
+      cola.total
+    );
+
+    return true;
+  }
+
+  colaEspera =
+    COLA_REINTENTO_MS;
+
+  Serial.printf(
+    "COLA: marca #%u sin entregar (HTTP %d), se reintenta\n",
+    marca.id,
+    r.httpCode
+  );
+
+  return true;
+}
+
+
+// La marca en vivo, salvo que haya marcas viejas en la cola: entonces la nueva
+// va detras, para que el servidor las reciba en el orden en que pasaron. Sin
+// hora no se puede encolar, y se manda en vivo igual.
+RespuestaAPI enviarMarcacionEnOrden(
+  uint8_t tipo,
+  uint16_t valor
+) {
+
+  if (
+    cola.total > 0 &&
+    relojEnHora
+  ) {
+
+    Serial.println(
+      "HAY MARCAS EN COLA: la nueva va detras"
+    );
+
+    RespuestaAPI r;
+
+    r.httpCode =
+      0;
+
+    r.ok =
+      false;
+
+    r.esperaSegundos =
+      -1;
+
+    return r;
+  }
+
+  return enviarMarcacion(
+    tipo,
+    valor,
+    0
+  );
+}
+
+
+// =====================================================
+// LISTA LOCAL DE NUMEROS
+//
+// GET /api/asistencia/numeros devuelve {version, sal, numeros: [{e, h, n}]},
+// con h = sha256(sal . numero) en hex. Se guarda SOLO en NVS:
+//
+//   num_ver    la version (se escribe al final: sin ella no hay lista)
+//   num_sal    la sal, tal cual (32 hex)
+//   num_lista  EntradaNumero[]: el hash en binario y el nombre en ASCII
+//
+// Con red, el que decide es el servidor; la lista solo se usa sin red.
+// =====================================================
+
+bool esHex(
+  const String& texto,
+  unsigned int largo
+) {
+
+  if (
+    texto.length() != largo
+  ) {
+    return false;
+  }
+
+  for (
+    unsigned int i = 0;
+    i < largo;
+    i++
+  ) {
+
+    if (
+      !isxdigit(texto[i])
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+// Lo que el JSON escapa: \" \\ \/ y á (Laravel escapa los acentos). El
+// resultado sale en UTF-8 para que normalizarTextoTFT() lo pase a ASCII.
+String desescaparJson(
+  const String& texto
+) {
+
+  String salida =
+    "";
+
+  salida.reserve(
+    texto.length()
+  );
+
+  for (
+    unsigned int i = 0;
+    i < texto.length();
+    i++
+  ) {
+
+    char c =
+      texto[i];
+
+    if (
+      c != '\\' ||
+      i + 1 >= texto.length()
+    ) {
+
+      salida += c;
+
+      continue;
+    }
+
+    i++;
+
+    char escapado =
+      texto[i];
+
+    if (
+      escapado == 'u' &&
+      i + 4 < texto.length()
+    ) {
+
+      uint16_t letra =
+        strtoul(
+          texto.substring(i + 1, i + 5).c_str(),
+          nullptr,
+          16
+        );
+
+      i += 4;
+
+      if (letra < 0x80) {
+        salida += (char) letra;
+      } else if (letra < 0x800) {
+        salida += (char) (0xC0 | (letra >> 6));
+        salida += (char) (0x80 | (letra & 0x3F));
+      }
+
+      // Lo que no es latino no se puede pintar con estas fuentes: se omite.
+      continue;
+    }
+
+    salida += escapado;
+  }
+
+  return salida;
+}
+
+
+bool guardarNumeros(
+  const String& version,
+  const String& sal,
+  const EntradaNumero* entradas,
+  uint16_t total
+) {
+
+  size_t largo =
+    total * sizeof(EntradaNumero);
+
+  preferencias.begin(
+    "asistencia",
+    false
+  );
+
+  // Primero se borra la version: si algo falla a medias, no queda una version
+  // que no corresponde a la lista. La lista vieja se borra antes de escribir
+  // la nueva para no necesitar lugar para las dos en los 20 KB de NVS.
+  preferencias.remove("num_ver");
+  preferencias.remove("num_lista");
+
+  bool ok =
+    (
+      total == 0 ||
+      preferencias.putBytes("num_lista", entradas, largo) == largo
+    ) &&
+    preferencias.putString("num_sal", sal) == sal.length() &&
+    preferencias.putString("num_ver", version) == version.length();
+
+  if (
+    !ok
+  ) {
+    preferencias.remove("num_ver");
+  }
+
+  preferencias.end();
+
+  return ok;
+}
+
+
+void descargarNumeros() {
+
+  numerosUltimoIntento =
+    millis();
+
+  String respuesta;
+
+  int http =
+    peticionEnrolamiento(
+      "GET",
+      "/api/asistencia/numeros",
+      "",
+      respuesta
+    );
+
+  if (
+    http != 200
+  ) {
+
+    Serial.print(
+      "NUMEROS: HTTP "
+    );
+
+    Serial.println(
+      http
+    );
+
+    return;
+  }
+
+  String version =
+    obtenerValorJson(
+      respuesta,
+      "version"
+    );
+
+  String sal =
+    obtenerValorJson(
+      respuesta,
+      "sal"
+    );
+
+  int lista =
+    respuesta.indexOf(
+      "\"numeros\":"
+    );
+
+  int posicion =
+    lista >= 0
+      ? respuesta.indexOf('[', lista)
+      : -1;
+
+  if (
+    version.length() == 0 ||
+    version.length() > 64 ||
+    !esHex(sal, 32) ||
+    posicion < 0
+  ) {
+
+    Serial.println(
+      "NUMEROS: respuesta ilegible, se conserva la lista anterior"
+    );
+
+    return;
+  }
+
+  // Al prender se baja siempre; si no cambio, no se reescribe la NVS.
+  if (
+    version == numerosVersion
+  ) {
+
+    numerosPendiente =
+      false;
+
+    Serial.println(
+      "NUMEROS: la lista no cambio"
+    );
+
+    return;
+  }
+
+  // Cuantas entradas hay, para reservar de una vez. "h": no puede aparecer
+  // dentro de un nombre: las comillas de adentro vienen escapadas.
+  uint16_t total =
+    0;
+
+  for (
+    int k = respuesta.indexOf("\"h\":", posicion);
+    k >= 0;
+    k = respuesta.indexOf("\"h\":", k + 4)
+  ) {
+    total++;
+  }
+
+  EntradaNumero* entradas =
+    total > 0
+      ? (EntradaNumero*) calloc(total, sizeof(EntradaNumero))
+      : nullptr;
+
+  if (
+    total > 0 &&
+    entradas == nullptr
+  ) {
+
+    Serial.println(
+      "NUMEROS: sin memoria para la lista"
+    );
+
+    return;
+  }
+
+  uint16_t leidas =
+    0;
+
+  bool cerrada =
+    false;
+
+  while (
+    leidas <= total
+  ) {
+
+    int inicio =
+      respuesta.indexOf('{', posicion);
+
+    int cierre =
+      respuesta.indexOf(']', posicion);
+
+    if (
+      cierre >= 0 &&
+      (inicio < 0 || cierre < inicio)
+    ) {
+
+      cerrada =
+        true;
+
+      break;
+    }
+
+    if (
+      inicio < 0 ||
+      leidas == total
+    ) {
+      break;
+    }
+
+    int fin =
+      finObjetoJson(
+        respuesta,
+        inicio
+      );
+
+    if (
+      fin < 0
+    ) {
+      break;
+    }
+
+    String objeto =
+      respuesta.substring(
+        inicio,
+        fin + 1
+      );
+
+    String hash =
+      obtenerValorJson(
+        objeto,
+        "h"
+      );
+
+    if (
+      !esHex(hash, 64)
+    ) {
+      break;
+    }
+
+    for (
+      uint8_t b = 0;
+      b < 32;
+      b++
+    ) {
+
+      entradas[leidas].hash[b] =
+        strtoul(
+          hash.substring(b * 2, b * 2 + 2).c_str(),
+          nullptr,
+          16
+        );
+    }
+
+    String nombre =
+      normalizarTextoTFT(
+        desescaparJson(
+          obtenerValorJson(
+            objeto,
+            "n"
+          )
+        )
+      );
+
+    // toCharArray() corta a 24 letras y deja el cero final.
+    nombre.toCharArray(
+      entradas[leidas].nombre,
+      sizeof(entradas[leidas].nombre)
+    );
+
+    leidas++;
+
+    posicion =
+      fin + 1;
+  }
+
+  // Una lista a medias (respuesta cortada, entrada ilegible) no reemplaza a la
+  // anterior: dejaria sin poder marcar a los que faltan.
+  if (
+    !cerrada ||
+    leidas != total
+  ) {
+
+    free(entradas);
+
+    Serial.println(
+      "NUMEROS: lista incompleta, se conserva la anterior"
+    );
+
+    return;
+  }
+
+  bool ok =
+    guardarNumeros(
+      version,
+      sal,
+      entradas,
+      total
+    );
+
+  free(entradas);
+
+  numerosPendiente =
+    false;
+
+  if (
+    !ok
+  ) {
+
+    numerosVersion =
+      "";
+
+    numerosVersionFallida =
+      version;
+
+    Serial.printf(
+      "NUMEROS: la lista (%u) no cabe en la NVS\n",
+      total
+    );
+
+    return;
+  }
+
+  numerosVersion =
+    version;
+
+  numerosVersionFallida =
+    "";
+
+  Serial.printf(
+    "NUMEROS: lista guardada, %u numeros\n",
+    total
+  );
+}
+
+
+// 1 = esta en la lista (y deja el nombre), 0 = no esta, -1 = no hay lista con
+// que comparar.
+int8_t buscarNumeroLocal(
+  const String& numero,
+  String& nombre
+) {
+
+  if (
+    numerosVersion.length() == 0
+  ) {
+    return -1;
+  }
+
+  preferencias.begin(
+    "asistencia",
+    true
+  );
+
+  String sal =
+    preferencias.getString(
+      "num_sal",
+      ""
+    );
+
+  size_t largo =
+    preferencias.getBytesLength(
+      "num_lista"
+    );
+
+  int8_t resultado =
+    esHex(sal, 32) ? 0 : -1;
+
+  EntradaNumero* lista =
+    resultado == 0 && largo >= sizeof(EntradaNumero)
+      ? (EntradaNumero*) malloc(largo)
+      : nullptr;
+
+  if (
+    lista != nullptr &&
+    preferencias.getBytes("num_lista", lista, largo) == largo
+  ) {
+
+    String entrada =
+      sal + numero;
+
+    uint8_t hash[32];
+
+    mbedtls_sha256(
+      (const unsigned char*) entrada.c_str(),
+      entrada.length(),
+      hash,
+      0
+    );
+
+    for (
+      size_t i = 0;
+      i < largo / sizeof(EntradaNumero);
+      i++
+    ) {
+
+      if (
+        memcmp(lista[i].hash, hash, sizeof(hash)) == 0
+      ) {
+
+        nombre =
+          String(lista[i].nombre);
+
+        resultado =
+          1;
+
+        break;
+      }
+    }
+
+  } else if (
+    resultado == 0 &&
+    largo >= sizeof(EntradaNumero)
+  ) {
+
+    // La lista existe pero no se pudo leer: no se castiga a la persona.
+    resultado =
+      -1;
+  }
+
+  free(lista);
+
+  preferencias.end();
+
+  return resultado;
 }
 
 
@@ -5793,6 +7653,665 @@ bool buscarSensor() {
 
 
 // =====================================================
+// RESPUESTA DE UNA MARCACION
+//
+// Lo que se pinta y suena cuando el servidor contesto, sea la marca por huella
+// o por numero. Lo que no llego al servidor no pasa por aca: va a
+// guardarSinRed().
+// =====================================================
+
+void atenderRespuestaMarcacion(
+  const RespuestaAPI& respuesta
+) {
+
+  // -----------------------------------------
+  // OK
+  // -----------------------------------------
+
+  if (
+    respuesta.httpCode ==
+    200 &&
+    (
+      respuesta.ok ||
+      respuesta.estado ==
+      "registrada"
+    )
+  ) {
+
+    dispositivoAutorizado =
+      true;
+
+    String nombre =
+      respuesta.nombre;
+
+    String tipo =
+      respuesta.tipo;
+
+    String hora =
+      respuesta.hora;
+
+    if (
+      nombre.length() == 0
+    ) {
+      nombre =
+        "EMPLEADO";
+    }
+
+    if (
+      tipo.length() == 0
+    ) {
+      tipo =
+        "REGISTRADA";
+    }
+
+    mostrarExito(
+      nombre,
+      tipo,
+      hora
+    );
+
+    // Recien aca: el AS608 encontro la huella hace rato, pero el unico que
+    // decide si hubo marcacion es el servidor.
+    avisarMarcacion(
+      respuesta.tipo
+    );
+
+    esperarRetiroConMensaje(
+      1200,
+      3000
+    );
+
+    mostrarListo();
+
+    return;
+  }
+
+  // -----------------------------------------
+  // COOLDOWN
+  // -----------------------------------------
+
+  if (
+    respuesta.httpCode ==
+    409 ||
+    respuesta.estado ==
+    "cooldown"
+  ) {
+
+    dispositivoAutorizado =
+      true;
+
+    mostrarCooldown(
+      respuesta.esperaSegundos
+    );
+
+    avisarYaMarcaste();
+
+    esperarRetiroConMensaje(
+      1200,
+      2600
+    );
+
+    mostrarListo();
+
+    return;
+  }
+
+  // -----------------------------------------
+  // HUELLA NO ASOCIADA EN LARAVEL
+  // -----------------------------------------
+
+  if (
+    respuesta.httpCode ==
+    404 &&
+    respuesta.estado ==
+    "huella_desconocida"
+  ) {
+
+    dispositivoAutorizado =
+      true;
+
+    mostrarDesconocida();
+
+    avisarNoRegistrada();
+
+    esperarRetiroConMensaje(
+      1200,
+      2600
+    );
+
+    mostrarListo();
+
+    return;
+  }
+
+  // -----------------------------------------
+  // TOKEN
+  // -----------------------------------------
+
+  if (
+    respuesta.httpCode ==
+    401
+  ) {
+
+    dispositivoAutorizado =
+      false;
+
+    mostrarError(
+      "NO AUTORIZADO",
+      "Token rechazado"
+    );
+
+    beepAdvertencia();
+
+    esperarRetiroConMensaje(
+      1500,
+      3000
+    );
+
+    mostrarListo();
+
+    return;
+  }
+
+  String mensaje =
+    respuesta.mensaje;
+
+  if (
+    mensaje.length() == 0
+  ) {
+
+    mensaje =
+      "HTTP " +
+      String(
+        respuesta.httpCode
+      );
+  }
+
+  mostrarError(
+    "ERROR API",
+    mensaje
+  );
+
+  beepAdvertencia();
+
+  esperarRetiroConMensaje(
+    1500,
+    3000
+  );
+
+  mostrarListo();
+}
+
+
+// =====================================================
+// GUARDAR UNA MARCA SIN RED
+//
+// La persona ya fue identificada: la huella por el AS608 o el numero por la
+// lista local. Solo se guarda con la hora sincronizada desde que prendio el
+// lector (ping o NTP); sin eso no hay `marcado_en` confiable.
+//
+// `instante` es el momento en que la persona marco, tomado antes de intentar
+// la red: los segundos de espera del servidor no pueden convertir una entrada
+// puntual en una tardia.
+// =====================================================
+
+void guardarSinRed(
+  uint8_t tipo,
+  uint16_t valor,
+  uint32_t instante,
+  const String& nombre
+) {
+
+  String problema =
+    "";
+
+  if (
+    !relojEnHora
+  ) {
+
+    problema =
+      "Sin hora: no se puede guardar la marca";
+
+  } else if (
+    cola.total >= COLA_TOPE
+  ) {
+
+    problema =
+      "Memoria llena: no se guardo la marca";
+
+  } else if (
+    !encolarMarca(
+      tipo,
+      valor,
+      instante
+    )
+  ) {
+
+    problema =
+      "No se pudo guardar la marca";
+  }
+
+  if (
+    problema.length() > 0
+  ) {
+
+    Serial.print(
+      "SIN RED: "
+    );
+
+    Serial.println(
+      problema
+    );
+
+    mostrarError(
+      "SIN SERVIDOR",
+      problema
+    );
+
+    beepAdvertencia();
+
+    esperarRetiroConMensaje(
+      1500,
+      3000
+    );
+
+    mostrarListo();
+
+    return;
+  }
+
+  mostrarGuardada(
+    nombre
+  );
+
+  beepExito();
+
+  esperarRetiroConMensaje(
+    1200,
+    3000
+  );
+
+  mostrarListo();
+}
+
+
+// =====================================================
+// MARCAR CON NUMERO
+//
+// Con red decide el servidor (y anota los equivocados). Sin red se compara
+// sha256(sal + numero) contra la lista local: si esta, se guarda en la cola
+// con el nombre en pantalla; si no, «Numero incorrecto». Los equivocados, con
+// o sin red, cuentan para el bloqueo del teclado.
+// =====================================================
+
+void numeroIncorrecto() {
+
+  numerosFallidos++;
+
+  if (
+    numerosFallidos >= BLOQUEO_INTENTOS
+  ) {
+
+    numerosFallidos =
+      0;
+
+    bloqueoActivo =
+      true;
+
+    bloqueoDesde =
+      millis();
+
+    Serial.println(
+      "TECLADO BLOQUEADO por numeros equivocados"
+    );
+  }
+
+  mostrarNumeroIncorrecto();
+
+  beepError();
+
+  esperarRetiroConMensaje(
+    1200,
+    2600
+  );
+
+  if (
+    tecladoEnBloqueo()
+  ) {
+
+    mostrarBloqueo();
+
+    return;
+  }
+
+  // De vuelta al teclado para que pueda corregirlo.
+  mostrarTeclado();
+}
+
+
+void marcarConNumero(
+  const String& numero
+) {
+
+  uint16_t valor =
+    numero.toInt();
+
+  uint32_t instante =
+    (uint32_t) time(nullptr);
+
+  mostrarRegistrando();
+
+  // Sin lista local, un numero no se puede comprobar para ir a la cola: se
+  // manda en vivo aunque haya marcas esperando.
+  RespuestaAPI respuesta =
+    numerosVersion.length() > 0
+      ? enviarMarcacionEnOrden(MARCA_NUMERO, valor)
+      : enviarMarcacion(MARCA_NUMERO, valor, 0);
+
+  if (
+    !marcaSinRed(
+      respuesta
+    )
+  ) {
+
+    // Tratado como huella_desconocida, pero con su propia pantalla.
+    if (
+      respuesta.estado ==
+      "numero_desconocido"
+    ) {
+
+      dispositivoAutorizado =
+        true;
+
+      numeroIncorrecto();
+
+      return;
+    }
+
+    if (
+      respuesta.httpCode == 200 ||
+      respuesta.httpCode == 409
+    ) {
+
+      numerosFallidos =
+        0;
+    }
+
+    atenderRespuestaMarcacion(
+      respuesta
+    );
+
+    return;
+  }
+
+  String nombre =
+    "";
+
+  int8_t enLista =
+    buscarNumeroLocal(
+      numero,
+      nombre
+    );
+
+  if (
+    enLista < 0
+  ) {
+
+    Serial.println(
+      "SIN RED y sin lista de numeros: no se puede comprobar"
+    );
+
+    mostrarError(
+      "SIN SERVIDOR",
+      "Marque con su huella"
+    );
+
+    beepAdvertencia();
+
+    esperarRetiroConMensaje(
+      1500,
+      3000
+    );
+
+    mostrarListo();
+
+    return;
+  }
+
+  if (
+    enLista == 0
+  ) {
+
+    numeroIncorrecto();
+
+    return;
+  }
+
+  numerosFallidos =
+    0;
+
+  guardarSinRed(
+    MARCA_NUMERO,
+    valor,
+    instante,
+    nombre
+  );
+}
+
+
+// =====================================================
+// TECLADO
+//
+// Lo atiende el loop mientras la pantalla es PANTALLA_TECLADO, cada
+// TECLADO_SONDEO_MS. Una tecla cuenta al apoyar el dedo, no al soltarlo, y una
+// sola vez por toque.
+// =====================================================
+
+void atenderTeclado() {
+
+  int16_t x =
+    0;
+
+  int16_t y =
+    0;
+
+  if (
+    !leerTactil(
+      x,
+      y
+    )
+  ) {
+
+    if (
+      teclaPresionada >= 0
+    ) {
+
+      dibujarTecla(
+        teclaPresionada,
+        false
+      );
+
+      teclaPresionada =
+        -1;
+    }
+
+    tecladoDedoAbajo =
+      false;
+
+    if (
+      millis() - tecladoUltimoToque >=
+      TECLADO_INACTIVIDAD_MS
+    ) {
+
+      mostrarListo();
+
+      return;
+    }
+
+    delay(
+      TECLADO_SONDEO_MS
+    );
+
+    return;
+  }
+
+  tecladoUltimoToque =
+    millis();
+
+  if (
+    tecladoDedoAbajo
+  ) {
+
+    delay(
+      TECLADO_SONDEO_MS
+    );
+
+    return;
+  }
+
+  tecladoDedoAbajo =
+    true;
+
+  int8_t tecla =
+    teclaEn(
+      x,
+      y
+    );
+
+  if (
+    tecla < 0
+  ) {
+    return;
+  }
+
+  teclaPresionada =
+    tecla;
+
+  dibujarTecla(
+    tecla,
+    true
+  );
+
+  sonar(
+    SONIDO_TECLA
+  );
+
+  if (
+    tecla == TECLA_CANCELAR
+  ) {
+
+    mostrarListo();
+
+    return;
+  }
+
+  if (
+    tecla == TECLA_BORRAR
+  ) {
+
+    if (
+      tecladoDigitos.length() > 0
+    ) {
+
+      tecladoDigitos.remove(
+        tecladoDigitos.length() - 1
+      );
+    }
+
+    dibujarCasillas();
+
+    return;
+  }
+
+  tecladoDigitos +=
+    ETIQUETAS_TECLA[tecla];
+
+  dibujarCasillas();
+
+  if (
+    tecladoDigitos.length() <
+    TECLADO_DIGITOS
+  ) {
+    return;
+  }
+
+  // Cuarto digito: se envia solo.
+  String numero =
+    tecladoDigitos;
+
+  tecladoDigitos =
+    "";
+
+  marcarConNumero(
+    numero
+  );
+}
+
+
+// =====================================================
+// REPOSO
+//
+// Las tareas de red del reposo, UNA peticion por vuelta del loop para no
+// dejar el sensor sin leer mas de una peticion seguida: el reenvio de la cola,
+// el ping, la lista de numeros y, como siempre, el enrolamiento. Solo se llama
+// donde el loop sabe que no hay un dedo reconocible (ver atenderEnrolamiento).
+// =====================================================
+
+bool atenderPing() {
+
+  if (
+    millis() - ultimoPing <
+    PING_CADA_MS
+  ) {
+    return false;
+  }
+
+  ultimoPing =
+    millis();
+
+  probarServidor();
+
+  return true;
+}
+
+
+bool atenderNumeros() {
+
+  if (
+    !numerosPendiente ||
+    millis() - numerosUltimoIntento <
+      NUMEROS_REINTENTO_MS
+  ) {
+    return false;
+  }
+
+  descargarNumeros();
+
+  return true;
+}
+
+
+void atenderReposo() {
+
+  if (
+    WiFi.status() ==
+    WL_CONNECTED
+  ) {
+
+    if (
+      reenviarCola() ||
+      atenderPing() ||
+      atenderNumeros()
+    ) {
+      return;
+    }
+  }
+
+  atenderEnrolamiento();
+}
+
+
+// =====================================================
 // SETUP
 // =====================================================
 
@@ -5915,6 +8434,9 @@ void setup() {
     sonar(
       SONIDO_ARRANQUE
     );
+
+    // Mismo bus que el codec: si el sensor lo ocupa, tampoco hay tactil.
+    iniciarTactil();
   }
 
   finger.getTemplateCount();
@@ -5956,12 +8478,28 @@ void setup() {
     );
   }
 
+  // MARCAS SIN ENVIAR Y LISTA DE NUMEROS (NVS)
+  cargarDatosGuardados();
+
   // WIFI
   mostrarArranque(
     "Conectando WiFi"
   );
 
   conectarWiFi();
+
+  // HORA POR NTP
+  //
+  // Ademas del epoch del ping. Si no hay internet, el SNTP sigue probando
+  // solo, sin trabar nada.
+  sntp_set_time_sync_notification_cb(
+    alSincronizarHora
+  );
+
+  configTzTime(
+    "CST6",
+    NTP_SERVIDOR
+  );
 
   // PING REAL
   if (
@@ -5984,6 +8522,25 @@ void setup() {
       false;
   }
 
+  // LISTA DE NUMEROS
+  //
+  // Se baja al prender (si no cambio, no se reescribe la NVS) y despues cada
+  // vez que el ping trae otra numeros_version. Si ahora falla, la reintenta
+  // el reposo. Antes del indice: ese termina pintando el reposo.
+  numerosPendiente =
+    true;
+
+  if (
+    servidorDisponible
+  ) {
+
+    mostrarArranque(
+      "Bajando numeros"
+    );
+
+    descargarNumeros();
+  }
+
   // INDICE DEL SENSOR
   //
   // Al arrancar, para que el servidor pueda elegir ranura sin chocar con las
@@ -5997,7 +8554,15 @@ void setup() {
     sincronizarIndiceSensor();
   }
 
+  ultimoPing =
+    millis();
+
   mostrarListo();
+
+  // Un toque del arranque (o el pulso del INT al reiniciar el FT6336G) no
+  // tiene que abrir el teclado.
+  tactilToco =
+    false;
 }
 
 
@@ -6011,6 +8576,44 @@ void loop() {
 
   mantenerWiFi();
 
+  // Teclado abierto: el sensor y la red esperan a que se cierre (Cancelar,
+  // cuarto digito o 15 s sin tocar). Un toque tiene que contestar al instante,
+  // y una lectura del AS608 o una peticion de red dejarian el vidrio sin leer
+  // por segundos.
+  if (
+    pantallaActual ==
+    PANTALLA_TECLADO
+  ) {
+
+    atenderTeclado();
+
+    return;
+  }
+
+  if (
+    tactilToco
+  ) {
+
+    tactilToco =
+      false;
+
+    if (
+      pantallaActual ==
+      PANTALLA_LISTO
+    ) {
+
+      if (
+        tecladoEnBloqueo()
+      ) {
+        mostrarBloqueo();
+      } else {
+        mostrarTeclado();
+      }
+
+      return;
+    }
+  }
+
   uint8_t p =
     finger.getImage();
 
@@ -6020,11 +8623,11 @@ void loop() {
   ) {
 
     // El UNICO punto del loop donde se sabe con certeza que no hay nadie
-    // apoyado. El sondeo del enrolamiento vive aca y en ningun otro sitio:
-    // ponerlo antes del getImage() le robaria la ventana a la marcacion, y
-    // ponerlo despues le quitaria a identificarHuella() la imagen que ya
-    // capturo este mismo getImage().
-    atenderEnrolamiento();
+    // apoyado. Las tareas de red del reposo (enrolamiento, cola, ping, lista
+    // de numeros) viven aca y en ningun otro sitio: ponerlas antes del
+    // getImage() le robaria la ventana a la marcacion, y ponerlas despues le
+    // quitaria a identificarHuella() la imagen que ya capturo este getImage().
+    atenderReposo();
 
     delay(
       POLLING_MS
@@ -6098,13 +8701,18 @@ void loop() {
       ">>> HUELLA RECONOCIDA <<<"
     );
 
-    Serial.print(
-      "ID: "
-    );
+    if (
+      SERIE_DETALLE
+    ) {
 
-    Serial.println(
-      id
-    );
+      Serial.print(
+        "ID: "
+      );
+
+      Serial.println(
+        id
+      );
+    }
 
     Serial.print(
       "Confianza: "
@@ -6114,215 +8722,40 @@ void loop() {
       confianza
     );
 
+    uint32_t instante =
+      (uint32_t) time(nullptr);
+
     mostrarRegistrando();
 
     RespuestaAPI respuesta =
-      enviarMarcacion(
+      enviarMarcacionEnOrden(
+        MARCA_HUELLA,
         id
       );
 
     // -----------------------------------------
-    // OK
+    // SIN SERVIDOR: se guarda y se envia despues
     // -----------------------------------------
 
     if (
-      respuesta.httpCode ==
-      200 &&
-      (
-        respuesta.ok ||
-        respuesta.estado ==
-        "registrada"
+      marcaSinRed(
+        respuesta
       )
     ) {
 
-      dispositivoAutorizado =
-        true;
-
-      String nombre =
-        respuesta.nombre;
-
-      String tipo =
-        respuesta.tipo;
-
-      String hora =
-        respuesta.hora;
-
-      if (
-        nombre.length() == 0
-      ) {
-        nombre =
-          "EMPLEADO";
-      }
-
-      if (
-        tipo.length() == 0
-      ) {
-        tipo =
-          "REGISTRADA";
-      }
-
-      mostrarExito(
-        nombre,
-        tipo,
-        hora
+      guardarSinRed(
+        MARCA_HUELLA,
+        id,
+        instante,
+        ""
       );
-
-      // Recien aca: el AS608 encontro la huella hace rato, pero el unico que
-      // decide si hubo marcacion es el servidor.
-      avisarMarcacion(
-        respuesta.tipo
-      );
-
-      esperarRetiroConMensaje(
-        1200,
-        3000
-      );
-
-      mostrarListo();
 
       return;
     }
 
-    // -----------------------------------------
-    // COOLDOWN
-    // -----------------------------------------
-
-    if (
-      respuesta.httpCode ==
-      409 ||
-      respuesta.estado ==
-      "cooldown"
-    ) {
-
-      dispositivoAutorizado =
-        true;
-
-      mostrarCooldown(
-        respuesta.esperaSegundos
-      );
-
-      avisarYaMarcaste();
-
-      esperarRetiroConMensaje(
-        1200,
-        2600
-      );
-
-      mostrarListo();
-
-      return;
-    }
-
-    // -----------------------------------------
-    // HUELLA NO ASOCIADA EN LARAVEL
-    // -----------------------------------------
-
-    if (
-      respuesta.httpCode ==
-      404 &&
-      respuesta.estado ==
-      "huella_desconocida"
-    ) {
-
-      dispositivoAutorizado =
-        true;
-
-      mostrarDesconocida();
-
-      avisarNoRegistrada();
-
-      esperarRetiroConMensaje(
-        1200,
-        2600
-      );
-
-      mostrarListo();
-
-      return;
-    }
-
-    // -----------------------------------------
-    // TOKEN
-    // -----------------------------------------
-
-    if (
-      respuesta.httpCode ==
-      401
-    ) {
-
-      dispositivoAutorizado =
-        false;
-
-      mostrarError(
-        "NO AUTORIZADO",
-        "Token rechazado"
-      );
-
-      beepAdvertencia();
-
-      esperarRetiroConMensaje(
-        1500,
-        3000
-      );
-
-      mostrarListo();
-
-      return;
-    }
-
-    // -----------------------------------------
-    // SIN SERVIDOR
-    // -----------------------------------------
-
-    if (
-      respuesta.httpCode <=
-      0
-    ) {
-
-      mostrarError(
-        "SIN SERVIDOR",
-        respuesta.mensaje
-      );
-
-      beepAdvertencia();
-
-      esperarRetiroConMensaje(
-        1500,
-        3000
-      );
-
-      mostrarListo();
-
-      return;
-    }
-
-    String mensaje =
-      respuesta.mensaje;
-
-    if (
-      mensaje.length() == 0
-    ) {
-
-      mensaje =
-        "HTTP " +
-        String(
-          respuesta.httpCode
-        );
-    }
-
-    mostrarError(
-      "ERROR API",
-      mensaje
+    atenderRespuestaMarcacion(
+      respuesta
     );
-
-    beepAdvertencia();
-
-    esperarRetiroConMensaje(
-      1500,
-      3000
-    );
-
-    mostrarListo();
 
     return;
   }
@@ -6395,8 +8828,7 @@ void loop() {
     );
 
     if (
-      pantallaActual !=
-      PANTALLA_LISTO
+      !pantallaEnReposo()
     ) {
 
       mostrarListo();
@@ -6406,8 +8838,9 @@ void loop() {
     // devuelve NOFINGER, y la rama NOFINGER era el unico sitio del sondeo:
     // las ordenes de la web no llegaban al lector («le doy a registrar y no
     // pasa nada»). Aca identificarHuella() ya termino sin ninguna lectura
-    // valida, asi que no hay imagen que perder ni marcacion en curso.
-    atenderEnrolamiento();
+    // valida, asi que no hay imagen que perder ni marcacion en curso. Lo
+    // mismo vale para la cola, el ping y la lista de numeros.
+    atenderReposo();
 
     delay(
       60
@@ -6426,8 +8859,7 @@ void loop() {
   ) {
 
     if (
-      pantallaActual !=
-      PANTALLA_LISTO
+      !pantallaEnReposo()
     ) {
 
       mostrarListo();
