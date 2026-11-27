@@ -8,6 +8,26 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.27] - 2026-11-27
+
+Marcar asistencia con un número de 4 dígitos, además de la huella, y el lector que marca sin internet (#448). Una migración: el número de cada persona y el método de cada marca. Sin cambios de permisos: el número lo pone quien ya puede gestionar las huellas. La contingencia sigue apagada.
+
+### Agregado
+
+- Personal: en la ficha de cada persona, junto a las huellas, «Número para marcar», de 4 dígitos. Lo pone la oficina o lo propone el sistema. Nunca se repite entre dos personas y, una vez guardado, no se vuelve a mostrar: si alguien lo olvida, se le pone otro (#448).
+- Lector de asistencia: al tocar la pantalla sale un teclado de números, y con los 4 dígitos marca igual que con la huella. Cinco números equivocados seguidos traban el teclado un minuto (#448).
+- Lector de asistencia: sin internet, las marcas con huella y con número se guardan y se mandan solas, en orden, cuando vuelve la conexión. Llegan a la hora en que se marcó (#448).
+- Asistencia: cada marca dice «Con huella» o «Con número» en Marcaciones, en la ficha, en «Marcas de hoy», en la hoja para imprimir y en Jornadas (#448).
+
+### Cambiado
+
+- Personal: quien no tiene huella pero sí número sale como «Solo número», no como «Sin huella» (#448).
+
+### Corregido
+
+- Lector de asistencia: ya no lee huellas fantasma con la pantalla táctil encendida (#448).
+- Lector de asistencia: si se cae el sensor de huella, el lector sigue andando y se marca con el número (#448).
+
 ## [2026.11.26.3] - 2026-11-26
 
 El lote repetido que salió en el ensayo con el Hacienda de pruebas (#444), el logo del correo en modo oscuro (#445) y Jefatura sin entregas (#446). Sin migraciones ni cambios de permisos. La contingencia sigue apagada.
