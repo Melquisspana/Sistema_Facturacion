@@ -131,7 +131,11 @@ final class RepetirGasto
      */
     public function periodoDe(array $calendario, CarbonImmutable $ancla): array
     {
-        $candidatos = $this->calendario->periodos($calendario, $ancla->subMonths(2), $ancla->addMonths(2));
+        // Seis meses a cada lado, para que en anual siempre haya un candidato: el seguro de
+        // marzo pagado en junio queda a más de dos meses de su fecha, y con una ventana de
+        // dos meses no había ninguno. En las demás frecuencias el más cercano está siempre a
+        // menos de un mes, así que el resultado no cambia.
+        $candidatos = $this->calendario->periodos($calendario, $ancla->subMonths(6), $ancla->addMonths(6));
 
         $mejor = null;
         $distancia = null;

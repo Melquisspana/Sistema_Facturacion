@@ -9,6 +9,7 @@ use App\Models\Gastos\Pago;
 use App\Models\Gastos\Regla;
 use App\Models\User;
 use App\Services\Gastos\ConsultaGastos;
+use App\Services\Gastos\PanelGastos;
 use App\Services\Gastos\Recurrencia\GenerarObligaciones;
 use App\Services\Gastos\Recurrencia\RepetirGasto;
 use App\Services\Gastos\RegistrarPago;
@@ -194,6 +195,34 @@ class RepetirYHistorialTest extends TestCase
 
         // Lo que sigue sí nace, en su fecha.
         $this->assertSame(['2026-10-Q1'], $this->generar($regla, '2026-10-15')['periodos']);
+    }
+
+    /**
+     * #16 · Lo mismo en anual, cuando el gasto se pagó lejos de la fecha de cada año: el
+     * seguro que vence el 10 de marzo se registró en junio. El período de 2026 es este
+     * gasto. Antes quedaba ocupando un «2026-06» que la regla anual no produce, y el
+     * 10/03/2026 aparecía en «Fecha pasada · por confirmar» con su botón de pagar: una
+     * deuda hacia atrás por lo que ya estaba pagado.
+     */
+    public function test_repetir_un_gasto_anual_lejos_de_su_fecha_no_deja_el_anio_en_curso_por_confirmar(): void
+    {
+        $u = $this->operador();
+        $this->travelTo(CarbonImmutable::parse('2026-06-20 10:00'));
+        $gasto = $this->gasto($u, ['concepto' => 'Seguro anual'], [['400.00', '2026-06-15']]);
+
+        $regla = $this->repetir($u, $gasto, ['frecuencia' => 'anual', 'dia_mes' => 10, 'mes' => 3]);
+
+        $porConfirmar = app(PanelGastos::class)->fechasPasadasSinConfirmar($u, [], CarbonImmutable::parse('2026-06-20')->startOfDay());
+        $this->assertSame([], $porConfirmar->pluck('vence')->all(), 'Ninguna fecha de 2026 queda por confirmar: la pagó este gasto.');
+        $this->assertSame('2026', Ocurrencia::where('regla_id', $regla->id)->value('periodo'));
+
+        $resultado = $this->generar($regla, '2026-06-20');
+        $this->assertSame([], $resultado['periodos']);
+        $this->assertSame([], $resultado['fuera_de_ventana']);
+
+        // El año que viene sí nace, en su fecha.
+        $this->assertSame(['2027'], $this->generar($regla, '2027-03-10')['periodos']);
+        $this->assertSame(2, Gasto::count());
     }
 
     /** La primera quincena tampoco arrastra la segunda del mes anterior. */
