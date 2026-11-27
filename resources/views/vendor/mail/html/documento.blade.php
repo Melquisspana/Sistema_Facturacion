@@ -29,7 +29,8 @@
 <table class="doc-head" align="center" width="600" cellpadding="0" cellspacing="0" role="presentation">
 <tr>
 @if ($logo)
-<td class="doc-logo-cell" width="56"><img src="{{ $logo }}" class="doc-logo" width="56" height="56" alt="Logo de {{ $empresa }}"></td>
+{{-- 72 px, no menos de 65: a 64 o menos, el modo oscuro de Gmail para Android lo toma por ícono y lo invierte (LogoCorreo). --}}
+<td class="doc-logo-cell" width="72"><img src="{{ $logo }}" class="doc-logo" width="72" height="72" alt="Logo de {{ $empresa }}"></td>
 @endif
 <td class="doc-emisor">
 <span class="doc-razon">{{ $empresa }}</span><br>

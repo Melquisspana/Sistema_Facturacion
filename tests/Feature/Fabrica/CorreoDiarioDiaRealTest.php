@@ -602,7 +602,7 @@ class CorreoDiarioDiaRealTest extends TestCase
     public function test_un_logo_que_gd_no_lee_no_va_y_el_correo_sale_con_el_nombre(): void
     {
         // Un SVG no se ve en Gmail ni en Outlook de escritorio (sale la imagen rota) y, sin GD,
-        // el archivo iría sin su círculo blanco y estirado a 56×56: mejor solo el nombre, como
+        // el archivo iría sin su círculo blanco y estirado a 72×72: mejor solo el nombre, como
         // cuando no hay archivo.
         $svg = sys_get_temp_dir().'/logo-de-prueba-'.Str::random(8).'.svg';
         file_put_contents($svg, '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>');

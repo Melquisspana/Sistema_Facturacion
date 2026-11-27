@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule as ScheduleFacade;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
+use Symfony\Component\Mime\Email;
 use Tests\TestCase;
 
 /**
@@ -306,18 +307,23 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/<a\b/i', $html);
     }
 
-    public function test_el_logo_va_incrustado_en_el_correo_con_fondo_blanco_y_su_nombre(): void
+    /** El resumen tal como saldría, por el transporte de prueba (array), que lo guarda y no lo entrega. */
+    private function mensajeConLogo(): Email
     {
         Empresa::create(['razon_social' => 'Empresa de prueba, S.A. de C.V.', 'nombre_comercial' => 'Confitería de prueba', 'activo' => true]);
         $contenido = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now());
-
-        // Por el transporte de prueba (array), que guarda el mensaje tal como saldría y no lo entrega.
         Mail::mailer('array')->to('oficina@ejemplo.test')->send(new ResumenDiarioPedidosCorreo($contenido));
-        $mensaje = Mail::mailer('array')->getSymfonyTransport()->messages()->sole()->getOriginalMessage();
+
+        return Mail::mailer('array')->getSymfonyTransport()->messages()->sole()->getOriginalMessage();
+    }
+
+    public function test_el_logo_va_incrustado_en_el_correo_con_fondo_blanco_y_su_nombre(): void
+    {
+        $mensaje = $this->mensajeConLogo();
         $html = $mensaje->getHtmlBody();
 
         // Va dentro del correo (cid:): no se pide al sistema por una dirección.
-        $this->assertSame(1, preg_match('/<img src="cid:([^"]+)" class="doc-logo"[^>]*width="56" height="56" alt="Logo de Confitería de prueba"/', $html, $m));
+        $this->assertSame(1, preg_match('/<img src="cid:([^"]+)" class="doc-logo"[^>]*width="72" height="72" alt="Logo de Confitería de prueba"/', $html, $m));
         $this->assertStringNotContainsString('images/dte', $html);
         $this->assertStringNotContainsString('data:image', $html);
         $logo = collect($mensaje->getAttachments())->filter(fn ($parte) => $parte->getContentId() === $m[1]);
@@ -328,10 +334,33 @@ class CorreoDiarioPedidosTest extends TestCase
         // Con su propio círculo blanco: en el modo oscuro de Gmail el fondo se oscurece y el
         // dibujo negro del logo, sin fondo, se perdía.
         $imagen = imagecreatefromstring($logo->first()->getBody());
-        $this->assertSame([168, 168], [imagesx($imagen), imagesy($imagen)]);
+        $this->assertSame([216, 216], [imagesx($imagen), imagesy($imagen)], '3 veces los 72 px, nítido en el celular');
         $color = fn (int $x, int $y) => imagecolorsforindex($imagen, imagecolorat($imagen, $x, $y));
         $this->assertSame(127, $color(2, 2)['alpha'], 'afuera del círculo, transparente');
-        $this->assertSame(['red' => 255, 'green' => 255, 'blue' => 255, 'alpha' => 0], $color(14, 84), 'adentro, blanco');
+        $this->assertSame(['red' => 255, 'green' => 255, 'blue' => 255, 'alpha' => 0], $color(14, 108), 'adentro, blanco');
+    }
+
+    public function test_el_logo_se_muestra_a_mas_de_64_px_para_que_gmail_oscuro_no_lo_invierta(): void
+    {
+        // Gmail para Android en modo oscuro (26/11/2026) mostraba el sello invertido: círculo
+        // negro, pelo blanco. Su visor es Chromium, que toma por «ícono» la imagen que se
+        // muestra a 64 px o menos de ancho Y de alto (kMaxImageLength en
+        // core/paint/paint_auto_dark_mode.cc) y, si tiene pocos colores como el sello, le
+        // invierte la luminosidad. Una de más de 64 px es una «foto» y no la toca.
+        $html = $this->mensajeConLogo()->getHtmlBody();
+
+        $this->assertSame(1, preg_match('/<img src="cid:[^"]+" class="doc-logo"[^>]*>/', $html, $img));
+        $this->assertSame(1, preg_match('/ width="(\d+)" height="(\d+)"/', $img[0], $atributos));
+        $this->assertSame(1, preg_match('/style="([^"]*)"/', $img[0], $estilo));
+        $this->assertSame(1, preg_match('/(?<![-\w])width:\s*(\d+)px/', $estilo[1], $ancho));
+        $this->assertSame(1, preg_match('/(?<![-\w])height:\s*(\d+)px/', $estilo[1], $alto));
+        // Por los atributos (si el cliente quita los estilos) y por el estilo en línea.
+        foreach (['ancho' => $atributos[1], 'alto' => $atributos[2], 'ancho del estilo' => $ancho[1], 'alto del estilo' => $alto[1]] as $que => $px) {
+            $this->assertGreaterThan(64, (int) $px, "el $que del logo: a 64 px o menos, Chromium lo invierte");
+        }
+        // La celda no lo achica.
+        $this->assertSame(1, preg_match('/<td class="doc-logo-cell" width="(\d+)"/', $html, $celda));
+        $this->assertSame((int) $atributos[1], (int) $celda[1]);
     }
 
     public function test_si_falla_el_pdf_de_fabrica_sale_el_correo_con_aviso(): void
