@@ -159,6 +159,10 @@ enum PermisoSistema: string
     // para el jefe de vendedores, que ve cuántas facturas (12/11/2026, por rol en
     // MapaVentasController). No le abre la pantalla de Ventas.
     case RutasMapaVer = 'rutas.mapa.ver';
+    // «Pedidos y entregas» (26/11/2026): la pantalla de solo mirar de la dueña, para el celular.
+    // Qué pidieron las salas, qué está en la fábrica, qué se entregó y cuánto se vendió. Lleva
+    // montos: solo Administrador y Jefatura (Melqui).
+    case RutasPedidosEntregasVer = 'rutas.pedidos-entregas.ver';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
     // `gestionar` da de alta y desactiva. Va aparte de `rutas.gestionar` porque el
     // catálogo de personas es un marco de trabajo, no la operación del día.
@@ -271,7 +275,8 @@ enum PermisoSistema: string
             // no sincroniza, no administra.
             //
             // La excepción es Rutas: configura las zonas y corrige las salidas (decisión
-            // del usuario, 26/09/2026). No le abre nada fiscal.
+            // del usuario, 26/09/2026), y desde el 26/11/2026 saca pedidos y tiene «Pedidos y
+            // entregas» (Melqui). No le abre nada fiscal.
             RolSistema::Jefatura => self::valores([
                 self::DashboardVer,
                 self::DteVer,
@@ -288,6 +293,10 @@ enum PermisoSistema: string
                 self::RutasVentasVer,
                 self::RutasPedidosVer,
                 self::RutasMapaVer,
+                // Saca pedidos desde «Sacar pedido»: su ficha de Rutas se arma al entrar
+                // (FichaVendedor) y aparece como vendedora en esos pedidos. No marca entregas.
+                self::RutasPedidosRegistrar,
+                self::RutasPedidosEntregasVer,
             ]),
 
             // Facturación: operación diaria. Emite y gestiona DTE, PPQ y

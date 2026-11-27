@@ -17,7 +17,8 @@ use Illuminate\Support\Str;
  * enlazada, sin cargarlo en otro lado (el usuario pidió registrar al vendedor en UN solo
  * lugar, 29/10/2026). El jefe también sale a ruta a veces (plan del tablero, decisión 1). El
  * administrador entra al «Menú del vendedor» y hace lo mismo que un vendedor (Melqui,
- * 11/11/2026: «yo tengo que poder hacer todo»).
+ * 11/11/2026: «yo tengo que poder hacer todo»). Jefatura saca pedidos desde el 26/11/2026
+ * (Melqui): tiene su ficha y aparece como vendedora en esos pedidos; no marca entregas.
  *
  *  - Si ya hay una ficha enlazada a ese usuario, se usa.
  *  - Si la persona está en Personal y ya tiene ficha de Rutas, se usa esa.
@@ -36,18 +37,22 @@ use Illuminate\Support\Str;
  */
 class FichaVendedor
 {
-    /** Roles que salen a ruta y por eso tienen ficha de campo. */
-    public const ROLES = [RolSistema::Vendedor->value, RolSistema::JefeVendedores->value, RolSistema::Administrador->value];
+    /** Roles que salen a ruta o sacan pedidos y por eso tienen ficha de campo. */
+    public const ROLES = [RolSistema::Vendedor->value, RolSistema::JefeVendedores->value, RolSistema::Administrador->value, RolSistema::Jefatura->value];
+
+    /** Los que no pasaron por el alta de vendedor: su ficha se arma la primera vez que entran. */
+    private const SE_ARMA_AL_ENTRAR = [RolSistema::Administrador->value, RolSistema::Jefatura->value];
 
     /**
-     * Los administradores que ya existían no pasaron por el alta de usuario: su ficha se arma
-     * la primera vez que entran al «Menú del vendedor». Solo si no tienen NINGUNA enlazada:
-     * la que alguien desactivó a mano no se reactiva sola. A Vendedor y Jefe no les aplica: la
-     * suya nace con el usuario y, si la oficina la desenlazó, no se rearma por entrar.
+     * Los administradores y Jefatura que ya existían no pasaron por el alta de usuario: su
+     * ficha se arma la primera vez que entran al «Menú del vendedor» o a «Sacar pedido». Solo
+     * si no tienen NINGUNA enlazada: la que alguien desactivó a mano no se reactiva sola. A
+     * Vendedor y Jefe no les aplica: la suya nace con el usuario y, si la oficina la
+     * desenlazó, no se rearma por entrar.
      */
     public function asegurar(User $usuario): void
     {
-        if (! $usuario->activo || ! $usuario->hasRole(RolSistema::Administrador->value) || PersonalRuta::where('user_id', $usuario->id)->exists()) {
+        if (! $usuario->activo || ! $usuario->hasAnyRole(self::SE_ARMA_AL_ENTRAR) || PersonalRuta::where('user_id', $usuario->id)->exists()) {
             return;
         }
         try {

@@ -569,7 +569,11 @@ class Dte extends Model
         return $this->hasMany(PedidoSalaEnvio::class, 'dte_id');
     }
 
-    /** El pedido de la tienda web que se facturó con esta Factura 01; null en cualquier otro. */
+    /**
+     * El pedido de la tienda web que se facturó con esta Factura 01; null en cualquier otro.
+     *
+     * @return HasOne<PedidoWeb, $this>
+     */
     public function pedidoWeb(): HasOne
     {
         return $this->hasOne(PedidoWeb::class, 'dte_id');

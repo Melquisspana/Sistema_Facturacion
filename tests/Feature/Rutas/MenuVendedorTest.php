@@ -25,8 +25,9 @@ use Tests\TestCase;
 /**
  * «Menú del vendedor» (Melqui, 11/11/2026): la entrada única de la oficina al celular del
  * vendedor. El administrador hace ahí lo mismo que un vendedor («yo tengo que poder hacer
- * todo»): su ficha de Rutas se arma sola la primera vez que entra. Jefatura y Facturación
- * siguen sin ficha: miran «Por entregar» y nada más. Datos ficticios.
+ * todo»): su ficha de Rutas se arma sola la primera vez que entra; la de Jefatura también, desde
+ * que saca pedidos (26/11/2026). Facturación sigue sin ficha: mira «Por entregar» y nada más.
+ * Datos ficticios.
  */
 class MenuVendedorTest extends TestCase
 {
@@ -154,26 +155,47 @@ class MenuVendedorTest extends TestCase
         $this->assertSame([1, 0], [PersonalRuta::count(), PedidoSala::count()]);
     }
 
-    public function test_jefatura_y_facturacion_siguen_sin_ficha_miran_por_entregar_y_no_sacan_pedido(): void
+    public function test_facturacion_sigue_sin_ficha_mira_por_entregar_y_no_saca_pedido(): void
     {
         $dte = $this->ccf();
-        foreach (['jefatura', 'facturacion'] as $rol) {
-            $usuario = User::factory()->create(['activo' => true])->assignRole($rol);
-            $this->actingAs($usuario);
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('facturacion'));
 
-            // Su «Menú del vendedor» abre «Por entregar»: mira, con el aviso, y no marca.
-            $this->get(route('rutas.por-entregar.index'))->assertOk()
-                ->assertSee('Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.')
-                ->assertSee($dte->numero_control)
-                ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
-            $this->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertForbidden();
-            // Sin permisos nuevos: ni el Inicio del celular ni «Sacar pedido».
-            $this->get(route('rutas.mi-salida.index'))->assertForbidden();
-            $this->get(route('rutas.sacar-pedido.index'))->assertForbidden();
-            $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertForbidden();
-        }
+        // Su «Menú del vendedor» abre «Por entregar»: mira, con el aviso, y no marca.
+        $this->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.')
+            ->assertSee($dte->numero_control)
+            ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
+        $this->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertForbidden();
+        // Sin permisos nuevos: ni el Inicio del celular ni «Sacar pedido».
+        $this->get(route('rutas.mi-salida.index'))->assertForbidden();
+        $this->get(route('rutas.sacar-pedido.index'))->assertForbidden();
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertForbidden();
 
         $this->assertSame([0, 0, 0], [PersonalRuta::count(), PedidoSala::count(), SalidaRutaEntrega::count()]);
+    }
+
+    /**
+     * Jefatura saca pedidos desde el 26/11/2026 (Melqui): su ficha de Rutas se arma sola, como
+     * la del administrador, y aparece como vendedora en esos pedidos. Entregas sigue sin marcar.
+     */
+    public function test_jefatura_saca_pedido_con_su_ficha_y_mira_por_entregar_sin_marcar(): void
+    {
+        $dte = $this->ccf();
+        $this->actingAs(User::factory()->create(['name' => 'Jefa de prueba', 'activo' => true])->assignRole('jefatura'));
+
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertDontSee('Tu usuario no es vendedor');
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasNoErrors();
+        $this->assertSame(PersonalRuta::sole()->id, PedidoSala::sole()->sacado_por_id);
+
+        // Con ficha, «Por entregar» le sigue diciendo que mira y no marca.
+        $this->get(route('rutas.por-entregar.index', ['ver' => 'todas']))->assertOk()
+            ->assertSee('Tu usuario no es vendedor: podés mirar la lista, pero no marcar entregas.')
+            ->assertSee($dte->numero_control)
+            ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
+        $this->post(route('rutas.por-entregar.marcar', $dte), QuienEntrega::yo(['resultado' => 'entregado', 'forma_cobro' => 'efectivo']))->assertForbidden();
+        $this->get(route('rutas.mi-salida.index'))->assertForbidden();
+
+        $this->assertSame([1, 0], [PersonalRuta::count(), SalidaRutaEntrega::count()]);
     }
 
     public function test_al_vendedor_que_la_oficina_desenlazo_no_se_le_rearma_la_ficha(): void

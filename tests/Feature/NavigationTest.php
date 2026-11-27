@@ -487,10 +487,11 @@ class NavigationTest extends TestCase
                 'fabrica.pedidos.index',
                 'personal.empleados',
             ]],
-            // Jefatura: lectura amplia, sin administración. ENTRA 'rutas.dashboard':
-            // desde el 26/09/2026 planifica las salidas (rutas.ver + rutas.gestionar), así
-            // que ve dos áreas y el selector del panel se dibuja.
-            'jefatura' => ['jefatura', [...$lecturaOperativa, 'rutas.dashboard']],
+            // Jefatura: lectura amplia, sin administración. Desde el 26/09/2026 planifica
+            // las salidas (rutas.ver + rutas.gestionar), así que ve dos áreas y el selector
+            // del panel se dibuja. Su puerta a Rutas es 'rutas.pedidos-entregas' (26/11/2026,
+            // la pantalla de la dueña), no el Tablero: ninguna pantalla nueva fuera de Rutas.
+            'jefatura' => ['jefatura', [...$lecturaOperativa, 'rutas.pedidos-entregas']],
             // Facturación: pierde el checklist de emisión real. ENTRA 'rutas.dashboard',
             // por la misma razón que jefatura: quien factura arma la salida.
             'facturacion' => ['facturacion', [...$lecturaOperativa, 'rutas.dashboard']],
@@ -540,8 +541,8 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El área Rutas presenta solo sus pantallas. Menú de la oficina (11/11/2026): Tablero
-     * primero, Pedidos, Ventas, Zonas y, al final, UNA sola entrada al celular del vendedor
+     * El área Rutas presenta solo sus pantallas. Menú de la oficina (11/11/2026): «Pedidos y
+     * entregas» primero para quien la ve (26/11/2026), Tablero, Pedidos, Ventas, Zonas y, al final, UNA sola entrada al celular del vendedor
      * («Menú del vendedor»); Inicio, Sacar pedido y Por entregar son sus pestañas. «Todos los
      * viajes» salió del menú (12/11/2026): se abre desde Tablero › Viajes.
      * Facturas por cobrar salió de esta barra (28/10/2026): sigue en la de Facturación.
@@ -560,6 +561,8 @@ class NavigationTest extends TestCase
                 // (29/10/2026), con `rutas.personal.ver`.
                 // Desde el 08/11/2026 su lista es la de Personal, que llega por el selector de áreas.
                 'rutas.dashboard', 'rutas.ventas.index', 'rutas.rutas.index', 'personal.empleados',
+                // «Pedidos y entregas» (26/11/2026), con `rutas.pedidos-entregas.ver`: el primero.
+                'rutas.pedidos-entregas',
                 // «Menú del vendedor»: una sola entrada al celular del vendedor (11/11/2026).
                 'rutas.mi-salida.index',
                 // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
@@ -572,7 +575,7 @@ class NavigationTest extends TestCase
 
         $sidebar = $this->sidebarDe($html);
         // Los títulos nuevos, en orden; los de antes ya no están.
-        $this->assertMatchesRegularExpression('/Tablero.*Pedidos.*Ventas.*Zonas.*Menú del vendedor/su', $sidebar);
+        $this->assertMatchesRegularExpression('/Pedidos y entregas.*Tablero.*Pedidos.*Ventas.*Zonas.*Menú del vendedor/su', $sidebar);
         foreach (['Salidas anteriores', 'Todos los viajes', 'Configurar rutas', 'Armar salida', 'Asignar salas', '>Inicio<', 'Sacar pedido', 'Por entregar'] as $retirado) {
             $this->assertStringNotContainsString($retirado, $sidebar);
         }

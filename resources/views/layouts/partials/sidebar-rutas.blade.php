@@ -6,12 +6,16 @@
      Ocultar no autoriza: cada grupo de rutas lleva su propio middleware. --}}
 <nav class="space-y-6 px-3 py-5">
 
-    {{-- Menú de la oficina (11/11/2026), cada título en una línea: el Tablero primero (Resumen,
-         Viajes y Mapa son sus pestañas), Pedidos, Ventas y Zonas. «Todos los viajes» salió del
+    {{-- Menú de la oficina (11/11/2026), cada título en una línea: «Pedidos y entregas» primero
+         para quien la ve (26/11/2026, la pantalla de la dueña), el Tablero (Resumen, Viajes y
+         Mapa son sus pestañas), Pedidos, Ventas y Zonas. «Todos los viajes» salió del
          menú (12/11/2026): se abre desde Tablero › Viajes y, con su detalle, resalta «Tablero».
          Al final, UNA sola entrada al celular del vendedor: adentro están sus pestañas (Inicio,
          Sacar pedido y Por entregar). Ya no hay «armar salida» ni «asignar salas». --}}
     <x-sidebar-group titulo="Rutas" icono="rutas">
+        @can('rutas.pedidos-entregas.ver')
+            <x-sidebar-link :href="route('rutas.pedidos-entregas')" :active="request()->routeIs('rutas.pedidos-entregas')">Pedidos y entregas</x-sidebar-link>
+        @endcan
         <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard', 'rutas.viajes', 'rutas.mapa', 'rutas.salidas.*')">Tablero</x-sidebar-link>
         @can('rutas.pedidos.ver')
             <x-sidebar-link :href="route('rutas.pedidos.index')" :active="request()->routeIs('rutas.pedidos.*')">Pedidos</x-sidebar-link>
