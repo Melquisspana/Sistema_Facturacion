@@ -8,6 +8,29 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.26.2] - 2026-11-26
+
+Lo que dejó el simulacro de contingencia (#440, con el #441 adentro) y «Pedidos y entregas» (#442). Sin migraciones. Permisos: el nuevo `rutas.pedidos-entregas.ver`, para jefatura y administrador, y jefatura suma `rutas.pedidos.registrar`. La contingencia sigue apagada.
+
+### Agregado
+
+- Rutas: «Pedidos y entregas», para mirar desde el celular, sin cambiar nada. Muestra lo que pidieron las salas, lo que está en la fábrica, lo entregado por zona y lo vendido sin IVA, con Hoy, Ayer y Semana. Jefatura entra a Rutas por esta pantalla (#442).
+- Rutas: Jefatura puede sacar pedidos (#442).
+- Contingencia: la ficha del documento y «Pendientes de envío» dejan mandarle al cliente el documento provisional a mano, y avisan si no salió (#440).
+
+### Cambiado
+
+- Contingencia: si nadie manda el aviso a Hacienda, sale solo a las 2 horas del cese, no a las 12 (#440).
+- Contingencia: el PDF del documento provisional dice «Emitida en contingencia: pendiente de sello de Hacienda» en vez de «Preliminar · no válido fiscalmente», y no lleva la línea técnica (#440).
+- Contingencia: con el envío automático encendido, el cliente recibe el provisional al emitirse y el completo cuando Hacienda lo sella. El provisional que no salió por falta de internet se manda otra vez al terminar la contingencia (#440).
+- Correo del documento: un PDF preliminar mandado a mano ya no frena el envío automático del documento válido (#440).
+- Contingencia: la franja «Volvió la conexión» aparece solo si de verdad volvió. La parte dada por recibida ya no se ve como rechazada, y el aviso que salió sin respuesta dice que Hacienda puede tenerlo (#441).
+
+### Corregido
+
+- La página de «sin permiso» (403) sale en castellano en todo el sistema (#441).
+- Contingencia: el correo «por vencer» dice a qué hora vence y ya no cuenta los documentos vencidos, que tienen su propio aviso (#441).
+
 ## [2026.11.26] - 2026-11-26
 
 Por pagar conserva lo escrito (#428), librerías al día y revisión automática del código (#436), y las decisiones de Melqui sobre exportaciones (#437) y sobre planta y configuración (#438). Sin migraciones ni cambios de permisos.
