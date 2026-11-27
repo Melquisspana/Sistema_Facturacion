@@ -16,9 +16,9 @@ use Illuminate\Http\JsonResponse;
 use LogicException;
 
 /**
- * La marcación real. El controlador NO decide nada de asistencia: recibe el
- * número de ranura ya validado, se lo pasa al servicio y traduce el desenlace a
- * JSON y a un código HTTP.
+ * La marcación real. El controlador NO decide nada de asistencia: recibe la ranura
+ * o el número de 4 dígitos ya validado, se lo pasa al servicio y traduce el
+ * desenlace a JSON y a un código HTTP.
  *
  * Todas las respuestas comparten forma —`ok`, `estado`, `mensaje`— para que el
  * firmware tenga un solo camino de lectura: pinta `mensaje` en la pantalla y
@@ -40,7 +40,10 @@ class DispositivoMarcacionController extends Controller
         $dispositivo = $request->attributes->get(AutenticaDispositivoAsistencia::ATRIBUTO);
 
         $instante = $request->instante();
-        $resultado = $registrar($dispositivo, $request->fingerprintId(), $request->ip(), $instante);
+        $numero = $request->numero();
+        $resultado = $numero !== null
+            ? $registrar->porNumero($dispositivo, $numero, $request->ip(), $instante)
+            : $registrar($dispositivo, (int) $request->fingerprintId(), $request->ip(), $instante);
 
         return response()->json(
             $this->cuerpo($resultado, $horaOficial) + [
@@ -65,6 +68,20 @@ class DispositivoMarcacionController extends Controller
                 // sistema, es lo que él mismo envió— para que el técnico vea qué
                 // ranura leyó el sensor sin tener que abrir un log.
                 'fingerprint_id' => $resultado->fingerprintId,
+            ],
+
+            // A diferencia de la ranura, el número NO se devuelve: es el secreto de la persona.
+            ResultadoMarcacion::NumeroDesconocido => [
+                'ok' => false,
+                'estado' => $resultado->estado->value,
+                'mensaje' => 'Número no registrado',
+            ],
+
+            // Ni el número ni quién lo tiene ahora: la marca no era suya.
+            ResultadoMarcacion::NumeroCambiado => [
+                'ok' => false,
+                'estado' => $resultado->estado->value,
+                'mensaje' => 'Número cambiado: marca no aplicada',
             ],
 
             ResultadoMarcacion::EmpleadoInactivo => [

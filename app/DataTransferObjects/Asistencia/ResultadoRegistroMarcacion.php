@@ -15,12 +15,15 @@ use App\Services\Asistencia\RegistrarMarcacion;
  * controlador no decide reglas de asistencia. Esa frontera es lo que permite que
  * mañana una pantalla web, un reporte o un segundo tipo de lector usen la misma
  * regla sin copiarla.
+ *
+ * `fingerprintId` es la ranura que leyó el sensor; null cuando se marcó con número. El
+ * número nunca viaja acá: no se devuelve ni se anota.
  */
 class ResultadoRegistroMarcacion
 {
     private function __construct(
         public readonly ResultadoMarcacion $estado,
-        public readonly int $fingerprintId,
+        public readonly ?int $fingerprintId = null,
         public readonly ?AsistenciaEmpleado $empleado = null,
         /** La marcación recién escrita. Solo en el caso exitoso. */
         public readonly ?AsistenciaMarcacion $marcacion = null,
@@ -31,7 +34,7 @@ class ResultadoRegistroMarcacion
         public readonly bool $repetida = false,
     ) {}
 
-    public static function registrada(AsistenciaEmpleado $empleado, AsistenciaMarcacion $marcacion, int $fingerprintId, bool $repetida = false): self
+    public static function registrada(AsistenciaEmpleado $empleado, AsistenciaMarcacion $marcacion, ?int $fingerprintId, bool $repetida = false): self
     {
         return new self(
             estado: ResultadoMarcacion::Registrada,
@@ -47,7 +50,18 @@ class ResultadoRegistroMarcacion
         return new self(estado: ResultadoMarcacion::HuellaDesconocida, fingerprintId: $fingerprintId);
     }
 
-    public static function empleadoInactivo(AsistenciaEmpleado $empleado, int $fingerprintId): self
+    public static function numeroDesconocido(): self
+    {
+        return new self(estado: ResultadoMarcacion::NumeroDesconocido);
+    }
+
+    /** Sin la persona: no se le dice al lector quién tiene el número ahora. */
+    public static function numeroCambiado(): self
+    {
+        return new self(estado: ResultadoMarcacion::NumeroCambiado);
+    }
+
+    public static function empleadoInactivo(AsistenciaEmpleado $empleado, ?int $fingerprintId): self
     {
         return new self(
             estado: ResultadoMarcacion::EmpleadoInactivo,
@@ -60,7 +74,7 @@ class ResultadoRegistroMarcacion
         AsistenciaEmpleado $empleado,
         AsistenciaMarcacion $previa,
         int $esperaSegundos,
-        int $fingerprintId,
+        ?int $fingerprintId,
     ): self {
         return new self(
             estado: ResultadoMarcacion::Cooldown,

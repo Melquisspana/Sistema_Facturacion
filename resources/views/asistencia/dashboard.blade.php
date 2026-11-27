@@ -18,7 +18,7 @@
             </div>
             @if ($hoy['empleados_sin_huella'])
                 <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                    {{ $hoy['empleados_sin_huella'] }} persona(s) activa(s) sin huella vigente.
+                    {{ $hoy['empleados_sin_huella'] }} persona(s) activa(s) sin huella vigente ni número para marcar.
                     <a href="{{ route('personal.empleados') }}" class="font-medium underline">Ver quiénes</a>
                 </p>
             @endif
@@ -33,8 +33,14 @@
                             @forelse ($hoy['marcaron'] as $fila)
                                 <tr>
                                     <td class="py-3 pr-4"><a href="{{ route('asistencia.empleados.show', $fila['persona']) }}" class="text-indigo-600 hover:underline dark:text-indigo-300">{{ $fila['persona']?->nombreCompleto() }}</a></td>
-                                    <td class="py-3 pr-4 tabular-nums">{{ $fila['primera_entrada']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? '—' }}</td>
-                                    <td class="py-3 pr-4 tabular-nums">{{ $fila['ultima_salida']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? 'sigue adentro' }}</td>
+                                    <td class="py-3 pr-4 tabular-nums">
+                                        {{ $fila['primera_entrada']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? '—' }}
+                                        @if ($fila['primera_entrada_metodo']) <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $fila['primera_entrada_metodo'] }}</span> @endif
+                                    </td>
+                                    <td class="py-3 pr-4 tabular-nums">
+                                        {{ $fila['ultima_salida']?->copy()->setTimezone($hoy['zona'])->format('H:i') ?? 'sigue adentro' }}
+                                        @if ($fila['ultima_salida_metodo']) <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $fila['ultima_salida_metodo'] }}</span> @endif
+                                    </td>
                                     <td class="py-3 pr-4 tabular-nums">{{ $fila['horas'] }} @unless ($fila['exacto']) <span class="text-xs text-gray-500 dark:text-paper-300">(mínimo)</span> @endunless</td>
                                 </tr>
                             @empty

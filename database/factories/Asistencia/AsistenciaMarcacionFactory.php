@@ -2,6 +2,7 @@
 
 namespace Database\Factories\Asistencia;
 
+use App\Enums\Asistencia\MetodoMarcacion;
 use App\Enums\Asistencia\TipoMarcacion;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Asistencia\AsistenciaMarcacion;
@@ -38,6 +39,7 @@ class AsistenciaMarcacionFactory extends Factory
             'marcado_at' => $instante,
             'fecha_local' => $this->fechaLocal($instante),
             'origen' => 'dispositivo',
+            'metodo' => MetodoMarcacion::Huella,
             'ip' => null,
         ];
     }
@@ -61,6 +63,7 @@ class AsistenciaMarcacionFactory extends Factory
     {
         return $this->state(fn () => [
             'origen' => 'manual',
+            'metodo' => null,
             'asistencia_dispositivo_id' => null,
             'asistencia_huella_id' => null,
         ]);

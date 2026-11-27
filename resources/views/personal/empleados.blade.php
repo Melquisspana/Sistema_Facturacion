@@ -116,6 +116,9 @@
                                                 <span class="text-gray-500 dark:text-paper-300">No marca</span>
                                             @elseif ($e['huellas'] > 0)
                                                 <span class="text-gray-700 dark:text-paper-100">{{ $e['huellas'] }} asignada(s)</span>
+                                            @elseif ($e['numero'])
+                                                {{-- Sin huella pero marca con su número: no es un problema, no va en ámbar. --}}
+                                                <span class="text-gray-700 dark:text-paper-100">Solo número</span>
                                             @else
                                                 <span class="text-amber-700 dark:text-amber-300">Sin huella</span>
                                             @endif

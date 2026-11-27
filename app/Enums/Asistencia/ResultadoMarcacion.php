@@ -22,7 +22,16 @@ enum ResultadoMarcacion: string
     /** El número de ranura no está asociado a nadie (o su huella está de baja). */
     case HuellaDesconocida = 'huella_desconocida';
 
-    /** La huella es de alguien que ya no marca (empleado desactivado). */
+    /** Nadie tiene ese número para marcar. Mismo trato que la huella desconocida. */
+    case NumeroDesconocido = 'numero_desconocido';
+
+    /**
+     * Marca guardada sin red con un número que, a esa hora, todavía no era de quien lo
+     * tiene hoy (la oficina lo puso o lo cambió durante el corte). NO se escribe nada.
+     */
+    case NumeroCambiado = 'numero_cambiado';
+
+    /** La huella o el número es de alguien que ya no marca (empleado desactivado). */
     case EmpleadoInactivo = 'empleado_inactivo';
 
     /** Dedo repetido dentro de la ventana de cortesía: NO se escribe nada. */
@@ -39,7 +48,7 @@ enum ResultadoMarcacion: string
     // nada impedía que uno escribiera `dispositivo_no_autorizado` y otro
     // `no_autorizado`.
 
-    /** El cuerpo no traía un `fingerprint_id` utilizable. */
+    /** El cuerpo no traía exactamente uno de `fingerprint_id` o `numero` utilizable. */
     case PayloadInvalido = 'payload_invalido';
 
     case HoraInvalida = 'hora_invalida';
@@ -51,12 +60,14 @@ enum ResultadoMarcacion: string
     {
         return match ($this) {
             self::Registrada => Response::HTTP_OK,
-            self::HuellaDesconocida => Response::HTTP_NOT_FOUND,
+            self::HuellaDesconocida, self::NumeroDesconocido => Response::HTTP_NOT_FOUND,
             self::EmpleadoInactivo => Response::HTTP_FORBIDDEN,
             // 409 y no 429: 429 es lo que devuelve el limitador de peticiones y
             // el firmware tiene que poder distinguir «marcaste hace un momento»
             // de «estás saturando el servidor».
-            self::Cooldown => Response::HTTP_CONFLICT,
+            // Igual que el cooldown, un 409 que el lector no reintenta: la marca ya se
+            // decidió. Se distinguen por `estado`.
+            self::Cooldown, self::NumeroCambiado => Response::HTTP_CONFLICT,
             self::PayloadInvalido, self::HoraInvalida => Response::HTTP_UNPROCESSABLE_ENTITY,
             self::DispositivoNoAutorizado => Response::HTTP_UNAUTHORIZED,
         };
@@ -77,7 +88,8 @@ enum ResultadoMarcacion: string
     public function loDecideLaRegla(): bool
     {
         return match ($this) {
-            self::Registrada, self::HuellaDesconocida, self::EmpleadoInactivo, self::Cooldown => true,
+            self::Registrada, self::HuellaDesconocida, self::NumeroDesconocido, self::NumeroCambiado,
+            self::EmpleadoInactivo, self::Cooldown => true,
             self::PayloadInvalido, self::HoraInvalida, self::DispositivoNoAutorizado => false,
         };
     }

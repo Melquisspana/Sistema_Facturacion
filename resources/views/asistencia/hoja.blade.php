@@ -19,7 +19,8 @@
         factura» no viene al caso). Lo común sale de components/documento.
 
         Variables: $fecha (CarbonImmutable, el día local) y $filas
-        [{nombre, entrada, salida}] con las horas ya en hora local («H:i» o null).
+        [{nombre, entrada, entrada_metodo, salida, salida_metodo}] con las horas ya en hora
+        local («H:i» o null) y «Con huella» / «Con número» debajo de cada hora.
     --}}
     <style>
         <x-documento.estilos acento="terracota" />
@@ -38,6 +39,7 @@
         td.nombre { font-weight: 600; }
         td.hora, th.hora { width: 5.5em; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
         td.hora { font-size: 16px; font-weight: 700; }
+        td.hora .metodo { display: block; font-size: 10px; font-weight: 400; color: #6B7280; }
         td.firma, th.firma { width: 22%; }
         .items th.n { text-align: right; }
         .items th.hora { text-align: center; }
@@ -114,9 +116,9 @@
                     <tr>
                         <td class="n">{{ $loop->iteration }}</td>
                         <td class="nombre">{{ $fila['nombre'] }}</td>
-                        <td class="hora">{{ $fila['entrada'] }}</td>
+                        <td class="hora">{{ $fila['entrada'] }}@if ($fila['entrada_metodo'])<span class="metodo">{{ $fila['entrada_metodo'] }}</span>@endif</td>
                         <td class="firma"></td>
-                        <td class="hora">{{ $fila['salida'] }}</td>
+                        <td class="hora">{{ $fila['salida'] }}@if ($fila['salida_metodo'])<span class="metodo">{{ $fila['salida_metodo'] }}</span>@endif</td>
                         <td class="firma"></td>
                     </tr>
                 @empty
@@ -125,7 +127,7 @@
             </tbody>
         </table>
     </div>
-    <p class="leyenda">Entrada y salida: la primera y la última marca del lector ese día, en hora de El Salvador. Sin marca, la hora queda en blanco para anotarla a mano.</p>
+    <p class="leyenda">Entrada y salida: la primera y la última marca del lector ese día, en hora de El Salvador, y si fue con huella o con número. Sin marca, la hora queda en blanco para anotarla a mano.</p>
 </main>
 
 </body>

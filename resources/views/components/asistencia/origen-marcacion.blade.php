@@ -41,3 +41,8 @@
 @else
     <span class="text-gray-500 dark:text-paper-300" title="Valor de origen no reconocido">{{ $marcacion->origen }}</span>
 @endif
+
+{{-- Con qué se identificó en el lector. Una corrección manual no tiene método. --}}
+@if ($marcacion->metodo)
+    <span class="block text-xs text-gray-500 dark:text-paper-300">{{ $marcacion->metodo->label() }}</span>
+@endif

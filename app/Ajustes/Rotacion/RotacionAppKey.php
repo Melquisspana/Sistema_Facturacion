@@ -3,6 +3,7 @@
 namespace App\Ajustes\Rotacion;
 
 use App\Ajustes\RepositorioAjustes;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
@@ -61,8 +62,11 @@ class RotacionAppKey
      *
      * `filtro` acota a las filas que de verdad lo están (en `ajustes_sistema`
      * conviven valores planos y cifrados); `etiqueta` es lo único que se muestra.
+     * `indices` (opcional): columna cifrada => columna con su HMAC derivado de APP_KEY
+     * ({@see NumeroParaMarcar::indice()}), que se rehace con la clave nueva en la misma
+     * escritura.
      *
-     * @var array<int, array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>}>
+     * @var array<int, array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>, indices?: array<string, string>}>
      */
     private const ORIGENES = [
         [
@@ -76,6 +80,15 @@ class RotacionAppKey
             'columnas' => ['access_token', 'refresh_token'],
             'etiqueta' => 'email',
             'filtro' => [],
+        ],
+        [
+            // El número para marcar de Asistencia: sin rehacer el índice, después de
+            // rotar nadie podría marcar con su número (ver NumeroParaMarcar).
+            'tabla' => 'asistencia_empleados',
+            'columnas' => ['numero_marcar'],
+            'etiqueta' => 'nombres',
+            'filtro' => [],
+            'indices' => ['numero_marcar' => 'numero_marcar_indice'],
         ],
     ];
 
@@ -235,6 +248,15 @@ class RotacionAppKey
                         'columna' => $columna,
                         'valor' => $criptogramaNuevo,
                     ];
+
+                    if (isset($origen['indices'][$columna])) {
+                        $escrituras[] = [
+                            'tabla' => $origen['tabla'],
+                            'id' => (int) $fila->id,
+                            'columna' => $origen['indices'][$columna],
+                            'valor' => NumeroParaMarcar::indice($plano, $nuevo->getKey()),
+                        ];
+                    }
                 }
             }
         }
@@ -248,23 +270,29 @@ class RotacionAppKey
     /**
      * Filas crudas de un origen.
      *
-     * Se comprueba que la tabla exista: la rotación tiene que poder correrse en un
-     * despliegue que todavía no aplicó alguna migración, y morir con un error de
-     * SQL en medio de un análisis es la peor forma de enterarse.
+     * Se comprueba que existan la tabla y TODAS las columnas que se leen o se escriben
+     * (también las de los índices que se rehacen): la rotación tiene que poder correrse
+     * en un despliegue que todavía no aplicó alguna migración, o que la tiene a medias,
+     * y morir con un error de SQL en medio de un análisis es la peor forma de enterarse.
+     * Sin esas columnas no hay secretos de ese origen que rotar.
      *
-     * @param  array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>}  $origen
+     * @param  array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>, indices?: array<string, string>}  $origen
      * @return Collection<int, object>
      */
     private function filasDe(array $origen): Collection
     {
-        if (! Schema::hasTable($origen['tabla'])) {
+        $columnas = array_merge(['id', $origen['etiqueta']], $origen['columnas']);
+
+        $todas = array_merge($columnas, array_keys($origen['filtro']), array_values($origen['indices'] ?? []));
+
+        if (! Schema::hasColumns($origen['tabla'], $todas)) {
             return collect();
         }
 
         return DB::table($origen['tabla'])
             ->where($origen['filtro'])
             ->orderBy('id')
-            ->get(array_merge(['id', $origen['etiqueta']], $origen['columnas']));
+            ->get($columnas);
     }
 
     /**

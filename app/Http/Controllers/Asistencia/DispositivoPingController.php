@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Asistencia;
 use App\Http\Controllers\Controller;
 use App\Services\Asistencia\AutenticadorDispositivo;
 use App\Services\Asistencia\HoraOficial;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,7 +15,8 @@ use Illuminate\Http\Request;
  *
  * Deliberadamente NO hace nada más que contestar:
  *  - no crea marcaciones ni ninguna otra fila;
- *  - no consulta empleados ni huellas;
+ *  - no consulta empleados ni huellas (con credencial VÁLIDA lee solo la versión de la
+ *    lista de números para marcar, `numeros_version`, para que el lector sepa si pedirla);
  *  - no requiere sesión de usuario;
  *  - no devuelve nombre de la empresa, versión, entorno ni ninguna configuración.
  *
@@ -49,6 +51,7 @@ class DispositivoPingController extends Controller
         Request $request,
         HoraOficial $horaOficial,
         AutenticadorDispositivo $autenticador,
+        NumeroParaMarcar $numeros,
     ): JsonResponse {
         $cuerpo = [
             'ok' => true,
@@ -69,6 +72,12 @@ class DispositivoPingController extends Controller
                 // El nombre solo aparece cuando la credencial YA resultó válida.
                 'nombre' => $dispositivo?->nombre,
             ];
+
+            // Si no coincide con la suya, el lector vuelve a pedir GET /api/asistencia/numeros.
+            // Solo con credencial válida: sin ella el ping sigue sin consultar la base.
+            if ($dispositivo !== null) {
+                $cuerpo['numeros_version'] = $numeros->version();
+            }
         }
 
         return response()->json($cuerpo);

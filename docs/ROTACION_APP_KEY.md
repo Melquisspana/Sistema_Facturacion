@@ -11,12 +11,13 @@
 ## 1. Por qué importa
 
 `APP_KEY` es la clave con la que Laravel cifra y descifra. Hoy la aplicación
-guarda cifrado en **dos sitios**:
+guarda cifrado en **tres sitios**:
 
 | Dónde | Qué |
 |---|---|
 | `ajustes_sistema.valor` (filas con `cifrado = 1`) | contraseña SMTP, secreto de cliente de Google, contraseña del buzón de compras |
 | `gmail_cuentas.access_token` / `refresh_token` | tokens OAuth de la cuenta conectada |
+| `asistencia_empleados.numero_marcar` | número para marcar en el lector; la rotación también rehace `numero_marcar_indice`, que sale de APP_KEY |
 
 Dos hechos que hay que tener presentes antes de tocar nada:
 
@@ -28,6 +29,14 @@ Dos hechos que hay que tener presentes antes de tocar nada:
 
 Además, cambiar `APP_KEY` invalida sesiones y cookies cifradas: los usuarios
 quedan desconectados. Eso es molesto pero reversible; lo de arriba no.
+
+**`APP_PREVIOUS_KEYS` no alcanza para los números para marcar.** Laravel descifra
+con las claves viejas que se pongan ahí, pero el índice `numero_marcar_indice` sale
+solo de la `APP_KEY` actual. Si se cambia la clave con `APP_PREVIOUS_KEYS` y sin el
+comando, los números para marcar quedan sin servicio: el número se sigue
+descifrando, pero el servidor ya no encuentra a nadie por él y responde
+`numero_desconocido`, también a las marcas guardadas sin red. Con números cargados,
+la clave se cambia siempre con el comando, que rehace el índice.
 
 ## 2. Regla
 

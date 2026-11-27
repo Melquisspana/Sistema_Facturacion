@@ -245,6 +245,7 @@ class AsistenciaSimpleTest extends TestCase
         $esperadas = [
             'ping' => ['api/asistencia/ping', ['GET', 'POST', 'HEAD']],
             'marcar' => ['api/asistencia/marcar', ['POST']],
+            'numeros' => ['api/asistencia/numeros', ['GET', 'HEAD']],
             'enrolamiento.pendiente' => ['api/asistencia/enrolamiento/pendiente', ['GET', 'HEAD']],
             'enrolamiento.progreso' => ['api/asistencia/enrolamiento/{orden}/progreso', ['POST']],
             'enrolamiento.resultado' => ['api/asistencia/enrolamiento/{orden}/resultado', ['POST']],

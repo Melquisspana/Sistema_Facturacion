@@ -3,10 +3,12 @@
 namespace App\Models\Asistencia;
 
 use App\Models\User;
+use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -18,6 +20,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Auditoría con spatie/activitylog, como el resto del proyecto: dar de alta a
  * alguien, cambiarle el nombre o desactivarlo son actos que después hay que poder
  * explicar frente a una planilla.
+ *
+ * @property Carbon|null $numero_marcar_desde cuándo se puso o se cambió el número para marcar
  */
 class AsistenciaEmpleado extends Model
 {
@@ -35,12 +39,30 @@ class AsistenciaEmpleado extends Model
         'user_id',
     ];
 
+    /**
+     * El número para marcar NO es asignable en masa ni sale en ningún arreglo o JSON: lo
+     * pone y lo quita solo {@see NumeroParaMarcar}, y la auditoría de `logFillable()`
+     * no lo ve porque no está en `$fillable`.
+     */
+    protected $hidden = [
+        'numero_marcar',
+        'numero_marcar_indice',
+    ];
+
     protected function casts(): array
     {
         return [
             'activo' => 'boolean',
             'fecha_ingreso' => 'date',
+            'numero_marcar' => 'encrypted',
+            'numero_marcar_desde' => 'datetime',
         ];
+    }
+
+    /** Sin descifrar nada: alcanza con saber si hay índice. */
+    public function tieneNumeroMarcar(): bool
+    {
+        return $this->numero_marcar_indice !== null;
     }
 
     public function getActivitylogOptions(): LogOptions

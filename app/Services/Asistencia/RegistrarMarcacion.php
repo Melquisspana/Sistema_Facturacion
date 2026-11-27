@@ -3,6 +3,8 @@
 namespace App\Services\Asistencia;
 
 use App\DataTransferObjects\Asistencia\ResultadoRegistroMarcacion;
+use App\Enums\Asistencia\MetodoMarcacion;
+use App\Enums\Asistencia\ResultadoMarcacion;
 use App\Enums\Asistencia\TipoMarcacion;
 use App\Facades\Ajustes;
 use App\Models\Asistencia\AsistenciaDispositivo;
@@ -11,12 +13,14 @@ use App\Models\Asistencia\AsistenciaHuella;
 use App\Models\Asistencia\AsistenciaMarcacion;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * LA REGLA de la marcación, y el único sitio donde se escribe una.
  *
- * El dispositivo manda una ranura y, para marcas sin red, un instante validado.
- * Quién es, si es entrada o salida y si cuenta se decide acá.
+ * El dispositivo manda una ranura o un número de 4 dígitos y, para marcas sin red, un
+ * instante validado. Quién es, si es entrada o salida y si cuenta se decide acá; la
+ * marca anota con qué se identificó (`metodo`).
  *
  * ───────────────────────────── Entrada o salida ─────────────────────────────
  *
@@ -52,8 +56,12 @@ use Illuminate\Support\Facades\DB;
  */
 class RegistrarMarcacion
 {
-    public function __construct(private readonly HoraOficial $horaOficial) {}
+    public function __construct(
+        private readonly HoraOficial $horaOficial,
+        private readonly NumeroParaMarcar $numeros,
+    ) {}
 
+    /** Con huella: el lector manda la ranura que reconoció. */
     public function __invoke(AsistenciaDispositivo $dispositivo, int $fingerprintId, ?string $ip = null, ?Carbon $instante = null): ResultadoRegistroMarcacion
     {
         $huella = AsistenciaHuella::query()
@@ -73,11 +81,80 @@ class RegistrarMarcacion
             return ResultadoRegistroMarcacion::empleadoInactivo($huella->empleado, $fingerprintId);
         }
 
-        return DB::transaction(function () use ($huella, $dispositivo, $fingerprintId, $ip, $instante) {
+        return $this->registrarPara($huella->empleado, $dispositivo, MetodoMarcacion::Huella, $huella, $ip, $instante);
+    }
+
+    /**
+     * Con el número de 4 dígitos (ya validado). La regla es la misma que con la huella;
+     * el número no se devuelve ni se anota en ningún lado.
+     */
+    public function porNumero(AsistenciaDispositivo $dispositivo, string $numero, ?string $ip = null, ?Carbon $instante = null): ResultadoRegistroMarcacion
+    {
+        $empleado = $this->numeros->buscar($numero);
+
+        if ($empleado === null) {
+            $this->anotarNumeroRechazado(ResultadoMarcacion::NumeroDesconocido, $dispositivo, $ip, $instante);
+
+            return ResultadoRegistroMarcacion::numeroDesconocido();
+        }
+
+        // Guardada sin red antes de que esta persona tuviera el número: era de otra persona
+        // o de un número que la oficina cambió durante el corte. No se le carga a ella.
+        if ($instante !== null && $empleado->numero_marcar_desde !== null
+            && $instante->getTimestamp() < $empleado->numero_marcar_desde->getTimestamp()) {
+            $this->anotarNumeroRechazado(ResultadoMarcacion::NumeroCambiado, $dispositivo, $ip, $instante);
+
+            return ResultadoRegistroMarcacion::numeroCambiado();
+        }
+
+        if (! $empleado->activo) {
+            return ResultadoRegistroMarcacion::empleadoInactivo($empleado, null);
+        }
+
+        return $this->registrarPara($empleado, $dispositivo, MetodoMarcacion::Numero, null, $ip, $instante);
+    }
+
+    /**
+     * Las huellas desconocidas no se anotan en ningún lado; los números rechazados van al
+     * log de la aplicación, NUNCA con los dígitos: en vivo, para ver si alguien prueba
+     * números; guardados sin red, con su hora, para que la oficina cargue la marca a mano.
+     */
+    private function anotarNumeroRechazado(ResultadoMarcacion $estado, AsistenciaDispositivo $dispositivo, ?string $ip, ?Carbon $instante): void
+    {
+        if ($instante === null) {
+            Log::warning('Asistencia: llegó un número para marcar que nadie tiene.', [
+                'estado' => $estado->value,
+                'dispositivo' => $dispositivo->codigo,
+                'ip' => $ip,
+            ]);
+
+            return;
+        }
+
+        Log::warning('Asistencia: no se aplicó una marca con número guardada sin red; revisarla y cargarla a mano.', [
+            'estado' => $estado->value,
+            'marcado_en' => $instante->copy()->setTimezone($this->horaOficial->zona())->toIso8601String(),
+            'dispositivo' => $dispositivo->codigo,
+            'ip' => $ip,
+        ]);
+    }
+
+    /** LA REGLA, con la persona ya resuelta por huella o por número. */
+    private function registrarPara(
+        AsistenciaEmpleado $persona,
+        AsistenciaDispositivo $dispositivo,
+        MetodoMarcacion $metodo,
+        ?AsistenciaHuella $huella,
+        ?string $ip,
+        ?Carbon $instante,
+    ): ResultadoRegistroMarcacion {
+        $fingerprintId = $huella?->fingerprint_id;
+
+        return DB::transaction(function () use ($persona, $huella, $metodo, $dispositivo, $fingerprintId, $ip, $instante) {
             // Serializa las marcaciones DE ESTA PERSONA: dos peticiones a la vez
             // se ponen en fila y la segunda ve lo que escribió la primera.
             $empleado = AsistenciaEmpleado::query()
-                ->whereKey($huella->asistencia_empleado_id)
+                ->whereKey($persona->getKey())
                 ->lockForUpdate()
                 ->first();
 
@@ -157,11 +234,12 @@ class RegistrarMarcacion
             $marcacion = AsistenciaMarcacion::create([
                 'asistencia_empleado_id' => $empleado->id,
                 'asistencia_dispositivo_id' => $dispositivo->id,
-                'asistencia_huella_id' => $huella->id,
+                'asistencia_huella_id' => $huella?->id,
                 'tipo' => TipoMarcacion::siguienteTras($ultimaDeHoy?->tipo),
                 'marcado_at' => $instante,
                 'fecha_local' => $fechaLocal,
                 'origen' => $diferida ? 'diferida' : 'dispositivo',
+                'metodo' => $metodo,
                 'ip' => $ip,
             ]);
 
