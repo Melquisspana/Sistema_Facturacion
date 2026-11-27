@@ -270,23 +270,29 @@ class RotacionAppKey
     /**
      * Filas crudas de un origen.
      *
-     * Se comprueba que la tabla exista: la rotación tiene que poder correrse en un
-     * despliegue que todavía no aplicó alguna migración, y morir con un error de
-     * SQL en medio de un análisis es la peor forma de enterarse.
+     * Se comprueba que existan la tabla y TODAS las columnas que se leen o se escriben
+     * (también las de los índices que se rehacen): la rotación tiene que poder correrse
+     * en un despliegue que todavía no aplicó alguna migración, o que la tiene a medias,
+     * y morir con un error de SQL en medio de un análisis es la peor forma de enterarse.
+     * Sin esas columnas no hay secretos de ese origen que rotar.
      *
-     * @param  array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>}  $origen
+     * @param  array{tabla: string, columnas: array<int, string>, etiqueta: string, filtro: array<string, mixed>, indices?: array<string, string>}  $origen
      * @return Collection<int, object>
      */
     private function filasDe(array $origen): Collection
     {
-        if (! Schema::hasTable($origen['tabla'])) {
+        $columnas = array_merge(['id', $origen['etiqueta']], $origen['columnas']);
+
+        $todas = array_merge($columnas, array_keys($origen['filtro']), array_values($origen['indices'] ?? []));
+
+        if (! Schema::hasColumns($origen['tabla'], $todas)) {
             return collect();
         }
 
         return DB::table($origen['tabla'])
             ->where($origen['filtro'])
             ->orderBy('id')
-            ->get(array_merge(['id', $origen['etiqueta']], $origen['columnas']));
+            ->get($columnas);
     }
 
     /**

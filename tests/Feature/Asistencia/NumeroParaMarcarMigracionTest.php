@@ -2,8 +2,12 @@
 
 namespace Tests\Feature\Asistencia;
 
+use App\Ajustes\Rotacion\RotacionAppKey;
 use App\Models\Asistencia\AsistenciaEmpleado;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -78,5 +82,34 @@ class NumeroParaMarcarMigracionTest extends TestCase
             DB::table('asistencia_marcaciones')->orderBy('id')->pluck('metodo', 'origen')->all(),
         );
         $this->assertTrue(Schema::hasColumns('asistencia_empleados', ['numero_marcar', 'numero_marcar_indice', 'numero_marcar_desde']));
+    }
+
+    /**
+     * La rotación de APP_KEY promete correr en un despliegue al que todavía le falta esta
+     * migración, o al que le quedó a medias: salta el origen si falta cualquiera de sus
+     * columnas, también la del índice que rehace. (Sin la columna, MySQL rechaza la
+     * consulta; SQLite la lee vacía, por eso el segundo caso.)
+     */
+    public function test_la_rotacion_de_app_key_corre_aunque_falte_esta_migracion_o_quede_a_medias(): void
+    {
+        $this->migracion()->down();
+        AsistenciaEmpleado::factory()->create();
+        $clave = 'base64:'.base64_encode(Encrypter::generateKey((string) config('app.cipher', 'AES-256-CBC')));
+        $rotacion = app(RotacionAppKey::class);
+
+        $this->assertSame([], $rotacion->afectados());
+        $this->assertTrue($rotacion->analizar($clave)->sinSecretos());
+        $this->assertTrue($rotacion->ejecutar($clave)->aplicada);
+
+        // A medias: la columna cifrada está, la del índice todavía no.
+        Schema::table('asistencia_empleados', fn (Blueprint $tabla) => $tabla->text('numero_marcar')->nullable());
+        try {
+            DB::table('asistencia_empleados')->update(['numero_marcar' => Crypt::encryptString('4821')]);
+
+            $this->assertSame([], $rotacion->afectados());
+            $this->assertTrue($rotacion->ejecutar($clave)->aplicada);
+        } finally {
+            Schema::table('asistencia_empleados', fn (Blueprint $tabla) => $tabla->dropColumn('numero_marcar'));
+        }
     }
 }
