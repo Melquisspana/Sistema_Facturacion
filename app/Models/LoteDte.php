@@ -7,6 +7,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
+/**
+ * @property int $id
+ * @property string $estado
+ * @property string|null $codigo_lote
+ * @property array<string, mixed>|null $respuesta_envio
+ * @property int $consultas
+ * @property int $cantidad
+ */
 class LoteDte extends Model
 {
     protected $table = 'lotes_dte';
@@ -23,6 +31,7 @@ class LoteDte extends Model
         return $this->belongsTo(ContingenciaEvento::class);
     }
 
+    /** @return HasMany<Dte, $this> */
     public function dtes(): HasMany
     {
         return $this->hasMany(Dte::class);

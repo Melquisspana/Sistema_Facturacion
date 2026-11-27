@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property array<string, mixed>|null $respuesta_mh
+ */
 class ContingenciaEvento extends Model
 {
     protected $table = 'contingencia_eventos';
