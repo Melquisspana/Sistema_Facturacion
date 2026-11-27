@@ -73,6 +73,9 @@
                         <td class="p-3"><a class="underline" href="{{ route('facturacion.show', $dte) }}">{{ $dte->codigo_generacion }}</a><br>{{ $dte->cliente?->nombre ?? $dte->cliente?->razon_social ?? 'Sin cliente' }}</td>
                         <td class="p-3">${{ number_format((float) $dte->total_pagar, 2) }}</td>
                         <td class="p-3">{{ $estado }}
+                            @if (!$final && $dte->loteDte?->haciendaYaLoTenia())
+                                <p>{{ \App\Services\Dte\LoteDteService::MENSAJE_YA_LO_TENIA }}</p>
+                            @endif
                             @foreach (($dte->respuesta_mh['observaciones'] ?? []) as $observacion)<p>{{ is_string($observacion) ? $observacion : json_encode($observacion) }}</p>@endforeach
                         </td>
                         <td class="p-3">{{ $recibido ? '72 h (lote)' : '24 h (evento)' }}

@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -841,5 +842,164 @@ class ContingenciaLotesTest extends TestCase
 
         config(['dte.contingencia.enabled' => false]);
         $this->assertFalse($detector->aplica());
+    }
+
+    // ─────────── Hacienda ya tiene el lote (ensayo contra apitest del 26/11, F21) ───────────
+    //
+    // Se perdió la respuesta del primer envío y el reintento, con el mismo idEnvio y el mismo
+    // payload, recibió esta respuesta. Antes caía en «respuesta_incierta»: el lote quedaba
+    // pendiente, la tarea lo volvía a mandar cada 5 minutos para siempre y sus documentos no
+    // recibían el sello hasta vencer las 72 h.
+
+    /** Respuesta real de apitest al segundo envío del mismo lote. */
+    private const LOTE_REPETIDO = ['version' => 1, 'ambiente' => '00', 'versionApp' => 1, 'estado' => 'RECHAZADO',
+        'idEnvio' => null, 'codigoLote' => null, 'fhProcesamiento' => '26/11/2026 18:38:18', 'clasificaMsg' => '99',
+        'codigoMsg' => '099', 'descripcionMsg' => 'YA EXISTE UN LOTE CON ESTE ID DE ENVIO'];
+
+    private const YA_LO_TENIA = 'Hacienda ya tenía este lote: se consultan los documentos uno por uno.';
+
+    /** El primer envío sale y se pierde su respuesta: el lote queda pendiente con su idEnvio. */
+    private function loteConLaRespuestaPerdida(): LoteDte
+    {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*recepcionlote' => Http::failedConnection()]);
+        $this->assertSame('error_conexion', $this->service()->enviar($this->evento)[0]['resultado']);
+
+        return LoteDte::sole();
+    }
+
+    private function haciendaContestaAlLote(array $cuerpo, int $status): void
+    {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*recepcionlote' => Http::response($cuerpo, $status)]);
+    }
+
+    /**
+     * La consulta individual por código de generación.
+     *
+     * @param  array<string, array<string, mixed>>  $porCodigo  respuesta por código; el que falta, «no lo tiene»
+     */
+    private function haciendaContestaPorDocumento(array $porCodigo): void
+    {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*recepcion/consultadte' => fn ($r) => isset($porCodigo[$r['codigoGeneracion']])
+            ? Http::response(['codigoGeneracion' => $r['codigoGeneracion']] + $porCodigo[$r['codigoGeneracion']])
+            : Http::response([], 404)]);
+    }
+
+    /** @return array<string, array{int}> */
+    public static function codigosDeLoteRepetido(): array
+    {
+        return ['208 de apitest' => [208], 'HTTP 200' => [200], 'HTTP 400' => [400], 'HTTP 409' => [409]];
+    }
+
+    #[DataProvider('codigosDeLoteRepetido')]
+    public function test_si_hacienda_ya_tiene_el_lote_no_se_reenvia_ni_se_liberan_sus_documentos(int $status): void
+    {
+        $documentos = collect([$this->documento(), $this->documento()]);
+        $lote = $this->loteConLaRespuestaPerdida();
+        $payload = Storage::get('dte/contingencia/lotes/'.$lote->id_envio.'.json');
+
+        $this->haciendaContestaAlLote(self::LOTE_REPETIDO, $status);
+        $resultado = $this->service()->enviar($this->evento);
+
+        $this->assertSame(['resultado' => 'recibido', 'mensaje' => self::YA_LO_TENIA], $resultado[0]);
+        Http::assertSent(fn ($r) => $r['idEnvio'] === $lote->id_envio && json_encode($r->data(), JSON_THROW_ON_ERROR) === $payload);
+        $lote->refresh();
+        $this->assertSame('recibido', $lote->estado);
+        $this->assertNull($lote->codigo_lote);
+        $this->assertSame(self::LOTE_REPETIDO, $lote->respuesta_envio);
+        Storage::assertExists($lote->respuesta_envio_path);
+        foreach ($documentos as $dte) {
+            $this->assertSame($lote->id, $dte->refresh()->lote_dte_id);
+            $this->assertSame(EstadoDte::Firmado, $dte->estado);
+        }
+        $this->assertDatabaseHas('activity_log', ['log_name' => 'dte_contingencia', 'subject_type' => LoteDte::class,
+            'subject_id' => $lote->id, 'description' => 'Hacienda ya tenía este lote: se consultan los documentos uno por uno']);
+
+        // Ni el botón ni la tarea vuelven a mandar el lote ni arman otro con sus documentos.
+        $this->haciendaContestaPorDocumento([]);
+        $this->post(route('facturacion.contingencia.lotes.enviar', $this->evento))->assertSessionHasNoErrors();
+        $this->pasanMinutos(5);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+        Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/recepcionlote'));
+        $this->assertSame(1, LoteDte::count());
+        $this->assertSame(0, LoteDte::where('estado', 'error')->count());
+    }
+
+    public function test_los_documentos_de_un_lote_que_hacienda_ya_tenia_se_resuelven_uno_por_uno(): void
+    {
+        Queue::fake();
+        Ajustes::guardarComoSistema('correo.auto_envio', true);
+        $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente de prueba', 'correo' => 'cliente@example.test']);
+        $aceptado = $this->documento();
+        $rechazado = $this->documento();
+        $todavia = $this->documento();
+        Dte::whereKey($aceptado->id)->update(['cliente_id' => $cliente->id]);
+        $lote = $this->loteConLaRespuestaPerdida();
+        $this->haciendaContestaAlLote(self::LOTE_REPETIDO, 208);
+        $this->post(route('facturacion.contingencia.lotes.enviar', $this->evento))->assertSessionHas('status', self::YA_LO_TENIA);
+        $this->get(route('facturacion.contingencia.pendientes'))->assertOk()->assertSee(self::YA_LO_TENIA)
+            ->assertSee('Consultar resultado');
+
+        // La tarea pregunta por cada documento. Uno procesado con sello, otro rechazado y
+        // otro que todavía no aparece.
+        $this->haciendaContestaPorDocumento([
+            $aceptado->codigo_generacion => ['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-INVENTADO-A',
+                'fhProcesamiento' => '13/10/2026 11:05:00', 'descripcionMsg' => 'RECIBIDO'],
+            $rechazado->codigo_generacion => ['estado' => 'RECHAZADO', 'descripcionMsg' => 'Rechazo inventado',
+                'observaciones' => ['Motivo inventado']],
+        ]);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+
+        Http::assertSentCount(3);
+        Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/recepcionlote'));
+        $this->assertSame(EstadoDte::Aceptado, $aceptado->refresh()->estado);
+        $this->assertSame('SELLO-INVENTADO-A', $aceptado->sello_recepcion);
+        Queue::assertPushed(EnviarDteCorreo::class, 1);
+        $this->assertSame(EstadoDte::Rechazado, $rechazado->refresh()->estado);
+        $this->assertSame(['Motivo inventado'], $rechazado->respuesta_mh['observaciones']);
+        $this->assertSame(EstadoDte::Firmado, $todavia->refresh()->estado);
+        $this->assertSame($lote->id, $todavia->lote_dte_id);
+        $lote->refresh();
+        $this->assertSame('recibido', $lote->estado);
+        $this->assertSame([1, 1, 1], [$lote->procesados, $lote->rechazados, $lote->consultas]);
+        $this->assertSame('informada', $this->contingencia->refresh()->estado);
+
+        // La vuelta siguiente pregunta solo por el que faltaba, y el lote se cierra.
+        $this->pasanMinutos(5);
+        $this->haciendaContestaPorDocumento([$todavia->codigo_generacion => ['estado' => 'PROCESADO',
+            'selloRecibido' => 'SELLO-INVENTADO-C', 'fhProcesamiento' => '13/10/2026 11:10:00']]);
+        $this->artisan('dte:contingencia-lotes')->assertSuccessful();
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($r) => $r['codigoGeneracion'] === $todavia->codigo_generacion);
+        $this->assertSame('SELLO-INVENTADO-C', $todavia->refresh()->sello_recepcion);
+        $this->assertSame('procesado', $lote->refresh()->estado);
+        $this->assertSame([2, 1], [$lote->procesados, $lote->rechazados]);
+        $this->assertSame('regularizada', $this->contingencia->refresh()->estado);
+        $this->assertSame(1, LoteDte::count());
+    }
+
+    public function test_otro_208_o_una_respuesta_rara_al_lote_sigue_en_duda_y_se_reintenta_con_el_mismo_idenvio(): void
+    {
+        $dte = $this->documento();
+        $lote = $this->loteConLaRespuestaPerdida();
+        foreach ([[['descripcionMsg' => 'OTRO MENSAJE INVENTADO'] + self::LOTE_REPETIDO, 208],
+            [['codigoMsg' => '001'] + self::LOTE_REPETIDO, 208],
+            [self::LOTE_REPETIDO, 500]] as [$cuerpo, $status]) {
+            $this->haciendaContestaAlLote($cuerpo, $status);
+            $this->assertSame('respuesta_incierta', $this->service()->enviar($this->evento)[0]['resultado']);
+            $this->assertSame('pendiente', $lote->refresh()->estado);
+            $this->assertSame($lote->id, $dte->refresh()->lote_dte_id);
+        }
+
+        $this->simular();
+        $this->assertSame('recibido', $this->service()->enviar($this->evento)[0]['resultado']);
+        Http::assertSent(fn ($r) => $r['idEnvio'] === $lote->id_envio);
+        $this->assertSame(1, LoteDte::count());
     }
 }
