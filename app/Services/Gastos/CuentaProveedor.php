@@ -271,6 +271,17 @@ final class CuentaProveedor
                     'cuota_id' => $l['cuota_id'],
                     'importe' => Dinero::decimal($l['aplica']),
                 ], $plan['lineas']);
+            } else {
+                // El reparto elegido a mano trae el número de cuota desde el formulario. Solo
+                // vale contra las compras abiertas de ESTA cuenta, igual que el propuesto: si
+                // no, el abono podía ir a otra deuda del mismo nombre o a otro proveedor.
+                $deLaCuenta = $this->abiertas($usuario, $datos['beneficiario'], $datos['moneda'])->pluck('id')->all();
+
+                if (array_diff(array_map('intval', array_column($reparto, 'cuota_id')), $deLaCuenta) !== []) {
+                    throw ValidationException::withMessages([
+                        'reparto' => 'El reparto incluye una deuda que no es una compra abierta de esta cuenta. Volvé a abrir la cuenta e intentalo de nuevo.',
+                    ]);
+                }
             }
 
             return $this->pagos->registrar($usuario, [

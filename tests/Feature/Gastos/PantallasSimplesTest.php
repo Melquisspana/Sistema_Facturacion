@@ -263,6 +263,47 @@ class PantallasSimplesTest extends TestCase
     }
 
     /**
+     * #16 · El reparto elegido a mano tampoco saca el abono de la cuenta. La pantalla solo
+     * ofrece las compras abiertas, pero el número de cuota viaja en el formulario: con otro
+     * número, el abono de Proveedor A iba a su alquiler, o a la compra de otro proveedor
+     * con el aviso «Abono registrado: Proveedor A».
+     */
+    public function test_el_abono_dirigido_solo_va_a_compras_abiertas_de_esa_cuenta(): void
+    {
+        $u = $this->completo();
+        $compra = $this->compraDeProveedorA($u, 'Pepitoria', '300.00');
+        $alquiler = Gasto::create([
+            'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('0', 64),
+            'beneficiario' => 'Proveedor A', 'concepto' => 'Alquiler de la bodega',
+            'categoria' => 'Alquiler', 'ambito' => 'empresarial', 'naturaleza' => 'operativo',
+            'moneda' => 'USD', 'importe' => '500.00', 'documentacion' => 'pendiente',
+            'responsable_id' => $u->id, 'registrado_por' => $u->id,
+        ]);
+        $alquiler->cuotas()->create(['numero' => 1, 'importe' => '500.00', 'vence' => null]);
+        $deOtro = app(CuentaProveedor::class)->agregarCompra($u, [
+            'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor B',
+            'concepto' => 'Maní', 'importe' => '200.00', 'fecha' => now()->toDateString(),
+            'ambito' => 'empresarial', 'moneda' => 'USD',
+        ]);
+
+        foreach ([$alquiler, $deOtro] as $ajena) {
+            $this->actingAs($u)->post(route('gastos.cuentas.abonos'), [
+                'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor A',
+                'importe' => '100.00', 'fecha' => now()->toDateString(),
+                'metodo' => 'transferencia', 'moneda' => 'USD',
+                'dirigido' => '1',
+                'reparto' => [['cuota_id' => $ajena->cuotas()->first()->id, 'importe' => '100.00']],
+            ])->assertSessionHasErrors('reparto');
+        }
+
+        $this->assertSame(0, Pago::count(), 'Ningún abono salió de la cuenta.');
+        $saldos = app(SaldosGastos::class);
+        $this->assertSame(30000, $saldos->pendienteCuota($compra->cuotas()->first()));
+        $this->assertSame(50000, $saldos->pendienteCuota($alquiler->cuotas()->first()));
+        $this->assertSame(20000, $saldos->pendienteCuota($deOtro->cuotas()->first()));
+    }
+
+    /**
      * #22 · Un importe mal escrito en el reparto elegido a mano es un aviso que nombra esa
      * compra, no un error del sistema. Antes reventaba al pasarlo a centavos.
      */
