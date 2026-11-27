@@ -426,12 +426,19 @@ class LoteDteService
         if ($documentos->isEmpty()) {
             return;
         }
-        $ambiente = $documentos->first()->ambiente;
+        $primero = $documentos->first();
+        if (! $primero instanceof Dte) {
+            return;
+        }
+        $ambiente = $primero->ambiente;
         $this->transporte->verificar($ambiente, CandadoEndpointOficial::CONSULTA, EndpointsHacienda::consultaOficial($ambiente), EndpointsHacienda::consulta($ambiente));
         // Sin poder iniciar sesión no se pregunta nada: sale el mismo aviso que al consultar un lote.
         $this->transporte->token();
         $lote->update(['consultas' => min(65535, $lote->consultas + 1), 'ultima_consulta_en' => HoraNegocio::ahora()]);
         foreach ($documentos as $dte) {
+            if (! $dte instanceof Dte) {
+                continue;
+            }
             try {
                 $resultado = $this->consulta->consultar($dte);
             } catch (DteTransmisionDeshabilitadaException $e) {

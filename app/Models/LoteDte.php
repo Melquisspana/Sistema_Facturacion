@@ -31,7 +31,6 @@ class LoteDte extends Model
         return $this->belongsTo(ContingenciaEvento::class);
     }
 
-    /** @return HasMany<Dte, $this> */
     public function dtes(): HasMany
     {
         return $this->hasMany(Dte::class);
