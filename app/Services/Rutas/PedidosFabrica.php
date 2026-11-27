@@ -85,6 +85,22 @@ class PedidosFabrica
     public const AUDITORIA_MANDO = [self::AUDITORIA_TODO, self::AUDITORIA_PARTE];
 
     /**
+     * «Volvió a la fábrica» (27/11/2026): el motivo, el estado anterior y los envíos que se
+     * anularon ({@see volvioALaFabrica()}). De ahí leen la ficha, «Hechos» y el correo diario.
+     */
+    public const AUDITORIA_VOLVIO = 'volvió a la fábrica';
+
+    public const VOLVIO_FACTURADO = 'Ya se facturó: eso se arregla con una nota de crédito.';
+
+    public const VOLVIO_EN_BORRADOR = 'Este pedido ya tiene un CCF en borrador. Eliminá el borrador antes.';
+
+    public const VOLVIO_WEB = 'Los pedidos web se resuelven aparte.';
+
+    public const VOLVIO_SIN_ENVIOS = 'De este pedido no salió nada.';
+
+    public const VOLVIO_SIN_MOTIVO = 'Escribí por qué volvió a la fábrica.';
+
+    /**
      * Lo que falta mandar, de cualquier fecha desde `pedidos.fabrica_desde`, del más viejo
      * al más nuevo. Sin precios: la fábrica no tiene `productos.ver`.
      *
@@ -170,11 +186,12 @@ class PedidosFabrica
     }
 
     /**
-     * «Hechos»: los envíos de hoy (también los anulados) y los pedidos cerrados de los
+     * «Hechos»: los envíos de hoy (también los anulados; `volvieron`, los que salieron y
+     * volvieron a la fábrica, que no se ven como deshechos) y los pedidos cerrados de los
      * últimos días que todavía se pueden reabrir (los que no se traen y los mandados con
-     * faltantes).
+     * faltantes; lo que volvió a la fábrica no se reabre).
      *
-     * @return array{envios: Collection<int, PedidoSalaEnvio>, cerrados: Collection<int, PedidoSala>, motivos: array<int, string>}
+     * @return array{envios: Collection<int, PedidoSalaEnvio>, volvieron: list<int>, cerrados: Collection<int, PedidoSala>, motivos: array<int, string>}
      */
     public function hechos(): array
     {
@@ -186,6 +203,7 @@ class PedidosFabrica
             ->with(['pedido.sala:id,nombre', 'pedido.pedidoWeb', 'registradoPor:id,name', 'anuladoPor:id,name', 'lineas.linea.producto:id,nombre', 'dte:id,estado,deleted_at'])
             ->orderByDesc('id')
             ->get();
+        $volvieron = $this->volvieron($envios->whereNotNull('anulado_en')->pluck('pedido_sala_id'));
 
         $cerrados = PedidoSala::query()
             ->whereIn('estado', [EstadoPedidoSala::NoSeTrae->value, EstadoPedidoSala::Enviado->value])
@@ -197,13 +215,14 @@ class PedidosFabrica
             ->filter(fn (PedidoSala $p) => $p->estado === EstadoPedidoSala::NoSeTrae || $p->faltaAlgo())
             ->values();
 
-        return ['envios' => $envios, 'cerrados' => $cerrados, 'motivos' => $this->motivosDeCierre($cerrados->modelKeys())];
+        return ['envios' => $envios, 'volvieron' => self::enviosQueVolvieron($volvieron), 'cerrados' => $cerrados, 'motivos' => $this->motivosDeCierre($cerrados->modelKeys())];
     }
 
     /**
-     * Por qué no se mandó cada pedido cerrado con «No mandar…»: [pedido_id => motivo]. Cuenta
-     * solo si lo último que lo cerró fue ese cierre; si después se reabrió y salió con un
-     * envío, ya no. Los cierres de antes del 13/11/2026 no tienen motivo y no aparecen.
+     * Por qué no se mandó cada pedido cerrado con «No mandar…» o por qué volvió a la fábrica:
+     * [pedido_id => motivo]. Cuenta solo si lo último que lo cerró fue ese cierre; si después
+     * se reabrió y salió con un envío, ya no. Los cierres de antes del 13/11/2026 no tienen
+     * motivo y no aparecen.
      *
      * @param  iterable<int>  $ids
      * @return array<int, string>
@@ -214,7 +233,7 @@ class PedidosFabrica
         if ($ids->isEmpty()) {
             return [];
         }
-        $cierres = [self::AUDITORIA_NO_SE_TRAE, self::AUDITORIA_LO_QUE_FALTA];
+        $cierres = [self::AUDITORIA_NO_SE_TRAE, self::AUDITORIA_LO_QUE_FALTA, self::AUDITORIA_VOLVIO];
 
         return Activity::query()
             ->where('log_name', 'pedido_sala')
@@ -559,6 +578,127 @@ class PedidosFabrica
 
             return true;
         }, 3);
+    }
+
+    /**
+     * «Volvió a la fábrica» (Melqui, 27/11/2026): lo que salió no se entregó (la sala no lo
+     * recibió) y la mercadería volvió. Lo marca la oficina desde «Llegó de pedidos». Los
+     * envíos vigentes quedan anulados, como con «Deshacer», pero lo que llevaban NO vuelve a
+     * quedar pendiente: el pedido se cierra como «Volvió a la fábrica» y no vuelve a la
+     * fábrica; si la sala lo vuelve a querer, se saca otro pedido. Lo marcado y no mandado se
+     * descarta. No toca inventario, Planta ni Cobros, ni crea documentos.
+     *
+     * Con motivo (hasta 200) y nunca si algún envío ya está en un CCF ({@see porQueNoVuelve()}).
+     * La auditoría guarda el motivo, el estado anterior y los envíos anulados. Mismos candados
+     * que el resto de la clase: pedido → líneas → envíos. Devuelve false si ya estaba así
+     * (doble toque): no toca nada más.
+     */
+    public function volvioALaFabrica(PedidoSala $pedido, string $motivo, User $usuario): bool
+    {
+        $motivo = trim($motivo);
+        if ($motivo === '') {
+            throw ValidationException::withMessages(['motivo' => self::VOLVIO_SIN_MOTIVO]);
+        }
+        if (mb_strlen($motivo) > 200) {
+            throw ValidationException::withMessages(['motivo' => self::MOTIVO_LARGO]);
+        }
+
+        return DB::transaction(function () use ($pedido, $motivo, $usuario) {
+            $pedido = $this->bloquear($pedido);
+            if ($pedido->estado === EstadoPedidoSala::Volvio) {
+                return false;
+            }
+            Gate::forUser($usuario)->authorize('volverALaFabrica', $pedido);
+            $this->cargarBloqueado($pedido);
+            // Con las filas bloqueadas (FacturarPedido toma los mismos candados): si la oficina
+            // lo facturó mientras tanto, se avisa.
+            $pedido->envios->load('dte');
+            if (($porQue = self::porQueNoVuelve($pedido)) !== null) {
+                throw ValidationException::withMessages(['pedido' => $porQue]);
+            }
+
+            $anterior = $pedido->estado;
+            $envios = $pedido->envios->whereNull('anulado_en')->values();
+            PedidoSalaEnvio::whereKey($envios->modelKeys())->update(['anulado_en' => now(), 'anulado_por' => $usuario->id]);
+            foreach ($pedido->lineas as $linea) {
+                $linea->update(['va_borrador' => null, 'motivo_borrador' => null]);
+            }
+            $pedido->update(['estado' => EstadoPedidoSala::Volvio, 'armando_desde' => null, 'armando_por' => null, 'armando_sigue' => false]);
+
+            activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
+                ->withProperties([
+                    'motivo' => $motivo,
+                    'estado_anterior' => $anterior->value,
+                    'estado_nuevo' => $pedido->estado->value,
+                    'envios' => $envios->map(fn ($e) => ['envio_id' => $e->getKey(), 'numero' => $e->getAttribute('numero')])->all(),
+                ])
+                ->log(self::AUDITORIA_VOLVIO);
+
+            return true;
+        }, 3);
+    }
+
+    /**
+     * Por qué el pedido no puede marcarse como que volvió a la fábrica, o null si puede: de
+     * sala, vigente, con algo que salió y nada en un CCF (también en borrador: eso va por nota
+     * de crédito o eliminando el borrador). Con `envios.dte` cargados ({@see FacturarPedido::estado()}):
+     * la tarjeta lo usa sin consultas y {@see volvioALaFabrica()}, con las filas bloqueadas.
+     */
+    public static function porQueNoVuelve(PedidoSala $pedido): ?string
+    {
+        $facturacion = FacturarPedido::estado($pedido);
+
+        return match (true) {
+            $pedido->origen === OrigenPedidoSala::Web => self::VOLVIO_WEB,
+            $pedido->estado === EstadoPedidoSala::Anulado => self::ANULADO,
+            $pedido->estado === EstadoPedidoSala::Volvio => self::CERRADO,
+            $pedido->envios->whereNull('anulado_en')->isEmpty() => self::VOLVIO_SIN_ENVIOS,
+            $facturacion['facturados']->isNotEmpty() => self::VOLVIO_FACTURADO,
+            $facturacion['borrador'] !== null => self::VOLVIO_EN_BORRADOR,
+            default => null,
+        };
+    }
+
+    /**
+     * La auditoría de «Volvió a la fábrica» de cada pedido, con quién lo marcó:
+     * [pedido_id => Activity]. La ficha dice cuándo, por qué y quién, como {@see corrigeA()}.
+     *
+     * @param  iterable<int>  $ids
+     * @return array<int, Activity>
+     */
+    public function volvieron(iterable $ids): array
+    {
+        $ids = collect($ids)->map(fn ($id) => (int) $id)->unique()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return Activity::query()
+            ->where('log_name', 'pedido_sala')
+            ->where('subject_type', (new PedidoSala)->getMorphClass())
+            ->whereIn('subject_id', $ids->all())
+            ->where('description', self::AUDITORIA_VOLVIO)
+            ->with('causer')
+            ->orderBy('id')
+            ->get()
+            ->keyBy('subject_id')
+            ->all();
+    }
+
+    /**
+     * Los envíos que se anularon porque el pedido volvió a la fábrica: se ven como «salió y
+     * volvió», no como deshechos.
+     *
+     * @param  iterable<Activity>  $auditorias  de {@see volvieron()}
+     * @return list<int>
+     */
+    public static function enviosQueVolvieron(iterable $auditorias): array
+    {
+        return collect($auditorias)
+            ->flatMap(fn (Activity $a) => array_column($a->properties['envios'] ?? [], 'envio_id'))
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
     }
 
     /**

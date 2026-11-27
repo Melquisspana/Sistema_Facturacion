@@ -118,7 +118,7 @@
                     @if ($hechos['envios']->isEmpty())
                         <div class="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-gray-500">Hoy todavía no salió nada.</div>
                     @else
-                        @include('rutas.pedidos._envios', ['envios' => $hechos['envios'], 'conSala' => true, 'conDeshacer' => true, 'conImprimir' => true, 'enColumnas' => true])
+                        @include('rutas.pedidos._envios', ['envios' => $hechos['envios'], 'conSala' => true, 'conDeshacer' => true, 'conImprimir' => true, 'enColumnas' => true, 'volvieron' => $hechos['volvieron']])
                     @endif
                 </section>
 

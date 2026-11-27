@@ -180,7 +180,8 @@ class ResumenDiarioPedidos
      *  - `llego`: los pedidos vigentes que entraron al sistema en el período (también los de
      *    la tienda web, con su nombre), con quién los sacó y sus productos.
      *  - `salio` y `deshecho`: los envíos del período y los que un correo anterior dio por
-     *    salidos y se deshicieron; `cerrados`: lo que faltó o no se mandó, y por qué.
+     *    salidos y se deshicieron; `cerrados`: lo que faltó o no se mandó, y por qué, y lo que
+     *    volvió a la fábrica (`volvio`, 27/11/2026: sus envíos no se cuentan como deshechos).
      *  - `listos` (listos para salir) y `por_mandar` (con `armando` si la fábrica ya lo
      *    empezó): lo que quedó, de cualquier día, con su fecha y `resto` si ya salió una parte.
      *
@@ -188,7 +189,7 @@ class ResumenDiarioPedidos
      *     llego: list<array{numero: int, vendedor: ?string, cajitas: int, productos: list<array{nombre: string, cantidad: string}>}>,
      *     salio: list<array{numero: int, pedido: int, cajitas: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
      *     deshecho: list<array{numero: int, pedido: int, cajitas: int, hora: string, productos: list<array{nombre: string, cantidad: string, linea: int}>}>,
-     *     cerrados: list<array{numero: int, nada: bool, motivo: ?string, productos: list<array{nombre: string, cantidad: string, motivo: ?string}>}>,
+     *     cerrados: list<array{numero: int, nada: bool, volvio: bool, motivo: ?string, productos: list<array{nombre: string, cantidad: string, motivo: ?string}>}>,
      *     listos: list<array{numero: int, fecha: string, atraso: int, resto: bool, productos: list<array{nombre: string, cantidad: string}>}>,
      *     por_mandar: list<array{numero: int, fecha: string, atraso: int, resto: bool, armando: bool, productos: list<array{nombre: string, cantidad: string}>}>,
      * }>}
@@ -250,25 +251,27 @@ class ResumenDiarioPedidos
         }
 
         // Un envío que un correo anterior dio por salido y se deshizo después. Uno que salió y
-        // se deshizo entre los dos correos no se nombra: nunca se informó.
+        // se deshizo entre los dos correos no se nombra: nunca se informó. El de un pedido que
+        // volvió a la fábrica tampoco: el pedido sale abajo, con su motivo.
         $deshechos = PedidoSalaEnvio::query()->whereBetween('anulado_en', [$desde, $hasta])->where('created_at', '<', $desde)
+            ->whereHas('pedido', fn ($p) => $p->where('estado', '!=', EstadoPedidoSala::Volvio->value))
             ->with($relaciones)->orderBy('id')->get();
         foreach ($deshechos as $e) {
             $salas[$sala($e->pedido)]['deshecho'][] = $envio($e);
         }
 
-        // Lo que faltó y lo que no se mandó: los pedidos que se CERRARON en el período, según la
-        // auditoría del cierre, aunque su envío haya salido otro día («Lo que falta no se
-        // trae» no crea envío). No se usa `updated_at`: agregar la OC después lo movería.
-        // Un pedido que se reabrió y sigue por mandar sale en lo que quedó.
+        // Lo que faltó, lo que no se mandó y lo que volvió a la fábrica: los pedidos que se
+        // CERRARON en el período, según la auditoría del cierre, aunque su envío haya salido
+        // otro día («Lo que falta no se trae» no crea envío). No se usa `updated_at`: agregar
+        // la OC después lo movería. Un pedido que se reabrió y sigue por mandar sale en lo que quedó.
         $cerrados = PedidoSala::query()
             ->whereIn('id', Activity::query()
                 ->where('log_name', 'pedido_sala')
                 ->where('subject_type', (new PedidoSala)->getMorphClass())
-                ->whereIn('description', [PedidosFabrica::AUDITORIA_PARTE, PedidosFabrica::AUDITORIA_NO_SE_TRAE, PedidosFabrica::AUDITORIA_LO_QUE_FALTA])
+                ->whereIn('description', [PedidosFabrica::AUDITORIA_PARTE, PedidosFabrica::AUDITORIA_NO_SE_TRAE, PedidosFabrica::AUDITORIA_LO_QUE_FALTA, PedidosFabrica::AUDITORIA_VOLVIO])
                 ->whereBetween('created_at', [$desde, $hasta])
                 ->select('subject_id'))
-            ->whereIn('estado', [EstadoPedidoSala::Enviado->value, EstadoPedidoSala::NoSeTrae->value])
+            ->whereIn('estado', [EstadoPedidoSala::Enviado->value, EstadoPedidoSala::NoSeTrae->value, EstadoPedidoSala::Volvio->value])
             ->with(['sala:id,nombre', 'pedidoWeb', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
             ->orderBy('id')
             ->get();
@@ -278,15 +281,20 @@ class ResumenDiarioPedidos
         $motivos = $this->fabrica->motivosDeCierre($cerrados->modelKeys());
         foreach ($cerrados as $pedido) {
             $nada = $pedido->estado === EstadoPedidoSala::NoSeTrae;
-            $productos = $nada
-                ? $pedido->lineas->map(fn ($l) => $producto($l, (string) $l->cantidad) + ['motivo' => null])
-                : $pedido->lineas->filter->tienePendiente()->map(fn ($l) => $producto($l, $l->pendiente()) + ['motivo' => $l->motivo_no_enviado]);
-            if (! $nada && $productos->isEmpty()) {
+            // Lo que volvió se nombra con su motivo, sin productos: no faltó nada ni queda nada por mandar.
+            $volvio = $pedido->estado === EstadoPedidoSala::Volvio;
+            $productos = match (true) {
+                $volvio => collect(),
+                $nada => $pedido->lineas->map(fn ($l) => $producto($l, (string) $l->cantidad) + ['motivo' => null]),
+                default => $pedido->lineas->filter->tienePendiente()->map(fn ($l) => $producto($l, $l->pendiente()) + ['motivo' => $l->motivo_no_enviado]),
+            };
+            if (! $nada && ! $volvio && $productos->isEmpty()) {
                 continue;
             }
             $salas[$sala($pedido)]['cerrados'][] = [
                 'numero' => $pedido->id,
                 'nada' => $nada,
+                'volvio' => $volvio,
                 'motivo' => $motivos[$pedido->id] ?? null,
                 'productos' => $productos->values()->all(),
             ];

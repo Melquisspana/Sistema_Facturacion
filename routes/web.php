@@ -262,6 +262,9 @@ Route::middleware('auth')->group(function () {
         Route::get('llego-de-fabrica', [PorFacturarController::class, 'index'])->name('llego-de-fabrica');
         // «Crear borrador» del CCF con todo lo que llegó del pedido y no se facturó (dte.gestionar).
         Route::post('pedidos/{pedido}/facturar', [FacturarPedidoController::class, 'store'])->name('pedidos.facturar');
+        // «Volvió a la fábrica»: lo que salió no se entregó; cierra el pedido con motivo.
+        // Permiso: PedidoSalaPolicy::volverALaFabrica (el mismo de «Facturar»).
+        Route::patch('pedidos/{pedido}/volvio', [PorFacturarController::class, 'volvio'])->name('pedidos.volvio');
         // Tienda nueva: enlazar el pedido a su sala (una que ya existe o la que se da de alta en
         // Clientes). Sin sala no se factura. Permiso: PedidoSalaPolicy::enlazarSala.
         Route::get('pedidos/{pedido}/tienda', [TiendaNuevaController::class, 'show'])->name('pedidos.tienda');

@@ -316,7 +316,7 @@ class PedidosYEntregasTest extends TestCase
 
         // Los pedidos que entraron hoy, con su estado de ahora.
         $this->assertSame(3, $datos['pedidos']['total']);
-        $this->assertSame(['registrado' => 1, 'parcial' => 0, 'listo' => 1, 'enviado' => 0, 'no_se_trae' => 1], $datos['pedidos']['por_estado']);
+        $this->assertSame(['registrado' => 1, 'parcial' => 0, 'listo' => 1, 'enviado' => 0, 'no_se_trae' => 1, 'volvio' => 0], $datos['pedidos']['por_estado']);
         $this->assertEqualsCanonicalizing([$this->p['pendiente']->id, $this->p['listo']->id, $this->p['no_se_trae']->id], $this->numeros($datos['pedidos']['lista']));
         $fila = collect($datos['pedidos']['lista'])->firstWhere('numero', $this->p['listo']->id);
         $this->assertSame(['Sala de prueba Norte', 'Vendedor de prueba', EstadoPedidoSala::Listo], [$fila['sala'], $fila['vendedor'], $fila['estado']]);
@@ -347,7 +347,7 @@ class PedidosYEntregasTest extends TestCase
 
         // El anulado no se cuenta.
         $this->assertSame(2, $datos['pedidos']['total']);
-        $this->assertSame(['registrado' => 1, 'parcial' => 1, 'listo' => 0, 'enviado' => 0, 'no_se_trae' => 0], $datos['pedidos']['por_estado']);
+        $this->assertSame(['registrado' => 1, 'parcial' => 1, 'listo' => 0, 'enviado' => 0, 'no_se_trae' => 0, 'volvio' => 0], $datos['pedidos']['por_estado']);
         $this->assertEqualsCanonicalizing([$this->p['armando']->id, $this->p['parte']->id], $this->numeros($datos['pedidos']['lista']));
 
         // Lo que está en la fábrica es lo de ahora, con el atraso contado hasta hoy.
@@ -369,7 +369,7 @@ class PedidosYEntregasTest extends TestCase
         $this->assertSame(['2026-11-23', '2026-11-26'], [$datos['desde']->toDateString(), $datos['hasta']->toDateString()]);
         // Sin el del domingo 22 ni el anulado.
         $this->assertSame(6, $datos['pedidos']['total']);
-        $this->assertSame(['registrado' => 2, 'parcial' => 1, 'listo' => 1, 'enviado' => 1, 'no_se_trae' => 1], $datos['pedidos']['por_estado']);
+        $this->assertSame(['registrado' => 2, 'parcial' => 1, 'listo' => 1, 'enviado' => 1, 'no_se_trae' => 1, 'volvio' => 0], $datos['pedidos']['por_estado']);
         $this->assertNotContains($this->p['viejo']->id, $this->numeros($datos['pedidos']['lista']));
 
         $this->assertFabricaDeAhora($datos);

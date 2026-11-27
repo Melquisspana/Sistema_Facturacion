@@ -9,25 +9,35 @@
      $conFacturacion (bool, solo la oficina: «Por facturar», «Borrador abierto» o
      «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto);
      $conImprimir (bool, solo la fábrica: «Imprimir de nuevo» la hoja de cada envío vigente);
-     $enColumnas (bool, solo la fábrica: en monitor, dos columnas de envíos). --}}
+     $enColumnas (bool, solo la fábrica: en monitor, dos columnas de envíos);
+     $volvieron (list<int>, PedidosFabrica::enviosQueVolvieron: los envíos que salieron y
+     volvieron a la fábrica, 27/11/2026; se ven sin tachar y con «Salió y volvió», no como
+     deshechos). --}}
 @php
     $conSala ??= false;
     $conDeshacer ??= false;
     $conFacturacion ??= false;
     $conImprimir ??= false;
     $enColumnas ??= false;
+    $volvieron ??= [];
 @endphp
 <ul class="space-y-3 {{ $enColumnas ? 'lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0' : '' }}">
     @foreach ($envios as $envio)
-        @php $anulado = ! $envio->estaVigente(); @endphp
+        @php
+            $anulado = ! $envio->estaVigente();
+            $volvio = $anulado && in_array($envio->id, $volvieron, true);
+            $tachado = $anulado && ! $volvio;
+        @endphp
         <li class="rounded-lg border border-gray-200 bg-white p-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
-                <p class="font-semibold text-gray-800 {{ $anulado ? 'line-through text-gray-400' : '' }}">
+                <p class="font-semibold text-gray-800 {{ $tachado ? 'line-through text-gray-400' : '' }}">
                     Envío {{ $envio->numero }}{{ $conSala ? ' · '.$envio->pedido?->nombreSala() : '' }} · {{ $envio->created_at->format('d/m/Y H:i') }} · lo marcó {{ $envio->registradoPor?->name }}
                 </p>
-                <x-rutas.estado-badge :estado="$anulado ? \App\Enums\EstadoPedidoSala::Anulado : \App\Enums\EstadoPedidoSala::Enviado" />
+                <x-rutas.estado-badge :estado="$volvio ? \App\Enums\EstadoPedidoSala::Volvio : ($anulado ? \App\Enums\EstadoPedidoSala::Anulado : \App\Enums\EstadoPedidoSala::Enviado)" />
             </div>
-            @if ($anulado)
+            @if ($volvio)
+                <p class="mt-1 text-sm text-gray-600">Salió y volvió a la fábrica el {{ $envio->anulado_en->format('d/m/Y') }} · lo marcó {{ $envio->anuladoPor?->name }}</p>
+            @elseif ($anulado)
                 <p class="mt-1 text-sm text-gray-500">Anulado por {{ $envio->anuladoPor?->name }} el {{ $envio->anulado_en->format('d/m/Y') }}</p>
             @elseif ($conFacturacion)
                 <p class="mt-1 text-sm text-gray-700">
@@ -38,7 +48,7 @@
                     @endif
                 </p>
             @endif
-            <ul class="mt-2 space-y-1 text-sm {{ $anulado ? 'line-through text-gray-400' : 'text-gray-700' }}">
+            <ul class="mt-2 space-y-1 text-sm {{ $tachado ? 'line-through text-gray-400' : 'text-gray-700' }}">
                 @foreach ($envio->lineas as $linea)
                     <li><span class="font-semibold tabular-nums">{{ $linea->cantidadLegible() }}</span> × {{ $linea->linea?->producto?->nombre }}</li>
                 @endforeach

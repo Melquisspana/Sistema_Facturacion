@@ -52,14 +52,27 @@ class PedidoSalaPolicy
      * No Jefatura: desde el 26/11/2026 saca sus pedidos, pero los de la oficina no los corrige
      * ni los anula. Tampoco el vendedor (no ve los pedidos de la oficina) ni la PC de pedidos.
      * Que no esté facturado, lo ya mandado y la sala nueva los revisa {@see PedidosOficina},
-     * con mensaje claro en vez de un 403.
+     * con mensaje claro en vez de un 403. Lo que volvió a la fábrica (27/11/2026) ya no se
+     * corrige ni se anula: queda cerrado así y, si la sala lo quiere, se saca otro pedido.
      */
     public function corregirEnOficina(User $usuario, PedidoSala $pedido): bool
     {
         return $this->view($usuario, $pedido)
             && ($usuario->can(PermisoSistema::DteGestionar->value)
                 || ($usuario->can(PermisoSistema::RutasPedidosRegistrar->value) && ! $usuario->hasRole(RolSistema::Jefatura->value)))
-            && $pedido->estaVigente();
+            && $pedido->estaVigente()
+            && $pedido->estado !== EstadoPedidoSala::Volvio;
+    }
+
+    /**
+     * «Volvió a la fábrica» (27/11/2026), desde «Llegó de pedidos»: los mismos que facturan
+     * ahí (ven el pedido y tienen `dte.gestionar`, como «Facturar»). Que se pueda (de sala,
+     * con algo que salió y nada en un CCF) lo dice {@see PedidosFabrica::porQueNoVuelve()},
+     * con mensaje claro en vez de un 403.
+     */
+    public function volverALaFabrica(User $usuario, PedidoSala $pedido): bool
+    {
+        return $this->view($usuario, $pedido) && $usuario->can(PermisoSistema::DteGestionar->value);
     }
 
     /**
@@ -103,7 +116,8 @@ class PedidoSalaPolicy
 
     /**
      * Volver a pendiente lo cerrado que todavía se puede mandar: lo que no se trae, y lo
-     * mandado con faltantes. Un mandado completo no se reabre: se anula su envío.
+     * mandado con faltantes. Un mandado completo no se reabre: se anula su envío. Lo que volvió
+     * a la fábrica tampoco: se saca otro pedido.
      */
     public function reabrir(User $usuario, PedidoSala $pedido): bool
     {

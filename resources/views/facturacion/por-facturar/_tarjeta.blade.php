@@ -11,6 +11,10 @@
      sin la que pide la sala). Con un borrador abierto no sale: lo que llegó después va en ese
      mismo CCF (FacturarPedido::BORRADOR_ABIERTO).
 
+     «Volvió a la fábrica» (27/11/2026, secundario, con confirmación y motivo): lo que salió no
+     se entregó. Solo quien factura y solo si nada del pedido está en un CCF
+     (PedidosFabrica::porQueNoVuelve); el pedido se cierra y sale de esta lista.
+
      Variables: $pedido (sala, ruta, sacadoPor, lineas.producto, lineas.envioLineasVigentes,
      envios vigentes con sus lineas y su dte); $oc (FacturarPedido::oc: propuestas, titulo,
      aviso, lista, y directo); $fecha (?Y-m-d); $facturacion (FacturarPedido::estado: por_facturar,
@@ -34,6 +38,9 @@
         }
     }
     $idProductos = 'productos-'.$pedido->id;
+    // El secundario de la guía, escrito acá: x-secondary-button todavía tiene el aspecto viejo.
+    $secundario = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
+    $puedeVolver = \App\Services\Rutas\PedidosFabrica::porQueNoVuelve($pedido) === null && auth()->user()->can('volverALaFabrica', $pedido);
 @endphp
 <li x-data="{ abierto: false }" class="rounded-lg border border-gray-200 bg-white">
     <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -96,7 +103,10 @@
         @can('view', $pedido)
             <div class="flex flex-col gap-2 sm:shrink-0 sm:flex-row">
                 <a href="{{ route('rutas.pedidos.hoja', array_filter([$pedido, 'fecha' => $fecha])) }}" target="_blank" rel="noopener"
-                   class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
+                   class="{{ $secundario }}">Imprimir hoja</a>
+                @if ($puedeVolver)
+                    <button type="button" x-on:click="$dispatch('open-modal', 'volvio-{{ $pedido->id }}')" class="{{ $secundario }}">Volvió a la fábrica</button>
+                @endif
                 {{-- x-primary-button es solo <button>: el enlace lleva sus clases (docs/GUIA_PANTALLAS.md). --}}
                 @if ($pedido->esTiendaNueva())
                     {{-- Tienda nueva: antes de facturar se da de alta y se enlaza a su sala. --}}
@@ -116,6 +126,41 @@
             </div>
         @endcan
     </div>
+
+    @if ($puedeVolver)
+        {{-- La confirmación con el motivo (x-modal, como «Corregir quién» de las entregas). Si el
+             servidor rechaza el motivo, vuelve abierta en esta fila con lo escrito. --}}
+        @php
+            $estaFila = (int) old('volvio_pedido') === $pedido->id;
+        @endphp
+        <x-modal name="volvio-{{ $pedido->id }}" :show="$estaFila && $errors->has('motivo')" maxWidth="md" focusable>
+            <form method="POST" action="{{ route('facturacion.pedidos.volvio', $pedido) }}" class="p-5 sm:p-6"
+                  role="dialog" aria-modal="true" aria-labelledby="volvio-titulo-{{ $pedido->id }}"
+                  x-data="{ enviando: false }" x-on:submit="if (enviando) { $event.preventDefault() } else { enviando = true }">
+                @csrf @method('PATCH')
+                <input type="hidden" name="volvio_pedido" value="{{ $pedido->id }}">
+                <h2 id="volvio-titulo-{{ $pedido->id }}" class="text-lg font-semibold text-gray-800">¿Volvió a la fábrica el pedido de {{ $pedido->nombreSala() }}?</h2>
+                <p class="mt-2 text-sm text-gray-600">
+                    {{ ucfirst($enviosTexto($porFacturar)) }} {{ $porFacturar->count() === 1 ? 'no se entregó' : 'no se entregaron' }}. El pedido queda cerrado como «Volvió a la fábrica»: no vuelve a pendiente ni se manda otra vez. Si la sala lo vuelve a querer, se saca un pedido nuevo. No cambia inventario, cobros ni documentos.
+                </p>
+                <div class="mt-4">
+                    <label for="volvio-motivo-{{ $pedido->id }}" class="block text-sm font-medium text-gray-700">Motivo</label>
+                    <input id="volvio-motivo-{{ $pedido->id }}" name="motivo" required maxlength="200" autocomplete="off"
+                           value="{{ $estaFila ? old('motivo') : '' }}" aria-describedby="volvio-ayuda-{{ $pedido->id }}"
+                           class="mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm">
+                    <p id="volvio-ayuda-{{ $pedido->id }}" class="mt-1 text-xs text-gray-500">Una línea corta, por ejemplo: la sala no lo recibió.</p>
+                    @if ($estaFila)
+                        <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                    @endif
+                </div>
+                <div class="mt-6 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+                    <button type="button" x-on:click="$dispatch('close-modal', 'volvio-{{ $pedido->id }}')" class="{{ $secundario }}">Cancelar</button>
+                    <button type="submit" x-bind:disabled="enviando"
+                            class="inline-flex min-h-11 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">Sí, volvió a la fábrica</button>
+                </div>
+            </form>
+        </x-modal>
+    @endif
 
     <div id="{{ $idProductos }}" x-show="abierto" x-cloak class="border-t border-gray-100 px-4 pb-4 pt-3">
         <p class="text-sm text-gray-600">

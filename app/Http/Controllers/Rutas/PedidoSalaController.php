@@ -74,7 +74,7 @@ class PedidoSalaController extends Controller
         ]);
     }
 
-    public function show(PedidoSala $pedido, FacturarPedido $facturar): View
+    public function show(PedidoSala $pedido, FacturarPedido $facturar, PedidosFabrica $fabrica): View
     {
         Gate::authorize('view', $pedido);
         $pedido->load(['sala:id,cliente_id,nombre,codigo,requiere_orden_compra', 'sala.cliente:id,requiere_orden_compra', 'ruta:id,nombre', 'salida', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'registradoPor:id,name', 'lineas.producto:id,codigo,nombre',
@@ -83,10 +83,12 @@ class PedidoSalaController extends Controller
 
         // `regresa`: por producto_id, llegó − facturado en los CCF vigentes (FacturarPedido::regresa).
         // `oc`: para «Facturar», con la misma regla que «Llegó de pedidos»; solo a quien factura.
+        // `volvio`: la auditoría de «Volvió a la fábrica» (cuándo, por qué y quién), o null.
         return view('rutas.pedidos.show', [
             'pedido' => $pedido,
             'regresa' => $facturar->regresa($pedido),
             'oc' => Gate::allows('create', Dte::class) ? self::ocParaFacturar($pedido) : null,
+            'volvio' => $pedido->estado === EstadoPedidoSala::Volvio ? ($fabrica->volvieron([$pedido->id])[$pedido->id] ?? null) : null,
         ]);
     }
 

@@ -45,6 +45,11 @@
                 );
         }
         foreach ($d['cerrados'] as $c) {
+            if ($c['volvio'] ?? false) {
+                $partes[] = 'volvió a la fábrica el pedido N.º '.$c['numero'].($c['motivo'] ? ' ('.$motivo($c['motivo']).')' : '');
+
+                continue;
+            }
             if ($c['nada']) {
                 $partes[] = 'no se mandó el pedido N.º '.$c['numero'].($c['motivo'] ? ' ('.$motivo($c['motivo']).')' : '');
 

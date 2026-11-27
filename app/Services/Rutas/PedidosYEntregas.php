@@ -97,6 +97,7 @@ class PedidosYEntregas
         }
         $estados = PedidoSala::query()->whereKey(array_column($lista, 'numero'))->pluck('estado', 'id');
         $porEstado = [];
+        // Cada estado, con su etiqueta: lo que volvió a la fábrica va en el suyo, no en nada por entregar.
         foreach (EstadoPedidoSala::cases() as $estado) {
             if ($estado !== EstadoPedidoSala::Anulado) {
                 $porEstado[$estado->value] = 0;

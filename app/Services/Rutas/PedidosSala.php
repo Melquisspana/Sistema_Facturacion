@@ -473,7 +473,8 @@ class PedidosSala
      */
     private function exigirSinFabrica(PedidoSala $pedido): void
     {
-        if (in_array($pedido->estado, [EstadoPedidoSala::Parcial, EstadoPedidoSala::Listo, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae], true)
+        // Lo que volvió a la fábrica también: ya salió (y sus envíos, aunque anulados, cuentan abajo).
+        if (in_array($pedido->estado, [EstadoPedidoSala::Parcial, EstadoPedidoSala::Listo, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae, EstadoPedidoSala::Volvio], true)
             || $pedido->armando_desde !== null
             || $pedido->envios()->sharedLock()->exists()) {
             throw ValidationException::withMessages(['lineas' => self::EN_FABRICA]);

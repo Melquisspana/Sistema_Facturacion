@@ -4,7 +4,9 @@
 
      Variables: $pedido (con envios.dte), $regresa [producto_id => llego, facturado,
      regresa] (FacturarPedido::regresa): la columna «Regresa» sale solo si ya se facturó algo;
-     y $oc (FacturarPedido::oc más `directo`; null para quien no factura).
+     $oc (FacturarPedido::oc más `directo`; null para quien no factura) y $volvio (la auditoría
+     de «Volvió a la fábrica», PedidosFabrica::volvieron; null si no volvió): cuándo, por qué y
+     quién, y sus envíos se ven como «salió y volvió», no como deshechos.
      «Facturar» (solo quien factura) lleva lo que sigue sin facturar: con una sola OC clara,
      directo al borrador; si no, al formulario del CCF (facturacion.por-facturar._facturar, la
      misma regla que «Llegó de pedidos», 24/11/2026). Con un borrador abierto no sale y se dice
@@ -82,6 +84,10 @@
                 @endcan
                 @if ($llegoDespues)
                     <p class="mt-3 text-sm text-amber-800">{{ \App\Services\Rutas\FacturarPedido::LLEGO_DESPUES_DEL_BORRADOR }}</p>
+                @endif
+                @if ($volvio)
+                    {{-- «Volvió a la fábrica» (27/11/2026): de su auditoría, como «Corrige al envío N.º». --}}
+                    <p class="mt-3 text-sm text-gray-700">Volvió a la fábrica el {{ $volvio->created_at->format('d/m/Y') }} · Motivo: {{ $volvio->properties['motivo'] ?? '—' }} · Lo marcó {{ $volvio->causer?->name ?? '—' }}</p>
                 @endif
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
@@ -170,7 +176,8 @@
                 @if ($pedido->envios->isEmpty())
                     <p class="mt-1 text-sm text-gray-500">Todavía no se despachó nada.</p>
                 @else
-                    <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios, 'conFacturacion' => true])</div>
+                    <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios, 'conFacturacion' => true,
+                        'volvieron' => \App\Services\Rutas\PedidosFabrica::enviosQueVolvieron(array_filter([$volvio]))])</div>
                 @endif
             </section>
         </div>

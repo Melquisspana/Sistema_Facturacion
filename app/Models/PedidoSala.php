@@ -17,6 +17,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * firma el gerente. La regla (quién, cuándo, qué se valida) vive en
  * {@see PedidosSala}, que también deja la auditoría (con las líneas);
  * ver la migración para cada columna.
+ *
+ * @property EstadoPedidoSala $estado
+ * @property OrigenPedidoSala $origen
  */
 class PedidoSala extends Model
 {
