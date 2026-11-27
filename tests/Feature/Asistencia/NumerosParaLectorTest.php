@@ -139,12 +139,12 @@ class NumerosParaLectorTest extends TestCase
 
     public function test_el_nombre_para_la_pantalla_no_pasa_de_24_caracteres(): void
     {
-        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Maximilianoooooooooo Segundo', 'apellidos' => 'Hernandezzzzzzzzzz Otro']);
+        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Maximilianoooooooooo Segundo', 'apellidos' => 'Apellidoooooooooooo Otro']);
         app(NumeroParaMarcar::class)->asignar($empleado, '4821');
 
         $nombre = $this->lista()->json('numeros.0.n');
         $this->assertSame(24, mb_strlen($nombre));
-        $this->assertSame('Maximilianoooooooooo Her', $nombre);
+        $this->assertSame('Maximilianoooooooooo Ape', $nombre);
     }
 
     public function test_el_ping_con_credencial_trae_la_misma_version_que_la_lista(): void

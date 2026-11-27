@@ -65,7 +65,7 @@ class PersonalController extends Controller
             'descuentos' => $e->con_descuentos_ley,
             'huellas' => $veAsistencia ? ($e->asistencia?->huellas_activas_count ?? null) : null,
             'marca' => $veAsistencia && $e->asistencia !== null,
-            'numero' => $veAsistencia && $e->asistencia?->tieneNumeroMarcar(),
+            'numero' => $veAsistencia && $e->asistencia instanceof AsistenciaEmpleado && $e->asistencia->tieneNumeroMarcar(),
             'mensual' => $mensuales[$e->id] ?? null,
         ]);
 
