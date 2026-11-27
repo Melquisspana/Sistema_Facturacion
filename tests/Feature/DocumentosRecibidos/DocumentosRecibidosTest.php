@@ -266,6 +266,29 @@ class DocumentosRecibidosTest extends TestCase
         $this->assertSame(1, $resumen['ignorado']);
     }
 
+    /**
+     * Caso real (Melqui, 27/11/2026): un proveedor anuló su CCF con una nota de crédito y
+     * mandó otro CCF. La nota de crédito resta; el comprobante de retención (07) guarda el
+     * monto sujeto a retención, que no es una compra, así que no suma.
+     */
+    public function test_el_total_resta_las_notas_de_credito_y_no_suma_las_retenciones(): void
+    {
+        $this->doc(['tipo_documento' => '03', 'total' => 1000, 'fecha_correo' => now()]);
+        $this->doc(['tipo_documento' => '05', 'total' => 1000, 'fecha_correo' => now()]);
+        $this->doc(['tipo_documento' => '03', 'total' => 1100.50, 'fecha_correo' => now()]);
+        $this->doc(['tipo_documento' => '06', 'total' => 10, 'fecha_correo' => now()]);
+        $this->doc(['tipo_documento' => '07', 'total' => 500, 'fecha_correo' => now()]);
+
+        $resumen = $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('documentos-recibidos.index', ['vista' => 'bandeja']))
+            ->assertOk()
+            ->assertSee('Las notas de crédito restan')
+            ->viewData('resumen');
+
+        $this->assertSame(5, $resumen['total_docs']);
+        $this->assertSame(1110.5, $resumen['total_monto']);
+    }
+
     // ---------- Excel ----------
 
     public function test_excel_tiene_las_columnas_esperadas(): void
