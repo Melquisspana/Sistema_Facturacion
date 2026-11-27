@@ -99,7 +99,9 @@ class FichaVendedor
         $ficha ??= $this->sinUsuarioConElMismoNombre($nombre, $usuario, $enPersonal)
             ?? new PersonalRuta(['nombre' => Str::limit($nombre, 120, '')]);
         $ficha->fill(['user_id' => $usuario->id, 'activo' => (bool) $usuario->activo])->save();
-        $this->ajustarFuncion($ficha, $usuario);
+        if ($ficha instanceof PersonalRuta) {
+            $this->ajustarFuncion($ficha, $usuario);
+        }
         if ($enPersonal && $enPersonal->personal_ruta_id === null && ! PlanillaEmpleado::where('personal_ruta_id', $ficha->id)->exists()) {
             $enPersonal->update(['personal_ruta_id' => $ficha->id]);
         }
