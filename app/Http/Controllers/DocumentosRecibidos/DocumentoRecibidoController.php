@@ -20,6 +20,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -372,7 +373,9 @@ class DocumentoRecibidoController extends Controller
 
         return [
             'total_docs' => (clone $base)->count(),
-            'total_monto' => (float) (clone $base)->sum('total'),
+            // Neto de compras: la nota de crédito (05) resta y el comprobante de retención
+            // (07) no suma, porque su `total` es el monto sujeto a retención, no una compra.
+            'total_monto' => round((float) (clone $base)->sum(DB::raw("CASE tipo_documento WHEN '05' THEN -total WHEN '07' THEN 0 ELSE total END")), 2),
             'pendiente' => (clone $base)->where('estado', 'pendiente')->count(),
             'enviado' => (clone $base)->where('estado', 'enviado')->count(),
             'ignorado' => (clone $base)->where('estado', 'ignorado')->count(),

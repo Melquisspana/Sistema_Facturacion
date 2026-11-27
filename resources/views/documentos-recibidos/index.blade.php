@@ -265,6 +265,7 @@
                 <div class="rounded-lg bg-white ring-1 ring-gray-200 p-3">
                     <p class="text-xs text-gray-400">Total</p>
                     <p class="text-lg font-semibold text-gray-800">${{ number_format($resumen['total_monto'], 2) }}</p>
+                    <p class="text-xs text-gray-400">Las notas de crédito restan</p>
                 </div>
                 <div class="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3">
                     <p class="text-xs text-amber-600">Pendientes</p>
