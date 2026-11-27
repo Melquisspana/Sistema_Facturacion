@@ -181,7 +181,8 @@ class VolvioALaFabricaTest extends TestCase
         $this->assertSame($this->oficina->id, $auditoria->causer_id);
         $this->assertSame('La sala no lo recibió', $auditoria->properties['motivo']);
         $this->assertSame('enviado', $auditoria->properties['estado_anterior']);
-        $this->assertSame([['envio_id' => $uno->id, 'numero' => 2], ['envio_id' => $dos->id, 'numero' => 3]], $auditoria->properties['envios']);
+        // assertEquals: MySQL guarda el JSON de la auditoría con las claves en otro orden.
+        $this->assertEquals([['envio_id' => $uno->id, 'numero' => 2], ['envio_id' => $dos->id, 'numero' => 3]], $auditoria->properties['envios']);
 
         // Ya no está en «Llegó de pedidos», ni para facturar ni en otro grupo.
         $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
