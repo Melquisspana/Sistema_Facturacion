@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ContingenciaEventoService
@@ -304,6 +305,19 @@ class ContingenciaEventoService
 
     private function mensajeEnDuda(ContingenciaEvento $evento): string
     {
+        // Hacienda real, al reenvío de un aviso que ya recibió, contesta RECHAZADO con «Ya
+        // existe envento de contingencia para codigo generacion: <código>» (así, con la
+        // errata; ensayo contra apitest del 26/11). Si el código es el de esta parte, sigue
+        // en duda —no se da por recibida sola—, pero el mensaje dice lo que contestó.
+        foreach ((array) ($evento->respuesta_mh['observaciones'] ?? []) as $observacion) {
+            if (is_string($observacion)
+                && preg_match('/ya existe en?vento de contingencia para codigo generacion:\s*([0-9a-f-]+)/i', Str::ascii($observacion), $m)
+                && strcasecmp($m[1], (string) $evento->codigo_generacion) === 0) {
+                return 'La parte '.$evento->parte.' quedó en duda, pero Hacienda dice que ya tiene este aviso ('.$evento->codigo_generacion.'). '
+                    .'Confirmalo con «Hacienda sí lo tiene» y no mandes otro.';
+            }
+        }
+
         return 'La parte '.$evento->parte.' quedó en duda: un envío anterior se cortó y Hacienda pudo haberlo recibido. '
             .'Verificá en Hacienda antes de reenviar. Si lo tiene, apretá «Hacienda sí lo tiene» y no mandes otro aviso. '
             .'Si no lo tiene, marcá «Ya verifiqué en Hacienda» y enviá de nuevo.';

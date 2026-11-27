@@ -7393,6 +7393,24 @@ parameters:
 			path: app/Services/Dte/FirmaTransmisionDte.php
 
 		-
+			message: '#^Parameter \#1 \$ambiente of method App\\Services\\Dte\\ContingenciaTransporte\:\:verificar\(\) expects App\\Enums\\AmbienteHacienda, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Dte/LoteDteService.php
+
+		-
+			message: '#^Parameter \#1 \$ambiente of static method App\\Support\\Dte\\EndpointsHacienda\:\:consulta\(\) expects App\\Enums\\AmbienteHacienda, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Dte/LoteDteService.php
+
+		-
+			message: '#^Parameter \#1 \$ambiente of static method App\\Support\\Dte\\EndpointsHacienda\:\:consultaOficial\(\) expects App\\Enums\\AmbienteHacienda, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/Dte/LoteDteService.php
+
+		-
 			message: '#^Access to an undefined property App\\Models\\ContingenciaEvento\:\:\$fecha_transmision\.$#'
 			identifier: property.notFound
 			count: 1

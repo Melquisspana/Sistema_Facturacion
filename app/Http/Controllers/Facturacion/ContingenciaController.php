@@ -49,7 +49,8 @@ class ContingenciaController extends Controller
         $this->authorize('contingencia', Dte::class);
         $resultados = $this->conBloqueosVisibles(fn () => $service->enviar($evento));
 
-        return back()->with('status', collect($resultados)->pluck('resultado')->implode(' | '));
+        // El resultado que trae su mensaje escrito para la persona se muestra con ese mensaje.
+        return back()->with('status', collect($resultados)->map(fn ($r) => $r['mensaje'] ?? $r['resultado'])->implode(' | '));
     }
 
     public function consultarLote(Request $request, LoteDte $lote, LoteDteService $service): RedirectResponse
