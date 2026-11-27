@@ -8,6 +8,7 @@ use App\Models\Distrito;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Municipio;
+use App\Services\Alertas\ComprobadorConexion;
 use App\Services\Dte\DteStateMachine;
 use App\Support\Correo\CandadoCorreoReal;
 use App\Support\Ubicacion\UbicacionCoherenteFactory;
@@ -17,6 +18,7 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Support\ConexionFalsa;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -39,6 +41,11 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->bloquearHttpReal();
+
+        // La prueba de conexión de los avisos sale a internet: en la suite contesta «hay
+        // internet» sin preguntar a nadie. Las pruebas de la red caída ponen su propia
+        // ConexionFalsa.
+        $this->app->instance(ComprobadorConexion::class, new ConexionFalsa);
 
         // La caché de `Configuracion` es una propiedad STATIC: vive en el proceso de
         // PHPUnit, no en la aplicación. `RefreshDatabase` borra la FILA entre pruebas

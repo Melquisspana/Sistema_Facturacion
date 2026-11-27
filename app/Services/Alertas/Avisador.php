@@ -84,6 +84,7 @@ class Avisador
             app(PaqueteMensualPendiente::class),
             EventosRecientes::errores500(),
             EventosRecientes::tareasProgramadas(),
+            EventosRecientes::sinConexion(),
             app(CobrosFueraDeRegla::class),
             app(DocumentosFiscalesFueraDeRegla::class),
             app(DatosQueNoCuadran::class),

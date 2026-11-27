@@ -22,6 +22,9 @@ final class RegistroEventos
 
     public const TAREAS = 'tareas_programadas';
 
+    /** Tareas que fallaron mientras el servidor no llegaba a internet. */
+    public const SIN_CONEXION = 'sin_conexion';
+
     /** Etiquetas distintas que se guardan por tipo; el resto solo suma al total. */
     private const MAX_ETIQUETAS = 10;
 
@@ -45,6 +48,35 @@ final class RegistroEventos
             Cache::put(self::clave($tipo), $evento, now()->addDays(2));
         } catch (Throwable) {
             // Sin caché no hay dónde anotar; el error original sigue su curso.
+        }
+    }
+
+    /**
+     * Una tarea que terminó mal. Si en ese momento el servidor no llega a internet, va a
+     * SIN_CONEXION: un corte de red hace fallar a la vez todas las tareas que lo usan y
+     * se avisa una sola vez «Sin conexión a internet», no una falla por tarea.
+     */
+    public static function anotarTareaFallida(string $tarea): void
+    {
+        if (! Ajustes::boolSinBase('alertas.enabled')) {
+            return;
+        }
+
+        self::anotar(self::hayInternet() ? self::TAREAS : self::SIN_CONEXION, $tarea);
+    }
+
+    /**
+     * La respuesta se guarda un minuto: cuando falla una tanda de tareas, se prueba una
+     * vez. Si la prueba misma falla, se toma como que hay internet y la tarea se anota
+     * como siempre.
+     */
+    private static function hayInternet(): bool
+    {
+        try {
+            return (bool) Cache::remember('alertas.hay_internet', 60,
+                static fn () => app(ComprobadorConexion::class)->hayInternet());
+        } catch (Throwable) {
+            return true;
         }
     }
 
