@@ -10,11 +10,9 @@
 #
 # Cómo reparte. La lista sale de las carpetas que phpunit.xml declara en <testsuites>,
 # en ese orden, con los archivos *Test.php de cada una ordenados por ruta: es el mismo
-# orden en que los corre PHPUnit. El archivo que queda en la posición i va a la parte
-# (i módulo total) + 1, es decir, se reparten por turno. Así los archivos vecinos de una
-# carpeta caen en partes distintas y las carpetas pesadas (Rutas, Cobros, Planilla)
-# quedan repartidas entre todas en vez de cargar una sola. No hay ninguna lista escrita
-# a mano: un archivo o una carpeta de pruebas nuevos entran solos.
+# orden en que los corre PHPUnit. Se reparten por peso (ver filtrar_parte): así las
+# partes terminan más o menos juntas. No hay ninguna lista escrita a mano: un archivo o
+# una carpeta de pruebas nuevos entran solos.
 #
 # Cada parte se corre pasando sus archivos como argumentos a PHPUnit, que sigue leyendo
 # phpunit.xml completo: mismas variables, mismo arranque, misma configuración.
@@ -61,8 +59,31 @@ todos_los_archivos() {
 }
 
 # Lee la lista completa por la entrada y deja pasar solo los archivos de la parte pedida.
+#
+# Reparte por PESO, no por turno (27/11/2026: por turno, la parte más cargada de MySQL
+# tardaba 38 minutos y la más liviana 22). El peso de un archivo es cuántas pruebas tiene
+# (`function test…`, `#[Test]` o `@test`) más uno por arrancarlo. Se ordenan de más pesado
+# a más liviano (a igual peso, por ruta) y cada uno va a la parte que lleva menos peso
+# hasta ese momento (a igual carga, la de número más chico). Es determinista: la misma
+# lista da el mismo reparto en cualquier máquina. Cada parte sale ordenada por ruta.
 filtrar_parte() {
-    awk -v parte="$1" -v total="$2" '(NR - 1) % total == parte - 1'
+    local parte="$1" total="$2"
+    local -a archivos
+    mapfile -t archivos
+    (( ${#archivos[@]} > 0 )) || return 0
+    # Un solo grep para todos los archivos (uno por archivo tardaba minutos en Windows).
+    # -H fuerza «archivo:cuenta» aunque haya uno solo; -c da 0 si no encuentra nada.
+    grep -HcE 'function test[A-Za-z0-9_]*[[:space:]]*\(|#\[Test\]|@test\b' -- "${archivos[@]}" \
+        | awk -F ':' '{ cuenta = $NF; sub(/:[0-9]+$/, ""); printf "%d\t%s\n", cuenta + 1, $0 }' \
+        | LC_ALL=C sort -t $'\t' -k1,1nr -k2,2 \
+        | awk -F '\t' -v parte="$parte" -v total="$total" '
+            {
+                elegida = 1
+                for (p = 2; p <= total; p++) if (carga[p] + 0 < carga[elegida] + 0) elegida = p
+                carga[elegida] += $1
+                if (elegida == parte) print $2
+            }' \
+        | LC_ALL=C sort
 }
 
 modo="${1:-}"

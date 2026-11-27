@@ -17,11 +17,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cambios:
+    # Decide una sola vez si hace falta correr PHPUnit: un push que solo cambia el
+    # CHANGELOG.md o el firmware de los lectores no puede romper la aplicación. Los jobs de
+    # pruebas corren igual, para que sus checks obligatorios existan, pero sin pasos. Si
+    # este job falla, los de pruebas no corren y master queda bloqueado: nunca pasa solo.
+    name: Qué cambió
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      completo: ${{ steps.mirar.outputs.completo }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirar qué cambió contra master
+        id: mirar
+        run: bash scripts/ci/hace-falta-correr.sh
+
   pruebas:
     # El total sale de la matriz: los checks se llaman «PHPUnit (1/4)» hasta «(4/4)».
     name: PHPUnit (${{ matrix.parte }}/${{ strategy.job-total }})
     # Los PR internos ya se verifican por push; los de forks necesitan esta ejecución.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    needs: cambios
     runs-on: ubuntu-latest
     # En un solo proceso la suite tardaba unos 50 minutos. Se reparte en partes que corren
     # a la vez con el mismo script que usa el job de MySQL. La cuenta: unos 45 minutos de
@@ -38,40 +59,48 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: shivammathur/setup-php@v2
+        if: needs.cambios.outputs.completo == 'true'
         with:
           php-version: '8.3'
           coverage: none
           extensions: mbstring, dom, fileinfo, gd, zip, intl, bcmath, pdo_sqlite, sqlite3, xml, xmlreader, xmlwriter, simplexml, libxml, iconv, openssl, tokenizer, ctype
 
       - name: Localizar caché de Composer
+        if: needs.cambios.outputs.completo == 'true'
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       # Se guardan descargas; composer install sigue comprobando el lock en cada ejecución.
       - uses: actions/cache@v4
+        if: needs.cambios.outputs.completo == 'true'
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
 
       - name: Instalar dependencias PHP
+        if: needs.cambios.outputs.completo == 'true'
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - uses: actions/setup-node@v4
+        if: needs.cambios.outputs.completo == 'true'
         with:
           node-version: '22'
           cache: npm
 
       - name: Instalar dependencias del frontend
+        if: needs.cambios.outputs.completo == 'true'
         run: npm ci
 
       # Las vistas usan @vite: sin public/build/manifest.json los layouts dan 500
       # (ViteManifestNotFoundException). También comprobamos que el frontend compile.
       - name: Compilar frontend
+        if: needs.cambios.outputs.completo == 'true'
         run: npm run build
 
       # phpunit.xml fija SQLite :memory: y el entorno de pruebas, pero no APP_KEY.
       # Esta clave evita MissingAppKeyException; el .env es desechable y sin secretos.
       - name: Preparar clave de la aplicación
+        if: needs.cambios.outputs.completo == 'true'
         run: |
           cp .env.example .env
           php artisan key:generate
@@ -80,13 +109,20 @@ jobs:
       # entre las partes, y que la lista repartida sea la misma que corre PHPUnit con
       # phpunit.xml. Son segundos y no corre ninguna prueba.
       - name: Comprobar el reparto de pruebas
+        if: needs.cambios.outputs.completo == 'true'
         run: |
           bash scripts/ci/reparto-pruebas.sh comprobar "${{ strategy.job-total }}"
           bash scripts/ci/reparto-pruebas.sh contra-phpunit
 
       # Un solo proceso por parte; tests/bootstrap.php ya fija memory_limit=1G.
       - name: Ejecutar PHPUnit
+        if: needs.cambios.outputs.completo == 'true'
         run: bash scripts/ci/reparto-pruebas.sh correr "${{ matrix.parte }}" "${{ strategy.job-total }}"
+
+      - name: Sin cambios que prueben PHP
+        if: needs.cambios.outputs.completo != 'true'
+        run: echo "Solo cambiaron el CHANGELOG o el firmware; las pruebas de PHP no hacen falta."
+
 
   estilo:
     name: Pint (archivos cambiados)
@@ -237,13 +273,14 @@ jobs:
         run: vendor/bin/phpstan analyse --memory-limit=2G --no-progress --error-format=github
 
   pruebas-mysql:
-    # El total sale de la matriz: los checks se llaman «PHPUnit (MySQL estricto) (1/4)»
-    # hasta «(4/4)».
+    # El total sale de la matriz: los checks se llaman «PHPUnit (MySQL estricto) (1/8)»
+    # hasta «(8/8)».
     name: PHPUnit (MySQL estricto) (${{ matrix.parte }}/${{ strategy.job-total }})
     # SQLite no hace cumplir el largo de los VARCHAR ni los bloqueos: este job corre la
     # suite contra MySQL en modo estricto en cada push, con la misma condición que los
     # otros jobs. Se activó junto con el arreglo de los textos largos de Cobros.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    needs: cambios
     runs-on: ubuntu-latest
     # En un solo job la suite pasaba de las 2 horas y GitHub la cortaba cerca del 97 %:
     # nunca daba un resultado. Se reparte en partes que corren a la vez, cada una con su
@@ -251,12 +288,14 @@ jobs:
     # 31 minutos de pruebas más unos 5 de preparación, y la parte más cargada lleva cerca
     # de un 10 % más que el promedio. Queda lejos de los 60 minutos del tope. Para
     # cambiar la cantidad de partes basta esta lista: el reparto y los nombres la siguen.
+    # 27/11/2026: con 4 partes la más cargada tardaba 38 minutos y frenaba cada PR. Pasó a
+    # 8 partes, repartidas por peso, con la base en memoria (ver «Acelerar MySQL»).
     # scripts/ci/reparto-pruebas.sh explica cómo se reparten los archivos.
     strategy:
       # Una parte en rojo no cancela las otras: se quiere el resultado de todas.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4]
+        parte: [1, 2, 3, 4, 5, 6, 7, 8]
     timeout-minutes: 60
     # NO BLOQUEANTE al principio: puede haber más deuda de MySQL que SQLite no muestra.
     # No se ignoran los fallos: cuando quede verde, quitar esta línea para que el job
@@ -272,7 +311,9 @@ jobs:
           MYSQL_ROOT_PASSWORD: ci-solo-pruebas
         ports:
           - 3306:3306
+        # La base vive en memoria (tmpfs): se tira al terminar, no hace falta disco.
         options: >-
+          --tmpfs /var/lib/mysql:rw
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-solo-pruebas"
           --health-interval=10s
           --health-timeout=5s
@@ -281,48 +322,64 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: shivammathur/setup-php@v2
+        if: needs.cambios.outputs.completo == 'true'
         with:
           php-version: '8.3'
           coverage: none
           extensions: mbstring, dom, fileinfo, gd, zip, intl, bcmath, pdo_sqlite, sqlite3, xml, xmlreader, xmlwriter, simplexml, libxml, iconv, openssl, tokenizer, ctype, pdo_mysql, mysqli
 
       - name: Localizar caché de Composer
+        if: needs.cambios.outputs.completo == 'true'
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       # Se guardan descargas; composer install sigue comprobando el lock en cada ejecución.
       - uses: actions/cache@v4
+        if: needs.cambios.outputs.completo == 'true'
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
 
       - name: Instalar dependencias PHP
+        if: needs.cambios.outputs.completo == 'true'
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - uses: actions/setup-node@v4
+        if: needs.cambios.outputs.completo == 'true'
         with:
           node-version: '22'
           cache: npm
 
       - name: Instalar dependencias del frontend
+        if: needs.cambios.outputs.completo == 'true'
         run: npm ci
 
       # Las vistas usan @vite: sin public/build/manifest.json los layouts dan 500
       # (ViteManifestNotFoundException). También comprobamos que el frontend compile.
       - name: Compilar frontend
+        if: needs.cambios.outputs.completo == 'true'
         run: npm run build
 
       # phpunit.xml fija SQLite :memory: y el entorno de pruebas, pero no APP_KEY.
       # Esta clave evita MissingAppKeyException; el .env es desechable y sin secretos.
       - name: Preparar clave de la aplicación
+        if: needs.cambios.outputs.completo == 'true'
         run: |
           cp .env.example .env
           php artisan key:generate
+
+      # La base de pruebas se tira al terminar: no hace falta que cada COMMIT espere al
+      # disco. Mismo MySQL 8.4, mismo modo estricto y mismas pruebas; solo cambia cuándo
+      # escribe el registro, algo que las pruebas no miran.
+      - name: Acelerar MySQL
+        if: needs.cambios.outputs.completo == 'true'
+        run: mysql -h 127.0.0.1 -uroot -pci-solo-pruebas -e "SET GLOBAL innodb_flush_log_at_trx_commit = 0; SET GLOBAL sync_binlog = 0;"
 
       # Antes de gastar la media hora: que ningún archivo de prueba se pierda ni se repita
       # entre las partes, y que la lista repartida sea la misma que corre PHPUnit con
       # phpunit.xml. Son segundos y no corre ninguna prueba ni toca la base.
       - name: Comprobar el reparto de pruebas
+        if: needs.cambios.outputs.completo == 'true'
         run: |
           bash scripts/ci/reparto-pruebas.sh comprobar "${{ strategy.job-total }}"
           bash scripts/ci/reparto-pruebas.sh contra-phpunit
@@ -334,6 +391,7 @@ jobs:
       # PRUEBAS_MYSQL_EFIMERA pide la única excepción al candado de Tests\TestCase, que
       # solo acepta esta base `testing` del runner (ver mysqlEfimeraDeCiSolicitada()).
       - name: Ejecutar PHPUnit
+        if: needs.cambios.outputs.completo == 'true'
         env:
           PRUEBAS_MYSQL_EFIMERA: '1'
           DB_CONNECTION: mysql
@@ -344,3 +402,7 @@ jobs:
           DB_PASSWORD: ci-solo-pruebas
           DB_URL: ''
         run: bash scripts/ci/reparto-pruebas.sh correr "${{ matrix.parte }}" "${{ strategy.job-total }}"
+
+      - name: Sin cambios que prueben PHP
+        if: needs.cambios.outputs.completo != 'true'
+        run: echo "Solo cambiaron el CHANGELOG o el firmware; las pruebas de PHP no hacen falta."
