@@ -38,7 +38,9 @@ jobs:
         run: bash scripts/ci/hace-falta-correr.sh
 
   pruebas:
-    # El total sale de la matriz: los checks se llaman «PHPUnit (1/4)» hasta «(4/4)».
+    # El total sale de la matriz: los checks se llaman «PHPUnit (1/6)» hasta «(6/6)».
+    # 27/11/2026: con MySQL en 8 partes, las 4 de SQLite pasaron a ser las más lentas
+    # (hasta 18 minutos); con 6 quedan parejas con las de MySQL.
     name: PHPUnit (${{ matrix.parte }}/${{ strategy.job-total }})
     # Los PR internos ya se verifican por push; los de forks necesitan esta ejecución.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
@@ -53,7 +55,7 @@ jobs:
       # Una parte en rojo no cancela las otras: se quiere el resultado de todas.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4]
+        parte: [1, 2, 3, 4, 5, 6]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
