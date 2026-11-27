@@ -29,6 +29,10 @@
                         <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">Ignoradas: <strong>{{ $r['ignoradas'] }}</strong></span>
                         <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-800">Advertencias: <strong>{{ $r['advertencias'] }}</strong></span>
                         <span class="px-2 py-1 rounded bg-red-100 text-red-700">Errores: <strong>{{ $r['errores'] }}</strong></span>
+                        {{-- Salas que el CCF todavía no acepta: hay que completarles el distrito. --}}
+                        @if (! empty($r['sin_distrito']))
+                            <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-800">Sin distrito: <strong>{{ $r['sin_distrito'] }}</strong></span>
+                        @endif
                     </div>
 
                     @if (! empty($r['detalles']))

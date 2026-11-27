@@ -3,16 +3,19 @@
 namespace App\Services\Importacion;
 
 use App\Models\Departamento;
+use App\Models\Distrito;
 use App\Models\Municipio;
+use App\Support\Ubicacion\CoherenciaUbicacion;
+use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Illuminate\Support\Str;
 
 /**
- * Resuelve departamento/municipio para la importación de salas, con normalización
- * de texto y un mapa de EQUIVALENCIAS para los nombres "nuevos" (distritos) que el
- * catálogo oficial todavía no tiene (ej. "San Salvador Centro" → "San Salvador").
+ * Resuelve departamento, municipio y distrito (CAT-008) para la importación de salas,
+ * con normalización de texto y un mapa de EQUIVALENCIAS para los nombres "nuevos" que el
+ * catálogo de municipios no tiene (ej. "San Salvador Centro" → "San Salvador").
  *
  * No bloquea la importación: si no hay coincidencia segura, devuelve una
- * advertencia y la sala se crea igual sin municipio.
+ * advertencia y la sala se crea igual sin municipio o sin distrito.
  */
 class ResolvedorUbicacionImportacion
 {
@@ -38,10 +41,17 @@ class ResolvedorUbicacionImportacion
     /** @var array<int, array{id: int, norm: string}>|null */
     private ?array $departamentos = null;
 
+    /** @var array<int, array{modelo: Distrito, norm: string, municipio: string}>|null */
+    private ?array $distritos = null;
+
     /**
+     * El trío que devuelve es siempre coherente ({@see CoherenciaUbicacion}): si el
+     * distrito no encaja, vuelve sin distrito y con una advertencia que lo explica.
+     *
      * @return array{
-     *   departamento_id: int|null,
-     *   municipio_id: int|null,
+     *   departamentoId: int|null,
+     *   municipioId: int|null,
+     *   distritoId: int|null,
      *   infos: array<int, string>,
      *   advertencias: array<int, string>
      * }
@@ -62,6 +72,7 @@ class ResolvedorUbicacionImportacion
 
         // Municipio, por prioridad: distrito → municipio → equiv(municipio) → equiv(distrito).
         $municipioId = null;
+        $infoEquivalencia = null;
         $candidatos = [
             ['texto' => $distrito, 'equivalencia' => false],
             ['texto' => $municipio, 'equivalencia' => false],
@@ -83,9 +94,53 @@ class ResolvedorUbicacionImportacion
             if ($encontrado !== null) {
                 $municipioId = $encontrado['id'];
                 if ($c['equivalencia']) {
-                    $infos[] = "Municipio mapeado por equivalencia: {$c['texto']} -> {$encontrado['nombre']}";
+                    $infoEquivalencia = "Municipio mapeado por equivalencia: {$c['texto']} -> {$encontrado['nombre']}";
                 }
                 break;
+            }
+        }
+
+        // Si la fila nombra tal cual un municipio 2024 («Cabañas Este»), esa agrupación manda
+        // sobre lo de arriba, que solo conoce los nombres anteriores a 2024: si no, un
+        // distrito de otra agrupación arrastraba su municipio y el choque no se veía.
+        $agrupacion = $this->llena($municipio) ? $this->distritoDeAgrupacion($municipio, $departamentoId) : null;
+        if ($agrupacion !== null && ! $agrupacion->perteneceAMunicipio($municipioId ? Municipio::find($municipioId) : null)) {
+            $representante = UbicacionCoherenteFactory::municipioDe($agrupacion);
+            if ($representante !== null) {
+                $municipioId = (int) $representante->id;
+                $infoEquivalencia = null;
+            }
+        }
+        if ($infoEquivalencia !== null) {
+            $infos[] = $infoEquivalencia;
+        }
+
+        // Distrito (CAT-008), que el CCF v4 exige en la sala. Si la fila no lo trae se
+        // prueba con el municipio: muchos municipios anteriores a 2024 hoy son distritos
+        // con el mismo nombre (p. ej. «Soyapango»).
+        $distritoId = null;
+        $textoDistrito = $this->llena($distrito) ? $distrito : $municipio;
+        $coinciden = $this->llena($textoDistrito) ? $this->buscarDistritos($textoDistrito, $departamentoId) : [];
+        $encontrado = count($coinciden) === 1 ? $coinciden[0] : null;
+        if (count($coinciden) > 1) {
+            $advertencias[] = "Distrito ambiguo: «{$textoDistrito}» existe en más de un departamento; indicá el departamento";
+        } elseif ($encontrado === null && $this->llena($distrito)) {
+            $advertencias[] = $departamentoId
+                ? "Distrito «{$distrito}» no está en el departamento indicado"
+                : "Distrito no encontrado: {$distrito}";
+        }
+        if ($encontrado !== null) {
+            // Lo que falte sale del distrito; el trío se guarda solo si es coherente.
+            $depto = $departamentoId ?? (int) $encontrado->departamento_id;
+            $muni = $municipioId ?? UbicacionCoherenteFactory::municipioDe($encontrado)?->id;
+            $problema = CoherenciaUbicacion::problema($depto, $muni, (int) $encontrado->id);
+            if ($problema !== null) {
+                $advertencias[] = "Distrito no enlazado: {$problema}";
+            } else {
+                if ($municipioId === null && $muni !== null) {
+                    $infos[] = "Municipio tomado del distrito: {$encontrado->nombre}";
+                }
+                [$departamentoId, $municipioId, $distritoId] = [$depto, $muni, (int) $encontrado->id];
             }
         }
 
@@ -96,7 +151,54 @@ class ResolvedorUbicacionImportacion
             }
         }
 
-        return compact('departamentoId', 'municipioId', 'infos', 'advertencias');
+        return compact('departamentoId', 'municipioId', 'distritoId', 'infos', 'advertencias');
+    }
+
+    /**
+     * Distritos activos con ese nombre, dentro del departamento si se conoce o en todo el
+     * país si no. Solo uno sirve: varios es un nombre ambiguo (p. ej. «San Isidro»).
+     *
+     * @return array<int, Distrito>
+     */
+    private function buscarDistritos(string $nombre, ?int $departamentoId): array
+    {
+        $n = $this->normalizar($nombre);
+
+        return array_values(array_map(
+            fn (array $d) => $d['modelo'],
+            array_filter(
+                $this->distritos(),
+                fn (array $d) => $d['norm'] === $n
+                    && ($departamentoId === null || (int) $d['modelo']->departamento_id === $departamentoId),
+            ),
+        ));
+    }
+
+    /** Un distrito del municipio 2024 con ese nombre exacto (la agrupación), o null. */
+    private function distritoDeAgrupacion(string $municipio, ?int $departamentoId): ?Distrito
+    {
+        $n = $this->normalizar($municipio);
+        foreach ($this->distritos() as $d) {
+            if ($d['municipio'] === $n && ($departamentoId === null || (int) $d['modelo']->departamento_id === $departamentoId)) {
+                return $d['modelo'];
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array<int, array{modelo: Distrito, norm: string, municipio: string}> */
+    private function distritos(): array
+    {
+        return $this->distritos ??= Distrito::query()
+            ->where('activo', true)
+            ->get(['id', 'nombre', 'departamento_id', 'municipio', 'municipio_codigo'])
+            ->map(fn (Distrito $d) => [
+                'modelo' => $d,
+                'norm' => $this->normalizar($d->nombre),
+                'municipio' => $this->normalizar((string) $d->municipio),
+            ])
+            ->all();
     }
 
     private function buscarDepartamento(string $nombre): ?int
@@ -119,12 +221,11 @@ class ResolvedorUbicacionImportacion
             return null;
         }
 
-        // Primero dentro del departamento (si se conoce), luego global.
-        foreach ([$departamentoId, null] as $filtro) {
-            foreach ($this->municipios() as $m) {
-                if ($m['norm'] === $n && ($filtro === null || $m['departamento_id'] === $filtro)) {
-                    return ['id' => $m['id'], 'nombre' => $m['nombre']];
-                }
+        // Dentro del departamento si se conoce; en todo el país solo si no. Tomar un
+        // municipio de otro departamento dejaba la sala con un par incoherente.
+        foreach ($this->municipios() as $m) {
+            if ($m['norm'] === $n && ($departamentoId === null || $m['departamento_id'] === $departamentoId)) {
+                return ['id' => $m['id'], 'nombre' => $m['nombre']];
             }
         }
 

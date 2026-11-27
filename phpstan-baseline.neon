@@ -8893,24 +8893,6 @@ parameters:
 			path: app/Services/Importacion/ExportadorDatos.php
 
 		-
-			message: '#^Offset ''departamentoId'' does not exist on array\{departamento_id\: int\|null, municipio_id\: int\|null, infos\: array\<int, string\>, advertencias\: array\<int, string\>\}\.$#'
-			identifier: offsetAccess.notFound
-			count: 1
-			path: app/Services/Importacion/ImportadorSalas.php
-
-		-
-			message: '#^Offset ''municipioId'' does not exist on array\{departamento_id\: int\|null, municipio_id\: int\|null, infos\: array\<int, string\>, advertencias\: array\<int, string\>\}\.$#'
-			identifier: offsetAccess.notFound
-			count: 1
-			path: app/Services/Importacion/ImportadorSalas.php
-
-		-
-			message: '#^Method App\\Services\\Importacion\\ResolvedorUbicacionImportacion\:\:resolver\(\) should return array\{departamento_id\: int\|null, municipio_id\: int\|null, infos\: array\<int, string\>, advertencias\: array\<int, string\>\} but returns array\{departamentoId\: int\|null, municipioId\: int\|null, infos\: array\{\}\|array\{non\-falsy\-string\}, advertencias\: array\{\}\|array\{0\: non\-falsy\-string, 1\?\: non\-falsy\-string\}\}\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Services/Importacion/ResolvedorUbicacionImportacion.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$importe\.$#'
 			identifier: property.notFound
 			count: 1

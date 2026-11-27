@@ -22,6 +22,9 @@ class ResultadoImportacion
 
     public int $errores = 0;
 
+    /** Salas que quedaron sin distrito (CAT-008): no se pueden facturar con CCF hasta completarlo. */
+    public int $sinDistrito = 0;
+
     /** @var array<int, array{fila: int, accion: string, nombre: string, detalle: string}> */
     public array $detalles = [];
 
@@ -75,6 +78,7 @@ class ResultadoImportacion
             'ignoradas' => $this->ignoradas,
             'advertencias' => $this->advertencias,
             'errores' => $this->errores,
+            'sin_distrito' => $this->sinDistrito,
             'detalles' => $this->detalles,
         ];
     }
