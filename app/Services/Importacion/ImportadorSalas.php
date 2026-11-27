@@ -3,6 +3,7 @@
 namespace App\Services\Importacion;
 
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Pais;
 use Illuminate\Support\Str;
 
@@ -99,7 +100,7 @@ class ImportadorSalas
                 $datos['codigo'] = $codigo;
             }
 
-            $sucursal = $cliente->sucursales()->firstOrNew(['nombre' => $nombre]);
+            $sucursal = ClienteSucursal::query()->firstOrNew(['cliente_id' => $cliente->id, 'nombre' => $nombre]);
             $infos = $ubic['infos'];
             if ($ubic['distritoId'] !== null) {
                 $datos['distrito_id'] = $ubic['distritoId'];
