@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 /**
  * Las tres pantallas simples: compra al contado, cuentas con proveedores y pago rápido.
@@ -74,8 +75,12 @@ class CompraRapidaController extends Controller
     {
         abort_unless($request->user()->can('gastos.ver'), 403);
 
-        $proveedor = (string) $request->query('proveedor', '');
-        $moneda = (string) $request->query('moneda', 'USD');
+        $datos = $request->validate([
+            'proveedor' => ['nullable', 'string', 'max:180'],
+            'moneda' => ['nullable', Rule::in(config('gastos.monedas'))],
+        ]);
+        $proveedor = (string) ($datos['proveedor'] ?? '');
+        $moneda = $datos['moneda'] ?? 'USD';
 
         abort_if($proveedor === '', 404);
 

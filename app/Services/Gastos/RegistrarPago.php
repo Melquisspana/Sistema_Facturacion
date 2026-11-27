@@ -32,7 +32,7 @@ final class RegistrarPago
             'clave' => ['required', 'uuid'], 'importe' => ['required', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D', 'gt:0'],
             'fecha' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'metodo' => ['required', Rule::in(array_keys(config('gastos.metodos')))],
-            'pagado_por' => ['required', Rule::exists('users', 'id')->where('activo', true)],
+            'pagado_por' => ['required', 'integer', Rule::exists('users', 'id')->where('activo', true)],
             'referencia' => ['nullable', 'string', 'max:180'],
             'sin_comprobante' => ['nullable', 'string', 'max:250'],
         ];

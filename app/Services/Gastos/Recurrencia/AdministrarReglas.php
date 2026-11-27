@@ -493,7 +493,9 @@ final class AdministrarReglas
 
             'dias_generar_antes' => ['required', 'integer', 'between:0,60'],
             'vigente_desde' => ['required', 'date_format:Y-m-d'],
-            'vigente_hasta' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:vigente_desde'],
+            // Comparar contra un arranque que llegó como lista reventaba: ese campo ya avisa solo.
+            'vigente_hasta' => ['nullable', 'date_format:Y-m-d',
+                Rule::when(is_string($datos['vigente_desde'] ?? null), 'after_or_equal:vigente_desde')],
         ], [
             'dia_mes_2.gt' => 'La segunda fecha del mes tiene que ser posterior a la primera.',
             'importe.required' => 'Un monto fijo necesita el importe. Si cambia cada período, elegí «variable».',

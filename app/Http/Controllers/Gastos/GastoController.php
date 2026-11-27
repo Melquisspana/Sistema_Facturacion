@@ -119,7 +119,8 @@ class GastoController extends Controller
      */
     public function repetir(Request $request, Gasto $gasto, RepetirGasto $repetir)
     {
-        $regla = $repetir->desdeGasto($request->user(), $gasto, $request->input('repeticion', []));
+        // Un texto en vez de la lista llega como lista vacía, y el servicio avisa qué falta.
+        $regla = $repetir->desdeGasto($request->user(), $gasto, (array) $request->input('repeticion', []));
 
         $proximo = $repetir->proximoVencimiento($regla, CarbonImmutable::now());
 

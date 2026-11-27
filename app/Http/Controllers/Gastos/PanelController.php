@@ -49,7 +49,10 @@ class PanelController extends Controller
     /** La pantalla principal, y la PUERTA del área. */
     public function index(Request $request, PanelGastos $panel, InstalacionGastos $instalacion)
     {
-        $filtros = ['ambito' => $request->query('ambito')];
+        // Un ámbito que no se entiende se ignora, como en el historial de pagos.
+        $filtros = ['ambito' => in_array($request->query('ambito'), ['empresarial', 'personal'], true)
+            ? $request->query('ambito')
+            : null];
 
         return view('gastos.panel', [
             'datos' => $panel->armar($request->user(), $filtros, CarbonImmutable::now()->startOfDay()),
