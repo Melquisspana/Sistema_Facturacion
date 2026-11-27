@@ -35,6 +35,18 @@ rc() {
   shift
   if rclone "$@" --stats 0 >> "$LOG" 2>&1; then log "OK $etiqueta"; else falla "$etiqueta"; fi
 }
+# Las comprobaciones (check, cryptcheck) se reintentan UNA vez antes de dar FALLO: un corte de
+# red en medio deja archivos sin leer de Drive aunque la copia esté bien (27/11/2026: 0
+# diferencias, 16 sin leer, y llegó «FALLÓ el respaldo»). La copia en sí no se reintenta acá.
+REINTENTO_SEG=${RESPALDO_REINTENTO_SEG:-600}
+rcv() {
+  local etiqueta=$1
+  shift
+  if rclone "$@" --stats 0 >> "$LOG" 2>&1; then log "OK $etiqueta"; return; fi
+  log "REINTENTO $etiqueta en ${REINTENTO_SEG}s (la primera comprobación no terminó bien)"
+  sleep "$REINTENTO_SEG"
+  if rclone "$@" --stats 0 >> "$LOG" 2>&1; then log "OK $etiqueta (al reintentar)"; else falla "$etiqueta"; fi
+}
 
 T0=$(date +%s)
 COMPLETO=no
@@ -79,13 +91,13 @@ rc "CHECK Rescate" check "$RCLONE_DIR/rescate/$RUN" "$R" --one-way --include /rc
 # Lo que se creó mientras corría el respaldo se sube en la próxima corrida: no se compara ahora.
 EDAD="$(($(date +%s) - T0 + 60))s"
 if [ "$COMPLETO" = si ]; then
-  rc "CRYPTCHECK Archivos-fiscales" cryptcheck "$PRIVADO" "$C:Produccion/Actual/Archivos-fiscales" --exclude "$EXCLUIR_ZIP" --min-age "$EDAD" --one-way
+  rcv "CRYPTCHECK Archivos-fiscales" cryptcheck "$PRIVADO" "$C:Produccion/Actual/Archivos-fiscales" --exclude "$EXCLUIR_ZIP" --min-age "$EDAD" --one-way
 else
-  rc "CHECK tamaños Archivos-fiscales" check "$PRIVADO" "$C:Produccion/Actual/Archivos-fiscales" --exclude "$EXCLUIR_ZIP" --min-age "$EDAD" --size-only --one-way
+  rcv "CHECK tamaños Archivos-fiscales" check "$PRIVADO" "$C:Produccion/Actual/Archivos-fiscales" --exclude "$EXCLUIR_ZIP" --min-age "$EDAD" --size-only --one-way
 fi
-rc "CRYPTCHECK Configuracion-critica" cryptcheck "$TRABAJO/Configuracion-critica" "$C:Produccion/Actual/Configuracion-critica-linux" --one-way
-rc "CRYPTCHECK Firmador" cryptcheck "$TRABAJO/Firmador" "$C:Produccion/Actual/Firmador-linux" --one-way
-rc "CRYPTCHECK Dump" cryptcheck "$DUMPS" "$C:Produccion/$ANIO/$MESRUTA/Base-de-datos" --include "/$PREFIJO_VOLCADO-$RUN.sql" --one-way
+rcv "CRYPTCHECK Configuracion-critica" cryptcheck "$TRABAJO/Configuracion-critica" "$C:Produccion/Actual/Configuracion-critica-linux" --one-way
+rcv "CRYPTCHECK Firmador" cryptcheck "$TRABAJO/Firmador" "$C:Produccion/Actual/Firmador-linux" --one-way
+rcv "CRYPTCHECK Dump" cryptcheck "$DUMPS" "$C:Produccion/$ANIO/$MESRUTA/Base-de-datos" --include "/$PREFIJO_VOLCADO-$RUN.sql" --one-way
 
 # Limpieza local: la carpeta de trabajo; volcados y rescates de más de 14 días; registros de más de 90.
 rm -rf "$TRABAJO"
