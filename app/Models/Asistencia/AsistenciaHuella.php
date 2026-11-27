@@ -90,6 +90,7 @@ class AsistenciaHuella extends Model
             });
     }
 
+    /** @return BelongsTo<AsistenciaEmpleado, $this> */
     public function empleado(): BelongsTo
     {
         return $this->belongsTo(AsistenciaEmpleado::class, 'asistencia_empleado_id');

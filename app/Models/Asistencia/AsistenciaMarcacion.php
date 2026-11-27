@@ -7,6 +7,7 @@ use App\Enums\Asistencia\TipoMarcacion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Un hecho: alguien marcó a tal hora. APPEND-ONLY (ver la migración).
@@ -17,6 +18,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * intentara `->update()` sobre una marcación, no habría ninguna columna que
  * delatara el cambio — por eso la tabla no la tiene, y por eso las correcciones
  * futuras serán filas NUEVAS con `origen = 'manual'` en vez de ediciones.
+ *
+ * @property TipoMarcacion $tipo
+ * @property MetodoMarcacion|null $metodo null en una corrección manual
+ * @property Carbon $marcado_at
  */
 class AsistenciaMarcacion extends Model
 {
