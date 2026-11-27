@@ -14,7 +14,8 @@
  *   papel        #FFFFFF  la tarjeta
  *   línea        #EADFD9  bordes y separadores
  * En el modo oscuro de Gmail el fondo se oscurece y el texto se aclara solo; lo que no se
- * puede invertir es el logo, que por eso lleva su propio círculo blanco (LogoCorreo).
+ * puede invertir es el logo, que por eso lleva su propio círculo blanco y va a más de 64 px
+ * (LogoCorreo).
  */
 
 /* Base */
@@ -348,7 +349,8 @@ img {
 
 /* Encabezado (mail::documento): el sello del logo y, a su lado, la empresa y el nombre del
    correo. La celda del logo va sin relleno y del ancho de la imagen: con relleno, el
-   box-sizing de arriba la achicaba y el logo salía aplastado. */
+   box-sizing de arriba la achicaba y el logo salía aplastado. El logo va a 72 px: a 64 o
+   menos, el modo oscuro de Gmail para Android lo toma por ícono y lo invierte (LogoCorreo). */
 
 .doc-header {
     padding: 28px 0 14px;
@@ -364,15 +366,15 @@ img {
 
 .doc-logo-cell {
     vertical-align: middle;
-    width: 56px;
+    width: 72px;
 }
 
 .doc-logo {
     border: 0;
     display: block;
-    height: 56px;
+    height: 72px;
     max-width: none;
-    width: 56px;
+    width: 72px;
 }
 
 .doc-emisor {
