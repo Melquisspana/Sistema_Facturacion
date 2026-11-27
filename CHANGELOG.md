@@ -8,6 +8,21 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.26.3] - 2026-11-26
+
+El lote repetido que salió en el ensayo con el Hacienda de pruebas (#444), el logo del correo en modo oscuro (#445) y Jefatura sin entregas (#446). Sin migraciones ni cambios de permisos. La contingencia sigue apagada.
+
+### Cambiado
+
+- Rutas: el Administrador también entra a Rutas por «Pedidos y entregas» (#446).
+
+### Corregido
+
+- Contingencia: si Hacienda contesta que ya tiene un lote con ese número de envío, el lote ya no queda rechazado ni se reenvía. Se da por recibido y sus documentos se consultan uno por uno. «Pendientes de envío» lo explica (#444).
+- Contingencia: si Hacienda contesta que ya tiene el aviso de contingencia, la parte en duda lo dice y pide confirmarlo con «Hacienda sí lo tiene», sin mandar otro (#444).
+- Correo: el logo ya no sale invertido en el modo oscuro de Gmail (#445).
+- Rutas: Jefatura saca pedidos pero no entrega. Ya no aparece en «¿Quién lo entregó?», en la lista de vendedores ni en el tablero, y su ficha pierde la función de vendedora la próxima vez que entra (#446).
+
 ## [2026.11.26.2] - 2026-11-26
 
 Lo que dejó el simulacro de contingencia (#440, con el #441 adentro) y «Pedidos y entregas» (#442). Sin migraciones. Permisos: el nuevo `rutas.pedidos-entregas.ver`, para jefatura y administrador, y jefatura suma `rutas.pedidos.registrar`. La contingencia sigue apagada.
