@@ -479,9 +479,12 @@ class NavigationTest extends TestCase
             //    puerta: ver test_facturacion_ya_no_tiene_los_bloques_de_administracion.
             //  - ENTRA 'personal.empleados' (08/11/2026): Personal funciona con Planilla
             //    apagada, así que el área aparece en el selector para la administración.
+            //  - SALE 'rutas.dashboard' y ENTRA 'rutas.pedidos-entregas' (26/11/2026): su
+            //    puerta a Rutas es «Pedidos y entregas», como la de Jefatura. El Tablero
+            //    sigue en el menú de Rutas.
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
-                'rutas.dashboard',
+                'rutas.pedidos-entregas',
                 // El área Fábrica (09/11/2026): el administrador tiene todos los permisos,
                 // así que el selector del panel la ofrece.
                 'fabrica.pedidos.index',

@@ -77,10 +77,7 @@ enum AreaSistema: string
      *  - Las fichas no se apagan: con Planilla apagada, quien tiene `planilla.ver` aterriza
      *    en Empleados. Por eso el área nunca desaparece entera.
      *
-     * `salvo_rol`: esa puerta no es el aterrizaje de ese rol (el administrador recibe todos los
-     * permisos y conserva su entrada de siempre). Solo cambia adónde aterriza, no quién entra.
-     *
-     * @return array<int, array{permiso: string, habilitada: bool, ruta: string, salvo_rol?: string}>
+     * @return array<int, array{permiso: string, habilitada: bool, ruta: string}>
      */
     public function puertas(): array
     {
@@ -105,10 +102,9 @@ enum AreaSistema: string
                 ['permiso' => PermisoSistema::FabricaPedidosMandar->value, 'habilitada' => true, 'ruta' => 'fabrica.pedidos.index'],
             ],
             self::Rutas => [
-                // La dueña (Jefatura) entra por «Pedidos y entregas» (26/11/2026). El
-                // administrador tiene todos los permisos y sigue entrando por el Tablero.
-                ['permiso' => PermisoSistema::RutasPedidosEntregasVer->value, 'habilitada' => true, 'ruta' => 'rutas.pedidos-entregas',
-                    'salvo_rol' => RolSistema::Administrador->value],
+                // Jefatura y el administrador entran por «Pedidos y entregas» (pedido de
+                // Melqui, 26/11/2026). Solo ellos tienen ese permiso.
+                ['permiso' => PermisoSistema::RutasPedidosEntregasVer->value, 'habilitada' => true, 'ruta' => 'rutas.pedidos-entregas'],
                 ['permiso' => PermisoSistema::RutasVer->value, 'habilitada' => true, 'ruta' => 'rutas.dashboard'],
                 // El vendedor entra por su inicio, «Mi salida» (maqueta del 10/11/2026): su viaje,
                 // «Sacar pedido» y «Por entregar» a un toque.
@@ -159,8 +155,7 @@ enum AreaSistema: string
     public function rutaInicioPara(?User $usuario): string
     {
         foreach ($this->puertas() as $puerta) {
-            if ($puerta['habilitada'] && $usuario?->can($puerta['permiso'])
-                && ! (isset($puerta['salvo_rol']) && $usuario->hasRole($puerta['salvo_rol']))) {
+            if ($puerta['habilitada'] && $usuario?->can($puerta['permiso'])) {
                 return $puerta['ruta'];
             }
         }

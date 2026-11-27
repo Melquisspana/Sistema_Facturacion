@@ -14,8 +14,10 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
@@ -181,6 +183,23 @@ class VendedoresTableroTest extends TestCase
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSeeInOrder(['Vendedores', 'Admin Inventado', 'Sin viajes en los últimos 90 días', 'Última entrega']);
+    }
+
+    /**
+     * Jefatura saca pedidos y el viaje se abre a su nombre, pero no es vendedora: no sale en
+     * esta sección (Melqui, 26/11/2026).
+     */
+    public function test_jefatura_con_el_viaje_de_sus_pedidos_no_sale_entre_los_vendedores(): void
+    {
+        $jefa = User::factory()->create(['name' => 'Jefa Inventada', 'activo' => true])->assignRole('jefatura');
+        app(FichaVendedor::class)->asegurar($jefa);
+        $ficha = PersonalRuta::where('user_id', $jefa->id)->sole();
+        $this->salida($this->norte, $ficha, '2026-11-02', EstadoSalidaRuta::EnCurso);
+
+        $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Vendedores', 'Jefe Inventado', 'Luis Inventado', 'Rosa Ficticia'])
+            ->assertViewHas('tarjetasVendedores', fn (Collection $tarjetas) => ! $tarjetas->contains(fn (array $t) => $t['persona']->is($ficha)));
     }
 
     public function test_quien_no_es_administrador_sale_aunque_no_tenga_viajes(): void

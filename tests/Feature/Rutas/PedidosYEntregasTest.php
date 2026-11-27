@@ -221,17 +221,22 @@ class PedidosYEntregasTest extends TestCase
 
     // ══════════════════════════════ por dónde entra
 
-    public function test_jefatura_entra_a_rutas_por_esta_pantalla_y_el_administrador_por_el_tablero(): void
+    /**
+     * Jefatura y el administrador entran a Rutas por esta pantalla (pedido de Melqui,
+     * 26/11/2026). El jefe de vendedores sigue entrando por el Tablero.
+     */
+    public function test_jefatura_y_el_administrador_entran_a_rutas_por_esta_pantalla(): void
     {
         $jefatura = $this->usuario('jefatura');
         $admin = $this->usuario('administrador');
 
-        $this->assertSame('rutas.pedidos-entregas', AreaSistema::Rutas->rutaInicioPara($jefatura));
-        $this->assertSame('rutas.dashboard', AreaSistema::Rutas->rutaInicioPara($admin));
-
-        // El selector de áreas la lleva ahí.
-        $this->actingAs($jefatura)->get(route('rutas.dashboard'))->assertOk()
-            ->assertSee('href="'.route('rutas.pedidos-entregas').'"', false);
+        foreach ([$jefatura, $admin] as $usuario) {
+            $this->assertSame('rutas.pedidos-entregas', AreaSistema::Rutas->rutaInicioPara($usuario));
+            // El selector de áreas la lleva ahí.
+            $this->actingAs($usuario)->get(route('rutas.dashboard'))->assertOk()
+                ->assertSee('href="'.route('rutas.pedidos-entregas').'"', false);
+        }
+        $this->assertSame('rutas.dashboard', AreaSistema::Rutas->rutaInicioPara($this->usuario('jefe_vendedores')));
 
         // Al iniciar sesión siguen llegando adonde llegaban: al Inicio de Facturación.
         foreach ([$jefatura, $admin] as $usuario) {

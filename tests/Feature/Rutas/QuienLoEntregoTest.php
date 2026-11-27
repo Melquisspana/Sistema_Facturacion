@@ -411,6 +411,35 @@ class QuienLoEntregoTest extends TestCase
         $this->assertSame($this->personaBeto->id, $entrega->refresh()->entregado_por_id);
     }
 
+    /**
+     * «Jefatura saca pedido pero no entrega» (Melqui, 26/11/2026). Corrige los viajes desde la
+     * oficina (`rutas.gestionar`), pero su ficha, la de sacar pedidos, no figura como quien
+     * entregó: ni para un vendedor ni cuando anota ella, aunque vaya en el viaje.
+     */
+    public function test_jefatura_no_figura_como_quien_entrego_ni_cuando_anota_ella(): void
+    {
+        $jefa = User::factory()->create(['name' => 'Jefa de prueba', 'activo' => true])->assignRole('jefatura');
+        $this->actingAs($jefa)->get(route('rutas.sacar-pedido.index'))->assertOk();
+        $fichaJefa = PersonalRuta::where('user_id', $jefa->id)->sole();
+        $this->ccf($this->salaTienda, '81.00');
+        $entrega = $this->salidaDeLaOficina($this->ccf($this->salaTienda, '80.00'), [$this->personaBeto, $fichaJefa]);
+        $url = route('rutas.salidas.entregas.update', [$entrega->salida_ruta_id, $entrega]);
+
+        $this->actingAs($this->ana)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('>Beto Ficticio</span>', false)->assertDontSee('Jefa de prueba');
+        foreach ([null, $this->ana, $jefa] as $anota) {
+            $this->assertFalse(PersonalRuta::query()->puedenEntregar($anota)->whereKey($fichaJefa->id)->exists());
+        }
+
+        $this->actingAs($jefa)->patch($url, ['resultado' => 'entregado', 'entregado_por_id' => $fichaJefa->id, 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasErrors('entregado_por_id');
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+
+        $this->actingAs($jefa)->patch($url, ['resultado' => 'entregado', 'entregado_por_id' => $this->personaBeto->id, 'forma_cobro' => 'efectivo'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame($this->personaBeto->id, $entrega->refresh()->entregado_por_id);
+    }
+
     // ---------------------------------------------------------------- tablero
 
     public function test_el_tablero_avisa_la_sala_entregada_que_al_dia_siguiente_sigue_sin_albaran(): void

@@ -359,7 +359,7 @@ Facturación › «Llegó de pedidos» (`facturacion/por-facturar`), con su luga
 
 ### Pedidos y entregas (26/11/2026)
 
-Rutas › «Pedidos y entregas» (`rutas/pedidos-y-entregas`): la pantalla de la dueña para el celular, de solo mirar. Permiso `rutas.pedidos-entregas.ver` (Jefatura y Administrador). Jefatura entra a Rutas por ella; el Administrador sigue entrando por el Tablero. Es la primera opción de la barra de Rutas para quien la ve.
+Rutas › «Pedidos y entregas» (`rutas/pedidos-y-entregas`): la pantalla de la dueña para el celular, de solo mirar. Permiso `rutas.pedidos-entregas.ver` (Jefatura y Administrador). Jefatura y el Administrador entran a Rutas por ella (pedido de Melqui, 26/11/2026); el jefe de vendedores, por el Tablero. Es la primera opción de la barra de Rutas para quien la ve.
 
 - **Período:** tres pastillas que son enlaces, **Hoy**, **Ayer** y **Semana** (`?periodo=`, «atrás» funciona; cualquier otro valor es Hoy), en `grid max-w-md grid-cols-3 gap-2`, la elegida en índigo con `aria-current="page"`. Debajo, las fechas (`26/11/2026` o `23/11/2026 al 26/11/2026`) y «Actualizado a las HH:MM». Sin recarga automática.
 - **Concisa, que diga cuál pedido es** (Melqui, sobre las capturas): cada bloque es la caja de la guía con el título en negrita y el total chico al lado («Pedidos de las salas · 3», «Entregado · 2 (1 no se pudo)», lo que no se pudo en rojo). Sin números gigantes, sin tablas de conteo ni frases como «pedidos entraron hoy».

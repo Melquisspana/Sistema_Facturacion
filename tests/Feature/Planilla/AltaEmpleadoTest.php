@@ -116,6 +116,17 @@ class AltaEmpleadoTest extends TestCase
         $this->assertTrue($e->usuario->hasRole(RolSistema::JefeVendedores->value));
     }
 
+    /** Jefatura saca pedidos pero no entrega (Melqui, 26/11/2026): su ficha de Rutas va sin la función Vendedor. */
+    public function test_jefatura_tiene_su_ficha_de_rutas_sin_la_funcion_vendedor(): void
+    {
+        $e = app(AltaEmpleado::class)->registrar($this->actor(), $this->datos(['usa_sistema' => true, 'rol' => RolSistema::Jefatura->value]));
+
+        $this->assertSame(1, PersonalRuta::count());
+        $this->assertSame($e->user_id, $e->personalRuta->user_id);
+        $this->assertTrue($e->personalRuta->activo);
+        $this->assertCount(0, $e->personalRuta->funciones);
+    }
+
     public function test_vendedor_crea_su_ficha_y_enlace_inactivo_conserva_estado(): void
     {
         $actor = $this->actor();
