@@ -77,6 +77,6 @@ class NumeroParaMarcarMigracionTest extends TestCase
             ['dispositivo' => 'huella', 'diferida' => 'huella', 'manual' => null],
             DB::table('asistencia_marcaciones')->orderBy('id')->pluck('metodo', 'origen')->all(),
         );
-        $this->assertTrue(Schema::hasColumns('asistencia_empleados', ['numero_marcar', 'numero_marcar_indice']));
+        $this->assertTrue(Schema::hasColumns('asistencia_empleados', ['numero_marcar', 'numero_marcar_indice', 'numero_marcar_desde']));
     }
 }

@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Schema;
  *    Sirve para buscar a la persona sin descifrar a todos y, con el ÚNICO, para que dos
  *    personas nunca tengan el mismo número aunque dos pedidos lleguen a la vez.
  *    Ver App\Services\Asistencia\NumeroParaMarcar.
+ *  - `numero_marcar_desde`: cuándo se puso o se cambió el número (NULL sin número). Una
+ *    marca guardada sin red de antes de esa hora no se le carga a quien lo tiene hoy.
  *
  * `asistencia_marcaciones.metodo`: 'huella' | 'numero'. NULL en las correcciones manuales,
  * que no las hizo nadie en el lector. Las marcas del lector que ya existen fueron todas
@@ -30,6 +32,8 @@ return new class extends Migration
             $table->char('numero_marcar_indice', 64)->nullable()
                 ->comment('HMAC-SHA256 del número con clave derivada de APP_KEY: búsqueda y unicidad');
             $table->unique('numero_marcar_indice', 'asistencia_empleados_numero_marcar_indice_unique');
+            $table->timestamp('numero_marcar_desde')->nullable()
+                ->comment('Cuándo se puso o se cambió el número: las marcas sin red de antes no son de esta persona');
         });
 
         Schema::table('asistencia_marcaciones', function (Blueprint $table) {
@@ -53,7 +57,7 @@ return new class extends Migration
         });
 
         Schema::table('asistencia_empleados', function (Blueprint $table) {
-            $table->dropColumn(['numero_marcar', 'numero_marcar_indice']);
+            $table->dropColumn(['numero_marcar', 'numero_marcar_indice', 'numero_marcar_desde']);
         });
     }
 };

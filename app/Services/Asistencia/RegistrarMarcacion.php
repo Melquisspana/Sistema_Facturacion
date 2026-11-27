@@ -4,6 +4,7 @@ namespace App\Services\Asistencia;
 
 use App\DataTransferObjects\Asistencia\ResultadoRegistroMarcacion;
 use App\Enums\Asistencia\MetodoMarcacion;
+use App\Enums\Asistencia\ResultadoMarcacion;
 use App\Enums\Asistencia\TipoMarcacion;
 use App\Facades\Ajustes;
 use App\Models\Asistencia\AsistenciaDispositivo;
@@ -92,14 +93,18 @@ class RegistrarMarcacion
         $empleado = $this->numeros->buscar($numero);
 
         if ($empleado === null) {
-            // Las huellas desconocidas no se anotan en ningún lado: los números van al log
-            // de la aplicación, sin los dígitos, para ver si alguien prueba números.
-            Log::warning('Asistencia: llegó un número para marcar que nadie tiene.', [
-                'dispositivo' => $dispositivo->codigo,
-                'ip' => $ip,
-            ]);
+            $this->anotarNumeroRechazado(ResultadoMarcacion::NumeroDesconocido, $dispositivo, $ip, $instante);
 
             return ResultadoRegistroMarcacion::numeroDesconocido();
+        }
+
+        // Guardada sin red antes de que esta persona tuviera el número: era de otra persona
+        // o de un número que la oficina cambió durante el corte. No se le carga a ella.
+        if ($instante !== null && $empleado->numero_marcar_desde !== null
+            && $instante->getTimestamp() < $empleado->numero_marcar_desde->getTimestamp()) {
+            $this->anotarNumeroRechazado(ResultadoMarcacion::NumeroCambiado, $dispositivo, $ip, $instante);
+
+            return ResultadoRegistroMarcacion::numeroCambiado();
         }
 
         if (! $empleado->activo) {
@@ -107,6 +112,31 @@ class RegistrarMarcacion
         }
 
         return $this->registrarPara($empleado, $dispositivo, MetodoMarcacion::Numero, null, $ip, $instante);
+    }
+
+    /**
+     * Las huellas desconocidas no se anotan en ningún lado; los números rechazados van al
+     * log de la aplicación, NUNCA con los dígitos: en vivo, para ver si alguien prueba
+     * números; guardados sin red, con su hora, para que la oficina cargue la marca a mano.
+     */
+    private function anotarNumeroRechazado(ResultadoMarcacion $estado, AsistenciaDispositivo $dispositivo, ?string $ip, ?Carbon $instante): void
+    {
+        if ($instante === null) {
+            Log::warning('Asistencia: llegó un número para marcar que nadie tiene.', [
+                'estado' => $estado->value,
+                'dispositivo' => $dispositivo->codigo,
+                'ip' => $ip,
+            ]);
+
+            return;
+        }
+
+        Log::warning('Asistencia: no se aplicó una marca con número guardada sin red; revisarla y cargarla a mano.', [
+            'estado' => $estado->value,
+            'marcado_en' => $instante->copy()->setTimezone($this->horaOficial->zona())->toIso8601String(),
+            'dispositivo' => $dispositivo->codigo,
+            'ip' => $ip,
+        ]);
     }
 
     /** LA REGLA, con la persona ya resuelta por huella o por número. */

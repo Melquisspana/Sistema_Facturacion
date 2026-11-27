@@ -39,11 +39,13 @@ class MarcarConNumeroTest extends TestCase
         config(['asistencia.enabled' => true, 'asistencia.zona_horaria' => 'America/El_Salvador', 'app.timezone' => 'UTC',
             'asistencia.cooldown_segundos' => 90, 'asistencia.diferidas_max_dias' => 31]);
         date_default_timezone_set('UTC');
-        Carbon::setTestNow(Carbon::parse('2026-11-26 14:00:00', 'UTC'));
 
         $this->lector = AsistenciaDispositivo::factory()->create();
         $this->empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Empleado', 'apellidos' => 'de prueba']);
+        // Tiene su número desde antes de las marcas de cada prueba, también las guardadas sin red.
+        Carbon::setTestNow(Carbon::parse('2026-11-01 12:00:00', 'UTC'));
         app(NumeroParaMarcar::class)->asignar($this->empleado, self::NUMERO);
+        Carbon::setTestNow(Carbon::parse('2026-11-26 14:00:00', 'UTC'));
     }
 
     protected function tearDown(): void
@@ -132,6 +134,60 @@ class MarcarConNumeroTest extends TestCase
 
         $this->assertDatabaseCount('asistencia_marcaciones', 1);
         $this->assertDatabaseHas('asistencia_marcaciones', ['origen' => 'diferida', 'metodo' => 'numero']);
+    }
+
+    /**
+     * Sin red, alguien marca con 1357 a las 07:02; a las 07:40 la oficina le da 1357 a otra
+     * persona. Al reenviarse, la marca no es de quien tiene el número hoy: no se le carga.
+     */
+    public function test_la_marca_sin_red_de_antes_de_que_otra_persona_tuviera_el_numero_no_se_le_carga(): void
+    {
+        $otra = AsistenciaEmpleado::factory()->create(['nombres' => 'Otra', 'apellidos' => 'de prueba']);
+        Carbon::setTestNow(Carbon::parse('2026-11-26 07:40:00', 'America/El_Salvador'));
+        app(NumeroParaMarcar::class)->asignar($otra, '1357');
+        Carbon::setTestNow(Carbon::parse('2026-11-26 14:00:00', 'UTC'));
+        Log::spy();
+
+        $epoch = Carbon::parse('2026-11-26 07:02:00', 'America/El_Salvador')->getTimestamp();
+        $respuesta = $this->marcar(['numero' => '1357', 'marcado_en' => $epoch])
+            ->assertStatus(409)
+            ->assertJson(['ok' => false, 'estado' => 'numero_cambiado', 'repetida' => false, 'diferida' => true]);
+
+        // Ni quién lo tiene ahora ni el número.
+        $this->assertArrayNotHasKey('empleado', $respuesta->json());
+        $this->assertStringNotContainsString('1357', $respuesta->getContent());
+        $this->assertDatabaseCount('asistencia_marcaciones', 0);
+        $this->assertRechazoAnotado('numero_cambiado', '2026-11-26T07:02:00-06:00', '1357');
+
+        // Lo que marca después de tenerlo sí cuenta, aunque llegue tarde.
+        $despues = Carbon::parse('2026-11-26 07:45:00', 'America/El_Salvador')->getTimestamp();
+        $this->marcar(['numero' => '1357', 'marcado_en' => $despues])->assertOk()->assertJsonPath('empleado.id', $otra->id);
+    }
+
+    /** Le cambiaron el número durante el corte: la marca con el viejo queda en el log con su hora. */
+    public function test_la_marca_sin_red_con_un_numero_que_ya_nadie_tiene_queda_en_el_log_con_su_hora(): void
+    {
+        app(NumeroParaMarcar::class)->asignar($this->empleado, '5930');
+        Log::spy();
+
+        $epoch = Carbon::parse('2026-11-26 07:02:00', 'America/El_Salvador')->getTimestamp();
+        $this->marcar(['numero' => self::NUMERO, 'marcado_en' => $epoch])
+            ->assertNotFound()
+            ->assertJson(['ok' => false, 'estado' => 'numero_desconocido', 'diferida' => true]);
+
+        $this->assertDatabaseCount('asistencia_marcaciones', 0);
+        $this->assertRechazoAnotado('numero_desconocido', '2026-11-26T07:02:00-06:00', self::NUMERO);
+    }
+
+    /** Una línea en el log con la hora, el lector y el estado, para cargarla a mano; nunca los dígitos. */
+    private function assertRechazoAnotado(string $estado, string $marcadoEn, string $numero): void
+    {
+        Log::shouldHaveReceived('warning')->withArgs(function (string $mensaje, array $contexto = []) use ($estado, $marcadoEn, $numero) {
+            return ($contexto['estado'] ?? null) === $estado
+                && ($contexto['marcado_en'] ?? null) === $marcadoEn
+                && ($contexto['dispositivo'] ?? null) === $this->lector->codigo
+                && ! str_contains($mensaje.json_encode($contexto), $numero);
+        })->once();
     }
 
     public function test_huella_y_numero_comparten_la_ventana_de_cortesia(): void

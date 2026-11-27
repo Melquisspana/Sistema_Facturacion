@@ -22,6 +22,8 @@ use Random\Randomizer;
  * El índice deja buscar a la persona sin descifrar a todos, y su ÚNICO en la base es lo
  * que de verdad garantiza que dos personas no compartan número aunque dos pedidos lleguen
  * a la vez. Sin la APP_KEY, el índice no sirve para adivinar el número.
+ * `numero_marcar_desde` guarda cuándo se puso o se cambió: una marca guardada sin red de
+ * antes de esa hora no se le carga a quien lo tiene hoy (ver RegistrarMarcacion::porNumero).
  *
  * Si se rota APP_KEY, `ajustes:rotar-app-key` re-cifra el número y rehace el índice
  * (ver App\Ajustes\Rotacion\RotacionAppKey).
@@ -68,9 +70,13 @@ class NumeroParaMarcar
             throw ValidationException::withMessages(['numero' => self::OCUPADO]);
         }
 
+        // Desde cuándo lo tiene: una marca guardada sin red de antes no es suya. Volver a
+        // guardar el mismo número no es un cambio y no le invalida sus marcas sin red.
+        $desde = $empleado->numero_marcar_indice === $indice ? $empleado->numero_marcar_desde : now();
+
         try {
-            DB::transaction(function () use ($empleado, $numero, $indice) {
-                $empleado->forceFill(['numero_marcar' => $numero, 'numero_marcar_indice' => $indice])->save();
+            DB::transaction(function () use ($empleado, $numero, $indice, $desde) {
+                $empleado->forceFill(['numero_marcar' => $numero, 'numero_marcar_indice' => $indice, 'numero_marcar_desde' => $desde])->save();
                 // Sin el número ni el índice: solo que se puso.
                 activity('asistencia')->performedOn($empleado)->event('numero_marcar')->log('puso un número para marcar');
             });
@@ -87,7 +93,7 @@ class NumeroParaMarcar
         }
 
         DB::transaction(function () use ($empleado) {
-            $empleado->forceFill(['numero_marcar' => null, 'numero_marcar_indice' => null])->save();
+            $empleado->forceFill(['numero_marcar' => null, 'numero_marcar_indice' => null, 'numero_marcar_desde' => null])->save();
             activity('asistencia')->performedOn($empleado)->event('numero_marcar')->log('quitó el número para marcar');
         });
 

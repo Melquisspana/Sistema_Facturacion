@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Asistencia\NumeroParaMarcar;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
@@ -138,8 +139,14 @@ class NumeroParaMarcarFichaTest extends TestCase
     public function test_cambiar_el_numero_deja_de_valer_el_anterior(): void
     {
         $empleado = $this->empleado();
+        Carbon::setTestNow('2026-11-20 08:00:00');
         $this->poner($empleado, '4821')->assertSessionHasNoErrors();
+        $this->assertSame('2026-11-20 08:00:00', $empleado->fresh()->numero_marcar_desde?->format('Y-m-d H:i:s'), 'Desde cuándo lo tiene.');
+
+        Carbon::setTestNow('2026-11-26 09:30:00');
         $this->poner($empleado, '5930')->assertSessionHasNoErrors();
+        $this->assertSame('2026-11-26 09:30:00', $empleado->fresh()->numero_marcar_desde?->format('Y-m-d H:i:s'), 'Cambiarlo vuelve a contar.');
+        Carbon::setTestNow();
 
         $servicio = app(NumeroParaMarcar::class);
         $this->assertNull($servicio->buscar('4821'));
@@ -161,6 +168,7 @@ class NumeroParaMarcarFichaTest extends TestCase
         $this->assertFalse($empleado->tieneNumeroMarcar());
         $this->assertNull($empleado->numero_marcar);
         $this->assertNull($empleado->numero_marcar_indice);
+        $this->assertNull($empleado->numero_marcar_desde);
         $this->ficha($empleado)->assertSee('Sin número')->assertDontSee('Quitar número');
     }
 
@@ -192,10 +200,15 @@ class NumeroParaMarcarFichaTest extends TestCase
     public function test_volver_a_poner_su_propio_numero_no_choca_consigo_misma(): void
     {
         $empleado = $this->empleado();
+        Carbon::setTestNow('2026-11-20 08:00:00');
         $this->poner($empleado, '4821')->assertSessionHasNoErrors();
+        Carbon::setTestNow('2026-11-26 09:30:00');
         $this->poner($empleado, '4821')->assertSessionHasNoErrors();
+        Carbon::setTestNow();
 
         $this->assertTrue(app(NumeroParaMarcar::class)->buscar('4821')->is($empleado));
+        // No cambió de número: sus marcas guardadas sin red de esos días siguen valiendo.
+        $this->assertSame('2026-11-20 08:00:00', $empleado->fresh()->numero_marcar_desde?->format('Y-m-d H:i:s'));
     }
 
     public function test_la_base_impide_el_duplicado_aunque_se_salte_la_comprobacion(): void

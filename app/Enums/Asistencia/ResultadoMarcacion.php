@@ -25,6 +25,12 @@ enum ResultadoMarcacion: string
     /** Nadie tiene ese número para marcar. Mismo trato que la huella desconocida. */
     case NumeroDesconocido = 'numero_desconocido';
 
+    /**
+     * Marca guardada sin red con un número que, a esa hora, todavía no era de quien lo
+     * tiene hoy (la oficina lo puso o lo cambió durante el corte). NO se escribe nada.
+     */
+    case NumeroCambiado = 'numero_cambiado';
+
     /** La huella o el número es de alguien que ya no marca (empleado desactivado). */
     case EmpleadoInactivo = 'empleado_inactivo';
 
@@ -59,7 +65,9 @@ enum ResultadoMarcacion: string
             // 409 y no 429: 429 es lo que devuelve el limitador de peticiones y
             // el firmware tiene que poder distinguir «marcaste hace un momento»
             // de «estás saturando el servidor».
-            self::Cooldown => Response::HTTP_CONFLICT,
+            // Igual que el cooldown, un 409 que el lector no reintenta: la marca ya se
+            // decidió. Se distinguen por `estado`.
+            self::Cooldown, self::NumeroCambiado => Response::HTTP_CONFLICT,
             self::PayloadInvalido, self::HoraInvalida => Response::HTTP_UNPROCESSABLE_ENTITY,
             self::DispositivoNoAutorizado => Response::HTTP_UNAUTHORIZED,
         };
@@ -80,7 +88,8 @@ enum ResultadoMarcacion: string
     public function loDecideLaRegla(): bool
     {
         return match ($this) {
-            self::Registrada, self::HuellaDesconocida, self::NumeroDesconocido, self::EmpleadoInactivo, self::Cooldown => true,
+            self::Registrada, self::HuellaDesconocida, self::NumeroDesconocido, self::NumeroCambiado,
+            self::EmpleadoInactivo, self::Cooldown => true,
             self::PayloadInvalido, self::HoraInvalida, self::DispositivoNoAutorizado => false,
         };
     }

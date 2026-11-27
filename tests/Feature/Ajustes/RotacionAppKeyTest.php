@@ -263,7 +263,9 @@ class RotacionAppKeyTest extends TestCase
     {
         $empleado = AsistenciaEmpleado::factory()->create();
         app(NumeroParaMarcar::class)->asignar($empleado, '4821');
-        $indiceViejo = DB::table('asistencia_empleados')->where('id', $empleado->id)->value('numero_marcar_indice');
+        $antes = DB::table('asistencia_empleados')->where('id', $empleado->id)->first();
+        $indiceViejo = $antes->numero_marcar_indice;
+        $this->assertNotNull($antes->numero_marcar_desde);
         $clave = $this->claveNueva();
 
         $this->assertNotEmpty(array_filter($this->rotacion()->afectados(), fn ($e) => str_starts_with($e, 'asistencia_empleados')));
@@ -273,6 +275,8 @@ class RotacionAppKeyTest extends TestCase
         $this->assertSame('4821', $this->cifradorDe($clave)->decryptString((string) $fila->numero_marcar));
         $this->assertSame(NumeroParaMarcar::indice('4821', RotacionAppKey::normalizar($clave)), $fila->numero_marcar_indice);
         $this->assertNotSame($indiceViejo, $fila->numero_marcar_indice);
+        // Es el mismo número: rotar no cambia desde cuándo lo tiene (las marcas sin red siguen valiendo).
+        $this->assertSame($antes->numero_marcar_desde, $fila->numero_marcar_desde);
     }
 
     /** Nunca queda texto plano en la base, ni antes ni después de rotar. */

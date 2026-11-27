@@ -77,6 +77,13 @@ class DispositivoMarcacionController extends Controller
                 'mensaje' => 'Número no registrado',
             ],
 
+            // Ni el número ni quién lo tiene ahora: la marca no era suya.
+            ResultadoMarcacion::NumeroCambiado => [
+                'ok' => false,
+                'estado' => $resultado->estado->value,
+                'mensaje' => 'Número cambiado: marca no aplicada',
+            ],
+
             ResultadoMarcacion::EmpleadoInactivo => [
                 'ok' => false,
                 'estado' => $resultado->estado->value,

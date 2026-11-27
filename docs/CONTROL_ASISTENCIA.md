@@ -59,6 +59,15 @@ número»; si alguien lo olvida, se le pone otro.
   `marcado_en`/`repetida` para los reenvíos. Un número que nadie tiene da
   `numero_desconocido` (404, sin devolver el número) y queda en el log de la aplicación
   sin los dígitos, con el lector y la IP.
+- `asistencia_empleados.numero_marcar_desde` guarda cuándo se puso o se cambió el
+  número (volver a guardar el mismo no cuenta como cambio; quitarlo lo deja en NULL; la
+  rotación de APP_KEY no lo toca). Una marca guardada sin red con `marcado_en` anterior
+  a esa hora no era de quien tiene el número hoy: no se marca y responde
+  `numero_cambiado` (409, sin la persona ni el número).
+- Toda marca guardada sin red que se rechace por el número (`numero_desconocido` o
+  `numero_cambiado`) queda en el log de la aplicación con `marcado_en` (hora local), el
+  código del lector y el estado, sin los dígitos, para que la oficina la revise y la
+  cargue a mano.
 - Cada marca dice «Con huella» o «Con número» en Marcaciones, «Marcas de hoy», la hoja,
   las jornadas y la ficha.
 
@@ -619,6 +628,7 @@ Todas las respuestas traen `ok`, `estado` y `mensaje`. **El firmware ramifica so
 | `registrada` | 200 | Se escribió la marcación |
 | `huella_desconocida` | 404 | Ranura sin asociar, o huella dada de baja |
 | `numero_desconocido` | 404 | Nadie tiene ese número (no se devuelve el número) |
+| `numero_cambiado` | 409 | Marca guardada sin red de antes de que quien tiene hoy el número lo tuviera. **No** se escribió nada |
 | `empleado_inactivo` | 403 | La huella o el número es de alguien que ya no marca |
 | `cooldown` | 409 | Dedo repetido dentro de la ventana. **No** se escribió nada |
 | `payload_invalido` | 422 | No vino exactamente uno de `fingerprint_id` (entero) o `numero` (texto de 4 dígitos) |

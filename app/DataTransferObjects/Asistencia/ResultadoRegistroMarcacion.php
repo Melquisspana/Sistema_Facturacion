@@ -55,6 +55,12 @@ class ResultadoRegistroMarcacion
         return new self(estado: ResultadoMarcacion::NumeroDesconocido);
     }
 
+    /** Sin la persona: no se le dice al lector quién tiene el número ahora. */
+    public static function numeroCambiado(): self
+    {
+        return new self(estado: ResultadoMarcacion::NumeroCambiado);
+    }
+
     public static function empleadoInactivo(AsistenciaEmpleado $empleado, ?int $fingerprintId): self
     {
         return new self(

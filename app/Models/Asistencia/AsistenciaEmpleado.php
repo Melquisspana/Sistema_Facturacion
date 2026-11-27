@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -19,6 +20,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Auditoría con spatie/activitylog, como el resto del proyecto: dar de alta a
  * alguien, cambiarle el nombre o desactivarlo son actos que después hay que poder
  * explicar frente a una planilla.
+ *
+ * @property Carbon|null $numero_marcar_desde cuándo se puso o se cambió el número para marcar
  */
 class AsistenciaEmpleado extends Model
 {
@@ -52,6 +55,7 @@ class AsistenciaEmpleado extends Model
             'activo' => 'boolean',
             'fecha_ingreso' => 'date',
             'numero_marcar' => 'encrypted',
+            'numero_marcar_desde' => 'datetime',
         ];
     }
 
