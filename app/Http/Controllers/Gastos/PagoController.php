@@ -48,12 +48,21 @@ class PagoController extends Controller
      */
     public function index(Request $request, ConsultaGastos $consulta)
     {
+        // Como en el listado: un filtro que no se entiende avisa, en vez de romper la pantalla.
+        $datos = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'desde' => ['nullable', 'date_format:Y-m-d'],
+            'hasta' => ['nullable', 'date_format:Y-m-d'],
+            'metodo' => ['nullable', Rule::in(array_keys(config('gastos.metodos')))],
+            'moneda' => ['nullable', Rule::in(config('gastos.monedas'))],
+        ]);
+
         $filtros = [
-            'q' => trim((string) $request->query('q', '')),
-            'desde' => $request->query('desde'),
-            'hasta' => $request->query('hasta'),
-            'metodo' => $request->query('metodo'),
-            'moneda' => $request->query('moneda'),
+            'q' => trim($datos['q'] ?? ''),
+            'desde' => $datos['desde'] ?? null,
+            'hasta' => $datos['hasta'] ?? null,
+            'metodo' => $datos['metodo'] ?? null,
+            'moneda' => $datos['moneda'] ?? null,
             // Empresa / Personal. Comodidad sobre lo ya alcanzable: el candado real
             // sigue siendo el permiso, aplicado dentro de la consulta.
             'ambito' => in_array($request->query('ambito'), ['empresarial', 'personal'], true)
@@ -118,7 +127,7 @@ class PagoController extends Controller
             'importe' => ['required', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D', 'gt:0'],
             'fecha' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'metodo' => ['required', Rule::in(array_keys(config('gastos.metodos')))],
-            'pagado_por' => ['required', Rule::exists('users', 'id')->where('activo', true)],
+            'pagado_por' => ['required', 'integer', Rule::exists('users', 'id')->where('activo', true)],
             'referencia' => ['nullable', 'string', 'max:180'],
             'sin_comprobante' => ['nullable', 'required_without:comprobantes', 'string', 'max:250'],
             'aplicar' => ['required', 'array', 'min:1'],

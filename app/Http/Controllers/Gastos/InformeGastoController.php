@@ -98,7 +98,8 @@ class InformeGastoController extends Controller
         $datos = $request->validate([
             'corte' => ['nullable', 'date_format:Y-m-d'],
             'desde' => ['nullable', 'date_format:Y-m-d'],
-            'hasta' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:desde'],
+            // Comparar contra un «desde» que llegó como lista reventaba: ese campo ya avisa solo.
+            'hasta' => ['nullable', 'date_format:Y-m-d', Rule::when(is_string($request->query('desde')), 'after_or_equal:desde')],
             'ambito' => ['nullable', Rule::in(['empresarial', 'personal'])],
         ]);
 

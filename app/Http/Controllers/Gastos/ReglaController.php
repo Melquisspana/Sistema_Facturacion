@@ -30,10 +30,11 @@ class ReglaController extends Controller
     public function index(Request $request, CalendarioRecurrencia $calendario)
     {
         $usuario = $request->user();
+        $estado = (string) ($request->validate(['estado' => ['nullable', 'string', 'max:20']])['estado'] ?? '');
 
         $reglas = Regla::query()
             ->when(! $usuario->can('gastos.personales'), fn ($q) => $q->where('ambito', 'empresarial'))
-            ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
+            ->when($estado !== '', fn ($q) => $q->where('estado', $estado))
             ->withCount(['ocurrencias as generadas' => fn ($q) => $q->where('estado', 'generada')])
             ->orderByRaw("CASE estado WHEN 'activa' THEN 0 WHEN 'pausada' THEN 1 ELSE 2 END")
             ->orderBy('nombre')
@@ -43,7 +44,7 @@ class ReglaController extends Controller
         return view('gastos.reglas.index', [
             'reglas' => $reglas,
             'calendario' => $calendario,
-            'estado' => $request->string('estado')->toString(),
+            'estado' => $estado,
             'hoy' => CarbonImmutable::now()->toDateString(),
         ]);
     }
