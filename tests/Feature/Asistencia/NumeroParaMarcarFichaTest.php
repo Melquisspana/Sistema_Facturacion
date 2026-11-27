@@ -6,7 +6,7 @@ use App\Enums\PermisoSistema;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\User;
 use App\Services\Asistencia\NumeroParaMarcar;
-use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -211,12 +211,29 @@ class NumeroParaMarcarFichaTest extends TestCase
         $this->assertSame('2026-11-20 08:00:00', $empleado->fresh()->numero_marcar_desde?->format('Y-m-d H:i:s'));
     }
 
-    public function test_la_base_impide_el_duplicado_aunque_se_salte_la_comprobacion(): void
+    /**
+     * Dos pedidos a la vez con el mismo número: el de la primera se cuela justo después de
+     * que el de la segunda comprobó que estaba libre. El único de la base lo frena y la
+     * oficina ve el mismo mensaje, no un error.
+     */
+    public function test_si_dos_pedidos_chocan_con_el_mismo_numero_la_base_frena_al_segundo_con_el_mismo_mensaje(): void
     {
-        $this->empleado('Primera', 'de prueba')->forceFill(['numero_marcar_indice' => NumeroParaMarcar::indice('4821')])->save();
+        $primera = $this->empleado('Primera', 'de prueba');
+        $segunda = $this->empleado('Segunda', 'de prueba');
 
-        $this->expectException(UniqueConstraintViolationException::class);
-        $this->empleado('Segunda', 'de prueba')->forceFill(['numero_marcar_indice' => NumeroParaMarcar::indice('4821')])->save();
+        $colado = false;
+        DB::listen(function (QueryExecuted $consulta) use (&$colado, $primera) {
+            if (! $colado && str_contains($consulta->sql, 'exists') && str_contains($consulta->sql, 'numero_marcar_indice')) {
+                $colado = true;
+                app(NumeroParaMarcar::class)->asignar($primera, '4821');
+            }
+        });
+
+        $this->poner($segunda, '4821')->assertSessionHasErrors(['numero' => NumeroParaMarcar::OCUPADO]);
+
+        $this->assertTrue($colado, 'El pedido rival llegó después de la comprobación previa.');
+        $this->assertFalse($segunda->fresh()->tieneNumeroMarcar());
+        $this->assertTrue(app(NumeroParaMarcar::class)->buscar('4821')->is($primera));
     }
 
     // ───────────────────────────── Permiso y auditoría ─────────────────────────────

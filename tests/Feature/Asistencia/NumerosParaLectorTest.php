@@ -127,11 +127,14 @@ class NumerosParaLectorTest extends TestCase
 
         $empleado->update(['activo' => false]);
         $v4 = $this->lista()->json('version');
-        $this->assertNotSame($v3, $v4);
+        $this->assertNotSame($v3, $v4, 'Desactivar cambia la versión.');
 
         $empleado->update(['activo' => true]);
+        $v5 = $this->lista()->json('version');
+        $this->assertNotSame($v4, $v5, 'Reactivar cambia la versión.');
+
         app(NumeroParaMarcar::class)->quitar($empleado);
-        $this->assertNotSame($v3, $this->lista()->json('version'));
+        $this->assertNotSame($v5, $this->lista()->json('version'), 'Quitar el número cambia la versión.');
     }
 
     public function test_el_nombre_para_la_pantalla_no_pasa_de_24_caracteres(): void
