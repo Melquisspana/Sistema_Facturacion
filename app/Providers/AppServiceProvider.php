@@ -11,7 +11,7 @@ use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
 use App\Listeners\AuditoriaAccesos;
 use App\Services\Alertas\ComprobadorConexion;
-use App\Services\Alertas\ComprobadorConexionTcp;
+use App\Services\Alertas\ComprobadorConexionHttp;
 use App\Services\Alertas\RegistroEventos;
 use App\Services\Asistencia\AutenticadorDispositivo;
 use App\Services\Contabilidad\SubidaDrivePaquete;
@@ -89,7 +89,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(FuentePedidos::class, FuentePedidosSala::class);
 
         // Cómo saben los avisos si el servidor llega a internet cuando falla una tarea.
-        $this->app->bind(ComprobadorConexion::class, ComprobadorConexionTcp::class);
+        $this->app->bind(ComprobadorConexion::class, ComprobadorConexionHttp::class);
 
         // Perfil documental del cliente. Singleton por la misma razón que el resolver de
         // ajustes: memoriza qué clientes tienen perfil, y recalcular una nota de crédito

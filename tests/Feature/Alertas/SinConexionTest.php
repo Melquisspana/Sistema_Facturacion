@@ -5,7 +5,7 @@ namespace Tests\Feature\Alertas;
 use App\Mail\AlertaSistemaCorreo;
 use App\Services\Alertas\Avisador;
 use App\Services\Alertas\ComprobadorConexion;
-use App\Services\Alertas\ComprobadorConexionTcp;
+use App\Services\Alertas\ComprobadorConexionHttp;
 use App\Services\Alertas\Detectores\EventosRecientes;
 use App\Services\Alertas\RegistroEventos;
 use App\Support\Correo\CandadoCorreoReal;
@@ -147,17 +147,22 @@ class SinConexionTest extends TestCase
     public function test_la_prueba_real_da_que_hay_internet_si_contesta_alguno_de_los_destinos(): void
     {
         $this->app->forgetInstance(ComprobadorConexion::class);
-        $this->assertInstanceOf(ComprobadorConexionTcp::class, app(ComprobadorConexion::class));
+        $this->assertInstanceOf(ComprobadorConexionHttp::class, app(ComprobadorConexion::class));
 
-        // Sin salir de la máquina: un puerto que escucha y otro que ya no.
-        $abierto = stream_socket_server('tcp://127.0.0.1:0');
-        $cerrado = stream_socket_server('tcp://127.0.0.1:0');
-        $destinoCerrado = stream_socket_get_name($cerrado, false);
-        fclose($cerrado);
+        // El primero no conecta y el segundo contesta, aunque sea con un error.
+        Http::fake([
+            'https://1.1.1.1' => Http::failedConnection(),
+            'https://8.8.8.8' => Http::response('', 404),
+        ]);
+        $this->assertTrue((new ComprobadorConexionHttp)->hayInternet());
+    }
 
-        $this->assertTrue((new ComprobadorConexionTcp([$destinoCerrado, stream_socket_get_name($abierto, false)], 0.5))->hayInternet());
-        fclose($abierto);
-        $this->assertFalse((new ComprobadorConexionTcp([$destinoCerrado], 0.5))->hayInternet());
+    public function test_la_prueba_real_da_que_no_hay_internet_si_no_conecta_ninguno(): void
+    {
+        Http::fake(['*' => Http::failedConnection()]);
+
+        $this->assertFalse((new ComprobadorConexionHttp)->hayInternet());
+        Http::assertSentCount(2); // probó los dos destinos antes de decir que no
     }
 
     /**
