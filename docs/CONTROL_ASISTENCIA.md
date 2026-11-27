@@ -68,6 +68,9 @@ número»; si alguien lo olvida, se le pone otro.
   `numero_cambiado`) queda en el log de la aplicación con `marcado_en` (hora local), el
   código del lector y el estado, sin los dígitos, para que la oficina la revise y la
   cargue a mano.
+- Intentos equivocados: los números equivocados que llegan al servidor (con red)
+  quedan en el log. Los que el lector rechaza sin red, porque no están en su lista
+  local, **no llegan al servidor** y no quedan anotados en ningún lado.
 - Cada marca dice «Con huella» o «Con número» en Marcaciones, «Marcas de hoy», la hoja,
   las jornadas y la ficha.
 
