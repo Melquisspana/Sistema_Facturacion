@@ -9559,6 +9559,34 @@ void setup() {
 // LOOP
 // =====================================================
 
+// Pantallas desde las que un toque abre el teclado: todas menos las que
+// estan haciendo algo con el sensor (leyendo, registrando, pidiendo que se
+// reacomode el dedo) y las del enrolamiento, que no se pueden interrumpir.
+bool pantallaAceptaTeclado() {
+
+  switch (
+    pantallaActual
+  ) {
+    case PANTALLA_TECLADO:
+    case PANTALLA_LEYENDO:
+    case PANTALLA_REGISTRANDO:
+    case PANTALLA_AJUSTAR:
+    case PANTALLA_ENROL_INICIO:
+    case PANTALLA_ENROL_COLOQUE:
+    case PANTALLA_ENROL_RETIRE:
+    case PANTALLA_ENROL_REPITA:
+    case PANTALLA_ENROL_GUARDANDO:
+    case PANTALLA_ENROL_OK:
+    case PANTALLA_ENROL_FALLO:
+    case PANTALLA_ENROL_INDICE:
+      return false;
+
+    default:
+      return true;
+  }
+}
+
+
 void loop() {
 
   atenderBuzzer();
@@ -9593,9 +9621,11 @@ void loop() {
       0;
 
     // La interrupcion sola no alcanza: el vidrio tiene que informar un dedo.
+    // Abre desde cualquier pantalla de espera o de resultado (pedido de Melqui,
+    // 27/11/2026: «cuando toque cualquier lado de la pantalla»), no solo desde
+    // el reposo: tambien con el aviso de sin red, de error o de una marca.
     if (
-      pantallaActual ==
-      PANTALLA_LISTO &&
+      pantallaAceptaTeclado() &&
       leerTactil(
         x,
         y
