@@ -8,11 +8,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
+use App\Policies\PedidoSalaPolicy;
 use App\Services\Rutas\FacturarPedido;
+use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\PedidosSala;
 use App\Support\HoraNegocio;
 use App\Support\OrdenCompra;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -38,7 +41,8 @@ use Illuminate\View\View;
  *    salieron ese día; sin `fecha`, 0 (ya se ve todo).
  *
  * La fábrica nunca factura: lo hace la oficina con la OC. Pide `dte.ver`: la fábrica y quien
- * no ve Facturación reciben 403. Facturar pide además `dte.gestionar` (FacturarPedidoController).
+ * no ve Facturación reciben 403. Facturar pide además `dte.gestionar` (FacturarPedidoController),
+ * igual que «Volvió a la fábrica» ({@see self::volvio()}).
  */
 class PorFacturarController extends Controller
 {
@@ -154,5 +158,29 @@ class PorFacturarController extends Controller
                 ->whereDoesntHave('envios', $enviosDelDia)
                 ->count(),
         ]);
+    }
+
+    /**
+     * «Volvió a la fábrica» (Melqui, 27/11/2026): lo que salió no se entregó y volvió. El
+     * pedido queda cerrado y sale de esta lista. Lo puede quien factura desde acá
+     * ({@see PedidoSalaPolicy::volverALaFabrica()}); la regla vive en
+     * {@see PedidosFabrica::volvioALaFabrica()}. `volvio_pedido` solo sirve para reabrir el
+     * diálogo de esa fila si el motivo no pasa.
+     */
+    public function volvio(Request $request, PedidoSala $pedido, PedidosFabrica $fabrica): RedirectResponse
+    {
+        Gate::authorize('volverALaFabrica', $pedido);
+        $datos = $request->validate([
+            'motivo' => ['required', 'string', 'max:200'],
+        ], [
+            'motivo.required' => PedidosFabrica::VOLVIO_SIN_MOTIVO,
+            'motivo.max' => PedidosFabrica::MOTIVO_LARGO,
+        ]);
+
+        $cambio = $fabrica->volvioALaFabrica($pedido, $datos['motivo'], $request->user());
+
+        return back()->with('status', $cambio
+            ? 'El pedido de «'.$pedido->nombreSala().'» quedó cerrado: volvió a la fábrica.'
+            : 'Ese pedido ya estaba marcado: volvió a la fábrica.');
     }
 }

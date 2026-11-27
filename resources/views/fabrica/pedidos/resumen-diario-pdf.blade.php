@@ -83,7 +83,9 @@
                     </td>
                     <td>
                         @foreach ($datos['cerrados'] as $cerrado)
-                            @if ($cerrado['nada'])
+                            @if ($cerrado['volvio'] ?? false)
+                                <span class="linea">Volvió a la fábrica el pedido N.º {{ $cerrado['numero'] }}@if ($cerrado['motivo']) — {{ $cerrado['motivo'] }}@endif</span>
+                            @elseif ($cerrado['nada'])
                                 <span class="linea">No se mandó el pedido N.º {{ $cerrado['numero'] }}: {{ $lista($cerrado['productos']) }}@if ($cerrado['motivo']) — {{ $cerrado['motivo'] }}@endif</span>
                             @else
                                 @foreach ($cerrado['productos'] as $p)

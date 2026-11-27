@@ -147,6 +147,9 @@
 
     @if ($estado === \App\Enums\EstadoPedidoSala::Anulado)
         <p class="st rojo" role="alert"><strong>Este pedido está anulado: no se factura.</strong></p>
+    @elseif ($estado === \App\Enums\EstadoPedidoSala::Volvio)
+        {{-- La ficha no la ofrece (sus envíos están anulados); si se abre igual, lo dice. --}}
+        <p class="st" role="alert"><strong>Este pedido volvió a la fábrica: no se entregó ni se factura.</strong></p>
     @elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado || ($estado === \App\Enums\EstadoPedidoSala::Listo && ! $parcial))
         <p class="st" role="alert"><strong>Todavía no se despachó nada de este pedido.</strong></p>
     @endif

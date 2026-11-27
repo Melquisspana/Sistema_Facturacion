@@ -21,6 +21,11 @@ use App\Services\Rutas\PedidosFabrica;
  *  - enviado («Mandado»): cerrado; salió todo, o salió una parte y lo que falta ya no va.
  *  - no_se_trae: cerrado sin envíos vigentes.
  *  - anulado: solo lo anula el vendedor.
+ *  - volvio («Volvió a la fábrica», 27/11/2026): salió, la sala no lo recibió y la mercadería
+ *    volvió. Lo marca la oficina desde «Llegó de pedidos»; sus envíos quedan anulados y el
+ *    pedido, cerrado para siempre: no vuelve a pendiente ni a la fábrica (si la sala lo
+ *    quiere, se saca otro). Quién, cuándo y por qué, en la auditoría
+ *    ({@see PedidosFabrica::volvioALaFabrica()}).
  *
  * «Vigente» es todo menos anulado; «por mandar» es registrado, parcial o listo.
  */
@@ -32,6 +37,7 @@ enum EstadoPedidoSala: string
     case Enviado = 'enviado';
     case NoSeTrae = 'no_se_trae';
     case Anulado = 'anulado';
+    case Volvio = 'volvio';
 
     public function label(): string
     {
@@ -42,6 +48,7 @@ enum EstadoPedidoSala: string
             self::Enviado => 'Mandado',
             self::NoSeTrae => 'No se trae',
             self::Anulado => 'Anulado',
+            self::Volvio => 'Volvió a la fábrica',
         };
     }
 
@@ -51,18 +58,22 @@ enum EstadoPedidoSala: string
         return match ($this) {
             self::Registrado, self::Parcial, self::Listo => 'amber',
             self::Enviado => 'green',
-            self::NoSeTrae => 'gray',
+            // Cerrado sin entregar, como lo que no se trae.
+            self::NoSeTrae, self::Volvio => 'gray',
             self::Anulado => 'red',
         };
     }
 
-    /** ¿Le falta salir de la fábrica? */
+    /** ¿Le falta salir de la fábrica? Lo que volvió, no: no se manda otra vez. */
     public function porMandar(): bool
     {
         return $this === self::Registrado || $this === self::Parcial || $this === self::Listo;
     }
 
-    /** ¿Cerrado? Lo que no salió ya no va: solo acá la hoja marca la «F» de faltó. */
+    /**
+     * ¿Cerrado? Lo que no salió ya no va: solo acá la hoja marca la «F» de faltó. Lo que volvió
+     * a la fábrica también está cerrado, pero no entra: no se entregó nada, no hay «F» que marcar.
+     */
     public function cerrado(): bool
     {
         return $this === self::Enviado || $this === self::NoSeTrae;
@@ -70,7 +81,8 @@ enum EstadoPedidoSala: string
 
     /**
      * ¿Tiene hoja para imprimir? Salió algo o ya se cerró (no si está pendiente o anulado). El
-     * listo que es resto de un envío también: {@see PedidoSala::tieneHoja()}.
+     * listo que es resto de un envío también: {@see PedidoSala::tieneHoja()}. Lo que volvió a la
+     * fábrica no: sus envíos están anulados y la hoja no tendría nada que decir.
      */
     public function tieneHoja(): bool
     {

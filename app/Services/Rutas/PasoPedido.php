@@ -23,7 +23,8 @@ use Illuminate\Support\Collection;
  *   4. Entregado: cada uno de esos CCF está entregado ({@see entregados()}).
  *
  * Un pedido con partes en pasos distintos va en el de la parte más atrasada. Lo que la
- * fábrica cerró sin mandar («No se trae») va aparte y no espera nada.
+ * fábrica cerró sin mandar («No se trae») y lo que volvió a la fábrica van aparte y no
+ * esperan nada.
  *
  * Un CCF está entregado con su entrega registrada, en cualquier salida y por quien sea, o
  * con un albarán de entrega inequívoco del supermercado ({@see AlbaranLocalizador}). Un «No
@@ -59,6 +60,8 @@ class PasoPedido
 
         return match (true) {
             $pedido->estado === EstadoPedidoSala::NoSeTrae => [self::NO_SE_TRAE, 'No se trae', $sacado],
+            // Lo que volvió a la fábrica (27/11/2026) tampoco espera nada: va aparte, con su nombre.
+            $pedido->estado === EstadoPedidoSala::Volvio => [self::NO_SE_TRAE, EstadoPedidoSala::Volvio->label(), $sacado],
             $pedido->estaRegistrado() && $pedido->armando_desde === null => [self::SACADO, null, $sacado],
             $pedido->estado === EstadoPedidoSala::Listo => [self::EN_FABRICA, EstadoPedidoSala::Listo->label(), $sacado],
             $pedido->estaPorMandar() => [self::EN_FABRICA, $pedido->estaRegistrado() ? 'En armado' : 'Mandado en parte', $sacado],
