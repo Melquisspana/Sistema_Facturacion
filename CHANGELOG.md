@@ -8,6 +8,21 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.27.2] - 2026-11-27
+
+Gastos con los últimos errores del #16 arreglados, aunque el módulo sigue apagado (#449); un solo aviso cuando se corta internet (#451); y el teclado del lector que se abre tocando cualquier pantalla (#450). Sin migraciones ni cambios de permisos.
+
+### Cambiado
+
+- Avisos: si una tarea programada falla porque el servidor no llega a internet, llega un solo aviso «Sin conexión a internet» con las tareas afectadas, en vez de «Tareas programadas con error: N». Al volver la red llega «Ya se normalizó: Conexión a internet» (#451).
+- Lector de asistencia: un toque en cualquier parte de la pantalla abre el teclado de números, también mientras muestra un aviso o el resultado de una marca (#450).
+
+### Corregido
+
+- Gastos: el abono con el reparto elegido a mano solo va a compras abiertas de esa cuenta (#449).
+- Gastos: repetir un gasto anual pagado lejos de su fecha ya no deja ese año «por confirmar», así que no se puede pagar dos veces (#449).
+- Gastos: un dato manipulado en formularios y filtros da un aviso, no un error del sistema (#449).
+
 ## [2026.11.27] - 2026-11-27
 
 Marcar asistencia con un número de 4 dígitos, además de la huella, y el lector que marca sin internet (#448). Una migración: el número de cada persona y el método de cada marca. Sin cambios de permisos: el número lo pone quien ya puede gestionar las huellas. La contingencia sigue apagada.
