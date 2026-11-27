@@ -18,7 +18,8 @@ use Illuminate\Support\Str;
  * lugar, 29/10/2026). El jefe también sale a ruta a veces (plan del tablero, decisión 1). El
  * administrador entra al «Menú del vendedor» y hace lo mismo que un vendedor (Melqui,
  * 11/11/2026: «yo tengo que poder hacer todo»). Jefatura saca pedidos desde el 26/11/2026
- * (Melqui): tiene su ficha y aparece como vendedora en esos pedidos; no marca entregas.
+ * (Melqui): tiene su ficha y figura como quien sacó esos pedidos, pero no entrega
+ * ({@see self::NO_ENTREGAN}).
  *
  *  - Si ya hay una ficha enlazada a ese usuario, se usa.
  *  - Si la persona está en Personal y ya tiene ficha de Rutas, se usa esa.
@@ -44,15 +45,31 @@ class FichaVendedor
     private const SE_ARMA_AL_ENTRAR = [RolSistema::Administrador->value, RolSistema::Jefatura->value];
 
     /**
+     * «Jefatura saca pedido pero no entrega» (Melqui, 26/11/2026): su ficha va sin la función
+     * Vendedor, no figura en «¿Quién lo entregó?» ({@see PersonalRuta::scopePuedenEntregar()})
+     * ni entre los vendedores del tablero.
+     */
+    public const NO_ENTREGAN = [RolSistema::Jefatura->value];
+
+    /**
      * Los administradores y Jefatura que ya existían no pasaron por el alta de usuario: su
      * ficha se arma la primera vez que entran al «Menú del vendedor» o a «Sacar pedido». Solo
      * si no tienen NINGUNA enlazada: la que alguien desactivó a mano no se reactiva sola. A
      * Vendedor y Jefe no les aplica: la suya nace con el usuario y, si la oficina la
-     * desenlazó, no se rearma por entrar.
+     * desenlazó, no se rearma por entrar. A la de Jefatura armada antes del 26/11/2026 se le
+     * quita al entrar la función Vendedor ({@see ajustarFuncion()}).
      */
     public function asegurar(User $usuario): void
     {
-        if (! $usuario->activo || ! $usuario->hasAnyRole(self::SE_ARMA_AL_ENTRAR) || PersonalRuta::where('user_id', $usuario->id)->exists()) {
+        if (! $usuario->activo || ! $usuario->hasAnyRole(self::SE_ARMA_AL_ENTRAR)) {
+            return;
+        }
+        $ficha = PersonalRuta::where('user_id', $usuario->id)->first();
+        if ($ficha !== null) {
+            if ($usuario->hasAnyRole(self::NO_ENTREGAN)) {
+                $this->ajustarFuncion($ficha, $usuario);
+            }
+
             return;
         }
         try {
@@ -82,7 +99,7 @@ class FichaVendedor
         $ficha ??= $this->sinUsuarioConElMismoNombre($nombre, $usuario, $enPersonal)
             ?? new PersonalRuta(['nombre' => Str::limit($nombre, 120, '')]);
         $ficha->fill(['user_id' => $usuario->id, 'activo' => (bool) $usuario->activo])->save();
-        $ficha->funciones()->firstOrCreate(['funcion' => FuncionPersonalRuta::Vendedor->value]);
+        $this->ajustarFuncion($ficha, $usuario);
         if ($enPersonal && $enPersonal->personal_ruta_id === null && ! PlanillaEmpleado::where('personal_ruta_id', $ficha->id)->exists()) {
             $enPersonal->update(['personal_ruta_id' => $ficha->id]);
         }
@@ -96,6 +113,19 @@ class FichaVendedor
         }
 
         return $ficha;
+    }
+
+    /**
+     * La función que da el rol: Vendedor. A Jefatura ({@see self::NO_ENTREGAN}) se le quita la
+     * que el sistema le había puesto. Las otras funciones, que pone la oficina, no se tocan.
+     */
+    public function ajustarFuncion(PersonalRuta $ficha, User $usuario): void
+    {
+        if ($usuario->hasAnyRole(self::NO_ENTREGAN)) {
+            $ficha->funciones()->where('funcion', FuncionPersonalRuta::Vendedor->value)->delete();
+        } else {
+            $ficha->funciones()->firstOrCreate(['funcion' => FuncionPersonalRuta::Vendedor->value]);
+        }
     }
 
     private function sinUsuarioConElMismoNombre(string $nombre, User $usuario, ?PlanillaEmpleado $enPersonal): ?PersonalRuta

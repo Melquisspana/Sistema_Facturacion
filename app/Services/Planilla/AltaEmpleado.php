@@ -330,7 +330,8 @@ class AltaEmpleado
             }
             if ($esVendedor) {
                 $punteros['user_id'] = $usuario->id;
-                $ruta->funciones()->firstOrCreate(['funcion' => 'vendedor']);
+                // Vendedor, salvo Jefatura, que saca pedidos pero no entrega.
+                app(FichaVendedor::class)->ajustarFuncion($ruta, $usuario);
             }
             if ($punteros) {
                 $ruta->update($punteros);

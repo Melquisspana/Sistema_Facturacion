@@ -5,6 +5,7 @@ namespace Tests\Feature\Rutas;
 use App\Enums\FuncionPersonalRuta;
 use App\Models\PersonalRuta;
 use App\Models\User;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Usuarios\CrearUsuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -108,5 +109,62 @@ class FichaVendedorTest extends TestCase
             'name' => 'Pedro Prueba', 'email' => 'vendedor@ejemplo.test', 'rol' => 'facturacion', 'activo' => '1',
         ])->assertRedirect();
         $this->assertFalse(PersonalRuta::where('user_id', $usuario->id)->sole()->activo);
+    }
+
+    /**
+     * «Jefatura saca pedido pero no entrega» (Melqui, 26/11/2026): tiene ficha para sacar
+     * pedidos, pero sin la función Vendedor. El vendedor y el administrador la conservan y son
+     * los que figuran como quien entrega.
+     */
+    public function test_jefatura_tiene_ficha_sin_funcion_vendedor_y_el_vendedor_y_el_administrador_la_conservan(): void
+    {
+        $vendedor = $this->crear('Pedro Prueba');
+        $jefa = $this->crear('Jefa Prueba', 'jefatura', 'jefa@ejemplo.test');
+        $admin = $this->admin();
+        app(FichaVendedor::class)->asegurar($admin);
+
+        $fichaJefa = PersonalRuta::where('user_id', $jefa->id)->sole();
+        $this->assertTrue($fichaJefa->activo);
+        $this->assertFalse($fichaJefa->tieneFuncion(FuncionPersonalRuta::Vendedor));
+        $fichas = [PersonalRuta::where('user_id', $vendedor->id)->sole(), PersonalRuta::where('user_id', $admin->id)->sole()];
+        foreach ($fichas as $ficha) {
+            $this->assertTrue($ficha->tieneFuncion(FuncionPersonalRuta::Vendedor));
+        }
+        $this->assertEqualsCanonicalizing(array_map(fn (PersonalRuta $f) => $f->id, $fichas), PersonalRuta::query()->puedenEntregar(null)->pluck('id')->all());
+    }
+
+    public function test_pasar_a_jefatura_le_quita_la_funcion_vendedor_y_volver_a_vendedor_se_la_devuelve(): void
+    {
+        $usuario = $this->crear('Pedro Prueba');
+        $admin = $this->admin();
+        $cambiarRol = fn (string $rol) => $this->actingAs($admin)->put(route('personal.accesos.update', $usuario), [
+            'name' => 'Pedro Prueba', 'email' => 'vendedor@ejemplo.test', 'rol' => $rol, 'activo' => '1',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $cambiarRol('jefatura');
+        $ficha = PersonalRuta::where('user_id', $usuario->id)->sole();
+        $this->assertTrue($ficha->activo);
+        $this->assertFalse($ficha->tieneFuncion(FuncionPersonalRuta::Vendedor));
+
+        $cambiarRol('vendedor');
+        $this->assertTrue($ficha->fresh()->tieneFuncion(FuncionPersonalRuta::Vendedor));
+    }
+
+    /**
+     * La ficha de Jefatura armada antes del arreglo trae la función Vendedor: se le quita la
+     * próxima vez que entra, sin crear otra. La función que la oficina le puso a mano, no.
+     */
+    public function test_la_ficha_de_jefatura_que_ya_tenia_la_funcion_vendedor_la_pierde_al_entrar(): void
+    {
+        $jefa = User::factory()->create(['activo' => true])->assignRole('jefatura');
+        $ficha = PersonalRuta::create(['nombre' => 'Jefa Prueba', 'user_id' => $jefa->id]);
+        $ficha->funciones()->create(['funcion' => FuncionPersonalRuta::Vendedor->value]);
+        $ficha->funciones()->create(['funcion' => FuncionPersonalRuta::Cobrador->value]);
+
+        app(FichaVendedor::class)->asegurar($jefa);
+
+        $this->assertSame(1, PersonalRuta::count());
+        $this->assertEquals([FuncionPersonalRuta::Cobrador], $ficha->fresh()->funcionesEnum()->all());
+        $this->assertFalse(PersonalRuta::query()->puedenEntregar(null)->whereKey($ficha->id)->exists());
     }
 }

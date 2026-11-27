@@ -13,6 +13,7 @@ use App\Models\SalidaRutaParticipante;
 use App\Models\User;
 use App\Services\Planilla\NombreUnico;
 use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
 use App\Services\Rutas\TableroViajes;
@@ -81,7 +82,9 @@ class RutasDashboardController extends Controller
         $lista = $this->filtrar($salas, $ver, $rutaId, $buscar);
         $pagina = $this->paginar($lista, $request);
 
-        $vendedores = PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre', 'telefono', 'user_id']);
+        // Jefatura tiene ficha para sacar pedidos, pero no es vendedora (26/11/2026).
+        $vendedores = PersonalRuta::activos()->whereDoesntHave('user.roles', fn ($q) => $q->whereIn('name', FichaVendedor::NO_ENTREGAN))
+            ->orderBy('nombre')->get(['id', 'nombre', 'telefono', 'user_id']);
         $facturado = $this->facturadoPorZona($entregas, $hoy, $salas);
 
         return view('rutas.dashboard', [
@@ -166,7 +169,8 @@ class RutasDashboardController extends Controller
      * 04/11/2026): para ellos ni se consulta Planilla.
      *
      * El Administrador tiene ficha de Rutas para entrar al menú del vendedor, pero no es
-     * vendedor: sale acá solo si en esos 90 días fue en un viaje o entregó.
+     * vendedor: sale acá solo si en esos 90 días fue en un viaje o entregó. Jefatura, que la
+     * tiene para sacar pedidos, no llega acá ({@see FichaVendedor::NO_ENTREGAN}).
      *
      * @param  Collection<int, PersonalRuta>  $personas
      * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, ultimaEntrega: ?CarbonImmutable, rutas: array<int, string>, ficha: ?string}>
