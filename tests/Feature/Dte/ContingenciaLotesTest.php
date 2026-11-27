@@ -911,7 +911,8 @@ class ContingenciaLotesTest extends TestCase
         $lote->refresh();
         $this->assertSame('recibido', $lote->estado);
         $this->assertNull($lote->codigo_lote);
-        $this->assertSame(self::LOTE_REPETIDO, $lote->respuesta_envio);
+        // MySQL guarda el JSON con otro orden de claves: se compara el contenido, no el orden.
+        $this->assertEquals(self::LOTE_REPETIDO, $lote->respuesta_envio);
         Storage::assertExists($lote->respuesta_envio_path);
         foreach ($documentos as $dte) {
             $this->assertSame($lote->id, $dte->refresh()->lote_dte_id);
