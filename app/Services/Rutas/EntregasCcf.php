@@ -71,6 +71,9 @@ class EntregasCcf
     /** Al vendedor, en el viaje o la automática, le falta decir cómo le pagaron. */
     public const FALTA_FORMA_COBRO = 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.';
 
+    /** Un dato del formulario llegó como lista en vez de texto (un enlace armado a mano). */
+    public const DATO_EN_LISTA = 'Ese dato no llegó bien. Volvé a marcar la entrega.';
+
     /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
     public const DIAS_POR_ENTREGAR = 45;
 
@@ -285,6 +288,14 @@ class EntregasCcf
      */
     public function registrar(SalidaRutaEntrega $entrega, array $datos, ?User $usuario, OrigenRegistroEntrega $origen): SalidaRutaEntrega
     {
+        // Las pantallas mandan cada dato tal cual llega (`$request->only()`): uno en lista no
+        // se convierte a texto (daba 500), se rechaza con aviso y sin anotar nada.
+        foreach ($datos as $campo => $valor) {
+            if (is_array($valor)) {
+                throw ValidationException::withMessages([$campo => self::DATO_EN_LISTA]);
+            }
+        }
+
         return DB::transaction(function () use ($entrega, $datos, $usuario, $origen) {
             $original = $entrega;
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);

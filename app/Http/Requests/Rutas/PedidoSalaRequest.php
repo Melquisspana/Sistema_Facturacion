@@ -35,7 +35,8 @@ class PedidoSalaRequest extends FormRequest
             }
         }
         $this->merge(['lineas' => $lineas]);
-        if ($this->has('sala_nueva_nombre')) {
+        // Solo un texto: si llega una lista, la regla `string` la rechaza con su aviso (antes, 500).
+        if (is_string($this->input('sala_nueva_nombre'))) {
             $this->merge(['sala_nueva_nombre' => preg_replace('/\s+/u', ' ', trim((string) $this->input('sala_nueva_nombre')))]);
         }
     }

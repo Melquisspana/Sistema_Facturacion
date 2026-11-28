@@ -33,7 +33,8 @@ class SalidaRutaController extends Controller
             ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra',
                 'pedidos:id,salida_ruta_id,ruta_id,estado', 'pedidos.ruta:id,nombre'])
             ->withCount(['entregas' => fn ($q) => $q->sinFacturadosDespues()])
-            ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
+            // Solo un texto: uno en lista (un enlace armado a mano) se ignora, no da 500.
+            ->when(is_string($request->query('estado')) && $request->filled('estado'), fn ($q) => $q->where('estado', $request->query('estado')))
             ->when($request->filled('ruta_id'), fn ($q) => $q->where('ruta_id', $request->integer('ruta_id')))
             // Lo más reciente primero: el listado se abre para ver qué está pasando
             // ahora, no para leer el historial desde el principio.
