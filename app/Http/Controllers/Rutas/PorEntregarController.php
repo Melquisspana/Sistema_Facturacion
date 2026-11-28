@@ -90,8 +90,10 @@ class PorEntregarController extends Controller
         // Con su viaje en curso: «Este viaje» y «Toda la zona»; si no, todo, como antes.
         $viaje = $persona ? $this->viajes->abierto($persona) : null;
         $vistas = $viaje ? $this->porEntregar->vistas($viaje, $todos) : [];
-        $ver = array_key_exists((string) $request->query('ver'), $vistas) || $request->query('ver') === 'todas'
-            ? (string) $request->query('ver') : (array_key_first($vistas) ?? 'todas');
+        // Los filtros son solo texto: uno en lista (un enlace armado a mano) se ignora, no da 500.
+        $pedida = $request->query('ver');
+        $pedida = is_string($pedida) ? $pedida : '';
+        $ver = array_key_exists($pedida, $vistas) || $pedida === 'todas' ? $pedida : (array_key_first($vistas) ?? 'todas');
         $dtes = $ver === 'todas' ? $todos : $vistas[$ver];
         // Los que ya van en una salida abierta: se marcan en ella (o esperan a que empiece).
         $enCamino = SalidaRutaEntrega::with(self::NOMBRE_DEL_VIAJE)->whereIn('dte_id', $dtes->pluck('id'))->pendientes()
@@ -124,7 +126,8 @@ class PorEntregarController extends Controller
             ->values();
 
         // El filtro de ruta es solo para mirar (?ruta=): no guarda nada.
-        $ruta = (string) $request->query('ruta', '');
+        $ruta = $request->query('ruta');
+        $ruta = is_string($ruta) ? $ruta : '';
         $ruta = $grupos->contains(fn (array $g) => $g['clave'] === $ruta) ? $ruta : null;
 
         return view('rutas.por-entregar.index', [

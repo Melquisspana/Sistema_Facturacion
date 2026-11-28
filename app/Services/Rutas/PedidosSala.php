@@ -388,7 +388,8 @@ class PedidosSala
     /**
      * El pedido vigente que ya tiene la sala y frena otro: el de hoy, lo haya sacado quien sea
      * (dos vendedores en la misma sala mandarían dos pedidos a la fábrica), o el del viaje del
-     * vendedor que todavía suma pedidos.
+     * vendedor que todavía suma pedidos. El que volvió a la fábrica no frena: quedó cerrado sin
+     * entregarse y, si la sala lo quiere, se saca otro (27/11/2026).
      */
     public function yaSacado(ClienteSucursal $sala, User $usuario): ?PedidoSala
     {
@@ -396,7 +397,7 @@ class PedidosSala
         $viaje = $persona ? $this->viajes->abierto($persona) : null;
         $viajeId = $viaje !== null && $this->viajes->sigueSumando($viaje) ? $viaje->id : null;
 
-        return PedidoSala::vigentes()->where('cliente_sucursal_id', $sala->id)
+        return PedidoSala::vigentes()->where('estado', '!=', EstadoPedidoSala::Volvio->value)->where('cliente_sucursal_id', $sala->id)
             ->where(fn (Builder $q) => $q->whereDate('fecha', HoraNegocio::fechaHoy())
                 ->when($viajeId, fn (Builder $q) => $q->orWhere('salida_ruta_id', $viajeId)))
             ->with('sacadoPor:id,nombre,user_id')->latest('id')->first();
@@ -499,6 +500,7 @@ class PedidosSala
     {
         return match (true) {
             ! $pedido->estaVigente() => null,
+            $pedido->estado === EstadoPedidoSala::Volvio => 'Volvió a la fábrica: si la sala lo quiere, sacá otro pedido.',
             $pedido->fabricaEmpezo() => 'Ya está en despacho: si cambió algo, avisá a la oficina.',
             self::sacoElSiguiente($pedido) => 'Ya sacaste otro pedido: este lo corrige la oficina.',
             default => null,

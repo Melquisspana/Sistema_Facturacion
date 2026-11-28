@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Rutas;
 
+use App\Enums\EstadoPedidoSala;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\PedidoSalaRequest;
 use App\Models\ClienteSucursal;
@@ -59,7 +60,8 @@ class MiPedidoController extends Controller
             'preguntarSiSigue' => $viaje !== null && $this->viajes->preguntarSiSigue($viaje, $request->session()->get(Viajes::SESION_SIGUE.$viaje->id)),
             'texto' => $texto,
             'salas' => $salas,
-            'sacadas' => $salas === null ? collect() : PedidoSala::vigentes()->whereIn('cliente_sucursal_id', $salas->pluck('id'))
+            // «Pedido sacado», con la regla de PedidosSala::yaSacado(): lo que volvió a la fábrica no cuenta.
+            'sacadas' => $salas === null ? collect() : PedidoSala::vigentes()->where('estado', '!=', EstadoPedidoSala::Volvio->value)->whereIn('cliente_sucursal_id', $salas->pluck('id'))
                 ->whereDate('fecha', HoraNegocio::fechaHoy())->pluck('cliente_sucursal_id')->flip(),
             'ritmos' => $salas === null ? [] : $this->ritmos($salas),
             'pedidosHoy' => $pedidosHoy,

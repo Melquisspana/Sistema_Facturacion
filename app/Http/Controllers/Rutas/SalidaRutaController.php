@@ -28,12 +28,14 @@ class SalidaRutaController extends Controller
 {
     public function index(Request $request, EntregasCcf $servicio): View
     {
+        $estado = $request->query('estado');
         $salidas = SalidaRuta::query()
             // Los pedidos con su zona: el viaje se nombra con ellos sin consultar fila por fila.
             ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra',
                 'pedidos:id,salida_ruta_id,ruta_id,estado', 'pedidos.ruta:id,nombre'])
             ->withCount(['entregas' => fn ($q) => $q->sinFacturadosDespues()])
-            ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
+            // Solo un texto: uno en lista (un enlace armado a mano) se ignora, no da 500.
+            ->when(is_string($estado) && $estado !== '', fn ($q) => $q->where('estado', $estado))
             ->when($request->filled('ruta_id'), fn ($q) => $q->where('ruta_id', $request->integer('ruta_id')))
             // Lo más reciente primero: el listado se abre para ver qué está pasando
             // ahora, no para leer el historial desde el principio.

@@ -76,7 +76,9 @@ class RutasDashboardController extends Controller
         $ver = in_array($request->query('ver'), self::VER, true) ? $request->query('ver') : 'todas';
         $rutaId = (int) $request->query('ruta');
         $rutaId = $rutas->contains(fn (array $f) => $f['ruta']->id === $rutaId) ? $rutaId : null;
-        $buscar = Str::limit(trim((string) $request->query('q')), 100, '');
+        // Solo un texto: una búsqueda en lista (un enlace armado a mano) se ignora, no da 500.
+        $buscar = $request->query('q');
+        $buscar = Str::limit(trim(is_string($buscar) ? $buscar : ''), 100, '');
         $soloRutasAtrasadas = $request->query('rutas') === 'atrasadas';
 
         $lista = $this->filtrar($salas, $ver, $rutaId, $buscar);

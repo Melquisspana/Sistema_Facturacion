@@ -71,6 +71,9 @@ class EntregasCcf
     /** Al vendedor, en el viaje o la automática, le falta decir cómo le pagaron. */
     public const FALTA_FORMA_COBRO = 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.';
 
+    /** Un dato del formulario llegó como lista en vez de texto (un enlace armado a mano). */
+    public const DATO_EN_LISTA = 'Ese dato no llegó bien. Volvé a marcar la entrega.';
+
     /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
     public const DIAS_POR_ENTREGAR = 45;
 
@@ -279,12 +282,24 @@ class EntregasCcf
      * fue, en «No entregado»): alguien que va en la salida. Obligatorio en los dos; los «No
      * entregado» de antes del 12/11/2026 pueden tenerlo vacío y se leen igual.
      *
-     * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
+     * Las claves que se leen: resultado, entregado_por_id, forma_cobro, trae_nota_averia,
+     * motivo_no_entrega, nota y fecha_resultado. Llegan tal cual del pedido HTTP, así que
+     * cualquiera puede venir en lista: se rechaza abajo antes de leerlas.
+     *
+     * @param  array<string, mixed>  $datos
      *
      * @throws ValidationException
      */
     public function registrar(SalidaRutaEntrega $entrega, array $datos, ?User $usuario, OrigenRegistroEntrega $origen): SalidaRutaEntrega
     {
+        // Las pantallas mandan cada dato tal cual llega (`$request->only()`): uno en lista no
+        // se convierte a texto (daba 500), se rechaza con aviso y sin anotar nada.
+        foreach ($datos as $campo => $valor) {
+            if (is_array($valor)) {
+                throw ValidationException::withMessages([$campo => self::DATO_EN_LISTA]);
+            }
+        }
+
         return DB::transaction(function () use ($entrega, $datos, $usuario, $origen) {
             $original = $entrega;
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
