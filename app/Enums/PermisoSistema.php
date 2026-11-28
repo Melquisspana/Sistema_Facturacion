@@ -249,7 +249,10 @@ enum PermisoSistema: string
     {
         return match ($rol) {
             RolSistema::Administrador => self::todos(),
-            RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar, self::RutasPedidosRegistrar]),
+            // «Clientes» (28/11/2026, Melqui): el vendedor ve las salas, su historia y el PDF del
+            // CCF con `rutas.pedidos.ver`. NO `rutas.ver`: el Tablero, Viajes, el Mapa y Ventas
+            // traen montos, y «Todos los pedidos» y el detalle de un pedido siguen en la oficina.
+            RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar, self::RutasPedidosRegistrar, self::RutasPedidosVer]),
             // Fábrica: la tableta (o laptop) donde se marca qué sale de cada pedido. SOLO
             // eso: ni insumos, ni Rutas, ni Facturación. Entrar y salir no piden permiso.
             RolSistema::Fabrica => self::valores([self::FabricaPedidosMandar]),

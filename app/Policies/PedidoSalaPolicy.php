@@ -50,7 +50,8 @@ class PedidoSalaPolicy
      * (Melqui, 13/11/2026): Facturación (`dte.gestionar`), el jefe de vendedores (el único que
      * además de ver todos los pedidos los saca: `rutas.pedidos.registrar`) y el administrador.
      * No Jefatura: desde el 26/11/2026 saca sus pedidos, pero los de la oficina no los corrige
-     * ni los anula. Tampoco el vendedor (no ve los pedidos de la oficina) ni la PC de pedidos.
+     * ni los anula. Tampoco el vendedor ni la PC de pedidos: desde el 28/11/2026 el vendedor
+     * tiene `rutas.pedidos.ver` para «Clientes», pero no la oficina (`rutas.ver`).
      * Que no esté facturado, lo ya mandado y la sala nueva los revisa {@see PedidosOficina},
      * con mensaje claro en vez de un 403. Lo que volvió a la fábrica (27/11/2026) ya no se
      * corrige ni se anula: queda cerrado así y, si la sala lo quiere, se saca otro pedido.
@@ -58,6 +59,7 @@ class PedidoSalaPolicy
     public function corregirEnOficina(User $usuario, PedidoSala $pedido): bool
     {
         return $this->view($usuario, $pedido)
+            && $usuario->can(PermisoSistema::RutasVer->value)
             && ($usuario->can(PermisoSistema::DteGestionar->value)
                 || ($usuario->can(PermisoSistema::RutasPedidosRegistrar->value) && ! $usuario->hasRole(RolSistema::Jefatura->value)))
             && $pedido->estaVigente()

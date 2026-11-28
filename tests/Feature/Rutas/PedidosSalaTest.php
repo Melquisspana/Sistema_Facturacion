@@ -127,7 +127,7 @@ class PedidosSalaTest extends TestCase
 
     public function test_permisos_por_rol(): void
     {
-        $this->assertSame(['rutas.entregas.registrar', 'rutas.pedidos.registrar'], RolSistema::Vendedor->permisos());
+        $this->assertSame(['rutas.entregas.registrar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver'], RolSistema::Vendedor->permisos());
         $this->assertContains('rutas.pedidos.registrar', RolSistema::JefeVendedores->permisos());
         $this->assertContains('rutas.pedidos.ver', RolSistema::JefeVendedores->permisos());
         foreach ([RolSistema::Jefatura, RolSistema::Facturacion] as $rol) {

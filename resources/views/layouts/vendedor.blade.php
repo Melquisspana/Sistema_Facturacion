@@ -37,17 +37,20 @@
         </div>
     </header>
     <main class="mx-auto max-w-3xl px-4 pb-8">
-        {{-- El menú del vendedor (flujo único, 10/11/2026): Inicio, Sacar pedido y Por entregar.
-             Cada título en una línea, también en el celular más angosto. --}}
+        {{-- El menú del vendedor (flujo único, 10/11/2026): Inicio, Sacar pedido, Por entregar y,
+             desde el 28/11/2026, Clientes (con `rutas.pedidos.ver`). Cada título en una línea,
+             también en el celular más angosto: con cuatro van de a dos (2×2) y desde `sm`, en
+             una fila. Solo permisos: sin consultas. --}}
         @can('rutas.entregas.registrar')
             @php
                 $pantallas = array_filter([
                     'rutas.mi-salida.index' => 'Inicio',
                     'rutas.sacar-pedido.index' => auth()->user()->can('rutas.pedidos.registrar') ? 'Sacar pedido' : null,
                     'rutas.por-entregar.index' => 'Por entregar',
+                    'rutas.clientes.index' => auth()->user()->can('rutas.pedidos.ver') ? 'Clientes' : null,
                 ]);
             @endphp
-            <nav aria-label="Pantallas del vendedor" class="mb-4 grid gap-2 {{ count($pantallas) === 3 ? 'grid-cols-3' : 'grid-cols-2' }}">
+            <nav aria-label="Pantallas del vendedor" class="mb-4 grid gap-2 {{ match (count($pantallas)) { 3 => 'grid-cols-3', 4 => 'grid-cols-2 sm:grid-cols-4', default => 'grid-cols-2' } }}">
                 @foreach ($pantallas as $destino => $texto)
                     @php($aqui = request()->routeIs(str_replace('.index', '.*', $destino)))
                     <a href="{{ route($destino) }}" @if ($aqui) aria-current="page" @endif

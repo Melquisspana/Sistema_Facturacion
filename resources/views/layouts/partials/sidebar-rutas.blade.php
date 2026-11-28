@@ -19,7 +19,10 @@
         @can('rutas.pedidos-entregas.ver')
             <x-sidebar-link :href="route('rutas.pedidos-entregas')" :active="request()->routeIs('rutas.pedidos-entregas')">Pedidos y entregas</x-sidebar-link>
         @endcan
-        <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard', 'rutas.viajes', 'rutas.mapa', 'rutas.ventas.*', 'rutas.rutas.*', 'rutas.salidas.*')">Tablero</x-sidebar-link>
+        {{-- Solo con la entrada a la oficina: el vendedor tiene Clientes sin `rutas.ver` (28/11/2026). --}}
+        @can('rutas.ver')
+            <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard', 'rutas.viajes', 'rutas.mapa', 'rutas.ventas.*', 'rutas.rutas.*', 'rutas.salidas.*')">Tablero</x-sidebar-link>
+        @endcan
         @can('rutas.pedidos.ver')
             <x-sidebar-link :href="route('rutas.clientes.index')" :active="request()->routeIs('rutas.clientes.*', 'rutas.pedidos.*')">Clientes</x-sidebar-link>
         @endcan
