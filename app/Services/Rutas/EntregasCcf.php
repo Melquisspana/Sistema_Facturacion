@@ -282,7 +282,11 @@ class EntregasCcf
      * fue, en «No entregado»): alguien que va en la salida. Obligatorio en los dos; los «No
      * entregado» de antes del 12/11/2026 pueden tenerlo vacío y se leen igual.
      *
-     * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
+     * Las claves que se leen: resultado, entregado_por_id, forma_cobro, trae_nota_averia,
+     * motivo_no_entrega, nota y fecha_resultado. Llegan tal cual del pedido HTTP, así que
+     * cualquiera puede venir en lista: se rechaza abajo antes de leerlas.
+     *
+     * @param  array<string, mixed>  $datos
      *
      * @throws ValidationException
      */
