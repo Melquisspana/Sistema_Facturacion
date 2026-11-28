@@ -8,6 +8,25 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.28] - 2026-11-28
+
+Antes del primer día de los vendedores con el sistema: lo que encontró el probador del día del vendedor (#464), el importador de salas con distrito (#462) y la limpieza de huellas sueltas del lector (#463). Sin migraciones ni cambios de permisos. La contingencia sigue apagada.
+
+### Agregado
+
+- Asistencia: el comando `asistencia:limpiar-sensor` muestra las huellas que quedaron grabadas en el sensor y que el sistema no conoce. Con `--confirmar` deja pendiente borrarlas, y el lector las borra la próxima vez que arranca. Nunca toca las de la gente registrada ni las reservadas, y no se borra nada solo (#463).
+
+### Cambiado
+
+- Importación de salas: enlaza el distrito, o lo toma del municipio viejo, y comprueba que departamento, municipio y distrito sean coherentes. Las salas que quedan sin distrito se cuentan y se avisan, porque sin distrito no se puede hacer el CCF (#462).
+- Lector de asistencia: un dedo sin registrar dice «Huella no registrada». El teclado abre con cualquier toque, al instante, aunque el sensor esté leyendo ruido. Un dedo registrado tiene más tiempo antes de que el lector diga que no lo conoce (#463, firmware).
+- Respaldo a Drive: el reintento de la comprobación vuelve a calcular la edad mínima, así un archivo nuevo no da una falla falsa (#460). En el servidor ya estaba puesto desde el 27/11.
+
+### Corregido
+
+- Rutas: un dato que llega en lista en vez de texto, en Sacar pedido, Por entregar, Tablero, Viajes y al marcar entregas, ya no da error 500: vuelve con un aviso (#464).
+- Sacar pedido: un pedido que volvió a la fábrica ya no impide sacar uno nuevo para esa sala. En «Tus pedidos de hoy» dice «Volvió a la fábrica: si la sala lo quiere, sacá otro pedido» (#464).
+
 ## [2026.11.27.3] - 2026-11-27
 
 «Volvió a la fábrica» para los pedidos que salieron y no se entregaron (#457), el total de Compras que resta las notas de crédito (#455) y una limpieza de código (#458). Sin migraciones ni cambios de permisos. También entran la CI más rápida (#456), que no cambia nada del servidor, y el reintento del respaldo (#454), que todavía falta instalar en el servidor (ver abajo).
