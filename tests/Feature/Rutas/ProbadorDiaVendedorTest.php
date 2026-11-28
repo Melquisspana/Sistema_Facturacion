@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Rutas;
 
+use App\Enums\EstadoPedidoSala;
 use App\Enums\ResultadoEntrega;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
@@ -12,11 +13,16 @@ use App\Models\Establecimiento;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
+use App\Models\PuntoVenta;
 use App\Models\Ruta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Rutas\PedidosFabrica;
+use App\Services\Rutas\PedidosSala;
+use App\Services\Rutas\ResumenDiarioPedidos;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -51,11 +57,11 @@ class ProbadorDiaVendedorTest extends TestCase
 
         $departamento = Departamento::firstOrCreate(['codigo' => '02'], ['nombre' => 'Santa Ana', 'activo' => true]);
         $ruta = Ruta::create(['nombre' => 'Zona de prueba']);
-        $this->sala = Cliente::factory()->create(['nombre' => 'Cliente de prueba'])
+        $this->sala = Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente de prueba', 'requiere_orden_compra' => false])
             ->sucursales()->create(['nombre' => 'Sala de prueba', 'codigo' => '9001', 'ruta_id' => $ruta->id, 'departamento_id' => $departamento->id]);
 
         UnidadMedida::create(['codigo' => '59', 'nombre' => 'Unidad', 'abreviatura' => 'u', 'activo' => true]);
-        $this->galleta = Producto::factory()->create(['nombre' => 'Galleta de prueba', 'codigo' => 'G01']);
+        $this->galleta = Producto::factory()->create(['nombre' => 'Galleta de prueba', 'codigo' => 'G01', 'precio_unitario' => 1.25]);
     }
 
     /** Un CCF aceptado de la sala, por entregar. */
@@ -73,6 +79,138 @@ class ProbadorDiaVendedorTest extends TestCase
             'numero_orden_compra' => '26112832'.str_pad((string) $n, 5, '0', STR_PAD_LEFT),
             'fecha_emision' => now()->toDateString(), 'hora_emision' => '07:00:00', 'total_pagar' => '100.25',
         ]);
+    }
+
+    /** Lo que necesita la oficina para crear el borrador del CCF. */
+    private function prepararFacturacion(): void
+    {
+        $empresa = Empresa::firstOrCreate(['razon_social' => 'Empresa de prueba'], ['ambiente' => '01', 'activo' => true]);
+        $establecimiento = Establecimiento::firstOrCreate(['empresa_id' => $empresa->id, 'codigo' => 'M001'], ['nombre' => 'Casa', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $establecimiento->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+    }
+
+    private function usuario(string $rol): User
+    {
+        return User::factory()->create(['activo' => true])->assignRole($rol);
+    }
+
+    // ---------------------------------------------------------------- el día completo
+
+    public function test_el_dia_del_vendedor_de_punta_a_punta_y_cada_quien_en_lo_suyo(): void
+    {
+        $this->prepararFacturacion();
+        $otro = $this->usuario('vendedor');
+        PersonalRuta::create(['nombre' => 'Otro vendedor de prueba', 'user_id' => $otro->id])->funciones()->create(['funcion' => 'vendedor']);
+        $fabrica = $this->usuario('fabrica');
+        $oficina = $this->usuario('facturacion');
+        $jefatura = $this->usuario('jefatura');
+
+        // 1. Entra y cae en su inicio: sin viaje todavía, con «Sacar pedido» y «Por entregar».
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()
+            ->assertSee(route('rutas.sacar-pedido.index'))->assertSee(route('rutas.por-entregar.index'));
+
+        // 2. Busca la sala, abre el sugerido y saca el pedido con la OC.
+        $this->get(route('rutas.sacar-pedido.index', ['q' => 'Sala de prueba']))->assertOk()->assertSee('Sala de prueba');
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()->assertSee('Galleta de prueba');
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '2611283200001'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('rutas.sacar-pedido.index'));
+        $pedido = PedidoSala::sole();
+        $this->assertSame([$this->persona->id, EstadoPedidoSala::Registrado, '2026-11-28'], [$pedido->sacado_por_id, $pedido->estado, $pedido->fecha->toDateString()]);
+        $viaje = $pedido->salida;
+        $this->assertTrue($viaje->esViaje(), 'El primer pedido abre su viaje.');
+
+        // El doble toque no saca otro, y otro vendedor en la misma sala tampoco.
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasErrors('lineas');
+        $this->actingAs($otro)->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '3']])
+            ->assertSessionHasErrors(['lineas' => 'El pedido de «Sala de prueba» ya lo sacó hoy Vendedor de prueba.']);
+        $this->actingAs($otro)->get(route('rutas.sacar-pedido.edit', $pedido))->assertForbidden();
+        $this->assertSame(1, PedidoSala::count());
+
+        // Lo corrige mientras la fábrica no empezó.
+        $this->actingAs($this->vendedor)->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '10'], 'numero_orden_compra' => '2611283200001'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame('10.0000', $pedido->lineas()->sole()->cantidad);
+
+        // 3. La fábrica lo manda; desde ahí el vendedor ya no lo corrige. La fábrica no factura.
+        $pedido = PedidoSala::query()->with(app(PedidosFabrica::class)->relaciones())->findOrFail($pedido->id);
+        $this->actingAs($fabrica)->get(route('fabrica.pedidos.index'))->assertOk()->assertSee('Sala de prueba');
+        $this->post(route('fabrica.pedidos.mandar', $pedido), [
+            'clave' => (string) Str::uuid(), 'version' => $pedido->versionProduccion(),
+            'cantidades' => [$pedido->lineas->sole()->id => '10'],
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+        $this->get(route('facturacion.llego-de-fabrica'))->assertForbidden();
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '2611283200001'])->assertForbidden();
+        $this->actingAs($this->vendedor)->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->galleta->id => '4']])
+            ->assertSessionHasErrors(['lineas' => PedidosSala::EN_FABRICA]);
+        $this->get(route('facturacion.llego-de-fabrica'))->assertForbidden();
+
+        // 4. La oficina lo ve en «Llegó de pedidos» y crea el borrador; se emite.
+        $this->actingAs($oficina)->get(route('facturacion.llego-de-fabrica'))->assertOk()->assertSee('Sala de prueba');
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '2611283200001'])->assertSessionHasNoErrors();
+        $dte = Dte::sole();
+        // Lo que hace Hacienda al aceptarlo (acá no se transmite nada).
+        $dte->update(['estado' => 'aceptado', 'ambiente' => '01', 'sello_recepcion' => '2026'.strtoupper(Str::random(36)),
+            'fecha_procesamiento_mh' => now(), 'numero_control' => 'DTE-03-M001P001-000000000000901', 'total_pagar' => '12.50']);
+
+        // 5. El vendedor lo entrega desde «Por entregar»: Jefatura mira pero no marca.
+        $this->actingAs($jefatura)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($dte->numero_control);
+        $this->actingAs($jefatura)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertForbidden();
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($dte->numero_control);
+        $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->persona->id])
+            ->assertSessionHasNoErrors();
+        $entrega = SalidaRutaEntrega::sole();
+        $this->assertSame([$viaje->id, ResultadoEntrega::Entregado, '12.50'], [$entrega->salida_ruta_id, $entrega->resultado, $entrega->monto_cobrado]);
+        // El doble toque no anota otra.
+        $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->persona->id])
+            ->assertSessionHas('status');
+        $this->assertSame(1, SalidaRutaEntrega::count());
+
+        // Se equivocó: deshace y lo anota con quedan.
+        $this->patch(route('rutas.mi-salida.deshacer', [$viaje, $entrega]))->assertSessionHasNoErrors();
+        $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'sin_cobro',
+            'quedan_numero' => 'Q-100', 'quedan_fecha_pago' => '2026-12-05', 'entregado_por_id' => $this->persona->id])->assertSessionHasNoErrors();
+        $entrega = SalidaRutaEntrega::where('dte_id', $dte->id)->entregadas()->sole();
+        $this->assertSame([null, 'Q-100', '2026-12-05'], [$entrega->forma_cobro, $entrega->quedan_numero, $entrega->quedan_fecha_pago?->toDateString()]);
+
+        // 6. Termina el día: mañana no sigue en la zona y el viaje deja de sumar.
+        $this->get(route('rutas.mi-salida.dia'))->assertOk()->assertSee('Sala de prueba');
+        $this->post(route('rutas.mi-salida.terminar-dia', $viaje), ['sigue' => 0])->assertSessionHasNoErrors();
+        $this->assertFalse($viaje->refresh()->suma_pedidos);
+
+        // 7. Jefatura mira «Pedidos y entregas» y el correo de las 18:00 cuenta lo del día.
+        $this->actingAs($jefatura)->get(route('rutas.pedidos-entregas'))->assertOk()->assertSee('Sala de prueba');
+        $resumen = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-27 18:00:00'), Carbon::parse('2026-11-28 18:00:00'));
+        $this->assertCount(1, $resumen['salas']['Sala de prueba']['llego']);
+        $this->assertCount(1, $resumen['salas']['Sala de prueba']['salio']);
+    }
+
+    /**
+     * «Volvió a la fábrica» dice que, si la sala lo quiere, se saca otro pedido. Hoy, el que
+     * volvió sigue contando como sacado y frena el nuevo en la misma sala.
+     */
+    public function test_despues_de_que_volvio_a_la_fabrica_la_sala_puede_pedir_otro(): void
+    {
+        $this->prepararFacturacion();
+        $oficina = $this->usuario('facturacion');
+        $this->actingAs($this->vendedor)->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])
+            ->assertSessionHasNoErrors();
+        $pedido = PedidoSala::sole();
+        $envio = $pedido->envios()->create(['numero' => 1, 'clave' => (string) Str::uuid(), 'fecha' => '2026-11-28', 'registrado_por' => $oficina->id]);
+        $envio->lineas()->create(['pedido_sala_linea_id' => $pedido->lineas()->sole()->id, 'cantidad' => '12']);
+        $pedido->update(['estado' => EstadoPedidoSala::Enviado]);
+        $this->actingAs($oficina)->patch(route('facturacion.pedidos.volvio', $pedido), ['motivo' => 'La sala estaba cerrada'])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Volvio, $pedido->refresh()->estado);
+
+        $this->actingAs($this->vendedor)->get(route('rutas.sacar-pedido.index', ['q' => 'Sala de prueba']))->assertOk()->assertDontSee('Pedido sacado');
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk();
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasNoErrors();
+        $nuevo = PedidoSala::whereKeyNot($pedido->id)->sole();
+        $this->assertSame([EstadoPedidoSala::Registrado, $pedido->salida_ruta_id], [$nuevo->estado, $nuevo->salida_ruta_id]);
+        // El nuevo sí cuenta: otro toque no saca un tercero.
+        $this->get(route('rutas.sacar-pedido.index', ['q' => 'Sala de prueba']))->assertSee('Pedido sacado');
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasErrors('lineas');
+        $this->assertSame(2, PedidoSala::count());
     }
 
     // ---------------------------------------------------------------- sacar pedido
