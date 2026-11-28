@@ -500,6 +500,7 @@ class PedidosSala
     {
         return match (true) {
             ! $pedido->estaVigente() => null,
+            $pedido->estado === EstadoPedidoSala::Volvio => 'Volvió a la fábrica: si la sala lo quiere, sacá otro pedido.',
             $pedido->fabricaEmpezo() => 'Ya está en despacho: si cambió algo, avisá a la oficina.',
             self::sacoElSiguiente($pedido) => 'Ya sacaste otro pedido: este lo corrige la oficina.',
             default => null,

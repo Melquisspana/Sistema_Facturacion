@@ -202,7 +202,10 @@ class ProbadorDiaVendedorTest extends TestCase
         $this->actingAs($oficina)->patch(route('facturacion.pedidos.volvio', $pedido), ['motivo' => 'La sala estaba cerrada'])->assertSessionHasNoErrors();
         $this->assertSame(EstadoPedidoSala::Volvio, $pedido->refresh()->estado);
 
-        $this->actingAs($this->vendedor)->get(route('rutas.sacar-pedido.index', ['q' => 'Sala de prueba']))->assertOk()->assertDontSee('Pedido sacado');
+        // En sus pedidos de hoy dice que volvió y qué hacer, no que está en despacho.
+        $this->actingAs($this->vendedor)->get(route('rutas.sacar-pedido.index'))->assertOk()
+            ->assertSee('Volvió a la fábrica: si la sala lo quiere, sacá otro pedido.')->assertDontSee('Ya está en despacho');
+        $this->get(route('rutas.sacar-pedido.index', ['q' => 'Sala de prueba']))->assertOk()->assertDontSee('Pedido sacado');
         $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk();
         $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasNoErrors();
         $nuevo = PedidoSala::whereKeyNot($pedido->id)->sole();
@@ -211,6 +214,36 @@ class ProbadorDiaVendedorTest extends TestCase
         $this->get(route('rutas.sacar-pedido.index', ['q' => 'Sala de prueba']))->assertSee('Pedido sacado');
         $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '12']])->assertSessionHasErrors('lineas');
         $this->assertSame(2, PedidoSala::count());
+    }
+
+    /**
+     * Medianoche en El Salvador: lo de las 23:59 es del sábado (su pedido, su entrega y su PDF)
+     * y a las 00:00 del domingo «hoy» ya es otro día, aunque el viaje siga abierto.
+     */
+    public function test_a_medianoche_lo_del_sabado_queda_en_el_sabado(): void
+    {
+        $dte = $this->ccf();
+        $this->travelTo(Carbon::parse('2026-11-28 23:59:30', 'America/El_Salvador'));
+        $this->actingAs($this->vendedor)->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '6']])
+            ->assertSessionHasNoErrors();
+        $this->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo', 'entregado_por_id' => $this->persona->id])
+            ->assertSessionHasNoErrors();
+        $pedido = PedidoSala::sole();
+        $entrega = SalidaRutaEntrega::sole();
+        $this->assertSame('2026-11-28', $pedido->fecha->toDateString());
+        $this->assertSame('2026-11-28', $entrega->fecha_resultado->toDateString());
+
+        $this->travelTo(Carbon::parse('2026-11-29 00:00:30', 'America/El_Salvador'));
+        // «Tus pedidos de hoy» y «Marcados hoy» ya no lo traen; el día del sábado sí, con su PDF.
+        $this->get(route('rutas.sacar-pedido.index'))->assertOk()->assertViewHas('pedidosHoy', fn ($lista) => $lista->isEmpty());
+        $this->get(route('rutas.por-entregar.index'))->assertOk()->assertViewHas('marcados', fn ($lista) => $lista->isEmpty());
+        $this->get(route('rutas.mi-salida.dia', ['fecha' => '2026-11-28']))->assertOk()
+            ->assertSee('Sábado 28/11/2026')->assertSeeText('Efectivo a entregar: $100.25');
+        $this->get(route('rutas.mi-salida.dia'))->assertOk()->assertSeeText('Efectivo a entregar: $0.00');
+        $this->get(route('rutas.mi-salida.dia.pdf', ['fecha' => '2026-11-28']))->assertOk();
+        // El viaje sigue sumando (el pedido es de ayer): la misma sala no se saca dos veces en él.
+        $this->post(route('rutas.sacar-pedido.store', $this->sala), ['cantidades' => [$this->galleta->id => '6']])->assertSessionHasErrors('lineas');
+        $this->assertSame(1, PedidoSala::count());
     }
 
     // ---------------------------------------------------------------- sacar pedido
