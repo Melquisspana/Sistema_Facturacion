@@ -3596,11 +3596,15 @@ ResultadoHuella identificarHuella(
   uint16_t &confianza
 ) {
 
+  // Prueba de 10 marcas con el dedo registrado (27/11/2026): con 1,6 s y 2 «no
+  // coincide» (contando el 0x17), un dedo registrado mal apoyado salía «no registrada»
+  // antes de llegar a una lectura buena. Con 2,5 s y 3 tiene más intentos; un dedo
+  // sin registrar sigue diciendo «no registrada» en 1 o 2 segundos.
   const unsigned long TIEMPO_MAXIMO =
-    1600;
+    2500;
 
   const int MAX_NO_COINCIDE =
-    2;
+    3;
 
   unsigned long inicio =
     millis();
