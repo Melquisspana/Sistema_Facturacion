@@ -381,6 +381,8 @@ enum Sonido : uint8_t {
 #define BUSQUEDA_SIN_COINCIDENCIA_AS608 0x17
 
 #define TACTIL_ADDR 0x38
+// Cada cuánto se le pregunta al vidrio si hay un dedo, además de la interrupción.
+#define TACTIL_SONDEO_MS 60
 #define TACTIL_INT  17
 #define TACTIL_RST  18
 
@@ -3622,6 +3624,16 @@ ResultadoHuella identificarHuella(
     millis() - inicio <
     TIEMPO_MAXIMO
   ) {
+
+    // Un toque en la pantalla corta la lectura mientras todavia no hubo una imagen
+    // valida (casi siempre es ruido del AS608): asi el teclado abre al instante en vez
+    // de esperar hasta 1,6 s (27/11/2026). Con una imagen valida se sigue: es un dedo.
+    if (
+      tactilToco &&
+      !huboLecturaValida
+    ) {
+      return RH_SIN_LECTURA;
+    }
 
     uint8_t p;
 
@@ -9617,12 +9629,30 @@ void loop() {
     return;
   }
 
+  // Ademas de la interrupcion, se pregunta al vidrio cada TACTIL_SONDEO_MS: en modo
+  // monitor (barrido lento) el FT6336 a veces no levanta el INT con un toque corto, y
+  // Melqui vio que tocando en algunas partes no abria (27/11/2026).
+  static unsigned long ultimoSondeoTactil =
+    0;
+
+  bool tocaSondeo =
+    tactilDisponible &&
+    !tactilToco &&
+    millis() - ultimoSondeoTactil >= TACTIL_SONDEO_MS;
+
   if (
-    tactilToco
+    tactilToco ||
+    tocaSondeo
   ) {
+
+    bool porInterrupcion =
+      tactilToco;
 
     tactilToco =
       false;
+
+    ultimoSondeoTactil =
+      millis();
 
     int16_t x =
       0;
@@ -9630,16 +9660,24 @@ void loop() {
     int16_t y =
       0;
 
+    bool hayDedo =
+      leerTactil(
+        x,
+        y
+      );
+
+
     // La interrupcion sola no alcanza: el vidrio tiene que informar un dedo.
     // Abre desde cualquier pantalla de espera o de resultado (pedido de Melqui,
     // 27/11/2026: «cuando toque cualquier lado de la pantalla»), no solo desde
     // el reposo: tambien con el aviso de sin red, de error o de una marca.
+    //
+    // La interrupcion SOLA ya alcanza (27/11/2026): con el AS608 leyendo ruido, el loop
+    // tarda hasta un segundo en volver y para entonces el dedo ya se levanto, asi que
+    // leerTactil() da 0 y el toque se perdia. El INT baja solo con un toque real.
     if (
       pantallaAceptaTeclado() &&
-      leerTactil(
-        x,
-        y
-      )
+      (hayDedo || porInterrupcion)
     ) {
 
       if (
