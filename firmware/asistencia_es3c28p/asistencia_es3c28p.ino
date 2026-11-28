@@ -118,6 +118,11 @@ const uint8_t ENROL_MAX_REINTENTOS_RESULTADO =
 const uint16_t ENROL_MAX_RANURAS_BARRIDO =
   1000;
 
+// Tope de huellas sueltas que se borran por vez cuando la respuesta del indice
+// trae "borrar". Lo que sobre se borra en el proximo envio del indice.
+const uint8_t LIMPIEZA_MAX_BORRAR =
+  50;
+
 
 // =====================================================
 // TECLADO NUMERICO (vidrio tactil)
@@ -763,6 +768,13 @@ String extraerObjetoJson(
   const String& clave
 );
 
+int extraerEnterosJson(
+  const String& json,
+  const String& clave,
+  uint16_t* destino,
+  int maximo
+);
+
 // ------------------------------------- enrolamiento
 
 void mostrarEnrolInicio(
@@ -803,7 +815,15 @@ int peticionEnrolamiento(
   String& respuesta
 );
 
-bool sincronizarIndiceSensor();
+bool sincronizarIndiceSensor(
+  bool permitirBorrado = true
+);
+
+void borrarHuellasSueltas(
+  const uint16_t* ranuras,
+  int cantidad,
+  uint16_t capacidadEfectiva
+);
 
 String construirListaOcupadas(
   uint16_t &capacidadEfectiva
@@ -4231,6 +4251,148 @@ int finObjetoJson(
 
 
 // =====================================================
+// EXTRAER LISTA DE ENTEROS JSON
+//
+// Lee "clave":[1,2,3] y deja hasta `maximo` numeros en `destino`. Devuelve
+// cuantos dejo.
+//
+// Ante cualquier duda devuelve 0: una respuesta cortada (sin el corchete que
+// cierra), un negativo, un texto o un numero que no cabe en una ranura. Se usa
+// para BORRAR plantillas del sensor, y ahi equivocarse hacia "nada" es
+// inofensivo; equivocarse hacia "algo" no tiene vuelta atras.
+//
+// Un numero solo se guarda al ver la coma o el corchete que lo cierra, asi que
+// el ultimo de una respuesta cortada nunca entra a medias.
+// =====================================================
+
+int extraerEnterosJson(
+  const String& json,
+  const String& clave,
+  uint16_t* destino,
+  int maximo
+) {
+
+  String patron =
+    "\"" +
+    clave +
+    "\":";
+
+  int posicion =
+    json.indexOf(
+      patron
+    );
+
+  if (
+    posicion < 0
+  ) {
+    return 0;
+  }
+
+  posicion +=
+    patron.length();
+
+  while (
+    posicion < (int) json.length() &&
+    json[posicion] == ' '
+  ) {
+
+    posicion++;
+  }
+
+  if (
+    posicion >= (int) json.length() ||
+    json[posicion] != '['
+  ) {
+    return 0;
+  }
+
+  int cantidad =
+    0;
+
+  // -1 = todavia no hay digitos del numero en curso.
+  long valor =
+    -1;
+
+  for (
+    int i = posicion + 1;
+    i < (int) json.length();
+    i++
+  ) {
+
+    char c =
+      json[i];
+
+    if (
+      c >= '0' &&
+      c <= '9'
+    ) {
+
+      valor =
+        (valor < 0 ? 0 : valor) * 10 +
+        (c - '0');
+
+      if (
+        valor > 65535
+      ) {
+        return 0;
+      }
+
+      continue;
+    }
+
+    if (
+      c == ',' ||
+      c == ']'
+    ) {
+
+      if (
+        valor >= 0
+      ) {
+
+        if (
+          cantidad >= maximo
+        ) {
+
+          // Tope alcanzado: el resto queda para el proximo envio.
+          return cantidad;
+        }
+
+        destino[cantidad] =
+          (uint16_t) valor;
+
+        cantidad++;
+      }
+
+      valor =
+        -1;
+
+      if (
+        c == ']'
+      ) {
+        return cantidad;
+      }
+
+      continue;
+    }
+
+    if (
+      c == ' ' ||
+      c == '\r' ||
+      c == '\n' ||
+      c == '\t'
+    ) {
+      continue;
+    }
+
+    return 0;
+  }
+
+  // Sin el corchete que cierra: respuesta cortada.
+  return 0;
+}
+
+
+// =====================================================
 // ENVIAR MARCACION
 //
 // Por huella (`fingerprint_id`, la ranura) o por numero (`numero`, texto de 4
@@ -6739,9 +6901,16 @@ String construirListaOcupadas(
 // y choca con las plantillas heredadas.
 //
 // Se llama al arrancar y cada vez que el sondeo contesta sincronizar_indice.
+//
+// Si la respuesta trae "borrar" (solo pasa cuando alguien confirmo a mano
+// asistencia:limpiar-sensor en el servidor), borra esas huellas sueltas, vuelve
+// a leer el indice y lo manda UNA vez mas, ya sin borrar: asi un borrado que
+// falla siempre no deja al lector dando vueltas.
 // =====================================================
 
-bool sincronizarIndiceSensor() {
+bool sincronizarIndiceSensor(
+  bool permitirBorrado
+) {
 
   if (
     enrolando
@@ -6913,7 +7082,158 @@ bool sincronizarIndiceSensor() {
 
   mostrarListo();
 
+  if (
+    http == 200 &&
+    permitirBorrado
+  ) {
+
+    uint16_t sueltas[LIMPIEZA_MAX_BORRAR];
+
+    int cantidad =
+      extraerEnterosJson(
+        respuesta,
+        "borrar",
+        sueltas,
+        LIMPIEZA_MAX_BORRAR
+      );
+
+    if (
+      cantidad > 0
+    ) {
+
+      borrarHuellasSueltas(
+        sueltas,
+        cantidad,
+        capacidadEfectiva
+      );
+
+      return sincronizarIndiceSensor(
+        false
+      );
+    }
+  }
+
   return http == 200;
+}
+
+
+// =====================================================
+// BORRAR HUELLAS SUELTAS
+//
+// Plantillas que el sensor tiene grabadas y el sistema no conoce: el dedo
+// coincide, la marca llega con una ranura que nadie tiene y se pierde. Las
+// elige el servidor —nunca el lector— y solo despues de que alguien lo
+// confirmara a mano.
+//
+// Una ranura fuera del rango del sensor no se toca. Por serie va la cantidad;
+// las ranuras, solo con SERIE_DETALLE.
+// =====================================================
+
+void borrarHuellasSueltas(
+  const uint16_t* ranuras,
+  int cantidad,
+  uint16_t capacidadEfectiva
+) {
+
+  int borradas =
+    0;
+
+  int errores =
+    0;
+
+  for (
+    int i = 0;
+    i < cantidad;
+    i++
+  ) {
+
+    uint16_t ranura =
+      ranuras[i];
+
+    if (
+      ranura >=
+      capacidadEfectiva
+    ) {
+
+      errores++;
+      continue;
+    }
+
+    uint8_t resultado =
+      finger.deleteModel(
+        ranura
+      );
+
+    if (
+      resultado !=
+      FINGERPRINT_OK
+    ) {
+
+      // Un reintento: puede ser ruido en la UART.
+      delay(15);
+
+      resultado =
+        finger.deleteModel(
+          ranura
+        );
+    }
+
+    if (
+      resultado ==
+      FINGERPRINT_OK
+    ) {
+
+      borradas++;
+
+    } else {
+
+      errores++;
+
+      if (
+        SERIE_DETALLE
+      ) {
+
+        Serial.print(
+          "NO SE PUDO BORRAR LA RANURA "
+        );
+
+        Serial.print(
+          ranura
+        );
+
+        Serial.print(
+          ": "
+        );
+
+        Serial.println(
+          resultado
+        );
+      }
+    }
+
+    delay(2);
+  }
+
+  Serial.print(
+    "HUELLAS SUELTAS BORRADAS: "
+  );
+
+  Serial.println(
+    borradas
+  );
+
+  if (
+    errores > 0
+  ) {
+
+    Serial.print(
+      "ERRORES AL BORRAR: "
+    );
+
+    Serial.println(
+      errores
+    );
+  }
 }
 
 
