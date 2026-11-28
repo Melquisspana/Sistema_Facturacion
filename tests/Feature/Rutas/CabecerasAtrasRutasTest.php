@@ -35,6 +35,7 @@ class CabecerasAtrasRutasTest extends TestCase
             route('rutas.dashboard'),
             route('rutas.viajes'),
             route('rutas.mapa'),
+            route('rutas.clientes.index'),
             route('rutas.pedidos.index'),
             route('rutas.ventas.index'),
             route('rutas.salidas.index'),
@@ -45,6 +46,8 @@ class CabecerasAtrasRutasTest extends TestCase
             $this->assertNotContains('no-store', $directivas, $url);
             $this->assertNotContains('public', $directivas, $url);
         }
+        // La historia de una sala en «Clientes» también solo se mira.
+        $this->assertContains('cache.headers:no_cache;private', app('router')->getRoutes()->getByName('rutas.clientes.show')->gatherMiddleware());
     }
 
     /**
@@ -65,7 +68,7 @@ class CabecerasAtrasRutasTest extends TestCase
             $this->assertContains('private', $directivas, $url);
         }
 
-        foreach (['rutas.pedidos.show', 'rutas.ventas.pdf'] as $nombre) {
+        foreach (['rutas.pedidos.show', 'rutas.ventas.pdf', 'rutas.clientes.ccf'] as $nombre) {
             $this->assertContains('cache.headers:no_store;private', app('router')->getRoutes()->getByName($nombre)->gatherMiddleware(), $nombre);
         }
     }

@@ -18,6 +18,11 @@
         $pastilla = 'inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500';
     @endphp
     <div class="py-6 font-sans tabular-nums text-gray-900 dark:text-paper-100 sm:py-8">
+        {{-- Pestaña del Tablero desde el 28/11/2026: Ventas salió del menú. Las pestañas van al
+             ancho del Tablero, así no se mueven al pasar de Resumen a Ventas. --}}
+        <div class="mx-auto mb-6 max-w-7xl px-4 sm:px-6 lg:px-8">
+            @include('rutas._pestanas', ['activa' => 'ventas'])
+        </div>
         <div class="mx-auto max-w-4xl space-y-7 px-4 sm:px-6">
             <nav aria-label="Canal de ventas" class="inline-flex gap-1 rounded-2xl bg-gray-100 p-1 dark:bg-ink-800">
                 @foreach (['nacional' => 'Nacional', 'exportacion' => 'Exportación'] as $clave => $nombre)

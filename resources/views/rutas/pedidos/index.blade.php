@@ -1,12 +1,14 @@
-{{-- «Pedidos» de la oficina: los sugeridos que sacan los vendedores en las salas. Filtros por
-     fecha, ruta y sala (docs/GUIA_PANTALLAS.md: formulario GET, «Filtrar» secundario y
-     «Limpiar» solo con filtros). «Mandado el»: lo que la fábrica mandó ese día. En el
+{{-- «Todos los pedidos» de la oficina: los sugeridos que sacan los vendedores en las salas. Desde
+     el 28/11/2026 es la segunda pestaña de «Clientes» (la entrada del menú) y sigue en la misma
+     dirección, así andan los enlaces que ya llegan acá (`?salida=` desde un viaje, `mandado_el`).
+     Filtros por fecha, ruta y sala (docs/GUIA_PANTALLAS.md: formulario GET, «Filtrar» secundario
+     y «Limpiar» solo con filtros). «Mandado el»: lo que la fábrica mandó ese día. En el
      celular, tarjetas; en la computadora, tabla. Solo lectura: lo que sale lo marca la
      fábrica en /fabrica/pedidos. Los anulados se esconden de entrada (Melqui, 16/11/2026). --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedidos</h1>
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Clientes</h1>
         </div>
     </x-slot>
 
@@ -17,6 +19,7 @@
 
     <div class="py-6 sm:py-8">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            @include('rutas.clientes._pestanas', ['activa' => 'pedidos'])
             <x-rutas.avisos />
 
             <form method="GET" class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 items-end lg:grid-cols-6">

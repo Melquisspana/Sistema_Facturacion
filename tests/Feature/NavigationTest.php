@@ -545,9 +545,11 @@ class NavigationTest extends TestCase
 
     /**
      * El área Rutas presenta solo sus pantallas. Menú de la oficina (11/11/2026): «Pedidos y
-     * entregas» primero para quien la ve (26/11/2026), Tablero, Pedidos, Ventas, Zonas y, al final, UNA sola entrada al celular del vendedor
+     * entregas» primero para quien la ve (26/11/2026), Tablero, Clientes y, al final, UNA sola entrada al celular del vendedor
      * («Menú del vendedor»); Inicio, Sacar pedido y Por entregar son sus pestañas. «Todos los
-     * viajes» salió del menú (12/11/2026): se abre desde Tablero › Viajes.
+     * viajes» salió del menú (12/11/2026): se abre desde Tablero › Viajes. Desde el 28/11/2026
+     * «Pedidos» es «Clientes» (con la pestaña «Todos los pedidos»), Ventas es pestaña del
+     * Tablero y Zonas se abre desde el Tablero.
      * Facturas por cobrar salió de esta barra (28/10/2026): sigue en la de Facturación.
      */
     public function test_el_area_rutas_presenta_solo_sus_enlaces(): void
@@ -560,16 +562,16 @@ class NavigationTest extends TestCase
                 // selector de áreas del panel, que es lo que permite volver desde un
                 // teléfono. No es una pantalla nueva para este rol.
                 'dashboard',
-                // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
-                // (29/10/2026), con `rutas.personal.ver`.
-                // Desde el 08/11/2026 su lista es la de Personal, que llega por el selector de áreas.
-                'rutas.dashboard', 'rutas.ventas.index', 'rutas.rutas.index', 'personal.empleados',
+                // Personal (29/10/2026), con `rutas.personal.ver`. Desde el 08/11/2026 su lista es
+                // la de Personal, que llega por el selector de áreas. Ventas y Zonas salieron del
+                // menú (28/11/2026): se abren desde el Tablero.
+                'rutas.dashboard', 'personal.empleados',
                 // «Pedidos y entregas» (26/11/2026), con `rutas.pedidos-entregas.ver`: el primero.
                 'rutas.pedidos-entregas',
                 // «Menú del vendedor»: una sola entrada al celular del vendedor (11/11/2026).
                 'rutas.mi-salida.index',
-                // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
-                'rutas.pedidos.index',
+                // «Clientes» (28/11/2026), con `rutas.pedidos.ver`: los pedidos de las salas son su pestaña.
+                'rutas.clientes.index',
                 // El área Fábrica (09/11/2026), desde el selector del panel.
                 'fabrica.pedidos.index',
             ]),
@@ -578,8 +580,8 @@ class NavigationTest extends TestCase
 
         $sidebar = $this->sidebarDe($html);
         // Los títulos nuevos, en orden; los de antes ya no están.
-        $this->assertMatchesRegularExpression('/Pedidos y entregas.*Tablero.*Pedidos.*Ventas.*Zonas.*Menú del vendedor/su', $sidebar);
-        foreach (['Salidas anteriores', 'Todos los viajes', 'Configurar rutas', 'Armar salida', 'Asignar salas', '>Inicio<', 'Sacar pedido', 'Por entregar'] as $retirado) {
+        $this->assertMatchesRegularExpression('/Pedidos y entregas.*Tablero.*Clientes.*Menú del vendedor/su', $sidebar);
+        foreach (['Salidas anteriores', 'Todos los viajes', 'Configurar rutas', 'Armar salida', 'Asignar salas', '>Inicio<', 'Sacar pedido', 'Por entregar', 'Zonas'] as $retirado) {
             $this->assertStringNotContainsString($retirado, $sidebar);
         }
         $this->assertStringNotContainsString('Facturas por cobrar', $sidebar);
