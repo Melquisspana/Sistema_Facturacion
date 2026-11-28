@@ -534,9 +534,12 @@ class ClientesRutasProbadorTest extends TestCase
             route('rutas.clientes.ccf', [$this->salaNorte, $dte]),
         ];
 
-        // `rutas.pedidos.ver` sin `rutas.ver`: no entra a Rutas.
+        // `rutas.pedidos.ver` sin `rutas.ver` sí entra a Clientes desde el 28/11/2026 (así lo tiene el vendedor).
         $soloPedidos = User::factory()->create(['activo' => true])->givePermissionTo('rutas.pedidos.ver');
-        $usuarios = [$soloPedidos];
+        foreach ($urls as $url) {
+            $this->actingAs($soloPedidos)->get($url)->assertOk();
+        }
+        $usuarios = [];
         foreach (['fabrica', 'produccion', 'contabilidad'] as $rol) {
             $usuarios[] = User::factory()->create(['activo' => true])->assignRole($rol);
         }

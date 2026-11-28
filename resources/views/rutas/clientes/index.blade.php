@@ -6,13 +6,24 @@
      (docs/GUIA_PANTALLAS.md: formulario GET, botón secundario y «Limpiar» solo con filtros).
      Tarjetas también en la computadora: es una pantalla del celular. La otra pestaña, «Todos
      los pedidos», es la lista de siempre. Variables: $salas (paginador de [sala, zona]),
-     $resumen (PanelClientes::resumen), $zonas, $filtro y $filtrado. --}}
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Clientes</h1>
-        </div>
-    </x-slot>
+     $resumen (PanelClientes::resumen), $zonas, $filtro y $filtrado.
+
+     El marco depende de quién entra: la oficina (`rutas.ver`) lo ve con la barra lateral
+     (rutas.clientes.marco-oficina) y el vendedor, que tiene solo `rutas.pedidos.ver`
+     (28/11/2026), en su layout del teléfono, con «Clientes» marcado en su menú y el
+     encabezado arriba del contenido. --}}
+@extends(auth()->user()->can('rutas.ver') ? 'rutas.clientes.marco-oficina' : 'layouts.vendedor')
+
+@section('titulo', 'Clientes')
+
+@section('encabezado')
+    <h1 class="text-xl font-semibold leading-tight text-gray-800">Clientes</h1>
+@endsection
+
+@section('content')
+    @cannot('rutas.ver')
+        <div class="mb-4">@yield('encabezado')</div>
+    @endcannot
 
     @php
         $campo = 'mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm';
@@ -21,10 +32,8 @@
         $dt = 'text-xs font-medium text-gray-500';
     @endphp
 
-    <div class="py-6 sm:py-8">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div>
             @include('rutas.clientes._pestanas', ['activa' => 'clientes'])
-            <x-rutas.avisos />
 
             <form method="GET" class="mb-4 grid grid-cols-1 items-end gap-3 sm:grid-cols-4">
                 <div class="sm:col-span-2">
@@ -117,6 +126,5 @@
                     <div class="mt-4 rounded-lg border border-gray-200 bg-white px-4 py-3">{{ $salas->links() }}</div>
                 @endif
             @endif
-        </div>
     </div>
-</x-app-layout>
+@endsection

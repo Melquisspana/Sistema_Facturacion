@@ -165,9 +165,9 @@ Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el t
 
 ### Menú del celular del vendedor
 
-Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan barra lateral: arriba va una fila de pastillas con sus tres pantallas, siempre en este orden: **Inicio**, **Sacar pedido** y **Por entregar**.
+Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan barra lateral: arriba va una fila de pastillas con sus pantallas, siempre en este orden: **Inicio**, **Sacar pedido**, **Por entregar** y, desde el 28/11/2026, **Clientes** (con `rutas.pedidos.ver`).
 
-- Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
+- Un `<nav>` con `aria-label` y `grid gap-2`: con tres pastillas, `grid-cols-3`; con cuatro, `grid-cols-2 sm:grid-cols-4` (dos filas de dos en el celular, una fila desde `sm`). Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
 - Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
 - En la barra lateral de la oficina el orden es Pedidos y entregas (solo para quien la ve, desde el 26/11/2026), Tablero y Clientes, y al final **una sola** entrada, «Menú del vendedor», que abre el Inicio del celular (a quien solo puede mirar, «Por entregar»). Las tres pantallas no se repiten en la barra. *Pedido de Melqui, 11/11/2026.* Desde el 28/11/2026 Ventas es pestaña del Tablero, Zonas y Todos los viajes se abren desde el Tablero (y lo dejan resaltado), y «Pedidos» es «Clientes», con «Todos los pedidos» como pestaña.
 - Quien entra sin ficha de vendedor no queda en una pantalla vacía: se le dice «Tu usuario no es vendedor» y se le ofrece «Por entregar».
@@ -362,6 +362,7 @@ Facturación › «Llegó de pedidos» (`facturacion/por-facturar`), con su luga
 
 Rutas › «Clientes» (`rutas/clientes`), en lugar de «Pedidos»: el historial de las salas para cobrar y para ver qué se le dejó. Mismo permiso que los pedidos (`rutas.pedidos.ver`). Dos pestañas: **Clientes**, la de entrada, y **Todos los pedidos**, la lista de siempre en su misma dirección (`rutas/pedidos`, con `?salida=` y `mandado_el`).
 
+- **El vendedor también** (Melqui, 28/11/2026): tiene `rutas.pedidos.ver` sin `rutas.ver`, así que no ve el Tablero ni nada con montos. Ve Clientes, la historia y el PDF en su layout del teléfono, con «Clientes» marcado en su menú; sin pestañas ni «Ver pedido», que son de la oficina. El encabezado (título y «Volver a clientes») va arriba del contenido.
 - **Todas las salas activas para todos**, sin filtrar por la zona del vendedor (no la registran al salir). Buscador por nombre o código y zona opcional: formulario `GET` con «Buscar» secundario y «Limpiar» solo con filtros.
 - **Una tarjeta por sala**, también en la computadora (`md:grid-cols-2 xl:grid-cols-3`): el nombre (abre la historia), «N CCF por cobrar» en ámbar si tiene, código y zona; «Último pedido» con fecha, quién lo sacó y cuántas cajas de cada producto (hasta 6; el resto, «Y N productos más en el historial»); «Último CCF» con «CCF …1234», la fecha y la etiqueta de la entrega; al pie, «Ver historial» a todo el ancho.
 - **Sin montos** en la lista ni en la historia: solo cantidades. El PDF del CCF sí los trae (aprobado).

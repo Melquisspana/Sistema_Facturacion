@@ -74,7 +74,7 @@ class VendedorMiSalidaTest extends TestCase
     public function test_rol_permiso_y_aterrizaje(): void
     {
         $this->assertSame('Vendedor', RolSistema::Vendedor->label());
-        $this->assertSame(['rutas.entregas.registrar', 'rutas.pedidos.registrar'], RolSistema::Vendedor->permisos());
+        $this->assertSame(['rutas.entregas.registrar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver'], RolSistema::Vendedor->permisos());
         foreach (RolSistema::cases() as $rol) {
             $this->assertSame(in_array($rol, [RolSistema::Administrador, RolSistema::Vendedor, RolSistema::JefeVendedores], true), in_array(PermisoSistema::RutasEntregasRegistrar->value, $rol->permisos(), true));
         }
@@ -170,9 +170,10 @@ class VendedorMiSalidaTest extends TestCase
             // `salud` es pública a propósito: la pide el vigilante de afuera sin sesión y no trae datos (#163).
             // `manifiesto-web` también: el navegador lo pide para instalar la app, sin sesión y sin datos (#376).
             // «Por entregar» y «Sacar pedido» son del vendedor como «Mi salida»: sus permisos los
-            // prueban PorEntregarTest y SacarPedidoSinSalidaTest.
+            // prueban PorEntregarTest y SacarPedidoSinSalidaTest. «Clientes» también, desde el
+            // 28/11/2026: lo prueba ClientesRutasTest.
             if (in_array('guest', $middleware, true)
-                || Str::is(['rutas.mi-salida.*', 'rutas.por-entregar.*', 'rutas.sacar-pedido.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud', 'manifiesto-web'], $nombre)) {
+                || Str::is(['rutas.mi-salida.*', 'rutas.por-entregar.*', 'rutas.sacar-pedido.*', 'rutas.clientes.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud', 'manifiesto-web'], $nombre)) {
                 continue;
             }
             // Dashboard es la puerta de redirección y se verifica por separado.

@@ -19,15 +19,27 @@
 
      Variables: $sala, $zona, $pedidos y $ccf (los más nuevos primero), $masPedidos y $masCcf,
      $entregas (dte_id => entrega, PanelClientes), $porCobrar (dte_id), $paginasPedidos y
-     $paginasCcf (cuántas vueltas de 10 se ven). --}}
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $sala->nombre }}</h1>
-            <a href="{{ route('rutas.clientes.index') }}"
-               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a clientes</a>
-        </div>
-    </x-slot>
+     $paginasCcf (cuántas vueltas de 10 se ven). «Ver pedido» lleva al detalle de la oficina:
+     solo con `rutas.ver`.
+
+     El marco depende de quién entra: la oficina (`rutas.ver`) lo ve con la barra lateral
+     (rutas.clientes.marco-oficina) y el vendedor, que tiene solo `rutas.pedidos.ver`
+     (28/11/2026), en su layout del teléfono, con «Clientes» marcado en su menú y el
+     encabezado arriba del contenido. --}}
+@extends(auth()->user()->can('rutas.ver') ? 'rutas.clientes.marco-oficina' : 'layouts.vendedor')
+
+@section('titulo', $sala->nombre)
+
+@section('encabezado')
+    <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $sala->nombre }}</h1>
+    <a href="{{ route('rutas.clientes.index') }}"
+       class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a clientes</a>
+@endsection
+
+@section('content')
+    @cannot('rutas.ver')
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">@yield('encabezado')</div>
+    @endcannot
 
     @php
         $secundario = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
@@ -38,9 +50,7 @@
         $cuantosPorCobrar = count($porCobrar);
     @endphp
 
-    <div class="py-6 sm:py-8">
-        <div class="max-w-7xl mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
-            <x-rutas.avisos />
+    <div class="space-y-6">
 
             <dl class="{{ $caja }} grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div>
@@ -75,7 +85,9 @@
                                     <x-rutas.estado-badge :estado="$pedido->estado" />
                                 </div>
                                 @include('rutas.clientes._lineas', ['pedido' => $pedido, 'tope' => null])
-                                <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver pedido<span class="sr-only"> del {{ $pedido->fecha->format('d/m/Y') }}</span></a>
+                                @can('rutas.ver')
+                                    <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver pedido<span class="sr-only"> del {{ $pedido->fecha->format('d/m/Y') }}</span></a>
+                                @endcan
                             </li>
                         @empty
                             <li class="{{ $caja }} py-10 text-center text-gray-500">Todavía no tiene pedidos.</li>
@@ -130,7 +142,6 @@
                     @endif
                 </section>
             </div>
-        </div>
     </div>
 
     <script>
@@ -197,4 +208,4 @@
             }));
         });
     </script>
-</x-app-layout>
+@endsection

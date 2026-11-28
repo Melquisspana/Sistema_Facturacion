@@ -118,6 +118,22 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', $sin
             ->middleware('permission:rutas.entregas.registrar');
     });
 
+/*
+| «Clientes» (28/11/2026): todas las salas con lo último que se les sacó y su último CCF, y la
+| historia de cada una, sin montos. Solo `rutas.pedidos.ver`, el permiso de «Pedidos» (su otra
+| pestaña en la oficina): va FUERA del grupo de la oficina para que entre el vendedor, que lo
+| tiene sin `rutas.ver` (Melqui, 28/11/2026). «Todos los pedidos» y el detalle de un pedido
+| siguen pidiendo `rutas.ver`. La lista y la historia solo se miran: «atrás» al instante. El
+| PDF del CCF (con montos, aprobado) no se guarda, como los demás PDF de Rutas.
+*/
+Route::middleware(['auth', 'permission:rutas.pedidos.ver'])
+    ->prefix('rutas/clientes')->name('rutas.clientes.')
+    ->group(function () use ($sinCopia, $atrasAlInstante) {
+        Route::get('/', [ClientesController::class, 'index'])->middleware($atrasAlInstante)->name('index');
+        Route::get('{sala}', [ClientesController::class, 'show'])->middleware($atrasAlInstante)->name('show');
+        Route::get('{sala}/ccf/{dte}', [ClientesController::class, 'ccf'])->middleware($sinCopia)->name('ccf');
+    });
+
 // Pantallas de la oficina: cada bloque dice si «atrás» la restaura o la vuelve a pedir.
 Route::middleware(['auth', 'permission:rutas.ver'])
     ->prefix('rutas')
@@ -207,18 +223,6 @@ Route::middleware(['auth', 'permission:rutas.ver'])
                 Route::patch('{entrega}/quien', [SalidaEntregaController::class, 'corregirQuien'])->name('quien');
                 Route::delete('{entrega}', [SalidaEntregaController::class, 'destroy'])->name('destroy');
             });
-
-        /*
-        | «Clientes» (28/11/2026): todas las salas con lo último que se les sacó y su último CCF,
-        | y la historia de cada una, sin montos. Mismo permiso que «Pedidos», su otra pestaña.
-        | La lista y la historia solo se miran: «atrás» al instante. El PDF del CCF (con montos,
-        | aprobado) no se guarda, como los demás PDF de Rutas.
-        */
-        Route::prefix('clientes')->name('clientes.')->middleware('permission:rutas.pedidos.ver')->group(function () use ($sinCopia, $atrasAlInstante) {
-            Route::get('/', [ClientesController::class, 'index'])->middleware($atrasAlInstante)->name('index');
-            Route::get('{sala}', [ClientesController::class, 'show'])->middleware($atrasAlInstante)->name('show');
-            Route::get('{sala}/ccf/{dte}', [ClientesController::class, 'ccf'])->middleware($sinCopia)->name('ccf');
-        });
 
         /*
         | Pedidos de sala: la lista y la hoja se miran: «atrás» al instante. El detalle tiene el

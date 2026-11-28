@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\ResultadoEntrega;
+use App\Enums\RolSistema;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Cobros\CobroDocumento;
@@ -343,12 +344,10 @@ class ClientesRutasTest extends TestCase
             route('rutas.clientes.ccf', [$this->salaNorte, $dte]),
         ];
 
-        // Con la entrada a Rutas pero sin `rutas.pedidos.ver`, y el vendedor (que no tiene ninguno).
+        // Con la entrada a Rutas pero sin `rutas.pedidos.ver`.
         $sinPedidos = User::factory()->create(['activo' => true])->assignRole('contabilidad')->givePermissionTo('rutas.ver');
-        foreach ([$sinPedidos, $this->vendedor] as $usuario) {
-            foreach ($urls as $url) {
-                $this->actingAs($usuario)->get($url)->assertForbidden();
-            }
+        foreach ($urls as $url) {
+            $this->actingAs($sinPedidos)->get($url)->assertForbidden();
         }
         // Sin `rutas.pedidos.ver` tampoco se ve la entrada en el menú.
         $this->actingAs($sinPedidos)->get(route('rutas.dashboard'))->assertOk()
@@ -359,8 +358,8 @@ class ClientesRutasTest extends TestCase
             $this->get($url)->assertRedirect(route('login'));
         }
 
-        // Jefe de vendedores, Facturación, Jefatura y el administrador lo tienen.
-        foreach (['jefe_vendedores', 'facturacion', 'jefatura', 'administrador'] as $rol) {
+        // Jefe de vendedores, Facturación, Jefatura, el administrador y, desde el 28/11/2026, el vendedor lo tienen.
+        foreach (['jefe_vendedores', 'facturacion', 'jefatura', 'administrador', 'vendedor'] as $rol) {
             $this->actingAs(User::factory()->create(['activo' => true])->assignRole($rol))->get(route('rutas.clientes.index'))->assertOk();
         }
     }
@@ -387,6 +386,68 @@ class ClientesRutasTest extends TestCase
         DB::table('dtes')->where('id', $borrado->id)->update(['deleted_at' => now()]);
         $this->get(route('rutas.clientes.ccf', [$this->salaNorte, $borrado->id]))->assertNotFound();
         $this->get('/rutas/clientes/'.$this->salaNorte->id.'/ccf/999999')->assertNotFound();
+    }
+
+    /**
+     * El vendedor (Melqui, 28/11/2026, «demole ya»): ve Clientes, la historia y el PDF en su
+     * layout del teléfono, con «Clientes» marcado en su menú de cuatro botones. Nada de la
+     * oficina: ni el Tablero, ni Ventas, ni «Todos los pedidos», ni corregir, anular o la OC.
+     */
+    public function test_el_vendedor_ve_clientes_en_su_telefono_y_nada_de_la_oficina(): void
+    {
+        $pedido = $this->pedido($this->salaNorte, '2026-11-25', [[$this->galleta, '6']]);
+        $dte = $this->ccf($this->salaNorte, '2026-11-26', '123.45');
+        $this->assertContains('rutas.pedidos.ver', RolSistema::Vendedor->permisos());
+        $this->assertNotContains('rutas.ver', RolSistema::Vendedor->permisos());
+        $this->actingAs($this->vendedor);
+
+        // La lista: su menú del teléfono con cuatro botones (2×2 en el celular), Clientes marcado.
+        $lista = $this->get(route('rutas.clientes.index'))->assertOk()
+            ->assertSeeInOrder(['>Inicio</a>', '>Sacar pedido</a>', '>Por entregar</a>', '>Clientes</a>'], false)
+            ->assertSee('grid-cols-2 sm:grid-cols-4', false)
+            ->assertSee('Sala de prueba Norte')->assertSee('6 cajas')->getContent();
+        $this->assertMatchesRegularExpression('/href="'.preg_quote(route('rutas.clientes.index'), '/').'"\s+aria-current="page"/u', $lista);
+        $this->assertSame(1, substr_count($lista, '<h1'));
+        // Sin la oficina: ni barra lateral, ni Tablero, ni «Todos los pedidos».
+        foreach (['<aside', 'Todos los pedidos', 'href="'.route('rutas.dashboard').'"', 'href="'.route('rutas.pedidos.index').'"', 'href="'.route('rutas.ventas.index').'"'] as $oficina) {
+            $this->assertStringNotContainsString($oficina, $lista, $oficina);
+        }
+
+        // La historia y el PDF del CCF, sin el detalle del pedido de la oficina.
+        $historia = $this->get(route('rutas.clientes.show', $this->salaNorte))->assertOk()
+            ->assertSee('Volver a clientes')->assertSee('Compartir')->getContent();
+        $this->assertStringNotContainsString('href="'.route('rutas.pedidos.show', $pedido).'"', $historia);
+        $this->assertStringNotContainsString('Ver pedido', $historia);
+        $this->assertSame('application/pdf', $this->get(route('rutas.clientes.ccf', [$this->salaNorte, $dte]))->assertOk()->headers->get('Content-Type'));
+        // Sin montos en lo que ve en la pantalla.
+        foreach ([$lista, $historia] as $html) {
+            foreach (['123.45', '7.77', '$'] as $monto) {
+                $this->assertStringNotContainsString($monto, substr($html, (int) strpos($html, '<main')), $monto);
+            }
+        }
+
+        // Su menú en las demás pantallas del teléfono también trae Clientes.
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('href="'.route('rutas.clientes.index').'"', false);
+
+        // La oficina sigue cerrada: Tablero, Ventas, «Todos los pedidos» y lo que corrige un pedido.
+        foreach ([
+            route('rutas.dashboard'), route('rutas.viajes'), route('rutas.ventas.index'), route('rutas.mapa'),
+            route('rutas.pedidos.index'), route('rutas.pedidos.show', $pedido), route('rutas.pedidos.hoja', $pedido),
+            route('rutas.pedidos.corregir', $pedido), route('rutas.pedidos.anular', $pedido),
+        ] as $url) {
+            $this->get($url)->assertForbidden();
+        }
+        $this->put(route('rutas.pedidos.corregir.guardar', $pedido), ['motivo' => 'x'])->assertForbidden();
+        $this->patch(route('rutas.pedidos.anular.guardar', $pedido), ['motivo' => 'x', 'version' => str_repeat('a', 64)])->assertForbidden();
+        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '4301'])->assertForbidden();
+        $this->assertFalse($this->vendedor->can('corregirEnOficina', $pedido));
+        $this->assertSame(EstadoPedidoSala::Registrado, $pedido->refresh()->estado);
+        $this->assertNull($pedido->numero_orden_compra);
+
+        // La oficina sigue viendo su marco, con las pestañas y el Tablero.
+        $this->actingAs($this->jefe)->get(route('rutas.clientes.index'))->assertOk()
+            ->assertSee('<aside', false)->assertSee('Todos los pedidos')->assertSee('href="'.route('rutas.dashboard').'"', false);
+        $this->get(route('rutas.clientes.show', $this->salaNorte))->assertOk()->assertSee('href="'.route('rutas.pedidos.show', $pedido).'"', false);
     }
 
     // ══════════════════════════════ menú, Ventas y Zonas
