@@ -34,8 +34,12 @@ class SinInternetTest extends TestCase
         $user = User::factory()->create(['name' => 'Persona ficticia privada']);
         $this->actingAs($user)->withSession(['dato_privado' => 'Monto ficticio privado']);
         $this->get('/sin-internet')->assertOk()
+            ->assertSee('No se pudo abrir el sistema')
             ->assertSee('Sin internet: entrá por la red del local')
             ->assertSee('Avanzado → Continuar')
+            // Vuelve a probar solo y con un toque, sin scripts: la misma dirección que se pidió.
+            ->assertSee('<meta http-equiv="refresh" content="15">', false)
+            ->assertSee('<a href="">Volver a intentar</a>', false)
             ->assertSee('Pedí la dirección al administrador.')
             ->assertDontSee('Abrir Facturación (sin internet)')
             ->assertDontSee($user->name)->assertDontSee($user->email)
@@ -104,6 +108,10 @@ class SinInternetTest extends TestCase
         $this->assertSame(1, substr_count($js, 'cache.put('));
         $this->assertStringContainsString('cache.put(OFFLINE_URL, response)', $js);
         $this->assertStringContainsString('name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME', $js);
-        $this->assertStringContainsString("const CACHE_NAME = 'sin-internet-v1'", $js);
+        // v2: el aviso cambió y cada navegador guarda el nuevo al actualizar el worker.
+        $this->assertStringContainsString("const CACHE_NAME = 'sin-internet-v2'", $js);
+        // Al volver del segundo plano, la red se prueba 3 veces antes del aviso (28/11/2026).
+        $this->assertStringContainsString('const ESPERAS_MS = [1000, 2000];', $js);
+        $this->assertStringContainsString('await esperar(ESPERAS_MS[intento]);', $js);
     }
 }
