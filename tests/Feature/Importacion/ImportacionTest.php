@@ -4,13 +4,20 @@ namespace Tests\Feature\Importacion;
 
 use App\Enums\TipoDte;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
+use App\Models\Municipio;
 use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
+use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Importacion\ExportadorDatos;
 use App\Services\Importacion\ImportadorProductosPrecios;
 use App\Services\Importacion\ImportadorSalas;
+use App\Services\Importacion\ResultadoImportacion;
+use App\Support\Ubicacion\CoherenciaUbicacion;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -64,7 +71,7 @@ class ImportacionTest extends TestCase
 
     private function csvSalas(): string
     {
-        return $this->csv(<<<CSV
+        return $this->csv(<<<'CSV'
         No.,Nombre comercial,Dirección,Distrito,Municipio,Departamento
         1,Súper Selectos Escalón,Col. Escalón,Centro,San Salvador,San Salvador
         2,Súper Selectos Soyapango,Av. Roosevelt,Norte,Soyapango,San Salvador
@@ -73,7 +80,7 @@ class ImportacionTest extends TestCase
 
     private function csvPrecios(): string
     {
-        return $this->csv(<<<CSV
+        return $this->csv(<<<'CSV'
         Código interno,Código de barra,Descripción de producto,Factor de empaque,Fecha de inicio,Costo nuevo / unidad libra / precio
         79873,7412201700031,CANILLITAS,BOLSA,2026-01-01,1.0500
         106753,7412201700079,COCO RALLADO,BOLSA,,1.0000
@@ -83,7 +90,7 @@ class ImportacionTest extends TestCase
 
     private function csvSalasConTitulo(): string
     {
-        return $this->csv(<<<CSV
+        return $this->csv(<<<'CSV'
         LISTADO DE SALAS CON SU RESPECTIVA DIRECCION,,,,,
         No.,NOMBRE COMERCIAL,DIRECCIÓN,DISTRITO,MUNICIPIO,DEPARTAMENTO
         1,Súper Selectos Escalón,"Col. Escalón, Calle 1",Centro,San Salvador,San Salvador
@@ -109,7 +116,7 @@ class ImportacionTest extends TestCase
     {
         $calleja = $this->calleja();
 
-        $csv = $this->csv(<<<CSV
+        $csv = $this->csv(<<<'CSV'
         No.,Nombre comercial,Código de sala,Dirección,Distrito,Municipio,Departamento
         1,Súper Selectos Escalón,230,Col. Escalón,Centro,San Salvador,San Salvador
         CSV);
@@ -135,7 +142,7 @@ class ImportacionTest extends TestCase
     public function test_importar_salas_encabezados_mayusculas_y_acentos(): void
     {
         $calleja = $this->calleja();
-        $csv = $this->csv(<<<CSV
+        $csv = $this->csv(<<<'CSV'
         NO.,NOMBRE COMERCIAL,DIRECCION,DISTRITO,MUNICIPIO,DEPARTAMENTO
         1,Sala Uno,Dir 1,Centro,San Salvador,San Salvador
         2,Sala Dos,Dir 2,Norte,Soyapango,San Salvador
@@ -150,7 +157,7 @@ class ImportacionTest extends TestCase
     public function test_importar_salas_ignora_filas_vacias(): void
     {
         $calleja = $this->calleja();
-        $csv = $this->csv(<<<CSV
+        $csv = $this->csv(<<<'CSV'
         LISTADO DE SALAS,,,,,
         No.,Nombre comercial,Dirección,Distrito,Municipio,Departamento
         ,,,,,
@@ -166,7 +173,7 @@ class ImportacionTest extends TestCase
     public function test_importar_salas_sin_encabezado_muestra_error(): void
     {
         $calleja = $this->calleja();
-        $csv = $this->csv(<<<CSV
+        $csv = $this->csv(<<<'CSV'
         foo,bar,baz
         1,2,3
         CSV);
@@ -179,7 +186,7 @@ class ImportacionTest extends TestCase
     }
 
     /** Importa una sola sala con la ubicación dada y devuelve la sucursal. */
-    private function importarUnaSala(\App\Models\Cliente $cliente, string $municipio, string $distrito = '', string $departamento = 'San Salvador'): \App\Models\ClienteSucursal
+    private function importarUnaSala(Cliente $cliente, string $municipio, string $distrito = '', string $departamento = 'San Salvador'): ClienteSucursal
     {
         // Campos entre comillas para que las comas internas (ej. "San ,Miguel") no rompan el CSV.
         $csv = $this->csv("No.,Nombre comercial,Dirección,Distrito,Municipio,Departamento\n1,\"Sala X\",\"Dir\",\"{$distrito}\",\"{$municipio}\",\"{$departamento}\"\n");
@@ -191,33 +198,33 @@ class ImportacionTest extends TestCase
     public function test_san_salvador_centro_se_mapea(): void
     {
         $sucursal = $this->importarUnaSala($this->calleja(), 'San Salvador Centro', '', 'San Salvador');
-        $this->assertSame('San Salvador', \App\Models\Municipio::find($sucursal->municipio_id)?->nombre);
+        $this->assertSame('San Salvador', Municipio::find($sucursal->municipio_id)?->nombre);
     }
 
     public function test_santa_ana_centro_se_mapea_a_santa_ana(): void
     {
         $sucursal = $this->importarUnaSala($this->calleja(), 'Santa Ana Centro', '', 'Santa Ana');
-        $this->assertSame('Santa Ana', \App\Models\Municipio::find($sucursal->municipio_id)?->nombre);
+        $this->assertSame('Santa Ana', Municipio::find($sucursal->municipio_id)?->nombre);
     }
 
     public function test_san_miguel_centro_con_coma_se_mapea(): void
     {
         // Municipio escrito como "San ,Miguel Centro".
         $sucursal = $this->importarUnaSala($this->calleja(), 'San ,Miguel Centro', '', 'San Miguel');
-        $this->assertSame('San Miguel', \App\Models\Municipio::find($sucursal->municipio_id)?->nombre);
+        $this->assertSame('San Miguel', Municipio::find($sucursal->municipio_id)?->nombre);
     }
 
     public function test_sonsonate_centro_se_mapea(): void
     {
         $sucursal = $this->importarUnaSala($this->calleja(), 'Sonsonate Centro', '', 'Sonsonate');
-        $this->assertSame('Sonsonate', \App\Models\Municipio::find($sucursal->municipio_id)?->nombre);
+        $this->assertSame('Sonsonate', Municipio::find($sucursal->municipio_id)?->nombre);
     }
 
     public function test_distrito_tiene_prioridad_sobre_municipio_nuevo(): void
     {
         // Distrito = Santa Tecla, Municipio = La Libertad Sur → usa Santa Tecla (distrito).
         $sucursal = $this->importarUnaSala($this->calleja(), 'La Libertad Sur', 'Santa Tecla', 'La Libertad');
-        $this->assertSame('Santa Tecla', \App\Models\Municipio::find($sucursal->municipio_id)?->nombre);
+        $this->assertSame('Santa Tecla', Municipio::find($sucursal->municipio_id)?->nombre);
     }
 
     public function test_sin_equivalencia_segura_crea_sucursal_con_advertencia(): void
@@ -244,6 +251,137 @@ class ImportacionTest extends TestCase
         $detalle = $resultado->detalles[0]['detalle'];
         $this->assertStringContainsString('Municipio no encontrado: Pueblo Inexistente XYZ', $detalle);
         $this->assertStringContainsString('Departamento no encontrado: Departamento Raro', $detalle);
+    }
+
+    // --- Distrito (CAT-008): el CCF v4 lo exige en la sala ---
+
+    private function clienteFicticio(): Cliente
+    {
+        return Cliente::factory()->contribuyente()->create(['nombre' => 'Distribuidora Ficticia, S.A. de C.V.']);
+    }
+
+    /**
+     * Importa una fila y devuelve el resultado y la sala guardada.
+     *
+     * @return array{0: ResultadoImportacion, 1: ClienteSucursal}
+     */
+    private function importarFila(Cliente $cliente, string $distrito, string $municipio, string $departamento, string $nombre = 'Sala Prueba'): array
+    {
+        $csv = $this->csv("No.,Nombre comercial,Dirección,Distrito,Municipio,Departamento\n1,\"{$nombre}\",\"Calle Ficticia 1\",\"{$distrito}\",\"{$municipio}\",\"{$departamento}\"\n");
+        $resultado = app(ImportadorSalas::class)->importar($cliente, $csv);
+
+        return [$resultado, $cliente->sucursales()->where('nombre', $nombre)->firstOrFail()];
+    }
+
+    public function test_sala_con_distrito_en_el_archivo_queda_enlazada(): void
+    {
+        [$resultado, $sala] = $this->importarFila($this->clienteFicticio(), 'Santa Tecla', 'La Libertad Sur', 'La Libertad');
+
+        $this->assertSame('Santa Tecla', $sala->distrito?->nombre);
+        $this->assertSame('La Libertad', $sala->departamento?->nombre);
+        $this->assertNull(CoherenciaUbicacion::problemaDe($sala));
+        $this->assertSame(0, $resultado->sinDistrito);
+    }
+
+    public function test_sin_distrito_el_municipio_viejo_que_hoy_es_distrito_lo_enlaza(): void
+    {
+        // Antes de 2024 «Soyapango» era municipio; hoy es distrito de San Salvador Este.
+        [, $sala] = $this->importarFila($this->clienteFicticio(), '', 'Soyapango', 'San Salvador');
+
+        $this->assertSame('Soyapango', $sala->distrito?->nombre);
+        $this->assertSame('San Salvador Este', $sala->distrito?->municipio);
+        $this->assertNull(CoherenciaUbicacion::problemaDe($sala));
+    }
+
+    public function test_el_distrito_completa_el_municipio_y_el_departamento_que_faltan(): void
+    {
+        // «Guacotecti» no está en el catálogo de municipios y es un nombre único en el país.
+        [$resultado, $sala] = $this->importarFila($this->clienteFicticio(), 'Guacotecti', '', '');
+
+        $this->assertSame('Guacotecti', $sala->distrito?->nombre);
+        $this->assertSame('Cabañas', $sala->departamento?->nombre);
+        $this->assertSame('Cabañas Este', $sala->municipio?->nombreFiscal());
+        $this->assertNull(CoherenciaUbicacion::problemaDe($sala));
+        $this->assertStringContainsString('Municipio tomado del distrito: Guacotecti', $resultado->detalles[0]['detalle']);
+    }
+
+    public function test_distrito_de_otro_departamento_no_se_enlaza(): void
+    {
+        // «Santa Tecla» es de La Libertad; la fila dice San Salvador.
+        [$resultado, $sala] = $this->importarFila($this->clienteFicticio(), 'Santa Tecla', 'San Salvador Centro', 'San Salvador');
+
+        $this->assertNull($sala->distrito_id);
+        $this->assertSame('San Salvador', $sala->departamento?->nombre);
+        $this->assertNull(CoherenciaUbicacion::problemaDe($sala), 'Nunca se guarda un trío incoherente.');
+        $detalle = $resultado->detalles[0]['detalle'];
+        $this->assertStringContainsString('Distrito «Santa Tecla» no está en el departamento indicado', $detalle);
+        $this->assertStringContainsString('Sin distrito: completalo en la sala antes de facturar (el CCF lo exige)', $detalle);
+    }
+
+    public function test_trio_incoherente_queda_sin_distrito_y_con_advertencia(): void
+    {
+        // «Ilobasco» es distrito de Cabañas Oeste, no del municipio Cabañas Este que dice la fila.
+        [$resultado, $sala] = $this->importarFila($this->clienteFicticio(), 'Ilobasco', 'Cabañas Este', 'Cabañas');
+
+        $this->assertNull($sala->distrito_id);
+        $this->assertSame('Cabañas Este', $sala->municipio?->nombreFiscal());
+        $this->assertNull(CoherenciaUbicacion::problemaDe($sala), 'Nunca se guarda un trío incoherente.');
+        $detalle = $resultado->detalles[0]['detalle'];
+        $this->assertStringContainsString('Distrito no enlazado: El distrito «Ilobasco» pertenece a «Cabañas Oeste», no al municipio «Cabañas Este»', $detalle);
+        $this->assertStringContainsString('Sin distrito: completalo en la sala antes de facturar (el CCF lo exige)', $detalle);
+        $this->assertSame(1, $resultado->sinDistrito);
+    }
+
+    public function test_sala_existente_no_pierde_su_distrito_si_la_fila_no_trae_uno(): void
+    {
+        $cliente = $this->clienteFicticio();
+        [, $sala] = $this->importarFila($cliente, 'Soyapango', 'San Salvador Este', 'San Salvador');
+        $distritoId = $sala->distrito_id;
+        $this->assertNotNull($distritoId);
+
+        // «San Salvador Centro» agrupa varios distritos: con esa fila no hay distrito que enlazar.
+        [$resultado, $sala] = $this->importarFila($cliente, '', 'San Salvador Centro', 'San Salvador');
+
+        $this->assertSame(1, $resultado->actualizadas);
+        $this->assertSame($distritoId, $sala->distrito_id);
+        $this->assertNull(CoherenciaUbicacion::problemaDe($sala), 'Nunca se guarda un trío incoherente.');
+        $this->assertSame(0, $resultado->sinDistrito);
+        $this->assertStringNotContainsString('Sin distrito', $resultado->detalles[0]['detalle']);
+    }
+
+    public function test_resumen_cuenta_las_salas_sin_distrito(): void
+    {
+        $cliente = $this->clienteFicticio();
+        $archivo = UploadedFile::fake()->createWithContent('salas.csv', <<<'CSV'
+        No.,Nombre comercial,Dirección,Distrito,Municipio,Departamento
+        1,Sala Prueba Uno,Calle 1,Santa Tecla,La Libertad Sur,La Libertad
+        2,Sala Prueba Dos,Calle 2,,San Salvador Centro,San Salvador
+        3,Sala Prueba Tres,Calle 3,Distrito Inventado,Pueblo Inventado,Departamento Inventado
+        CSV);
+        $admin = $this->usuario('administrador');
+
+        $this->actingAs($admin)
+            ->post(route('importaciones.salas.importar'), ['cliente_id' => $cliente->id, 'archivo' => $archivo])
+            ->assertSessionHas('resumen.sin_distrito', 2);
+
+        $this->actingAs($admin)
+            ->get(route('importaciones.index'))
+            ->assertOk()
+            ->assertSeeText('Sin distrito: 2');
+    }
+
+    public function test_distrito_ambiguo_sin_departamento_no_se_enlaza(): void
+    {
+        // «San Isidro» es distrito de Cabañas y de Morazán.
+        $cliente = $this->clienteFicticio();
+        [$resultado, $sala] = $this->importarFila($cliente, 'San Isidro', '', '');
+
+        $this->assertNull($sala->distrito_id);
+        $this->assertStringContainsString('Distrito ambiguo: «San Isidro» existe en más de un departamento', $resultado->detalles[0]['detalle']);
+
+        // Con el departamento deja de ser ambiguo y queda enlazado.
+        [, $otra] = $this->importarFila($cliente, 'San Isidro', '', 'Cabañas', 'Sala Prueba Dos');
+        $this->assertSame('Cabañas Este', $otra->distrito?->municipio);
     }
 
     public function test_importar_salas_dos_veces_no_duplica(): void
@@ -308,9 +446,9 @@ class ImportacionTest extends TestCase
         app(ImportadorProductosPrecios::class)->importar($calleja, $this->csvPrecios());
         $producto = Producto::where('codigo', '79873')->firstOrFail();
 
-        $empresa = \App\Models\Empresa::create(['razon_social' => 'X', 'ambiente' => '00', 'activo' => true]);
-        $estab = \App\Models\Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Matriz', 'activo' => true]);
-        $pv = \App\Models\PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        $empresa = Empresa::create(['razon_social' => 'X', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Matriz', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
 
         $borradores = app(DteBorradorService::class);
         $dte = $borradores->crearBorrador([

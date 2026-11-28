@@ -3,13 +3,15 @@
 namespace App\Services\Importacion;
 
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Pais;
 use Illuminate\Support\Str;
 
 /**
  * Importa salas/sucursales de un cliente desde CSV. Idempotente (clave: cliente +
- * nombre de sucursal). Mapea departamento/municipio a los catálogos si coinciden;
- * si no, deja la ubicación en observaciones y agrega una advertencia, sin abortar.
+ * nombre de sucursal). Mapea departamento/municipio/distrito a los catálogos si
+ * coinciden; si no, deja la ubicación en observaciones y agrega una advertencia, sin
+ * abortar. Las salas que quedan sin distrito se cuentan: el CCF no las acepta así.
  */
 class ImportadorSalas
 {
@@ -43,7 +45,7 @@ class ImportadorSalas
 
     public function importar(Cliente $cliente, string $ruta): ResultadoImportacion
     {
-        $resultado = new ResultadoImportacion();
+        $resultado = new ResultadoImportacion;
 
         try {
             $filas = $this->lector->leer($ruta, self::ALIAS, self::REQUERIDAS);
@@ -98,12 +100,31 @@ class ImportadorSalas
                 $datos['codigo'] = $codigo;
             }
 
-            $sucursal = $cliente->sucursales()->updateOrCreate(['nombre' => $nombre], $datos);
+            $sucursal = ClienteSucursal::query()->firstOrNew(['cliente_id' => $cliente->id, 'nombre' => $nombre]);
+            $infos = $ubic['infos'];
+            if ($ubic['distritoId'] !== null) {
+                $datos['distrito_id'] = $ubic['distritoId'];
+            } elseif ($sucursal->distrito_id !== null) {
+                // La sala ya tiene distrito y la fila no trae uno: no se pisa con vacío, y su
+                // departamento y municipio tampoco, para no dejar un trío incoherente.
+                unset($datos['departamento_id'], $datos['municipio_id']);
+                $infos[] = 'Se conservó la ubicación que ya tenía la sala, con su distrito';
+            }
+
+            $sucursal->fill($datos)->save();
+
+            // Sin distrito la sala no se puede facturar con CCF: se avisa y se cuenta.
+            $avisoDistrito = [];
+            if ($sucursal->distrito_id === null) {
+                $avisoDistrito[] = 'Sin distrito: completalo en la sala antes de facturar (el CCF lo exige)';
+                $resultado->sinDistrito++;
+                $resultado->advertencias++;
+            }
 
             // Detalle: equivalencias (info) y/o advertencias.
             $partes = array_merge(
-                array_map(fn ($i) => '✓ '.$i, $ubic['infos']),
-                array_map(fn ($a) => '⚠ '.$a, $ubic['advertencias']),
+                array_map(fn ($i) => '✓ '.$i, $infos),
+                array_map(fn ($a) => '⚠ '.$a, [...$ubic['advertencias'], ...$avisoDistrito]),
             );
             $detalle = implode(' · ', $partes);
 
