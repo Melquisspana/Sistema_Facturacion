@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Once;
 use Tests\Support\SalidaDePrueba;
 use Tests\TestCase;
 
@@ -171,5 +172,35 @@ class PersonalRutaTest extends TestCase
 
         // Ver no es gestionar: el alta necesita el otro permiso.
         $this->actingAs($conPermiso)->get(route('rutas.personal.create'))->assertForbidden();
+    }
+
+    /**
+     * La lista propia de Rutas (sin Planilla instalada): un filtro armado a mano (en lista, una
+     * función que no existe, un estado raro) se ignora, como en Clientes; no da 500 (28/11/2026).
+     * Los que sí valen siguen filtrando.
+     */
+    public function test_los_filtros_armados_a_mano_se_ignoran_sin_error(): void
+    {
+        Schema::withoutForeignKeyConstraints(fn () => Schema::drop('planilla_empleados'));
+        Once::flush();
+        $vendedor = PersonalRuta::create(['nombre' => 'Vendedor de prueba']);
+        $vendedor->funciones()->create(['funcion' => FuncionPersonalRuta::Vendedor]);
+        $otro = PersonalRuta::create(['nombre' => 'Otro 100% de prueba', 'activo' => false]);
+        $this->actingAs($this->admin());
+
+        foreach ([
+            '/rutas/personal?funcion[]=x', '/rutas/personal?funcion=no-existe', '/rutas/personal?q[]=x',
+            '/rutas/personal?estado[]=activos', '/rutas/personal?estado=raro', '/rutas/personal?q[a]=1&funcion[b]=2&estado[c]=3',
+        ] as $url) {
+            $this->get($url)->assertOk()->assertSee('Vendedor de prueba')->assertSee('Otro 100% de prueba');
+        }
+
+        $this->get(route('rutas.personal.index', ['funcion' => FuncionPersonalRuta::Vendedor->value]))->assertOk()
+            ->assertSee('Vendedor de prueba')->assertDontSee('Otro 100% de prueba');
+        $this->get(route('rutas.personal.index', ['estado' => 'inactivos']))->assertOk()
+            ->assertSee('Otro 100% de prueba')->assertDontSee('Vendedor de prueba');
+        $this->get(route('rutas.personal.index', ['q' => 'otro']))->assertOk()
+            ->assertSee('Otro 100% de prueba')->assertDontSee('Vendedor de prueba');
+        $this->assertNotNull($otro);
     }
 }

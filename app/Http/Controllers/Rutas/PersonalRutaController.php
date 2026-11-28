@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -33,16 +34,20 @@ class PersonalRutaController extends Controller
             return redirect()->route('personal.empleados');
         }
 
+        // Los filtros son solo texto: uno en lista, una función que no existe o un estado raro
+        // (un enlace armado a mano) se ignoran, como en «Clientes»; no dan 500 (28/11/2026).
+        $texto = $request->query('q');
+        $texto = Str::limit(trim(is_string($texto) ? $texto : ''), 100, '');
+        $estado = in_array($request->query('estado'), ['activos', 'inactivos'], true) ? $request->query('estado') : null;
+        $funcion = $request->query('funcion');
+        $funcion = is_string($funcion) ? FuncionPersonalRuta::tryFrom($funcion) : null;
+
         $personal = PersonalRuta::query()
             ->with(['funciones:id,rutas_personal_id,funcion', 'user:id,name'])
             ->withCount('participaciones')
-            ->when($request->filled('q'), function ($q) use ($request) {
-                $texto = '%'.trim($request->string('q')).'%';
-                $q->where('nombre', 'like', $texto);
-            })
-            ->when($request->input('estado') === 'activos', fn ($q) => $q->where('activo', true))
-            ->when($request->input('estado') === 'inactivos', fn ($q) => $q->where('activo', false))
-            ->when($request->filled('funcion'), fn ($q) => $q->conFuncion(FuncionPersonalRuta::from($request->string('funcion')->toString())))
+            ->when($texto !== '', fn ($q) => $q->where('nombre', 'like', '%'.addcslashes($texto, '%_\\').'%'))
+            ->when($estado !== null, fn ($q) => $q->where('activo', $estado === 'activos'))
+            ->when($funcion !== null, fn ($q) => $q->conFuncion($funcion))
             ->orderByDesc('activo')
             ->orderBy('nombre')
             ->paginate(25)
@@ -50,7 +55,7 @@ class PersonalRutaController extends Controller
 
         return view('rutas.personal.index', [
             'personal' => $personal,
-            'filtros' => $request->only(['q', 'estado', 'funcion']),
+            'filtros' => ['q' => $texto, 'estado' => $estado, 'funcion' => $funcion?->value],
             'funciones' => FuncionPersonalRuta::cases(),
             // De quién es cada ficha en Personal, para llevar a ella.
             'fichas' => PlanillaEmpleado::enUso()

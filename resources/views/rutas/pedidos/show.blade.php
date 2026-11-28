@@ -17,8 +17,9 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h1 class="text-xl font-semibold leading-tight text-gray-800">Pedido de {{ $pedido->nombreSala() }}</h1>
-            <a href="{{ route('rutas.pedidos.index') }}"
-               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a pedidos</a>
+            {{-- A la historia de la sala si se abrió desde ahí; si no, a «Todos los pedidos» ($volver, del controlador). --}}
+            <a href="{{ $volver['url'] }}"
+               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">{{ $volver['texto'] }}</a>
         </div>
     </x-slot>
 

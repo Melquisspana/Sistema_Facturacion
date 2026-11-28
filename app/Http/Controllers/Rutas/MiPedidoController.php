@@ -94,8 +94,12 @@ class MiPedidoController extends Controller
     public function create(Request $request, ClienteSucursal $sucursal): View|RedirectResponse
     {
         Gate::authorize('create', PedidoSala::class);
-        // Inactiva, o una sala donde no se sacan pedidos: como si no existiera.
-        abort_unless($sucursal->activo && ! in_array($sucursal->id, PedidosSala::salasSinPedidos(), true), 404);
+        // Una sala donde no se sacan pedidos: como si no existiera.
+        abort_if(in_array($sucursal->id, PedidosSala::salasSinPedidos(), true), 404);
+        // Desactivada (un enlace viejo, «atrás»): un aviso claro y de vuelta a la búsqueda, no un 404 seco.
+        if (! $sucursal->activo) {
+            return redirect()->route('rutas.sacar-pedido.index')->with('error', PedidosSala::SALA_DESACTIVADA);
+        }
 
         // Ya sacado: no se saca otro. Quien lo sacó lo corrige (si la fábrica no empezó); los
         // demás vuelven a la búsqueda con el aviso.

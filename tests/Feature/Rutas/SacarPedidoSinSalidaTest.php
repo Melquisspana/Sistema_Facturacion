@@ -393,8 +393,9 @@ class SacarPedidoSinSalidaTest extends TestCase
         // La sala cerrada no se busca ni se usa.
         $cerrada = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de prueba cerrada', 'activo' => false]);
         $this->get(route('rutas.sacar-pedido.index', ['q' => 'cerrada']))->assertOk()->assertDontSee('Sala de prueba cerrada');
-        $this->get(route('rutas.sacar-pedido.create', $cerrada))->assertNotFound();
-        $this->sacar($cerrada)->assertNotFound();
+        $this->get(route('rutas.sacar-pedido.create', $cerrada))->assertRedirect(route('rutas.sacar-pedido.index'))
+            ->assertSessionHas('error', PedidosSala::SALA_DESACTIVADA);
+        $this->sacar($cerrada)->assertSessionHasErrors(['lineas' => PedidosSala::SALA_DESACTIVADA]);
         $this->assertSame(0, SalidaRuta::count());
     }
 

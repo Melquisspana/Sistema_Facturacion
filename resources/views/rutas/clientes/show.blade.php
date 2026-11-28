@@ -31,7 +31,12 @@
 @section('titulo', $sala->nombre)
 
 @section('encabezado')
-    <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $sala->nombre }}</h1>
+    <div class="flex flex-wrap items-center gap-2">
+        <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $sala->nombre }}</h1>
+        @unless ($sala->activo)
+            <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Desactivada</span>
+        @endunless
+    </div>
     <a href="{{ route('rutas.clientes.index') }}"
        class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver a clientes</a>
 @endsection
@@ -51,6 +56,10 @@
     @endphp
 
     <div class="space-y-6">
+            {{-- Desactivada (28/11/2026): no sale en la lista ni se le sacan pedidos; su historia se sigue consultando. --}}
+            @unless ($sala->activo)
+                <p class="text-sm text-gray-600">Esta sala está desactivada: no sale en la lista y no se le sacan pedidos. Su historia queda para consultar.</p>
+            @endunless
 
             <dl class="{{ $caja }} grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div>
@@ -86,7 +95,7 @@
                                 </div>
                                 @include('rutas.clientes._lineas', ['pedido' => $pedido, 'tope' => null])
                                 @can('rutas.ver')
-                                    <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver pedido<span class="sr-only"> del {{ $pedido->fecha->format('d/m/Y') }}</span></a>
+                                    <a href="{{ route('rutas.pedidos.show', [$pedido, 'desde' => 'sala']) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver pedido<span class="sr-only"> del {{ $pedido->fecha->format('d/m/Y') }}</span></a>
                                 @endcan
                             </li>
                         @empty
