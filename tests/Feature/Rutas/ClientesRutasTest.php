@@ -462,7 +462,7 @@ class ClientesRutasTest extends TestCase
         // La oficina sigue viendo su marco, con las pestañas y el Tablero.
         $this->actingAs($this->jefe)->get(route('rutas.clientes.index'))->assertOk()
             ->assertSee('<aside', false)->assertSee('Todos los pedidos')->assertSee('href="'.route('rutas.dashboard').'"', false);
-        $this->get(route('rutas.clientes.show', $this->salaNorte))->assertOk()->assertSee('href="'.route('rutas.pedidos.show', $pedido).'"', false);
+        $this->get(route('rutas.clientes.show', $this->salaNorte))->assertOk()->assertSee('href="'.e(route('rutas.pedidos.show', [$pedido, 'desde' => 'sala'])).'"', false);
     }
 
     // ══════════════════════════════ menú, Ventas y Zonas
@@ -533,6 +533,35 @@ class ClientesRutasTest extends TestCase
         // El detalle del pedido sigue abriendo, y desde la historia de la sala se llega a él.
         $this->get(route('rutas.pedidos.show', $delViaje))->assertOk();
         $this->get(route('rutas.clientes.show', $this->salaNorte))->assertOk()
-            ->assertSee('href="'.route('rutas.pedidos.show', $delViaje).'"', false);
+            ->assertSee('href="'.e(route('rutas.pedidos.show', [$delViaje, 'desde' => 'sala'])).'"', false);
+    }
+
+    /**
+     * «Volver» del detalle de un pedido (28/11/2026): abierto desde la historia de su sala, vuelve
+     * a esa historia; desde «Todos los pedidos», a la lista. Solo con la marca `desde=sala` y a
+     * la sala del propio pedido: ninguna dirección que llegue en el enlace se usa para volver.
+     */
+    public function test_volver_del_pedido_lleva_a_donde_se_abrio(): void
+    {
+        $pedido = $this->pedido($this->salaNorte, '2026-11-20', [[$this->galleta, '2']]);
+        $tienda = PedidoSala::create(['sala_nueva_nombre' => 'Tienda de prueba nueva', 'sacado_por_id' => $this->persona->id,
+            'registrado_por' => $this->vendedor->id, 'fecha' => '2026-11-20', 'estado' => EstadoPedidoSala::Registrado]);
+        $volverA = fn (string $html) => preg_match('/<a href="([^"]+)"[^>]*>\s*(Volver a [^<]+)<\/a>/u', $html, $m) ? [html_entity_decode($m[1]), trim($m[2])] : null;
+        $this->actingAs($this->jefe);
+
+        $this->assertSame([route('rutas.clientes.show', $this->salaNorte), 'Volver a la sala'],
+            $volverA($this->get(route('rutas.pedidos.show', [$pedido, 'desde' => 'sala']))->assertOk()->getContent()));
+        // Desde «Todos los pedidos» (o sin marca), a la lista, como siempre.
+        $this->assertSame([route('rutas.pedidos.index'), 'Volver a pedidos'],
+            $volverA($this->get(route('rutas.pedidos.show', $pedido))->assertOk()->getContent()));
+        // Una marca rara o una dirección de afuera no se usan; la tienda nueva no tiene sala.
+        foreach ([
+            route('rutas.pedidos.show', [$pedido, 'desde' => 'https://otro.example/robar']),
+            route('rutas.pedidos.show', [$pedido, 'desde' => '//otro.example']),
+            '/rutas/pedidos/'.$pedido->id.'?desde[]=sala',
+            route('rutas.pedidos.show', [$tienda, 'desde' => 'sala']),
+        ] as $url) {
+            $this->assertSame([route('rutas.pedidos.index'), 'Volver a pedidos'], $volverA($this->get($url)->assertOk()->getContent()), $url);
+        }
     }
 }

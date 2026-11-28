@@ -95,7 +95,7 @@
                                 </div>
                                 @include('rutas.clientes._lineas', ['pedido' => $pedido, 'tope' => null])
                                 @can('rutas.ver')
-                                    <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver pedido<span class="sr-only"> del {{ $pedido->fecha->format('d/m/Y') }}</span></a>
+                                    <a href="{{ route('rutas.pedidos.show', [$pedido, 'desde' => 'sala']) }}" class="mt-1 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver pedido<span class="sr-only"> del {{ $pedido->fecha->format('d/m/Y') }}</span></a>
                                 @endcan
                             </li>
                         @empty

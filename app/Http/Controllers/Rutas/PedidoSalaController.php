@@ -74,7 +74,7 @@ class PedidoSalaController extends Controller
         ]);
     }
 
-    public function show(PedidoSala $pedido, FacturarPedido $facturar, PedidosFabrica $fabrica): View
+    public function show(Request $request, PedidoSala $pedido, FacturarPedido $facturar, PedidosFabrica $fabrica): View
     {
         Gate::authorize('view', $pedido);
         $pedido->load(['sala:id,cliente_id,nombre,codigo,requiere_orden_compra', 'sala.cliente:id,requiere_orden_compra', 'ruta:id,nombre', 'salida', 'salida.ruta:id,nombre', 'sacadoPor:id,nombre', 'registradoPor:id,name', 'lineas.producto:id,codigo,nombre',
@@ -89,6 +89,12 @@ class PedidoSalaController extends Controller
             'regresa' => $facturar->regresa($pedido),
             'oc' => Gate::allows('create', Dte::class) ? self::ocParaFacturar($pedido) : null,
             'volvio' => $pedido->estado === EstadoPedidoSala::Volvio ? ($fabrica->volvieron([$pedido->id])[$pedido->id] ?? null) : null,
+            // «Volver» (28/11/2026): abierto desde la historia de su sala (`?desde=sala`), vuelve a
+            // ella; si no, a «Todos los pedidos». Solo esa marca, y la sala es la del pedido: nada
+            // de la dirección que llega se usa para volver.
+            'volver' => $request->query('desde') === 'sala' && $pedido->sala !== null
+                ? ['url' => route('rutas.clientes.show', $pedido->sala), 'texto' => 'Volver a la sala']
+                : ['url' => route('rutas.pedidos.index'), 'texto' => 'Volver a pedidos'],
         ]);
     }
 
