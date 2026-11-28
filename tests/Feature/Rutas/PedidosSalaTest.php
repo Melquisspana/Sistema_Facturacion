@@ -19,6 +19,7 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Rutas\PedidosSala;
 use App\Support\Dte\OrdenProductosOc;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -258,8 +259,12 @@ class PedidosSalaTest extends TestCase
     public function test_cualquier_sala_activa_sirve(): void
     {
         $inactiva = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala cerrada', 'ruta_id' => $this->ruta->id, 'activo' => false]);
-        $this->get(route('rutas.sacar-pedido.create', $inactiva))->assertNotFound();
-        $this->sacar([], $inactiva)->assertNotFound();
+        // Desactivada: un aviso claro y vuelta a «Sacar pedido», no un 404 seco (28/11/2026).
+        $this->get(route('rutas.sacar-pedido.create', $inactiva))
+            ->assertRedirect(route('rutas.sacar-pedido.index'))->assertSessionHas('error', PedidosSala::SALA_DESACTIVADA);
+        $this->followRedirects($this->get(route('rutas.sacar-pedido.create', $inactiva)))->assertOk()
+            ->assertSee('Esta sala está desactivada')->assertDontSee('Sala cerrada');
+        $this->sacar([], $inactiva)->assertSessionHasErrors(['lineas' => PedidosSala::SALA_DESACTIVADA]);
         $this->assertSame(0, PedidoSala::count());
 
         $ajena = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de otra ruta', 'ruta_id' => Ruta::create(['nombre' => 'Otra'])->id]);

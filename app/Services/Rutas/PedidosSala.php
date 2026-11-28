@@ -177,7 +177,9 @@ class PedidosSala
         return DB::transaction(function () use ($sala, $datos, $usuario, $pedido, $personaId, $sinPedidos) {
             $persona = PersonalRuta::whereKey($personaId)->where('user_id', $usuario->id)->where('activo', true)->lockForUpdate()->first() ?? abort(403);
             if ($sala !== null) {
-                $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
+                // Desactivada (con una pantalla vieja, o mientras se escribía): un aviso, no un 404.
+                $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first()
+                    ?? throw ValidationException::withMessages(['lineas' => self::SALA_DESACTIVADA]);
             }
 
             $campos = [
@@ -228,6 +230,9 @@ class PedidosSala
     }
 
     public const SALA_SIN_PEDIDOS = 'En esta sala no se sacan pedidos.';
+
+    /** Sin el nombre: es una sala que ya no se ofrece (28/11/2026). */
+    public const SALA_DESACTIVADA = 'Esta sala está desactivada: ya no se le sacan pedidos. Buscá otra sala o avisá a la oficina.';
 
     /**
      * Las salas donde no se sacan pedidos (Configuración › Rutas; por ejemplo, la bodega

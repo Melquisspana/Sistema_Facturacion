@@ -333,6 +333,21 @@ class ClientesRutasTest extends TestCase
         $this->assertSame(1, substr_count($historia, '>Por cobrar</span>'));
     }
 
+    /**
+     * Una sala desactivada no sale en la lista, pero su historia abre (con su enlace viejo) y
+     * lo dice arriba, sin un 404 seco (28/11/2026).
+     */
+    public function test_la_historia_de_una_sala_desactivada_lo_dice(): void
+    {
+        $this->pedido($this->salaSur, '2026-11-20', [[$this->galleta, '3']]);
+        $this->salaSur->update(['activo' => false]);
+
+        $this->actingAs($this->jefe)->get(route('rutas.clientes.show', $this->salaSur))->assertOk()
+            ->assertSee('Desactivada')->assertSee('Esta sala está desactivada')->assertSee('3 cajas')
+            ->assertSee('Volver a clientes');
+        $this->get(route('rutas.clientes.show', $this->salaNorte))->assertOk()->assertDontSee('Esta sala está desactivada');
+    }
+
     // ══════════════════════════════ permisos y PDF
 
     public function test_sin_rutas_pedidos_ver_no_se_abre_nada(): void
