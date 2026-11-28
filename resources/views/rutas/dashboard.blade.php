@@ -111,9 +111,13 @@
             <section id="rutas" aria-labelledby="rutas-titulo">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <h2 id="rutas-titulo" class="{{ $titulo }}">{{ $soloRutasAtrasadas ? 'Zonas atrasadas' : 'Zonas' }}</h2>
-                    @if ($soloRutasAtrasadas)
-                        <a href="{{ route('rutas.dashboard') }}#rutas" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver todas las zonas</a>
-                    @endif
+                    {{-- Zonas salió del menú (28/11/2026): su pantalla (nombre y lugares que cubre) se abre desde acá. --}}
+                    <div class="flex flex-wrap items-center gap-x-4">
+                        @if ($soloRutasAtrasadas)
+                            <a href="{{ route('rutas.dashboard') }}#rutas" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver todas las zonas</a>
+                        @endif
+                        <a href="{{ route('rutas.rutas.index') }}" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver zonas</a>
+                    </div>
                 </div>
 
                 @if ($filas->isEmpty())

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Rutas\ClientesController;
 use App\Http\Controllers\Rutas\MapaVentasController;
 use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
@@ -48,7 +49,7 @@ use Illuminate\Support\Facades\Route;
 |     anota entregas y gastos, no se guardan en el navegador (`no-store`): al tocar «atrás»
 |     después de marcar se vuelven a pedir y muestran lo hecho. Una copia vieja llevaría a
 |     marcar dos veces.
-|   - Las de la oficina que solo se miran (Tablero, Viajes, Mapa, Pedidos, Zonas, Ventas,
+|   - Las de la oficina que solo se miran (Tablero, Viajes, Mapa, Clientes, Pedidos, Ventas,
 |     Pedidos y entregas y Todos los viajes) usan `private, no-cache`: «atrás» las restaura al instante como
 |     estaban, una visita nueva las pide frescas y ningún proxy las guarda. Al salir, el
 |     logout manda `Clear-Site-Data: "cache"` para que «atrás» no las muestre sin sesión.
@@ -206,6 +207,18 @@ Route::middleware(['auth', 'permission:rutas.ver'])
                 Route::patch('{entrega}/quien', [SalidaEntregaController::class, 'corregirQuien'])->name('quien');
                 Route::delete('{entrega}', [SalidaEntregaController::class, 'destroy'])->name('destroy');
             });
+
+        /*
+        | «Clientes» (28/11/2026): todas las salas con lo último que se les sacó y su último CCF,
+        | y la historia de cada una, sin montos. Mismo permiso que «Pedidos», su otra pestaña.
+        | La lista y la historia solo se miran: «atrás» al instante. El PDF del CCF (con montos,
+        | aprobado) no se guarda, como los demás PDF de Rutas.
+        */
+        Route::prefix('clientes')->name('clientes.')->middleware('permission:rutas.pedidos.ver')->group(function () use ($sinCopia, $atrasAlInstante) {
+            Route::get('/', [ClientesController::class, 'index'])->middleware($atrasAlInstante)->name('index');
+            Route::get('{sala}', [ClientesController::class, 'show'])->middleware($atrasAlInstante)->name('show');
+            Route::get('{sala}/ccf/{dte}', [ClientesController::class, 'ccf'])->middleware($sinCopia)->name('ccf');
+        });
 
         /*
         | Pedidos de sala: la lista y la hoja se miran: «atrás» al instante. El detalle tiene el

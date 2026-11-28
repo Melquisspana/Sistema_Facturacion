@@ -93,9 +93,16 @@ class EntregasCcf
      */
     public function porEntregar(?int $dteId = null): Collection
     {
-        $desde = max($this->desde(), Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR));
+        return $this->pendientesDeSalas(null, $this->desdePorEntregar(), enCamino: true, dteId: $dteId);
+    }
 
-        return $this->pendientesDeSalas(null, $desde, enCamino: true, dteId: $dteId);
+    /**
+     * Desde qué día se lista en «Por entregar»: los últimos {@see self::DIAS_POR_ENTREGAR} días,
+     * nunca antes de `rutas.entregas_desde`. Lo de antes no se lista ni se marca.
+     */
+    public function desdePorEntregar(): Carbon
+    {
+        return max($this->desde(), Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR));
     }
 
     /**
@@ -806,6 +813,38 @@ class EntregasCcf
             });
 
         return $fechas;
+    }
+
+    /**
+     * Si se entregó cada uno de estos CCF, con la regla de «Por entregar»: alguien registró
+     * «Entregado» o cayó su albarán de entrega inequívoco ({@see AlbaranLocalizador}). La fecha
+     * es la del registro o la del albarán; null si el albarán no la trae. Las mismas consultas
+     * para uno que para cien. Lo usa «Clientes» de Rutas.
+     *
+     * @param  Collection<int, Dte>  $dtes  con `numero_orden_compra`
+     * @return array<int, array{entregado: bool, fecha: ?Carbon}> dte_id => entrega
+     */
+    public function entregados(Collection $dtes): array
+    {
+        if ($dtes->isEmpty()) {
+            return [];
+        }
+
+        $ids = $dtes->pluck('id')->all();
+        $registradas = SalidaRutaEntrega::query()->entregadas()->whereIn('dte_id', $ids)
+            ->groupBy('dte_id')->toBase()->selectRaw('dte_id, MAX(fecha_resultado) as fecha')->pluck('fecha', 'dte_id');
+        [$porDte, $porOrden] = $this->albaranes->indices($ids, $dtes->pluck('numero_orden_compra')->all());
+
+        return $dtes->mapWithKeys(function (Dte $dte) use ($registradas, $porDte, $porOrden) {
+            if (isset($registradas[$dte->id])) {
+                return [$dte->id => ['entregado' => true, 'fecha' => Carbon::parse($registradas[$dte->id])->startOfDay()]];
+            }
+            $albaran = $this->albaranes->elegir($porDte, $porOrden, $dte->id, $dte->numero_orden_compra);
+
+            return [$dte->id => $albaran->estaVinculado()
+                ? ['entregado' => true, 'fecha' => filled($albaran->albaran?->fecha_albaran) ? Carbon::parse($albaran->albaran->fecha_albaran)->startOfDay() : null]
+                : ['entregado' => false, 'fecha' => null]];
+        })->all();
     }
 
     public function desde(): Carbon

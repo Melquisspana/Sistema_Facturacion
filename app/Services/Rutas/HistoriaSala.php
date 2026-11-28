@@ -4,9 +4,11 @@ namespace App\Services\Rutas;
 
 use App\Models\ClienteSucursal;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Dte;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaLinea;
 use App\Models\SalidaRutaEntrega;
+use App\Services\Cobros\BandejaCobros;
 use App\Support\HoraNegocio;
 use Carbon\CarbonImmutable;
 
@@ -21,7 +23,7 @@ use Carbon\CarbonImmutable;
  */
 class HistoriaSala
 {
-    public function __construct(private readonly RitmoRutas $ritmo) {}
+    public function __construct(private readonly RitmoRutas $ritmo, private readonly EntregasCcf $entregas) {}
 
     /**
      * @return array<string, mixed> la fila de {@see RitmoRutas::deSalas()} más `cajas` (?string,
@@ -52,13 +54,52 @@ class HistoriaSala
             }
         : null;
 
-        // Por cobrar: lo que «Facturas por cobrar» tiene sin pago completo y los quedan que
-        // dejó la tienda al entregar. Cada factura, una vez.
-        $porCobrar = CobroDocumento::query()->pendienteDeCobro()->sinInvalidadosRetirables()
-            ->whereHas('dte', fn ($q) => $q->where('cliente_sucursal_id', $sala->id))->pluck('dte_id')
-            ->merge(SalidaRutaEntrega::query()->quedanPorCobrar()->where('cliente_sucursal_id', $sala->id)->pluck('dte_id'))
-            ->filter()->unique()->count();
+        return $fila + ['cajas' => $cajas, 'pago' => $pago, 'porCobrar' => count($this->porCobrar([$sala->id])[$sala->id] ?? [])];
+    }
 
-        return $fila + ['cajas' => $cajas, 'pago' => $pago, 'porCobrar' => $porCobrar];
+    /**
+     * Las facturas por cobrar de cada sala: los CCF que «Facturas por cobrar» tiene sin pago
+     * completo y los quedan que dejó la tienda al entregar. Cada factura, una vez. Las mismas
+     * consultas para una sala que para veinte (la usa también «Clientes» de Rutas).
+     *
+     * Con los filtros de la bandeja ({@see BandejaCobros::documentos()}): solo CCF, sin los
+     * invalidados que ya no hay que mirar, sin los que sus NC dejan en saldo 0 y, en el
+     * servidor real, sin los del ambiente de pruebas. Antes del 28/11/2026 contaba también
+     * esos, y la sala salía «por cobrar» con una factura ya saldada.
+     *
+     * El quedan cuenta mientras su CCF no llegó a «Facturas por cobrar»: con el CCF ahí, decide
+     * Cobros (lo de arriba). Y solo si el CCF cuenta en Rutas ({@see EntregasCcf::baseCcf()}):
+     * un CCF invalidado después de entregado no se cobra. Queda afuera, sin Cobros, el que una
+     * NC salda: no se vio en el uso y lo resuelve Cobros apenas lo da de alta.
+     *
+     * @param  array<int, int>  $salaIds
+     * @return array<int, list<int>> sala_id => dte_id
+     */
+    public function porCobrar(array $salaIds): array
+    {
+        if ($salaIds === []) {
+            return [];
+        }
+
+        $cobros = CobroDocumento::query()->pendienteDeCobro()->sinInvalidadosRetirables()->where('tipo_dte', '03')
+            ->when(config('dte.ambiente') === '01', fn ($q) => $q->whereDoesntHave('dte', fn ($d) => $d->where('ambiente', '00')))
+            ->whereHas('dte', fn ($q) => $q->whereIn('cliente_sucursal_id', $salaIds));
+        $deCobros = (clone $cobros)->whereKeyNot(CobroDocumento::idsSaldadosConNcEntre($cobros))->pluck('dte_id');
+        $salaDe = Dte::whereKey($deCobros->all())->pluck('cliente_sucursal_id', 'id');
+        $pares = $deCobros->map(fn ($dteId) => [$salaDe[$dteId] ?? null, $dteId])
+            ->merge(SalidaRutaEntrega::query()->quedanPorCobrar()->whereIn('cliente_sucursal_id', $salaIds)
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('cobro_documentos')
+                    ->whereColumn('cobro_documentos.dte_id', 'salida_ruta_entregas.dte_id'))
+                ->whereIn('dte_id', $this->entregas->baseCcf()->select('dtes.id'))
+                ->get(['id', 'cliente_sucursal_id', 'dte_id'])->map(fn (SalidaRutaEntrega $e) => [$e->cliente_sucursal_id, $e->dte_id]));
+
+        $porSala = [];
+        foreach ($pares as [$salaId, $dteId]) {
+            if ($salaId !== null && $dteId !== null && ! in_array((int) $dteId, $porSala[$salaId] ?? [], true)) {
+                $porSala[$salaId][] = (int) $dteId;
+            }
+        }
+
+        return $porSala;
     }
 }

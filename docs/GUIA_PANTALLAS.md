@@ -157,7 +157,7 @@ Tomado de Planta (tabla, filtros y «Limpiar») y de Gastos (lista en tarjetas e
 
 ### Pestañas
 
-Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Viajes, Mapa y Vendedores).
+Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Viajes, Mapa y Ventas; Clientes de Rutas: Clientes y Todos los pedidos).
 
 - Una fila de enlaces dentro de un `<nav>` con `aria-label`: `flex flex-wrap gap-1 border-b border-gray-200`.
 - Cada pestaña: `inline-flex min-h-11 items-center rounded-t-md px-3 text-sm`. La elegida lleva `border-b-2 border-indigo-600 font-semibold text-indigo-700` y `aria-current="page"`; las otras, `text-gray-600 hover:text-gray-900`.
@@ -169,7 +169,7 @@ Del flujo único de Rutas (10/11/2026). Las pantallas del vendedor no llevan bar
 
 - Un `<nav>` con `aria-label` y `grid grid-cols-3 gap-2`. Cada pastilla: `inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full px-2 text-sm font-medium`. La elegida va en índigo (`bg-indigo-600 text-white`) y con `aria-current="page"`.
 - Cada título entra en una línea en el celular más angosto (375 px). Un título nuevo que no entre no se agrega: se busca uno más corto.
-- En la barra lateral de la oficina el orden es Pedidos y entregas (solo para quien la ve, desde el 26/11/2026), Tablero, Pedidos, Ventas, Todos los viajes y Zonas, y al final **una sola** entrada, «Menú del vendedor», que abre el Inicio del celular (a quien solo puede mirar, «Por entregar»). Las tres pantallas no se repiten en la barra. *Pedido de Melqui, 11/11/2026.*
+- En la barra lateral de la oficina el orden es Pedidos y entregas (solo para quien la ve, desde el 26/11/2026), Tablero y Clientes, y al final **una sola** entrada, «Menú del vendedor», que abre el Inicio del celular (a quien solo puede mirar, «Por entregar»). Las tres pantallas no se repiten en la barra. *Pedido de Melqui, 11/11/2026.* Desde el 28/11/2026 Ventas es pestaña del Tablero, Zonas y Todos los viajes se abren desde el Tablero (y lo dejan resaltado), y «Pedidos» es «Clientes», con «Todos los pedidos» como pestaña.
 - Quien entra sin ficha de vendedor no queda en una pantalla vacía: se le dice «Tu usuario no es vendedor» y se le ofrece «Por entregar».
 - **Instalar como app** (13/11/2026): en Android, abrir el sistema en Chrome, tocar los tres puntos y «Instalar app» (o «Agregar a pantalla principal»); en iPhone, abrirlo en Safari, tocar Compartir y «Agregar a inicio». Queda con el logo y abre sin la barra del navegador. Todo layout nuevo incluye `layouts.partials.instalar-app` en el `<head>`.
 
@@ -357,6 +357,17 @@ Facturación › «Llegó de pedidos» (`facturacion/por-facturar`), con su luga
 - **«Facturar» va directo al borrador** cuando hay una sola OC clara (la que anotó el vendedor, o la única del correo) o la sala no pide OC, y el emisor se elige solo. El formulario sale solo si falta la OC, hay varias para elegir o hay que elegir el emisor; ahí la única OC del correo ya viene puesta. Si la sala tiene otro pedido abierto sin OC propia, la del correo puede ser de ese: no va directo ni viene puesta, sale en «Esperando OC» con «Revisar OC» y el aviso «La sala tiene otro pedido sin OC: revisá de cuál es esta OC.», y se elige en el formulario viendo su detalle. Si algo frena al ir directo, se abre el formulario con lo que falta. El resto que llega con una parte ya facturada nunca va directo: lleva la OC del CCF de esa parte (no una del correo, que suele ser la del próximo pedido), sale en «Esperando OC» con «Revisar OC» y el aviso «Esa OC ya tiene un CCF», y el formulario la trae puesta con ese aviso. La ficha del pedido usa el mismo botón (`facturacion/por-facturar/_facturar`).
 - Siguen igual: un borrador por sala, el CCF con todo lo que llegó (se baja en el editor lo que la OC no pide) y dos envíos en un solo CCF.
 - **«Volvió a la fábrica»** (27/11/2026): secundario, entre «Imprimir hoja» y «Facturar», solo para quien factura y solo si nada del pedido está en un CCF (tampoco en borrador). Abre un `x-modal` con la pregunta, qué va a pasar («no vuelve a pendiente ni se manda otra vez; no cambia inventario, cobros ni documentos»), el campo «Motivo» (obligatorio, hasta 200) y, al pie, «Cancelar» y el de peligro «Sí, volvió a la fábrica». Si el servidor rechaza el motivo, el diálogo vuelve abierto en esa fila con lo escrito. El pedido queda cerrado con la etiqueta gris «Volvió a la fábrica»; en su ficha, «Volvió a la fábrica el dd/mm/aaaa · Motivo: … · Lo marcó …», y sus envíos sin tachar, con «Salió y volvió a la fábrica», no como deshechos.
+
+### Clientes de Rutas (28/11/2026)
+
+Rutas › «Clientes» (`rutas/clientes`), en lugar de «Pedidos»: el historial de las salas para cobrar y para ver qué se le dejó. Mismo permiso que los pedidos (`rutas.pedidos.ver`). Dos pestañas: **Clientes**, la de entrada, y **Todos los pedidos**, la lista de siempre en su misma dirección (`rutas/pedidos`, con `?salida=` y `mandado_el`).
+
+- **Todas las salas activas para todos**, sin filtrar por la zona del vendedor (no la registran al salir). Buscador por nombre o código y zona opcional: formulario `GET` con «Buscar» secundario y «Limpiar» solo con filtros.
+- **Una tarjeta por sala**, también en la computadora (`md:grid-cols-2 xl:grid-cols-3`): el nombre (abre la historia), «N CCF por cobrar» en ámbar si tiene, código y zona; «Último pedido» con fecha, quién lo sacó y cuántas cajas de cada producto (hasta 6; el resto, «Y N productos más en el historial»); «Último CCF» con «CCF …1234», la fecha y la etiqueta de la entrega; al pie, «Ver historial» a todo el ancho.
+- **Sin montos** en la lista ni en la historia: solo cantidades. El PDF del CCF sí los trae (aprobado).
+- **Entrega del CCF**, con la regla de «Por entregar»: «Entregado el dd/mm/aaaa» en verde (registrado o con su albarán de entrega), «Por entregar» en ámbar y «Sin registro de entrega» en gris para lo de antes del control de entregas.
+- **Historia de la sala** (`rutas/clientes/{sala}`): «Volver a clientes» arriba; código, zona y «N CCF por cobrar»; Pedidos y CCF, del más nuevo al más viejo, de a 10 con «Ver más pedidos» / «Ver más CCF» (dos columnas desde `lg`). Cada pedido lleva su etiqueta de estado y «Ver pedido»; cada CCF, su entrega, «Por cobrar» si lo está, la OC si tiene, y dos botones del mismo ancho: «Ver PDF» y «Compartir».
+- **Compartir un PDF desde el teléfono:** botón secundario «Compartir» que baja el PDF y abre el menú de compartir del teléfono (`navigator.share` con el archivo) para mandarlo por WhatsApp; donde no se puede compartir, lo descarga. Mientras baja dice «Preparando…» y no se puede tocar dos veces. Si el teléfono pide tocar de nuevo (Safari), el archivo queda listo y lo dice; sin señal, «No se pudo traer el PDF. Revisá la señal y probá de nuevo.». Alpine escrito en la vista (`Alpine.data` en `alpine:init`) y el botón con `x-cloak`: sin JavaScript no se ve y «Ver PDF» anda igual. El PDF se abre en el navegador (`inline`), donde se ve, se descarga y se imprime.
 
 ### Pedidos y entregas (26/11/2026)
 

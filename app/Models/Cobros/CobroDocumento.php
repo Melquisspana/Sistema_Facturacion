@@ -189,7 +189,19 @@ class CobroDocumento extends Model
      */
     public static function idsSaldadosConNc(int $clienteId): array
     {
-        $documentos = static::deCliente($clienteId)->where('tipo_dte', '03')->whereNotNull('dte_id')
+        return static::idsSaldadosConNcEntre(static::deCliente($clienteId));
+    }
+
+    /**
+     * La misma regla de {@see idsSaldadosConNc()}, entre los documentos de `$consulta` (por
+     * ejemplo, los de varias salas en «Clientes» de Rutas). No cambia la consulta que recibe.
+     *
+     * @param  Builder<CobroDocumento>  $consulta
+     * @return array<int, int>
+     */
+    public static function idsSaldadosConNcEntre(Builder $consulta): array
+    {
+        $documentos = (clone $consulta)->where('tipo_dte', '03')->whereNotNull('dte_id')
             ->whereIn('dte_id', Dte::query()->where('tipo_dte', '05')->where('estado', EstadoDte::Aceptado->value)
                 ->whereNotNull('dte_relacionado_id')->select('dte_relacionado_id'))
             ->get(['id', 'dte_id', 'monto', 'monto_pagado']);
