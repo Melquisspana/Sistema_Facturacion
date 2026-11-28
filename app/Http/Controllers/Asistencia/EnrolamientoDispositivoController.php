@@ -11,6 +11,7 @@ use App\Http\Requests\Asistencia\ProgresoEnrolamientoRequest;
 use App\Http\Requests\Asistencia\ResultadoEnrolamientoRequest;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
+use App\Services\Asistencia\LimpiezaSensor;
 use App\Services\Asistencia\ResolverEnrolamiento;
 use App\Services\Asistencia\SincronizarIndiceSensor;
 use App\Services\Asistencia\TomarOrdenEnrolamiento;
@@ -139,7 +140,7 @@ class EnrolamientoDispositivoController extends Controller
      * Sin esto el servidor elige a ciegas y choca con las plantillas heredadas. El
      * lector lo manda al arrancar y cada vez que el sondeo se lo pide.
      */
-    public function indiceSensor(IndiceSensorRequest $request, SincronizarIndiceSensor $sincronizar): JsonResponse
+    public function indiceSensor(IndiceSensorRequest $request, SincronizarIndiceSensor $sincronizar, LimpiezaSensor $limpieza): JsonResponse
     {
         $lector = $sincronizar(
             $this->lector(),
@@ -147,12 +148,20 @@ class EnrolamientoDispositivoController extends Controller
             $request->input('ocupadas', []),
         );
 
-        return response()->json([
+        $cuerpo = [
             'ok' => true,
             'capacidad' => $lector->capacidad_sensor,
             'ocupadas' => count($lector->ranurasOcupadasEnSensor()),
             'sincronizado_at' => $lector->indice_sincronizado_at?->toIso8601String(),
-        ]);
+        ];
+
+        // Solo si alguien confirmó a mano una limpieza para ESTE lector
+        // (asistencia:limpiar-sensor --confirmar). Sin eso, nunca se pide borrar.
+        if (($borrar = $limpieza->paraBorrar($lector)) !== []) {
+            $cuerpo['borrar'] = $borrar;
+        }
+
+        return response()->json($cuerpo);
     }
 
     // ---------------------------------------------------------------- interno

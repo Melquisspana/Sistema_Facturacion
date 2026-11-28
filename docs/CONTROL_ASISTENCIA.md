@@ -1268,6 +1268,30 @@ consola que desde la web.
 Guardar la plantilla biométrica en la ranura N es un acto del sensor, no de
 Laravel. Estos comandos solo anotan a quién corresponde.
 
+### Huellas sueltas en el sensor
+
+Una huella suelta es una plantilla grabada en el AS608 que el sistema no conoce:
+su ranura está ocupada en el último índice del lector, no tiene ninguna fila en
+`asistencia_huellas` de ese lector (ni activa ni de baja) y ninguna orden abierta
+la reserva. El dedo coincide, pero la marca llega con una ranura que nadie tiene y
+el servidor contesta 404.
+
+```powershell
+# Solo muestra las sueltas y, aparte, las de baja (esas no se borran).
+php artisan asistencia:limpiar-sensor lector-entrada
+
+# Deja pendiente borrarlas (7 días, en caché) y lo audita.
+php artisan asistencia:limpiar-sensor lector-entrada --confirmar --usuario=correo@ejemplo
+```
+
+Después se reinicia el lector. Al mandar su índice, la respuesta de
+`POST /indice-sensor` trae `"borrar": [9, 11]`. Esa lista se arma en ese momento:
+son las sueltas de ahora que también estaban en la confirmación. El lector borra
+hasta 50 por vez con `deleteModel` y vuelve a mandar su índice una vez. Cuando ya
+no queda nada por borrar, la pendiente se cierra sola y se audita. Sin
+`--confirmar`, la respuesta nunca trae `borrar`. Si el índice tiene más de un día,
+el comando pide reiniciar el lector antes de confirmar.
+
 ## Probarlo
 
 ```powershell

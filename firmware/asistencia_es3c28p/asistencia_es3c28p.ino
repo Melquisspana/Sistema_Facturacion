@@ -118,6 +118,11 @@ const uint8_t ENROL_MAX_REINTENTOS_RESULTADO =
 const uint16_t ENROL_MAX_RANURAS_BARRIDO =
   1000;
 
+// Tope de huellas sueltas que se borran por vez cuando la respuesta del indice
+// trae "borrar". Lo que sobre se borra en el proximo envio del indice.
+const uint8_t LIMPIEZA_MAX_BORRAR =
+  50;
+
 
 // =====================================================
 // TECLADO NUMERICO (vidrio tactil)
@@ -377,7 +382,12 @@ enum Sonido : uint8_t {
 // aparato: si un toque cae del lado opuesto, poner en true ese eje.
 // =====================================================
 
+// Código 0x17 de fingerFastSearch del AS608 (sin constante en la librería de Adafruit).
+#define BUSQUEDA_SIN_COINCIDENCIA_AS608 0x17
+
 #define TACTIL_ADDR 0x38
+// Cada cuánto se le pregunta al vidrio si hay un dedo, además de la interrupción.
+#define TACTIL_SONDEO_MS 60
 #define TACTIL_INT  17
 #define TACTIL_RST  18
 
@@ -758,6 +768,13 @@ String extraerObjetoJson(
   const String& clave
 );
 
+int extraerEnterosJson(
+  const String& json,
+  const String& clave,
+  uint16_t* destino,
+  int maximo
+);
+
 // ------------------------------------- enrolamiento
 
 void mostrarEnrolInicio(
@@ -798,7 +815,15 @@ int peticionEnrolamiento(
   String& respuesta
 );
 
-bool sincronizarIndiceSensor();
+bool sincronizarIndiceSensor(
+  bool permitirBorrado = true
+);
+
+void borrarHuellasSueltas(
+  const uint16_t* ranuras,
+  int cantidad,
+  uint16_t capacidadEfectiva
+);
 
 String construirListaOcupadas(
   uint16_t &capacidadEfectiva
@@ -3591,11 +3616,15 @@ ResultadoHuella identificarHuella(
   uint16_t &confianza
 ) {
 
+  // Prueba de 10 marcas con el dedo registrado (27/11/2026): con 1,6 s y 2 «no
+  // coincide» (contando el 0x17), un dedo registrado mal apoyado salía «no registrada»
+  // antes de llegar a una lectura buena. Con 2,5 s y 3 tiene más intentos; un dedo
+  // sin registrar sigue diciendo «no registrada» en 1 o 2 segundos.
   const unsigned long TIEMPO_MAXIMO =
-    1600;
+    2500;
 
   const int MAX_NO_COINCIDE =
-    2;
+    3;
 
   unsigned long inicio =
     millis();
@@ -3619,6 +3648,16 @@ ResultadoHuella identificarHuella(
     millis() - inicio <
     TIEMPO_MAXIMO
   ) {
+
+    // Un toque en la pantalla corta la lectura mientras todavia no hubo una imagen
+    // valida (casi siempre es ruido del AS608): asi el teclado abre al instante en vez
+    // de esperar hasta 1,6 s (27/11/2026). Con una imagen valida se sigue: es un dedo.
+    if (
+      tactilToco &&
+      !huboLecturaValida
+    ) {
+      return RH_SIN_LECTURA;
+    }
 
     uint8_t p;
 
@@ -3769,9 +3808,16 @@ ResultadoHuella identificarHuella(
       return RH_RECONOCIDA;
     }
 
+    // 0x17 (23): el AS608 lo devuelve a menudo en la búsqueda de un dedo que NO está
+    // registrado, alternado con NOTFOUND (lo vio Melqui el 27/11/2026: con un dedo sin
+    // registrar salía «ponga bien la huella» una y otra vez, porque el 23 no contaba y
+    // nunca se juntaban dos NOTFOUND). La imagen ya pasó image2Tz, así que hay dedo de
+    // verdad: cuenta como «no coincide». Una huella registrada da 0 y no pasa por acá.
     if (
       busqueda ==
-      FINGERPRINT_NOTFOUND
+      FINGERPRINT_NOTFOUND ||
+      busqueda ==
+      BUSQUEDA_SIN_COINCIDENCIA_AS608
     ) {
 
       noCoincide++;
@@ -4201,6 +4247,148 @@ int finObjetoJson(
   }
 
   return -1;
+}
+
+
+// =====================================================
+// EXTRAER LISTA DE ENTEROS JSON
+//
+// Lee "clave":[1,2,3] y deja hasta `maximo` numeros en `destino`. Devuelve
+// cuantos dejo.
+//
+// Ante cualquier duda devuelve 0: una respuesta cortada (sin el corchete que
+// cierra), un negativo, un texto o un numero que no cabe en una ranura. Se usa
+// para BORRAR plantillas del sensor, y ahi equivocarse hacia "nada" es
+// inofensivo; equivocarse hacia "algo" no tiene vuelta atras.
+//
+// Un numero solo se guarda al ver la coma o el corchete que lo cierra, asi que
+// el ultimo de una respuesta cortada nunca entra a medias.
+// =====================================================
+
+int extraerEnterosJson(
+  const String& json,
+  const String& clave,
+  uint16_t* destino,
+  int maximo
+) {
+
+  String patron =
+    "\"" +
+    clave +
+    "\":";
+
+  int posicion =
+    json.indexOf(
+      patron
+    );
+
+  if (
+    posicion < 0
+  ) {
+    return 0;
+  }
+
+  posicion +=
+    patron.length();
+
+  while (
+    posicion < (int) json.length() &&
+    json[posicion] == ' '
+  ) {
+
+    posicion++;
+  }
+
+  if (
+    posicion >= (int) json.length() ||
+    json[posicion] != '['
+  ) {
+    return 0;
+  }
+
+  int cantidad =
+    0;
+
+  // -1 = todavia no hay digitos del numero en curso.
+  long valor =
+    -1;
+
+  for (
+    int i = posicion + 1;
+    i < (int) json.length();
+    i++
+  ) {
+
+    char c =
+      json[i];
+
+    if (
+      c >= '0' &&
+      c <= '9'
+    ) {
+
+      valor =
+        (valor < 0 ? 0 : valor) * 10 +
+        (c - '0');
+
+      if (
+        valor > 65535
+      ) {
+        return 0;
+      }
+
+      continue;
+    }
+
+    if (
+      c == ',' ||
+      c == ']'
+    ) {
+
+      if (
+        valor >= 0
+      ) {
+
+        if (
+          cantidad >= maximo
+        ) {
+
+          // Tope alcanzado: el resto queda para el proximo envio.
+          return cantidad;
+        }
+
+        destino[cantidad] =
+          (uint16_t) valor;
+
+        cantidad++;
+      }
+
+      valor =
+        -1;
+
+      if (
+        c == ']'
+      ) {
+        return cantidad;
+      }
+
+      continue;
+    }
+
+    if (
+      c == ' ' ||
+      c == '\r' ||
+      c == '\n' ||
+      c == '\t'
+    ) {
+      continue;
+    }
+
+    return 0;
+  }
+
+  // Sin el corchete que cierra: respuesta cortada.
+  return 0;
 }
 
 
@@ -6713,9 +6901,16 @@ String construirListaOcupadas(
 // y choca con las plantillas heredadas.
 //
 // Se llama al arrancar y cada vez que el sondeo contesta sincronizar_indice.
+//
+// Si la respuesta trae "borrar" (solo pasa cuando alguien confirmo a mano
+// asistencia:limpiar-sensor en el servidor), borra esas huellas sueltas, vuelve
+// a leer el indice y lo manda UNA vez mas, ya sin borrar: asi un borrado que
+// falla siempre no deja al lector dando vueltas.
 // =====================================================
 
-bool sincronizarIndiceSensor() {
+bool sincronizarIndiceSensor(
+  bool permitirBorrado
+) {
 
   if (
     enrolando
@@ -6887,7 +7082,158 @@ bool sincronizarIndiceSensor() {
 
   mostrarListo();
 
+  if (
+    http == 200 &&
+    permitirBorrado
+  ) {
+
+    uint16_t sueltas[LIMPIEZA_MAX_BORRAR];
+
+    int cantidad =
+      extraerEnterosJson(
+        respuesta,
+        "borrar",
+        sueltas,
+        LIMPIEZA_MAX_BORRAR
+      );
+
+    if (
+      cantidad > 0
+    ) {
+
+      borrarHuellasSueltas(
+        sueltas,
+        cantidad,
+        capacidadEfectiva
+      );
+
+      return sincronizarIndiceSensor(
+        false
+      );
+    }
+  }
+
   return http == 200;
+}
+
+
+// =====================================================
+// BORRAR HUELLAS SUELTAS
+//
+// Plantillas que el sensor tiene grabadas y el sistema no conoce: el dedo
+// coincide, la marca llega con una ranura que nadie tiene y se pierde. Las
+// elige el servidor —nunca el lector— y solo despues de que alguien lo
+// confirmara a mano.
+//
+// Una ranura fuera del rango del sensor no se toca. Por serie va la cantidad;
+// las ranuras, solo con SERIE_DETALLE.
+// =====================================================
+
+void borrarHuellasSueltas(
+  const uint16_t* ranuras,
+  int cantidad,
+  uint16_t capacidadEfectiva
+) {
+
+  int borradas =
+    0;
+
+  int errores =
+    0;
+
+  for (
+    int i = 0;
+    i < cantidad;
+    i++
+  ) {
+
+    uint16_t ranura =
+      ranuras[i];
+
+    if (
+      ranura >=
+      capacidadEfectiva
+    ) {
+
+      errores++;
+      continue;
+    }
+
+    uint8_t resultado =
+      finger.deleteModel(
+        ranura
+      );
+
+    if (
+      resultado !=
+      FINGERPRINT_OK
+    ) {
+
+      // Un reintento: puede ser ruido en la UART.
+      delay(15);
+
+      resultado =
+        finger.deleteModel(
+          ranura
+        );
+    }
+
+    if (
+      resultado ==
+      FINGERPRINT_OK
+    ) {
+
+      borradas++;
+
+    } else {
+
+      errores++;
+
+      if (
+        SERIE_DETALLE
+      ) {
+
+        Serial.print(
+          "NO SE PUDO BORRAR LA RANURA "
+        );
+
+        Serial.print(
+          ranura
+        );
+
+        Serial.print(
+          ": "
+        );
+
+        Serial.println(
+          resultado
+        );
+      }
+    }
+
+    delay(2);
+  }
+
+  Serial.print(
+    "HUELLAS SUELTAS BORRADAS: "
+  );
+
+  Serial.println(
+    borradas
+  );
+
+  if (
+    errores > 0
+  ) {
+
+    Serial.print(
+      "ERRORES AL BORRAR: "
+    );
+
+    Serial.println(
+      errores
+    );
+  }
 }
 
 
@@ -9607,12 +9953,30 @@ void loop() {
     return;
   }
 
+  // Ademas de la interrupcion, se pregunta al vidrio cada TACTIL_SONDEO_MS: en modo
+  // monitor (barrido lento) el FT6336 a veces no levanta el INT con un toque corto, y
+  // Melqui vio que tocando en algunas partes no abria (27/11/2026).
+  static unsigned long ultimoSondeoTactil =
+    0;
+
+  bool tocaSondeo =
+    tactilDisponible &&
+    !tactilToco &&
+    millis() - ultimoSondeoTactil >= TACTIL_SONDEO_MS;
+
   if (
-    tactilToco
+    tactilToco ||
+    tocaSondeo
   ) {
+
+    bool porInterrupcion =
+      tactilToco;
 
     tactilToco =
       false;
+
+    ultimoSondeoTactil =
+      millis();
 
     int16_t x =
       0;
@@ -9620,16 +9984,24 @@ void loop() {
     int16_t y =
       0;
 
+    bool hayDedo =
+      leerTactil(
+        x,
+        y
+      );
+
+
     // La interrupcion sola no alcanza: el vidrio tiene que informar un dedo.
     // Abre desde cualquier pantalla de espera o de resultado (pedido de Melqui,
     // 27/11/2026: «cuando toque cualquier lado de la pantalla»), no solo desde
     // el reposo: tambien con el aviso de sin red, de error o de una marca.
+    //
+    // La interrupcion SOLA ya alcanza (27/11/2026): con el AS608 leyendo ruido, el loop
+    // tarda hasta un segundo en volver y para entonces el dedo ya se levanto, asi que
+    // leerTactil() da 0 y el toque se perdia. El INT baja solo con un toque real.
     if (
       pantallaAceptaTeclado() &&
-      leerTactil(
-        x,
-        y
-      )
+      (hayDedo || porInterrupcion)
     ) {
 
       if (

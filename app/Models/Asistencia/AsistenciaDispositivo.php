@@ -18,6 +18,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * {@see hashDeToken()} es el único lugar donde se decide cómo se derivan esos
  * hashes, para que el comando que da de alta y el middleware que autentica no
  * puedan divergir.
+ *
+ * @property Carbon|null $indice_sincronizado_at
  */
 class AsistenciaDispositivo extends Model
 {
